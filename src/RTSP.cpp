@@ -40,7 +40,7 @@ void RTSP::run() {
 			OutPacketBuffer::maxSize = cfg->rtsp.out_buffer_size;
 
 
-			if (1) {
+			if (true) {
 				LOG_DEBUG("identify stream 0");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 0);
 				H264NALUnit sps;
@@ -101,7 +101,7 @@ void RTSP::run() {
 				LOG_INFO("stream 0 available at: " << url);
 			}
 
-			if (1) {
+			if (true) {
 				LOG_DEBUG("identify stream 1");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 1);
 				H264NALUnit sps;
