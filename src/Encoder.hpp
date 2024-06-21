@@ -85,10 +85,10 @@ class Encoder {
 			return Encoder::sink_id++;
 		}
 
-		static void remove_sink(uint32_t sink_id) {
-			LOG_DEBUG("Remove Sink: " << sink_id);
+		static void remove_sink(uint32_t sinkId) {
+			LOG_DEBUG("Remove Sink: " << sinkId);
 			std::unique_lock<std::mutex> lck(sinks_lock);
-			sinks.erase(sink_id);
+			sinks.erase(sinkId);
 		}
 
 	private:
