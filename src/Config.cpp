@@ -233,253 +233,254 @@ CFG::CFG() {
 
 bool read_proc(std::string procPath, std::string &line) {
 
-    std::ifstream procFile(procPath);
+	std::ifstream procFile(procPath);
 
-    if (procFile) {
-	if (std::getline(procFile, line)) {
-	    return true;
+	if (procFile) {
+		if (std::getline(procFile, line)) {
+			return true;
+		}
 	}
-    }
-    return false;
+	return false;
 }
 
 bool CFG::readConfig() {
 
-    // Construct the path to the configuration file in the same directory as the program binary
-    fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
-    fs::path cfgFilePath = binaryPath / "prudynt.cfg";
-    filePath = cfgFilePath;
+	// Construct the path to the configuration file in the same directory as the program binary
+	fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
+	fs::path cfgFilePath = binaryPath / "prudynt.cfg";
+	filePath = cfgFilePath;
 
-    // Try to load the configuration file from the specified paths
-    try {
-	lc.readFile(cfgFilePath.c_str());
-	LOG_INFO("Loaded configuration from " + cfgFilePath.string());
-    } catch (const libconfig::FileIOException &) {
-	fs::path etcPath = "/etc/prudynt.cfg";
-	filePath = etcPath;
+	// Try to load the configuration file from the specified paths
 	try {
-	    lc.readFile(etcPath.c_str());
-	    LOG_INFO("Loaded configuration from " + etcPath.string());
-	} catch (...) {
-	    LOG_WARN("Failed to load prudynt configuration file from /etc.");
-	    return 0; // Exit if configuration file is missing
+		lc.readFile(cfgFilePath.c_str());
+		LOG_INFO("Loaded configuration from " + cfgFilePath.string());
+	} catch (const libconfig::FileIOException &) {
+		fs::path etcPath = "/etc/prudynt.cfg";
+		filePath = etcPath;
+		try {
+			lc.readFile(etcPath.c_str());
+			LOG_INFO("Loaded configuration from " + etcPath.string());
+		} catch (...) {
+			LOG_WARN("Failed to load prudynt configuration file from /etc.");
+			return 0; // Exit if configuration file is missing
+		}
+	} catch (const libconfig::ParseException &pex) {
+		LOG_WARN("Parse error at " + std::string(pex.getFile()) + ":" + std::to_string(pex.getLine()) + " - " + pex.getError());
+		return 0; // Exit on parsing error
 	}
-    } catch (const libconfig::ParseException &pex) {
-	LOG_WARN("Parse error at " + std::string(pex.getFile()) + ":" + std::to_string(pex.getLine()) + " - " + pex.getError());
-	return 0; // Exit on parsing error
-    }
 
-    return 1;
+	return 1;
 }
 
 bool CFG::updateConfig() {
 
-    config_loaded = readConfig();
+	config_loaded = readConfig();
 
-    if( config_loaded ) {
+	if (config_loaded) {
 
-	libconfig::Setting &root = lc.getRoot();
+		libconfig::Setting &root = lc.getRoot();
 
 	for (auto &item : settings) {
 
-	    std::string path = item.first;
+			std::string path = item.first;
 
-	    size_t pos = path.find('.');
-	    std::string sect = path.substr(0, pos);
-	    std::string entr = path.substr(pos + 1);
+			size_t pos = path.find('.');
+			std::string sect = path.substr(0, pos);
+			std::string entr = path.substr(pos + 1);
 
-	    if (!root.exists(sect)) {
-		root.add(sect, libconfig::Setting::TypeGroup);
-	    }
-
-	    std::visit([&path,&root,&sect,&entr,this](const auto& e) {
-
-		using T = std::decay_t<decltype(e.value)>;
-		using U = std::decay_t<decltype(e)>;
-
-		std::string line;
-		int state = 0;
-
-		if (!state && !e.procPath.empty())
-		    state |= read_proc(e.procPath, line)?2:0;
-
-		if(lc.lookup(sect).exists(entr))
-		    lc.lookup(sect).remove(entr);
-
-		if constexpr (std::is_same_v<U, bolEntry>) {
-		    if constexpr (std::is_same_v<T, bool>) {
-			bool value = e.defaultValue;
-			state |= lc.lookupValue(path, value);
-			if(value != e.value && e.value != e.defaultValue && state != 2) {
-			    root.lookup(sect).add(entr, libconfig::Setting::TypeBoolean) = e.value;
+			if (!root.exists(sect)) {
+				root.add(sect, libconfig::Setting::TypeGroup);
 			}
-		    }
-		} else if constexpr (std::is_same_v<U, intEntry>) {
-		    if constexpr (std::is_same_v<T, int>) {
-			int value = e.defaultValue;
-			state |= lc.lookupValue(path, value);
-			if(value != e.value && e.value != e.defaultValue && state != 2) {
-			    root.lookup(sect).add(entr, libconfig::Setting::TypeInt) = e.value;
-			}
-		    }
-		} else if constexpr (std::is_same_v<U, strEntry>) {
-		    if constexpr (std::is_same_v<T, std::string>) {
-			std::string value = e.defaultValue;
-			state |= lc.lookupValue(path, value);
-			if(value != e.value && e.value != e.defaultValue && state != 2) {
-			    root.lookup(sect).add(entr, libconfig::Setting::TypeString) = e.value;
-			}
-		    }
-		}else if constexpr (std::is_same_v<U, uintEntry>) {
-		    if constexpr (std::is_same_v<T, unsigned int>) {
-			unsigned int value = e.defaultValue;
-			state |= lc.lookupValue(path, value);
-			if(value != e.value && e.value != e.defaultValue && state != 2) {
-			    libconfig::Setting &setting = root.lookup(sect).add(entr, libconfig::Setting::TypeInt) = (long)e.value;
-			    setting.setFormat(libconfig::Setting::FormatHex);
-			}
-		    }
+
+			std::visit([&path, &root, &sect, &entr, this](const auto &e) {
+
+			    using T = std::decay_t<decltype(e.value)>;
+			    using U = std::decay_t<decltype(e)>;
+
+			    std::string line;
+			    int state = 0;
+
+			    if (!state && !e.procPath.empty())
+				    state |= read_proc(e.procPath, line) ? 2 : 0;
+
+			    if (lc.lookup(sect).exists(entr))
+				    lc.lookup(sect).remove(entr);
+
+			    if constexpr (std::is_same_v<U, bolEntry>) {
+				    if constexpr (std::is_same_v<T, bool>) {
+					    bool value = e.defaultValue;
+					    state |= lc.lookupValue(path, value);
+					    if (value != e.value && e.value != e.defaultValue && state != 2) {
+						    root.lookup(sect).add(entr, libconfig::Setting::TypeBoolean) = e.value;
+					    }
+				    }
+			    } else if constexpr (std::is_same_v<U, intEntry>) {
+				    if constexpr (std::is_same_v<T, int>) {
+					    int value = e.defaultValue;
+					    state |= lc.lookupValue(path, value);
+					    if (value != e.value && e.value != e.defaultValue && state != 2) {
+						    root.lookup(sect).add(entr, libconfig::Setting::TypeInt) = e.value;
+					    }
+				    }
+			    } else if constexpr (std::is_same_v<U, strEntry>) {
+				    if constexpr (std::is_same_v<T, std::string>) {
+					    std::string value = e.defaultValue;
+					    state |= lc.lookupValue(path, value);
+					    if (value != e.value && e.value != e.defaultValue && state != 2) {
+						    root.lookup(sect).add(entr, libconfig::Setting::TypeString) = e.value;
+					    }
+				    }
+			    } else if constexpr (std::is_same_v<U, uintEntry>) {
+				    if constexpr (std::is_same_v<T, unsigned int>) {
+					    unsigned int value = e.defaultValue;
+					    state |= lc.lookupValue(path, value);
+					    if (value != e.value && e.value != e.defaultValue && state != 2) {
+						    libconfig::Setting &setting = root.lookup(sect).add(entr, libconfig::Setting::TypeInt) = (long) e.value;
+						    setting.setFormat(libconfig::Setting::FormatHex);
+					    }
+				    }
+			    }
+			}, item.second);
 		}
-	    }, item.second);
+
+		if (root.exists("rois"))
+			root.remove("rois");
+
+		libconfig::Setting &rois = root.add("rois", libconfig::Setting::TypeGroup);
+
+		for (int i = 0; i < motion.roi_count; i++) {
+
+			libconfig::Setting &entry = rois.add("roi_" + std::to_string(i), libconfig::Setting::TypeArray);
+			entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p0_x;
+			entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p0_y;
+			entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p1_x;
+			entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p1_y;
+		}
 	}
 
-	if(root.exists("rois"))
-	    root.remove("rois");
+	lc.writeFile(filePath);
+	LOG_DEBUG("Config is written to " << filePath);
 
-	libconfig::Setting &rois = root.add("rois", libconfig::Setting::TypeGroup);
-
-	for (int i=0; i<motion.roi_count; i++) {
-
-	    libconfig::Setting &entry = rois.add("roi_" + std::to_string(i), libconfig::Setting::TypeArray);
-	    entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p0_x;
-	    entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p0_y;
-	    entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p1_x;
-	    entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p1_y;
-	}
-    }
-
-    lc.writeFile(filePath);
-    LOG_DEBUG("Config is written to " << filePath);
-
-    return true;
+	return true;
 }
 
 CFG::CFG() {
 
-    config_loaded = readConfig();
+	config_loaded = readConfig();
 
-    if( config_loaded ) {
+	if (config_loaded) {
 
-	for (auto &item : settings) {
+		for (auto &item: settings) {
 
-	    std::string path = item.first;
+			std::string path = item.first;
 
-	    std::visit([&path,this](const auto& e) {
+			std::visit([&path, this](const auto &e) {
 
-		using T = std::decay_t<decltype(e.value)>;
-		using U = std::decay_t<decltype(e)>;
+			    using T = std::decay_t<decltype(e.value)>;
+			    using U = std::decay_t<decltype(e)>;
 
-		T value;
-		std::string line;
-		int state = lc.lookupValue(path, value);
+			    T value;
+			    std::string line;
+			    int state = lc.lookupValue(path, value);
 
-		if (!state && !e.procPath.empty())
-		    state |= read_proc(e.procPath, line)?2:0;
+			    if (!state && !e.procPath.empty())
+				    state |= read_proc(e.procPath, line) ? 2 : 0;
 
-		if constexpr (std::is_same_v<U, bolEntry>) {
-		    if constexpr (std::is_same_v<T, bool>) {
-			if(state){
-			    if(e.isValid(value)) {
-				e.value = value;
-			    } else {
-				std::cout << "[CFG:Config.cpp] " << path << ", " << e.message << std::endl;
-				e.value = e.defaultValue;
+			    if constexpr (std::is_same_v<U, bolEntry>) {
+				    if constexpr (std::is_same_v<T, bool>) {
+					    if (state) {
+						    if (e.isValid(value)) {
+							    e.value = value;
+						    } else {
+							    std::cout << "[CFG:Config.cpp] " << path << ", " << e.message << std::endl;
+							    e.value = e.defaultValue;
+						    }
+					    } else {
+						    e.value = e.defaultValue;
+					    }
+				    }
+			    } else if constexpr (std::is_same_v<U, intEntry>) {
+				    if constexpr (std::is_same_v<T, int>) {
+					    if (state == 2) {
+						    std::istringstream iss(line);
+						    iss >> value;
+						    std::cout << "[CFG:Config.cpp] " << path << ", Use config from procfs." << std::endl;
+					    }
+					    if (state) {
+						    if (e.isValid(value)) {
+							    e.value = value;
+						    } else {
+							    std::cout << "[CFG:Config.cpp] " << path << ", " << e.message << std::endl;
+							    e.value = e.defaultValue;
+						    }
+					    } else {
+						    e.value = e.defaultValue;
+					    }
+				    }
+			    } else if constexpr (std::is_same_v<U, strEntry>) {
+				    if constexpr (std::is_same_v<T, std::string>) {
+					    if (state == 2) { //not read from config but found in procfs
+						    value = line;
+						    std::cout << "[CFG:Config.cpp] " << path << ", use config from procfs." << std::endl;
+					    }
+					    if (state) {
+						    if (e.isValid(value)) {
+							    e.value = value;
+						    } else {
+							    std::cout << "[CFG:Config.cpp] " << path << ", " << e.message << std::endl;
+							    e.value = e.defaultValue;
+						    }
+					    } else {
+						    e.value = e.defaultValue;
+					    }
+				    }
+			    } else if constexpr (std::is_same_v<U, uintEntry>) {
+				    if constexpr (std::is_same_v<T, unsigned int>) {
+					    if (state == 2) {
+						    std::istringstream iss(line);
+						    if (line.find("0x") == 0) {
+							    iss >> std::hex >> value;
+						    } else {
+							    iss >> value;
+						    }
+						    std::cout << "[CFG:Config.cpp] " << path << ", Use config from procfs." << std::endl;
+					    }
+					    if (state) {
+						    if (e.isValid(value)) {
+							    e.value = value;
+						    } else {
+							    std::cout << "[CFG:Config.cpp]" << path << ", " << e.message << std::endl;
+							    e.value = e.defaultValue;
+						    }
+					    } else {
+						    e.value = e.defaultValue;
+					    }
+				    }
 			    }
-			} else {
-			    e.value = e.defaultValue;
-			}
-		    }
-		} else if constexpr (std::is_same_v<U, intEntry>) {
-		    if constexpr (std::is_same_v<T, int>) {
-			if(state==2) {
-			    std::istringstream iss(line);
-			    iss >> value;
-			    std::cout << "[CFG:Config.cpp] " << path << ", Use config from procfs." << std::endl;
-			}
-			if(state){
-			    if(e.isValid(value)) {
-				e.value = value;
-			    } else {
-				std::cout << "[CFG:Config.cpp] " << path << ", " << e.message << std::endl;
-				e.value = e.defaultValue;
-			    }
-			} else {
-			    e.value = e.defaultValue;
-			}
-		    }
-		} else if constexpr (std::is_same_v<U, strEntry>) {
-		    if constexpr (std::is_same_v<T, std::string>) {
-			if(state == 2) { //not read from config but found in procfs
-			    value = line;
-			    std::cout << "[CFG:Config.cpp] " << path << ", use config from procfs." << std::endl;
-			}
-			if(state){
-			    if(e.isValid(value)) {
-				e.value = value;
-			    } else {
-				std::cout << "[CFG:Config.cpp] " << path << ", " << e.message << std::endl;
-				e.value = e.defaultValue;
-			    }
-			} else {
-			    e.value = e.defaultValue;
-			}
-		    }
-		}else if constexpr (std::is_same_v<U, uintEntry>) {
-		    if constexpr (std::is_same_v<T, unsigned int>) {
-			if(state==2) {
-			    std::istringstream iss(line);
-			    if (line.find("0x") == 0) {
-				iss >> std::hex >> value;
-			    } else {
-				iss >> value;
-			    }
-			    std::cout << "[CFG:Config.cpp] " << path << ", Use config from procfs." << std::endl;
-			}
-			if(state){
-			    if(e.isValid(value)) {
-				e.value = value;
-			    } else {
-				std::cout << "[CFG:Config.cpp]" << path << ", " << e.message << std::endl;
-				e.value = e.defaultValue;
-			    }
-			} else {
-			    e.value = e.defaultValue;
-			}
-		    }
+			}, item.second);
 		}
-	    }, item.second);
-	}
 
-	libconfig::Setting &root = lc.getRoot();
+		libconfig::Setting &root = lc.getRoot();
 
-	if(root.exists("rois")) {
+		if (root.exists("rois")) {
 
-	    libconfig::Setting &rois = root.lookup("rois");
+			libconfig::Setting &rois = root.lookup("rois");
 
-	    for (int i=0; i<motion.roi_count; i++) {
+			for (int i = 0; i < motion.roi_count; i++) {
 
-		int n = atoi(std::regex_replace(rois[i].getName(),
-			    std::regex("[^0-9]*([0-9]+).*"), std::string("$1")).c_str());
+				int n = atoi(std::regex_replace(rois[i].getName(),
+								std::regex("[^0-9]*([0-9]+).*"), std::string("$1")).c_str());
 
-		if(rois[i].getLength() == 4) {
-		    motion.rois[n].p0_x = rois[i][0];
-		    motion.rois[n].p0_y = rois[i][1];
-		    motion.rois[n].p1_x = rois[i][2];
-		    motion.rois[n].p1_y = rois[i][3];
+				if (rois[i].getLength() == 4) {
+					motion.rois[n].p0_x = rois[i][0];
+					motion.rois[n].p0_y = rois[i][1];
+					motion.rois[n].p1_x = rois[i][2];
+					motion.rois[n].p1_y = rois[i][3];
+				}
+			}
 		}
-	    }
 	}
-    }
 }
+
 #endif //defined(OLD_CONFIG)
 
