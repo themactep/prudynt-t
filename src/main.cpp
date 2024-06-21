@@ -128,7 +128,7 @@ int main(int argc, const char *argv[]) {
     enc_thread = std::thread(&Encoder::run, &enc);
     rtsp_thread = std::thread(&RTSP::run, rtsp);
 
-    while(1) {
+    while (true) {
 
         usleep(1000*1000);
 
