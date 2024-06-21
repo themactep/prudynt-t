@@ -15,7 +15,7 @@
 //~10k
 //#define AUDIO_SUPPORT
 
-struct roi{
+struct roi {
     int p0_x;
     int p0_y;
     int p1_x;
@@ -25,9 +25,9 @@ struct roi{
 template<typename T>
 struct ConfigItem {
     const char *path;
-    T& value;
+    T &value;
     T defaultValue;
-    std::function<bool(const T&)> validate;
+    std::function<bool(const T &)> validate;
     const char *procPath;
 };
 
@@ -44,7 +44,7 @@ struct _rtsp {
     int port;
     int est_bitrate;
     int out_buffer_size;
-    int send_buffer_size;		
+    int send_buffer_size;
     bool auth_required;
     const char *username;
     const char *password;
@@ -82,22 +82,22 @@ struct _image {
     int wb_bgain;
 
 };
-#if defined(AUDIO_SUPPORT)        
+#if defined(AUDIO_SUPPORT)
 struct _audio {
     bool input_enabled;
     int input_vol;
     int input_gain;
     int input_alc_gain;
-    bool output_enabled;            
+    bool output_enabled;
     int output_vol;
     int output_gain;
-    int input_noise_suppression;            
+    int input_noise_suppression;
     bool input_echo_cancellation;
     bool input_high_pass_filter;
     bool output_high_pass_filter;
 };
-#endif      
-struct _osd {            
+#endif
+struct _osd {
     int font_size;
     int font_stroke_size;
     int logo_height;
@@ -117,13 +117,13 @@ struct _osd {
     int pos_logo_x;
     int pos_logo_y;
     int logo_transparency;
-    int logo_rotation;            
-    bool enabled;            
+    int logo_rotation;
+    bool enabled;
     bool time_enabled;
     bool user_text_enabled;
     bool uptime_enabled;
     bool logo_enabled;
-    bool font_stroke_enabled;            
+    bool font_stroke_enabled;
     const char *font_path;
     const char *time_format;
     const char *uptime_format;
@@ -132,7 +132,7 @@ struct _osd {
     unsigned int font_color;
     unsigned int font_stroke_color;
     _regions regions;
-};  
+};
 struct _stream {
     int gop;
     int max_gop;
@@ -152,9 +152,9 @@ struct _stream {
     /* JPEG stream*/
     int jpeg_quality;
     int jpeg_refresh;
-    const char *jpeg_path;  
-    _osd osd;          
-};	
+    const char *jpeg_path;
+    _osd osd;
+};
 struct _motion {
     int debounce_time;
     int post_time;
@@ -183,101 +183,107 @@ struct _websocket {
 };
 
 class CFG {
-	public:
+public:
 
-        bool config_loaded = false;
-        libconfig::Config lc;
-        std::string filePath;
+    bool config_loaded = false;
+    libconfig::Config lc;
+    std::string filePath;
 
-		CFG();
-        static CFG *createNew();
-        bool readConfig();
-        bool updateConfig();
+    CFG();
 
-		_general general;
-		_rtsp rtsp;
-		_sensor sensor;
-        _image image;
-#if defined(AUDIO_SUPPORT)           
-        _audio audio;
+    static CFG *createNew();
+
+    bool readConfig();
+
+    bool updateConfig();
+
+    _general general;
+    _rtsp rtsp;
+    _sensor sensor;
+    _image image;
+#if defined(AUDIO_SUPPORT)
+    _audio audio;
 #endif
-		_stream stream0;
-        _stream stream1;
-		_stream stream2;
-		_osd osd;
-		_motion motion;
-        _websocket websocket;
+    _stream stream0;
+    _stream stream1;
+    _stream stream2;
+    _osd osd;
+    _motion motion;
+    _websocket websocket;
 
-        std::atomic<int> main_thread_signal{1};
+    std::atomic<int> main_thread_signal{1};
 
-        // bit 1 = init, 2 = running, 4 = stop, 8 stopped, 256 = exit
-        std::atomic<int> encoder_thread_signal{1};
-        // bit 1 = init, 2 = running, 4 = stop, 8 stopped, 256 = exit
-        std::atomic<int> jpg_thread_signal{1};
-        // bit 0 = start, 1 = stop, 2 = stopped, 256 = exit
-        char volatile rtsp_thread_signal{0};
-        // bit 1 = init, 2 = running, 4 = stop, 8 stopped, 256 = exit
-        std::atomic<int> motion_thread_signal{1};
+    // bit 1 = init, 2 = running, 4 = stop, 8 stopped, 256 = exit
+    std::atomic<int> encoder_thread_signal{1};
+    // bit 1 = init, 2 = running, 4 = stop, 8 stopped, 256 = exit
+    std::atomic<int> jpg_thread_signal{1};
+    // bit 0 = start, 1 = stop, 2 = stopped, 256 = exit
+    char volatile rtsp_thread_signal{0};
+    // bit 1 = init, 2 = running, 4 = stop, 8 stopped, 256 = exit
+    std::atomic<int> motion_thread_signal{1};
 
-    template <typename T>
+    template<typename T>
     T get(const std::string &name) {
-        T result;
-        std::vector<ConfigItem<T>> *items = nullptr;
-        if constexpr (std::is_same_v<T, bool>) {
-            items = &boolItems;
-        } else if constexpr (std::is_same_v<T, const char*>) {
-            items = &charItems;
-        } else if constexpr (std::is_same_v<T, int>) {
-            items = &intItems;
-        } else if constexpr (std::is_same_v<T, unsigned int>) {
-            items = &uintItems;
-        } else {
-            return result;
-        }
-        for (auto &item : *items) {
-            if (item.path == name) {
-                return item.value;
-            }
-        }
-        return result;
+	    T result;
+	    std::vector<ConfigItem<T>> *items = nullptr;
+	    if constexpr (std::is_same_v<T, bool>) {
+		    items = &boolItems;
+	    } else if constexpr (std::is_same_v<T, const char *>) {
+		    items = &charItems;
+	    } else if constexpr (std::is_same_v<T, int>) {
+		    items = &intItems;
+	    } else if constexpr (std::is_same_v<T, unsigned int>) {
+		    items = &uintItems;
+	    } else {
+		    return result;
+	    }
+	    for (auto &item: *items) {
+		    if (item.path == name) {
+			    return item.value;
+		    }
+	    }
+	    return result;
     }
 
-    template <typename T>
+    template<typename T>
     bool set(const std::string &name, T value) {
-        std::vector<ConfigItem<T>> *items = nullptr;
-        if constexpr (std::is_same_v<T, bool>) {
-            items = &boolItems;
-        } else if constexpr (std::is_same_v<T, const char*>) {
-            items = &charItems;
-        } else if constexpr (std::is_same_v<T, int>) {
-            items = &intItems;
-        } else if constexpr (std::is_same_v<T, unsigned int>) {
-            items = &uintItems;
-        } else {
-            return false;
-        }
-        for (auto &item : *items) {
-            if (item.path == name) {
-                if (item.validate(value)) {
-                    item.value = value;
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-        }
-        return false;
+	    std::vector<ConfigItem<T>> *items = nullptr;
+	    if constexpr (std::is_same_v<T, bool>) {
+		    items = &boolItems;
+	    } else if constexpr (std::is_same_v<T, const char *>) {
+		    items = &charItems;
+	    } else if constexpr (std::is_same_v<T, int>) {
+		    items = &intItems;
+	    } else if constexpr (std::is_same_v<T, unsigned int>) {
+		    items = &uintItems;
+	    } else {
+		    return false;
+	    }
+	    for (auto &item: *items) {
+		    if (item.path == name) {
+			    if (item.validate(value)) {
+				    item.value = value;
+				    return true;
+			    } else {
+				    return false;
+			    }
+		    }
+	    }
+	    return false;
     }
 
-    private:
+private:
 
-        std::vector<ConfigItem<bool>> boolItems;
-        std::vector<ConfigItem<const char *>> charItems;
-        std::vector<ConfigItem<int>> intItems;
-        std::vector<ConfigItem<unsigned int>> uintItems;
+    std::vector<ConfigItem<bool>> boolItems;
+    std::vector<ConfigItem<const char *>> charItems;
+    std::vector<ConfigItem<int>> intItems;
+    std::vector<ConfigItem<unsigned int>> uintItems;
 
-        std::vector<ConfigItem<bool>> getBoolItems();
-        std::vector<ConfigItem<const char *>> getCharItems() ;
-        std::vector<ConfigItem<int>> getIntItems();
-        std::vector<ConfigItem<unsigned int>> getUintItems();
+    std::vector<ConfigItem<bool>> getBoolItems();
+
+    std::vector<ConfigItem<const char *>> getCharItems();
+
+    std::vector<ConfigItem<int>> getIntItems();
+
+    std::vector<ConfigItem<unsigned int>> getUintItems();
 };
