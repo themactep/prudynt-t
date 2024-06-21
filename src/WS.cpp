@@ -76,7 +76,7 @@ static const char *const rtsp_keys[] = {
     "out_buffer_size",
     "send_buffer_size",
     "auth_required",
-    "name"
+    "name",
     "username",
     "password"};
 
