@@ -12,8 +12,8 @@
 #include FT_STROKER_H
 
 #if defined(PLATFORM_T31)
-	#define IMPEncoderCHNAttr IMPEncoderChnAttr
-	#define IMPEncoderCHNStat IMPEncoderChnStat
+#define IMPEncoderCHNAttr IMPEncoderChnAttr
+#define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
 
 struct OSDItem {
@@ -22,50 +22,60 @@ struct OSDItem {
 };
 
 class OSD {
-    public:
-        static OSD* createNew(std::shared_ptr<CFG::_osd> osd,int osdGrp, int encChn);
-        OSD(std::shared_ptr<CFG::_osd> osd, int osdGrp, int encChn) : osd(osd), osdGrp(osdGrp), encChn(encChn) {
-            init();
-        }
-        void init();
-        int exit();
-        void update();
-        void updateDisplayEverySecond();
-        
-        void rotateBGRAImage(uint8_t*& inputImage, int& width, int& height, int angle, bool del);
-        static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, int width = 0, int height = 0, int encChn = 0);
-        static int get_abs_pos(int max, int size, int pos);            
-    private:
-        std::shared_ptr<CFG::_osd> osd;
+public:
+    static OSD *createNew(std::shared_ptr<CFG::_osd> osd, int osdGrp, int encChn);
 
-        int last_updated_second;
+    OSD(std::shared_ptr<CFG::_osd> osd, int osdGrp, int encChn) : osd(osd), osdGrp(osdGrp), encChn(encChn) {
+	    init();
+    }
 
-        OSDItem osdTime;   
-        OSDItem osdUser;
-        OSDItem osdUptm;
-        OSDItem osdLogo;
-        
-        int freetype_init();
-        void draw_glyph(uint8_t *data, FT_BitmapGlyph bmg,
-                        int *pen_x, int *pen_y,
-                        int item_height, int item_width,
-                    uint32_t color);
-        void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, std::string text, int posX, int posY, int angle);
+    void init();
 
-        FT_Library freetype;
-        FT_Face fontface;
-        FT_Stroker stroker;
+    int exit();
 
-        IMPEncoderCHNAttr channelAttributes;
+    void update();
 
-        std::map<char,FT_BitmapGlyph> bitmaps;
-        std::map<char,FT_BitmapGlyph> stroke_bitmaps;
-        std::map<char,FT_BBox> boxes;
-        std::map<char,FT_Vector> advances;
+    void updateDisplayEverySecond();
 
-        bool initialized{0};
-        int osdGrp;
-        int encChn;
+    void rotateBGRAImage(uint8_t *&inputImage, int &width, int &height, int angle, bool del);
+
+    static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, int width = 0, int height = 0, int encChn = 0);
+
+    static int get_abs_pos(int max, int size, int pos);
+
+private:
+    std::shared_ptr<CFG::_osd> osd;
+
+    int last_updated_second;
+
+    OSDItem osdTime;
+    OSDItem osdUser;
+    OSDItem osdUptm;
+    OSDItem osdLogo;
+
+    int freetype_init();
+
+    void draw_glyph(uint8_t *data, FT_BitmapGlyph bmg,
+		    int *pen_x, int *pen_y,
+		    int item_height, int item_width,
+		    uint32_t color);
+
+    void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, std::string text, int posX, int posY, int angle);
+
+    FT_Library freetype;
+    FT_Face fontface;
+    FT_Stroker stroker;
+
+    IMPEncoderCHNAttr channelAttributes;
+
+    std::map<char, FT_BitmapGlyph> bitmaps;
+    std::map<char, FT_BitmapGlyph> stroke_bitmaps;
+    std::map<char, FT_BBox> boxes;
+    std::map<char, FT_Vector> advances;
+
+    bool initialized{0};
+    int osdGrp;
+    int encChn;
 };
 
 #endif
