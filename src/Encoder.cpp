@@ -38,10 +38,10 @@ int Encoder::channel_init(int chn_nr, int grp_nr, IMPEncoderCHNAttr *chn_attr) {
 	int ret;
 
 	ret = IMP_Encoder_CreateChn(chn_nr, chn_attr);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateChn(" << chn_nr << ", chn_attr)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateChn(" << chn_nr << ", chn_attr)")
 
 	ret = IMP_Encoder_RegisterChn(grp_nr, chn_nr);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_RegisterChn(" << chn_nr << ", chn_attr)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_RegisterChn(" << chn_nr << ", chn_attr)")
 
 	return ret;
 }
@@ -50,10 +50,10 @@ int Encoder::channel_deinit(int chn_nr) {
 	int ret;
 
 	ret = IMP_Encoder_UnRegisterChn(chn_nr);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_UnRegisterChn(" << chn_nr << ")");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_UnRegisterChn(" << chn_nr << ")")
 
 	ret = IMP_Encoder_DestroyChn(chn_nr);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_DestroyChn(" << chn_nr << ")");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_DestroyChn(" << chn_nr << ")")
 
 	return ret;
 }
@@ -77,26 +77,26 @@ int Encoder::system_init() {
 	LOG_INFO("CPU Information: " << cpuInfo);
 
 	ret = IMP_OSD_SetPoolSize(OSDPoolSize);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_OSD_SetPoolSize(" << OSDPoolSize << ")");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_OSD_SetPoolSize(" << OSDPoolSize << ")")
 
 	ret = IMP_ISP_Open();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Open()");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Open()")
 
 	sinfo = create_sensor_info(cfg->sensor.model.c_str());
 	ret = IMP_ISP_AddSensor(&sinfo);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_AddSensor(&sinfo)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_AddSensor(&sinfo)")
 
 	ret = IMP_ISP_EnableSensor();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableSensor()");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableSensor()")
 
 	ret = IMP_System_Init();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Init()");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Init()")
 
 	// Enable tuning.
 	// This is necessary to customize the sensor's image output.
 	// Denoising, WDR, Night Mode, and FPS customization require this.
 	ret = IMP_ISP_EnableTuning();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableTuning()");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableTuning()")
 
 	/* Image tuning */
 	ret = IMP_ISP_Tuning_SetContrast(cfg->image.contrast);
@@ -284,11 +284,11 @@ int Encoder::system_init() {
 	LOG_DEBUG("ISP Tuning Defaults set");
 
 	ret = IMP_ISP_Tuning_SetSensorFPS(cfg->sensor.fps, 1);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetSensorFPS(" << cfg->sensor.fps << ", 1);");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetSensorFPS(" << cfg->sensor.fps << ", 1);")
 
 	// Set the ISP to DAY on launch
 	ret = IMP_ISP_Tuning_SetISPRunningMode(IMPISP_RUNNING_MODE_DAY);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetISPRunningMode(" << IMPISP_RUNNING_MODE_DAY << ")");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetISPRunningMode(" << IMPISP_RUNNING_MODE_DAY << ")")
 
 	return ret;
 }
@@ -531,67 +531,67 @@ bool Encoder::init() {
 	int ret = 0;
 
 	ret = system_init();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "system_init(0)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "system_init(0)")
 
 	ret = framesource_init();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "framesource_init(0)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "framesource_init(0)")
 
 	ret = encoder_init();
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "encoder_init(0)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "encoder_init(0)")
 
 	/* Encoder highres channel */
 	if (cfg->stream0.enabled) {
 
 		ret = IMP_Encoder_CreateGroup(0);
-		LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateGroup(0)");
+		LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateGroup(0)")
 
 		if (!cfg->stream0.osd.enabled) {
 
 			ret = IMP_System_Bind(&high_fs, &high_enc);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&high_fs, &high_enc)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&high_fs, &high_enc)")
 		} else {
 			osdStream0 = true;
 
 			stream0_osd = OSD::createNew(std::make_shared<CFG::_osd>(cfg->stream0.osd), 0, 0);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "osd.init(cfg, 0)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "osd.init(cfg, 0)")
 
 			// high framesource -> high OSD
 			ret = IMP_System_Bind(&high_fs, &high_osd_cell);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&high_fs, &high_osd_cell)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&high_fs, &high_osd_cell)")
 
 			// high OSD -> high Encoder
 			ret = IMP_System_Bind(&high_osd_cell, &high_enc);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&high_osd_cell, &high_enc)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&high_osd_cell, &high_enc)")
 		}
 
 		ret = IMP_FrameSource_EnableChn(0);
-		LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_EnableChn(0)");
+		LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_EnableChn(0)")
 	}
 
 	/* Encoder lowres channel */
 	if (cfg->stream1.enabled) {
 		ret = IMP_Encoder_CreateGroup(1);
-		LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateGroup(1)");
+		LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateGroup(1)")
 
 		if (!cfg->stream1.osd.enabled) {
 			ret = IMP_System_Bind(&low_fs, &low_enc);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&low_fs, &low_enc)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&low_fs, &low_enc)")
 		} else {
 			osdStream1 = true;
 
 			stream1_osd = OSD::createNew(std::make_shared<CFG::_osd>(cfg->stream1.osd), 1, 1);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "osd.init(cfg, 1)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "osd.init(cfg, 1)")
 
 			// low framesource -> low OSD
 			ret = IMP_System_Bind(&low_fs, &low_osd_cell);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&low_fs, &low_osd_cell)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&low_fs, &low_osd_cell)")
 
 			// low OSD -> low Encoder
 			ret = IMP_System_Bind(&low_osd_cell, &low_enc);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&low_osd_cell, &low_enc)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&low_osd_cell, &low_enc)")
 
 			ret = IMP_FrameSource_EnableChn(1);
-			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_EnableChn(1)");
+			LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_EnableChn(1)")
 		}
 	}
 
