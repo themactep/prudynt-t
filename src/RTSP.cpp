@@ -43,9 +43,13 @@ void RTSP::run() {
 			if (cfg->stream0.enabled) {
 				LOG_DEBUG("identify stream 0");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 0);
-				H264NALUnit sps, pps; // Declare outside the loop!
+				H264NALUnit sps;
+				H264NALUnit pps; // Declare outside the loop!
 				H264NALUnit *vps = nullptr; // Use a pointer for VPS
-				bool have_pps = false, have_sps = false, have_vps = false;
+				bool have_vps = false;
+				bool have_sps = false;
+				bool have_pps = false;
+
 				// Read from the stream until we capture the SPS and PPS. Only capture VPS if needed.
 				while (!have_pps || !have_sps || (cfg->stream0.format == "H265" && !have_vps)) {
 					LOG_DEBUG("wait_read");
@@ -100,9 +104,13 @@ void RTSP::run() {
 			if (cfg->stream1.enabled) {
 				LOG_DEBUG("identify stream 1");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 1);
-				H264NALUnit sps, pps; // Declare outside the loop!
+				H264NALUnit sps;
+				H264NALUnit pps; // Declare outside the loop!
 				H264NALUnit *vps = nullptr; // Use a pointer for VPS
-				bool have_pps = false, have_sps = false, have_vps = false;
+				bool have_vps = false;
+				bool have_sps = false;
+				bool have_pps = false;
+
 				// Read from the stream until we capture the SPS and PPS. Only capture VPS if needed.
 				while (!have_pps || !have_sps || (cfg->stream0.format == "H265" && !have_vps)) {
 					H264NALUnit unit = deviceSource->wait_read();
