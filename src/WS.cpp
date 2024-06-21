@@ -1938,7 +1938,7 @@ void WS::run()
 
     LOG_INFO("Server started on port " << cfg->websocket.port);
 
-    while (1)
+    while (true)
     {
         lws_service(context, 50);
     }
