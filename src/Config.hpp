@@ -671,7 +671,7 @@ class CFG {
 			{"motion.roi_0_y", 			intEntry{motion.roi_0_y, 0, [](const int &v) { return v >= 0; }, "Motion ROI 0 Y position should be non-negative", ""}},
 			{"motion.roi_1_x", 			intEntry{motion.roi_1_x, 1920, [](const int &v) { return v >= 0; }, "Motion ROI 1 X position should be non-negative", ""}},
 			{"motion.roi_1_y", 			intEntry{motion.roi_1_y, 1080, [](const int &v) { return v >= 0; }, "Motion ROI 1 Y position should be non-negative", ""}},
-			{"motion.roi_count", 		intEntry{motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }, "Motion ROI count should be between 1 and 52", ""}},						
+			{"motion.roi_count", 		intEntry{motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }, "Motion ROI count should be between 1 and 52", ""}},trailing
 
 			{"websocket.enabled",       bolEntry{websocket.enabled, true, [](const bool &v) { return true; }, "Websocket enabled flag. Must be either true or false.", ""}},
             {"websocket.secured",       bolEntry{websocket.secured, false, [](const bool &v) { return true; }, "Websocket security flag. Must be either true or false.", ""}},
