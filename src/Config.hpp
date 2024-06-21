@@ -83,7 +83,7 @@ class CFG {
 			int port;
 			int est_bitrate;
 			int out_buffer_size;
-			int send_buffer_size;		
+			int send_buffer_size;
 			bool auth_required;
 			std::string username;
 			std::string password;
@@ -121,22 +121,22 @@ class CFG {
             int wb_bgain;
 
         };
-#if defined(AUDIO_SUPPORT)        
+#if defined(AUDIO_SUPPORT)
         struct _audio {
             bool input_enabled;
             int input_vol;
             int input_gain;
             int input_alc_gain;
-            bool output_enabled;            
+            bool output_enabled;
             int output_vol;
             int output_gain;
-            int input_noise_suppression;            
+            int input_noise_suppression;
             bool input_echo_cancellation;
             bool input_high_pass_filter;
             bool output_high_pass_filter;
         };
-#endif      
-		struct _osd {            
+#endif
+		struct _osd {
 			int font_size;
 			int font_stroke_size;
 			int logo_height;
@@ -156,13 +156,13 @@ class CFG {
 			int pos_logo_x;
 			int pos_logo_y;
 			int logo_transparency;
-            int logo_rotation;            
-			bool enabled;            
+            int logo_rotation;
+			bool enabled;
 			bool time_enabled;
 			bool user_text_enabled;
 			bool uptime_enabled;
             bool logo_enabled;
-			bool font_stroke_enabled;            
+			bool font_stroke_enabled;
 			std::string font_path;
 			std::string time_format;
 			std::string uptime_format;
@@ -170,7 +170,7 @@ class CFG {
 			std::string logo_path;
 			unsigned int font_color;
 			unsigned int font_stroke_color;
-		};  
+		};
         struct _stream {
 			int gop;
 			int max_gop;
@@ -189,9 +189,9 @@ class CFG {
             /* JPEG stream*/
 			int jpeg_quality;
 			int jpeg_refresh;
-			std::string jpeg_path;  
-            _osd osd;          
-		};	
+			std::string jpeg_path;
+            _osd osd;
+		};
 		struct _motion {
 			int debounce_time;
 			int post_time;
@@ -230,7 +230,7 @@ class CFG {
 		_rtsp rtsp;
 		_sensor sensor;
         _image image;
-#if defined(AUDIO_SUPPORT)           
+#if defined(AUDIO_SUPPORT)
         _audio audio;
 #endif
 		_stream stream0;
@@ -294,7 +294,7 @@ class CFG {
             if (item.path == name) {
                 if (item.validate(value)) {
                     item.value = value;
-                    return true; 
+                    return true;
                 } else {
                     return false;
                 }
@@ -309,7 +309,7 @@ class CFG {
             {"rtsp.auth_required",      rtsp.auth_required, true, [](const bool &v) { return true; }, ""},
             {"image.vflip", 	        image.vflip, false, [](const bool &v) { return true; }, ""},
             {"image.hflip", 	        image.hflip, false, [](const bool &v) { return true; }, ""},
-#if defined(WITH_AUDIO)            
+#if defined(WITH_AUDIO)
             {"audio.input_enabled",	    audio.input_enabled, false, [](const bool &v) { return true; }, ""},
             {"audio.output_enabled",	audio.output_enabled, false, [](const bool &v) { return true; }, ""},
 			{"audio.input_echo_cancellation", audio.input_echo_cancellation, false, [](const bool &v) { return true; }, ""},
@@ -332,12 +332,12 @@ class CFG {
             {"stream1.osd.time_enabled",stream1.osd.time_enabled, true, [](const bool &v) { return true; }, ""},
             {"stream1.osd.user_text_enabled", stream1.osd.user_text_enabled, true, [](const bool &v) { return true; }, ""},
             {"stream1.osd.font_stroke_enabled", stream1.osd.font_stroke_enabled, true, [](const bool &v) { return true; }, ""},
-            {"stream1.osd.uptime_enabled", stream1.osd.uptime_enabled, true, [](const bool &v) { return true; }, ""},            
+            {"stream1.osd.uptime_enabled", stream1.osd.uptime_enabled, true, [](const bool &v) { return true; }, ""},
             {"motion.enabled",          motion.enabled, false, [](const bool &v) { return true; }, ""},
 			{"websocket.enabled",       websocket.enabled, true, [](const bool &v) { return true; }, ""},
             {"websocket.secured",       websocket.secured, false, [](const bool &v) { return true; }, ""},
         };
-        
+
         std::vector<ConfigItem<std::string>> stringItems = {
 			{"general.loglevel",		general.loglevel, "INFO", [](const std::string &v) { std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"}; return a.count(v)==1; }, ""},
             {"rtsp.username",           rtsp.username, "thingino", [](const std::string &v) { return !v.empty(); },""},
@@ -347,7 +347,7 @@ class CFG {
 			{"stream0.rtsp_endpoint",   stream0.rtsp_endpoint, "ch0", [](const std::string &v) { return !v.empty(); }, ""},
             {"stream0.format",          stream0.format, "H264", [](const std::string &v) { return v == "H264" || v == "H265"; },""},
 			{"stream1.rtsp_endpoint",   stream1.rtsp_endpoint, "ch0", [](const std::string &v) { return !v.empty(); }, ""},
-            {"stream1.format",          stream1.format, "H264", [](const std::string &v) { return v == "H264" || v == "H265"; },""},            
+            {"stream1.format",          stream1.format, "H264", [](const std::string &v) { return v == "H264" || v == "H265"; },""},
             {"stream2.jpeg_path",		stream2.jpeg_path, "/tmp/snapshot.jpg", [](const std::string &v) { return !v.empty(); }, ""},
             {"stream0.osd.font_path",   stream0.osd.font_path, "/usr/share/fonts/UbuntuMono-Regular2.ttf", [](const std::string &v) { return !v.empty(); }, ""},
             {"stream0.osd.time_format", stream0.osd.time_format, "%I:%M:%S%p %m/%d/%Y", [](const std::string &v) { return !v.empty(); }, ""},
@@ -358,7 +358,7 @@ class CFG {
             {"stream1.osd.time_format", stream1.osd.time_format, "%I:%M:%S%p %m/%d/%Y", [](const std::string &v) { return !v.empty(); }, ""},
             {"stream1.osd.uptime_format", stream1.osd.uptime_format, "Uptime: %02lu:%02lu:%02lu", [](const std::string &v) { return !v.empty(); }, ""},
             {"stream1.osd.user_text_format", stream1.osd.user_text_format, "thingino", [](const std::string &v) { return true; },  ""},
-            {"stream1.osd.logo_path",   stream1.osd.logo_path, "/usr/share/thingino_logo_1.bgra", [](const std::string &v) { return !v.empty(); }, ""},            
+            {"stream1.osd.logo_path",   stream1.osd.logo_path, "/usr/share/thingino_logo_1.bgra", [](const std::string &v) { return !v.empty(); }, ""},
             {"motion.script_path",      motion.script_path, "/usr/sbin/motion", [](const std::string &v) { return !v.empty(); },""},
 			{"websocket.name", 	        websocket.name, "wss prudynt", [](const std::string &v) { return !v.empty(); },  ""},
         };
@@ -367,7 +367,7 @@ class CFG {
 			{"rtsp.port", 				rtsp.port, 554, [](const int &v) { return v > 0 && v <= 65535; }, ""},
 			{"rtsp.est_bitrate", 		rtsp.est_bitrate, 5000, [](const int &v) { return v > 0; }, ""},
 			{"rtsp.out_buffer_size", 	rtsp.out_buffer_size, 500000, [](const int &v) { return v > 0; },  ""},
-			{"rtsp.send_buffer_size", 	rtsp.send_buffer_size, 307200, [](const int &v) { return v > 0; },  ""}, 
+			{"rtsp.send_buffer_size", 	rtsp.send_buffer_size, 307200, [](const int &v) { return v > 0; },  ""},
 			{"sensor.fps", 				sensor.fps, 24, [](const int &v) { return v > 0 && v <= 60; },"/proc/jz/sensor/max_fps"},
 			{"sensor.width", 			sensor.width, 1920, [](const int &v) { return v > 0; },  "/proc/jz/sensor/width"},
 			{"sensor.height", 			sensor.height, 1080, [](const int &v) { return v > 0; },"/proc/jz/sensor/height"},
@@ -391,14 +391,14 @@ class CFG {
             {"image.core_wb_mode",      image.core_wb_mode, 0, [](const int &v) { return v >= 0 && v <= 9; },  ""},
             {"image.wb_rgain",          image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; },""},
             {"image.wb_bgain",          image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; },""},
-#if defined(WITH_AUDIO)            
+#if defined(WITH_AUDIO)
             {"audio.input_vol",	        audio.input_vol, 0, [](const int &v) { return v >= -30 && v <= 120; },""},
 			{"audio.input_gain", 		audio.input_gain, 0, [](const int &v) { return v >= 0 && v <= 31; }, ""},
 			{"audio.input_alc_gain",   	audio.input_alc_gain, 0, [](const int &v) { return v >= 0 && v <= 7; }, ""},
 			{"audio.output_vol", 		audio.output_vol, 0, [](const int &v) { return v >= -30 && v <= 120; },  ""},
 			{"audio.output_gain", 		audio.output_gain, 0, [](const int &v) { return v >= 0 && v <= 31; },  ""},
 			{"audio.input_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }, ""},
-#endif            
+#endif
 			{"stream0.gop", 			stream0.gop, 20, [](const int &v) { return v > 0; }, ""},
 			{"stream0.max_gop", 		stream0.max_gop, 60, [](const int &v) { return v > 0; }, ""},
 			{"stream0.fps", 			stream0.fps, 24, [](const int &v) { return v > 0 && v <= 60; }, ""},
@@ -412,7 +412,7 @@ class CFG {
 			{"stream1.buffers", 		stream1.buffers, 1, [](const int &v) { return v > 0 && v <= 32; }, ""},
 			{"stream1.width", 			stream1.width, 640, [](const int &v) { return v > 0; },  ""},
 			{"stream1.height", 			stream1.height, 340, [](const int &v) { return v > 0; },""},
-			{"stream1.bitrate", 		stream1.bitrate, 500, [](const int &v) { return v > 0; }, ""},            
+			{"stream1.bitrate", 		stream1.bitrate, 500, [](const int &v) { return v > 0; }, ""},
 			{"stream0.osd.pos_time_x", 	stream0.osd.pos_time_x, 15, [](const int &v) { return v >= -15360 && v <= 15360; },""},
 			{"stream0.osd.pos_time_y", 	stream0.osd.pos_time_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; }, ""},
 			{"stream0.osd.time_transparency", stream0.osd.time_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, ""},
@@ -420,15 +420,15 @@ class CFG {
 			{"stream0.osd.pos_user_text_x", stream0.osd.pos_user_text_x, 0, [](const int &v) { return v >= -15360 && v <= 15360; }, ""},
 			{"stream0.osd.pos_user_text_y", stream0.osd.pos_user_text_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream0.osd.user_text_transparency", stream0.osd.user_text_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; },  ""},
-            {"stream0.osd.user_text_rotation", stream0.osd.user_text_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},            
+            {"stream0.osd.user_text_rotation", stream0.osd.user_text_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},
 			{"stream0.osd.pos_uptime_x", stream0.osd.pos_uptime_x, -15, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream0.osd.pos_uptime_y", stream0.osd.pos_uptime_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream0.osd.uptime_transparency", stream0.osd.uptime_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, ""},
-            {"stream0.osd.uptime_rotation", stream0.osd.uptime_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},            
+            {"stream0.osd.uptime_rotation", stream0.osd.uptime_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},
 			{"stream0.osd.pos_logo_x", 	stream0.osd.pos_logo_x, -15, [](const int &v) { return v >= -15360 && v <= 15360; },""},
 			{"stream0.osd.pos_logo_y", 	stream0.osd.pos_logo_y, -10, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream0.osd.logo_transparency", stream0.osd.logo_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, ""},
-            {"stream0.osd.logo_rotation", stream0.osd.logo_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, ""},   
+            {"stream0.osd.logo_rotation", stream0.osd.logo_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, ""},
 			{"stream1.osd.pos_time_x", 	stream1.osd.pos_time_x, 15, [](const int &v) { return v >= -15360 && v <= 15360; },""},
 			{"stream1.osd.pos_time_y", 	stream1.osd.pos_time_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; }, ""},
 			{"stream1.osd.time_transparency", stream1.osd.time_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, ""},
@@ -436,15 +436,15 @@ class CFG {
 			{"stream1.osd.pos_user_text_x", stream1.osd.pos_user_text_x, 0, [](const int &v) { return v >= -15360 && v <= 15360; }, ""},
 			{"stream1.osd.pos_user_text_y", stream1.osd.pos_user_text_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream1.osd.user_text_transparency", stream1.osd.user_text_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; },  ""},
-            {"stream1.osd.user_text_rotation", stream1.osd.user_text_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},            
+            {"stream1.osd.user_text_rotation", stream1.osd.user_text_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},
 			{"stream1.osd.pos_uptime_x", stream1.osd.pos_uptime_x, -15, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream1.osd.pos_uptime_y", stream1.osd.pos_uptime_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream1.osd.uptime_transparency", stream1.osd.uptime_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, ""},
-            {"stream1.osd.uptime_rotation", stream1.osd.uptime_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},            
+            {"stream1.osd.uptime_rotation", stream1.osd.uptime_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; },  ""},
 			{"stream1.osd.pos_logo_x", 	stream1.osd.pos_logo_x, -15, [](const int &v) { return v >= -15360 && v <= 15360; },""},
 			{"stream1.osd.pos_logo_y", 	stream1.osd.pos_logo_y, -10, [](const int &v) { return v >= -15360 && v <= 15360; },  ""},
 			{"stream1.osd.logo_transparency", stream1.osd.logo_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, ""},
-            {"stream1.osd.logo_rotation", stream1.osd.logo_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, ""},                      
+            {"stream1.osd.logo_rotation", stream1.osd.logo_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, ""},
 			{"stream0.rotation", 		stream0.rotation, 0, [](const int &v) { return v >= 0 && v <= 2; }, ""},
 			{"stream0.scale_width", 	stream0.scale_width, 640, [](const int &v) { return v > 0; }, ""},
 			{"stream0.scale_height", 	stream0.scale_height, 360, [](const int &v) { return v > 0; },""},
@@ -457,7 +457,7 @@ class CFG {
 			{"stream1.osd.font_size",   stream1.osd.font_size, 32, [](const int &v) { return v > 0; }, ""},
 			{"stream1.osd.font_stroke_size", stream1.osd.font_stroke_size, 32, [](const int &v) { return v >= 0; },""},
 			{"stream1.osd.logo_height", stream1.osd.logo_height, 30, [](const int &v) { return v > 0; },  ""},
-			{"stream1.osd.logo_width",  stream1.osd.logo_width, 100, [](const int &v) { return v > 0; },""},            
+			{"stream1.osd.logo_width",  stream1.osd.logo_width, 100, [](const int &v) { return v > 0; },""},
 			{"motion.debounce_time", 	motion.debounce_time, 0, [](const int &v) { return v >= 0; },""},
 			{"motion.post_time", 		motion.post_time, 0, [](const int &v) { return v >= 0; },""},
             {"motion.thread_wait", 		motion.thread_wait, 5000, [](const int &v) { return v >= 1000 && v <= 10000; }, ""},
@@ -471,7 +471,7 @@ class CFG {
 			{"motion.roi_0_y", 			motion.roi_0_y, 0, [](const int &v) { return v >= 0; },""},
 			{"motion.roi_1_x", 			motion.roi_1_x, 1920, [](const int &v) { return v >= 0; },""},
 			{"motion.roi_1_y", 			motion.roi_1_y, 1080, [](const int &v) { return v >= 0; },  ""},
-			{"motion.roi_count", 		motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; },""},						
+			{"motion.roi_count", 		motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; },""},
             {"websocket.port", 			websocket.port, 8089, [](const int &v) { return v > 0 && v <= 65535; },""},
             {"websocket.loglevel", 		websocket.loglevel, 4096, [](const int &v) { return v > 0 && v <= 1024; }, ""},
         };
@@ -481,7 +481,7 @@ class CFG {
 			{"stream0.osd.font_color",  stream0.osd.font_color, 0xFFFFFFFF, [](const unsigned int &v) { return true; }, ""},
 			{"stream0.font_stroke_color", stream0.osd.font_stroke_color, 0xFF000000, [](const unsigned int &v) { return true; },""},
 			{"stream1.font_color",      stream1.osd.font_color, 0xFFFFFFFF, [](const unsigned int &v) { return true; }, ""},
-			{"stream1.font_stroke_color", stream1.osd.font_stroke_color, 0xFF000000, [](const unsigned int &v) { return true; },""},            
+			{"stream1.font_stroke_color", stream1.osd.font_stroke_color, 0xFF000000, [](const unsigned int &v) { return true; },""},
         };
 #else
         template <typename T>
@@ -515,7 +515,7 @@ class CFG {
             if constexpr (std::is_same_v<T, int>) {
                 auto& entry = std::get<intEntry>(it->second);
                 if (entry.isValid(value) && entry.value != value) {
-                    entry.value = value; 
+                    entry.value = value;
                     return true;
                 } else {
                     std::cout << "[ERROR:config.hpp] Invalid int value for key: " << key << std::endl;
@@ -549,10 +549,10 @@ class CFG {
             }
             return false;
         }
-        
+
         std::map<std::string, std::variant<intEntry, bolEntry, strEntry, uintEntry>> settings = {
 			{"general.loglevel",		strEntry{general.loglevel, "INFO", [](const std::string &v) { std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"}; return a.count(v)==1; }, ""}},
-			
+
 			{"rtsp.port", 				intEntry{rtsp.port, 554, [](const int &v) { return v > 0 && v <= 65535; }, "RTSP port must be between 1 and 65535", ""}},
             {"rtsp.auth_required",      bolEntry{rtsp.auth_required, true, [](const bool &v) { return true; }, "RTSP authentication required flag. Must be either true or false.", ""}},
             {"rtsp.username",           strEntry{rtsp.username, "thingino", [](const std::string &v) { return !v.empty(); }, "RTSP username cannot be empty.", ""}},
@@ -590,7 +590,7 @@ class CFG {
             {"image.core_wb_mode",      intEntry{image.core_wb_mode, 0, [](const int &v) { return v >= 0 && v <= 9; }, "WB (White Balance) must between 0 and 255", ""}},
             {"image.wb_rgain",          intEntry{image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }, "defog_strength must between 0 and 34464", ""}},
             {"image.wb_bgain",          intEntry{image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }, "defog_strength must between 0 and 34464", ""}},
-#if defined(AUDIO_SUPPORT)   
+#if defined(AUDIO_SUPPORT)
             {"audio.input_enabled",	    bolEntry{audio.input_enabled, false, [](const bool &v) { return true; }, "Audio input enabled must be true or false", ""}},
             {"audio.input_vol",	        intEntry{audio.input_vol, 0, [](const int &v) { return v >= -30 && v <= 120; }, "Audio input volume must between -30 and 120", ""}},
 			{"audio.input_gain", 		intEntry{audio.input_gain, 0, [](const int &v) { return v >= 0 && v <= 31; }, "Audio input gain must between 0 and 30", ""}},
@@ -620,15 +620,15 @@ class CFG {
 			{"stream0.osd_pos_user_text_x", intEntry{stream0.osd_pos_user_text_x, 0, [](const int &v) { return v >= -15360 && v <= 15360; }, "X position for user text OSD in stream 0", ""}},
 			{"stream0.osd_pos_user_text_y", intEntry{stream0.osd_pos_user_text_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; }, "Y position for user text OSD in stream 0", ""}},
 			{"stream0.osd_user_text_transparency", intEntry{stream0.osd_user_text_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, "Transparency for user text OSD in stream 0", ""}},
-            {"stream0.osd_user_text_rotation", intEntry{stream0.osd_user_text_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, "Angle for user text OSD rotation in stream 0", ""}},            
+            {"stream0.osd_user_text_rotation", intEntry{stream0.osd_user_text_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, "Angle for user text OSD rotation in stream 0", ""}},
 			{"stream0.osd_pos_uptime_x", intEntry{stream0.osd_pos_uptime_x, -15, [](const int &v) { return v >= -15360 && v <= 15360; }, "X position for uptime OSD in stream 0", ""}},
 			{"stream0.osd_pos_uptime_y", intEntry{stream0.osd_pos_uptime_y, 10, [](const int &v) { return v >= -15360 && v <= 15360; }, "Y position for uptime OSD in stream 0", ""}},
 			{"stream0.osd_uptime_transparency", intEntry{stream0.osd_uptime_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, "Transparency for uptime OSD in stream 0", ""}},
-            {"stream0.osd_uptime_rotation", intEntry{stream0.osd_uptime_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, "Angle for uptime OSD rotation in stream 0", ""}},            
+            {"stream0.osd_uptime_rotation", intEntry{stream0.osd_uptime_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, "Angle for uptime OSD rotation in stream 0", ""}},
 			{"stream0.osd_pos_logo_x", 	intEntry{stream0.osd_pos_logo_x, -15, [](const int &v) { return v >= -15360 && v <= 15360; }, "X position for logo OSD in stream 0", ""}},
 			{"stream0.osd_pos_logo_y", 	intEntry{stream0.osd_pos_logo_y, -10, [](const int &v) { return v >= -15360 && v <= 15360; }, "Y position for logo OSD in stream 0", ""}},
 			{"stream0.osd_logo_transparency", intEntry{stream0.osd_logo_transparency, 255, [](const int &v) { return v >= 0 && v <= 255; }, "Transparency for logo OSD in stream 0", ""}},
-            {"stream0.osd_logo_rotation", intEntry{stream0.osd_logo_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, "Angle for logo OSD rotation in stream 0", ""}},            
+            {"stream0.osd_logo_rotation", intEntry{stream0.osd_logo_rotation, 0, [](const int &v) { return v >= 0 && v <= 360; }, "Angle for logo OSD rotation in stream 0", ""}},
 			{"stream0.rotation", 		intEntry{stream0.rotation, 0, [](const int &v) { return v >= 0 && v <= 2; }, "Stream 0 rotation must be 0, 1, or 2", ""}},
 			{"stream0.scale_width", 	intEntry{stream0.scale_width, 640, [](const int &v) { return v > 0; }, "Stream 0 scale width should be greater than 0", ""}},
 			{"stream0.scale_height", 	intEntry{stream0.scale_height, 360, [](const int &v) { return v > 0; }, "Stream 0 scale height should be greater than 0", ""}},
