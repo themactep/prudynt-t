@@ -294,15 +294,15 @@ bool CFG::readConfig() {
 		}
 		catch (...) {
 			LOG_WARN("Failed to load prudynt configuration file from /etc.");
-			return 0; // Exit if configuration file is missing
+			return false; // Exit if configuration file is missing
 		}
 	}
 	catch (const libconfig::ParseException &pex) {
 		LOG_WARN("Parse error at " + std::string(pex.getFile()) + ":" + std::to_string(pex.getLine()) + " - " + pex.getError());
-		return 0; // Exit on parsing error
+		return false; // Exit on parsing error
 	}
 
-	return 1;
+	return true;
 }
 
 template<typename T>
