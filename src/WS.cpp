@@ -411,7 +411,7 @@ void append_message(const char *t, Args &&...a) {
 signed char WS::general_callback(struct lejp_ctx *ctx, char reason) {
 	if ((reason & LEJP_FLAG_CB_IS_VALUE) && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -441,7 +441,7 @@ signed char WS::general_callback(struct lejp_ctx *ctx, char reason) {
 signed char WS::rtsp_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -499,7 +499,7 @@ signed char WS::rtsp_callback(struct lejp_ctx *ctx, char reason) {
 signed char WS::sensor_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -562,7 +562,7 @@ signed char WS::sensor_callback(struct lejp_ctx *ctx, char reason) {
 signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -814,7 +814,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason)
     if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match)
     {
 
-	struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+	auto *u_ctx = (struct user_ctx *)ctx->user;
 	u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 	append_message(
@@ -1030,7 +1030,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason)
 #endif
 
 signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
-	struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+	auto *u_ctx = (struct user_ctx *) ctx->user;
 	u_ctx->path = u_ctx->root + "." + std::string(ctx->path) + std::to_string(u_ctx->flag);
 
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
@@ -1081,7 +1081,7 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
 signed char WS::stream1_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -1134,7 +1134,7 @@ signed char WS::stream1_callback(struct lejp_ctx *ctx, char reason) {
 
 signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->path + "." + std::string(ctx->path);
 
 		LOG_DEBUG("osd_callback: " << u_ctx->path << " = " << (char *) ctx->buf);
@@ -1286,7 +1286,7 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
 
 signed char WS::motion_callback(struct lejp_ctx *ctx, char reason) {
 
-	struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+	auto *u_ctx = (struct user_ctx *) ctx->user;
 	u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
@@ -1347,7 +1347,7 @@ signed char WS::motion_callback(struct lejp_ctx *ctx, char reason) {
 }
 
 signed char WS::motion_roi_callback(struct lejp_ctx *ctx, char reason) {
-	struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+	auto *u_ctx = (struct user_ctx *) ctx->user;
 	u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 	if (reason & LEJP_FLAG_CB_IS_VALUE) {
@@ -1426,7 +1426,7 @@ signed char WS::motion_roi_callback(struct lejp_ctx *ctx, char reason) {
 signed char WS::info_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -1458,7 +1458,7 @@ signed char WS::info_callback(struct lejp_ctx *ctx, char reason) {
 signed char WS::action_callback(struct lejp_ctx *ctx, char reason) {
 	if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
 
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->root + "." + std::string(ctx->path);
 
 		append_message(
@@ -1507,7 +1507,7 @@ signed char WS::action_callback(struct lejp_ctx *ctx, char reason) {
 
 signed char WS::root_callback(struct lejp_ctx *ctx, char reason) {
 	if ((reason & LEJPCB_OBJECT_START) && ctx->path_match) {
-		struct user_ctx *u_ctx = (struct user_ctx *) ctx->user;
+		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path.clear();
 		u_ctx->root = ctx->path;
 
@@ -1577,7 +1577,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
 	struct lejp_ctx ctx;
 
-	user_ctx *u_ctx = (user_ctx *) lws_context_user(lws_get_context(wsi));
+	auto *u_ctx = (user_ctx *) lws_context_user(lws_get_context(wsi));
 	u_ctx->s = 0;
 
 	char client_ip[128];
