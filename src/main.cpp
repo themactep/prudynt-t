@@ -31,7 +31,7 @@ void stop_encoder() {
 
         usleep(1000);
         duration = duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t0);
-        if( duration.count() > 1000 * 1000 * 10 ) {
+        if( duration.count() > TENSECONDS ) {
             LOG_ERROR("Unable to stop encoder, no response.");
             return;
         }
@@ -53,7 +53,7 @@ void start_encoder() {
 
         usleep(1000);
         duration = duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t0);
-        if( duration.count() > 1000 * 1000 * 10 ) {
+        if( duration.count() > TENSECONDS ) {
             LOG_ERROR("Unable to start encoder, no response.");
             return;
         }
@@ -74,7 +74,7 @@ void stop_rtsp() {
 
         usleep(1000);
         duration = duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t0);
-        if( duration.count() > 1000 * 1000 * 10 ) {
+        if( duration.count() > TENSECONDS ) {
             LOG_ERROR("Unable to stop RTSP Server, no response.");
             return;
         }
@@ -130,7 +130,7 @@ int main(int argc, const char *argv[]) {
 
     while (true) {
 
-        usleep(1000*1000);
+        usleep(ONESECOND);
 
         cfg->main_thread_signal.wait(1);
 

@@ -1012,14 +1012,14 @@ void Encoder::run()
             // really matter which NAL we select here as they
             // all have identical timestamps.
             int64_t high_nal_ts = stream0.pack[stream0.packCount - 1].timestamp;
-            if (high_nal_ts - last_high_nal_ts > 1.5 * (1000000 / cfg->stream0.fps))
+            if (high_nal_ts - last_high_nal_ts > 1.5 * (ONESECOND / cfg->stream0.fps))
             {
                 // Silence for now until further tests / THINGINO
-                // LOG_WARN("The encoder 0 dropped a frame. " << (high_nal_ts - last_high_nal_ts) << ", " << (1.5 * (1000000 / cfg->stream0.fps)));
+                // LOG_WARN("The encoder 0 dropped a frame. " << (high_nal_ts - last_high_nal_ts) << ", " << (1.5 * (ONESECOND / cfg->stream0.fps)));
             }
             struct timeval high_encode_time;
-            high_encode_time.tv_sec = high_nal_ts / 1000000;
-            high_encode_time.tv_usec = high_nal_ts % 1000000;
+            high_encode_time.tv_sec = high_nal_ts / ONESECOND;
+            high_encode_time.tv_usec = high_nal_ts % ONESECOND;
 
             for (unsigned int i = 0; i < stream0.packCount; ++i)
             {
@@ -1140,11 +1140,11 @@ void Encoder::run()
             if (low_nal_ts - last_low_nal_ts > 1.5 * (1000000 / cfg->stream0.fps))
             {
                 // Silence for now until further tests / THINGINO
-                // LOG_WARN("The encoder 1 dropped a frame. " << (low_nal_ts - last_low_nal_ts) << ", " << (1.5 * (1000000 / cfg->stream0.fps)));
+                // LOG_WARN("The encoder 1 dropped a frame. " << (low_nal_ts - last_low_nal_ts) << ", " << (1.5 * (ONESECOND / cfg->stream0.fps)));
             }
             struct timeval low_encode_time;
-            low_encode_time.tv_sec = low_nal_ts / 1000000;
-            low_encode_time.tv_usec = low_nal_ts % 1000000;
+            low_encode_time.tv_sec = low_nal_ts / ONESECOND;
+            low_encode_time.tv_usec = low_nal_ts % ONESECOND;
 
             for (unsigned int i = 0; i < stream1.packCount; ++i)
             {

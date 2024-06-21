@@ -186,11 +186,11 @@ int Motion::exit() {
     while((cfg->motion_thread_signal.load() & 8)!=8) {
         LOG_DEBUG("Wait for motion detect thread exit." << cfg->motion_thread_signal.load());
         duration = duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t0);
-        if( duration.count() > 1000 * 1000 * 30 ) { //30 seconds
+        if( duration.count() > ONESECOND * 30 ) { //30 seconds
             LOG_ERROR("Motion thread exit timeout.");
             return false;
         }
-        usleep(1000 * 1000);
+        usleep(ONESECOND);
     }
     LOG_DEBUG("Join motion detect thread to cleanup.");
     detect_thread.join();
