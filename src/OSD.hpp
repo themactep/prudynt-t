@@ -12,8 +12,8 @@
 #include FT_STROKER_H
 
 #if defined(PLATFORM_T31)
-	#define IMPEncoderCHNAttr IMPEncoderChnAttr
-	#define IMPEncoderCHNStat IMPEncoderChnStat
+#define IMPEncoderCHNAttr IMPEncoderChnAttr
+#define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
 
 struct OSDItem {

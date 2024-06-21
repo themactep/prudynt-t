@@ -16,11 +16,11 @@
 #define LOG_INFO(str)      Logger::log(Logger::INFO, FILENAME, LogMsg() << str)
 
 #if defined(ENABLE_LOG_DEBUG)
-    #define LOG_DEBUG(str)     Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
-    #define LOG_DEBUG_OR_ERROR(condition, str)  \
+#define LOG_DEBUG(str)     Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
+#define LOG_DEBUG_OR_ERROR(condition, str)  \
         ((condition) == 0 ? Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str) : \
         Logger::log(Logger::ERROR, FILENAME, LogMsg() << str))
-    #define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) \
+#define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) \
         if ((condition) == 0) { \
             Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str); \
         } else { \
@@ -28,49 +28,52 @@
             return condition; \
         }
 #else
-    #define LOG_DEBUG(str) ((void)0)
-    #define LOG_DEBUG_OR_ERROR(condition, str) ((void)0);
-    #define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) ((void)0);
+#define LOG_DEBUG(str) ((void)0)
+#define LOG_DEBUG_OR_ERROR(condition, str) ((void)0);
+#define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) ((void)0);
 #endif
 
 struct LogMsg {
     LogMsg() {};
     std::string log_str;
-    LogMsg& operator<<(std::string a) {
-        log_str.append(a);
-        return *this;
+
+    LogMsg &operator<<(std::string a) {
+	    log_str.append(a);
+	    return *this;
     }
 
-    LogMsg& operator<<(int a) {
-        std::stringstream ss;
-        ss << a;
-        log_str.append(ss.str());
-        return *this;
+    LogMsg &operator<<(int a) {
+	    std::stringstream ss;
+	    ss << a;
+	    log_str.append(ss.str());
+	    return *this;
     }
 };
 
 class Logger {
 public:
     enum Level {
-        EMERGENCY,
-        ALERT,
-        CRIT,
-        ERROR,
-        WARN,
-        NOTICE,
-        INFO,
-        DEBUG
+	EMERGENCY,
+	ALERT,
+	CRIT,
+	ERROR,
+	WARN,
+	NOTICE,
+	INFO,
+	DEBUG
     };
 
     static bool init(std::string logLevel);
+
     static void log(Level level, std::string module, LogMsg msg);
 
     static void setLevel(std::string lvl);
+
     static Level level;
 
 private:
     static std::mutex log_mtx;
-    
+
 };
 
 #endif

@@ -11,23 +11,27 @@
 #include <imp/imp_system.h>
 
 class Motion {
-    public:
-        static void detect_start(Motion *m);
-        void detect();
-        void run();
-        int init(std::shared_ptr<CFG> _cfg);
-        int exit();
+public:
+    static void detect_start(Motion *m);
 
-    private:
-        std::atomic<bool> moving;
-        std::atomic<bool> indicator;    
-        std::shared_ptr<CFG> cfg;
-        IMP_IVS_MoveParam move_param;
-        IMPIVSInterface *move_intf;
-        std::thread detect_thread;
+    void detect();
 
-        IMPCell fs = { DEV_ID_FS, 0, 1 };
-        IMPCell ivs_cell = { DEV_ID_IVS, 0, 0 };    
+    void run();
+
+    int init(std::shared_ptr<CFG> _cfg);
+
+    int exit();
+
+private:
+    std::atomic<bool> moving;
+    std::atomic<bool> indicator;
+    std::shared_ptr<CFG> cfg;
+    IMP_IVS_MoveParam move_param;
+    IMPIVSInterface *move_intf;
+    std::thread detect_thread;
+
+    IMPCell fs = {DEV_ID_FS, 0, 1};
+    IMPCell ivs_cell = {DEV_ID_IVS, 0, 0};
 };
 
 #endif /* Motion_hpp */

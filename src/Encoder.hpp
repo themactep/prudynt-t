@@ -24,8 +24,8 @@
 #include <../sysutils/su_base.h>
 
 #if defined(PLATFORM_T31)
-	#define IMPEncoderCHNAttr IMPEncoderChnAttr
-	#define IMPEncoderCHNStat IMPEncoderChnStat
+#define IMPEncoderCHNAttr IMPEncoderChnAttr
+#define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
 
 
@@ -52,95 +52,102 @@ static const std::array<int, 64> jpeg_luma_quantizer = {{
 }};
 
 struct H264NALUnit {
-	std::vector<uint8_t> data;
-	struct timeval time;
-	int64_t imp_ts;
-	int64_t duration;
+    std::vector<uint8_t> data;
+    struct timeval time;
+    int64_t imp_ts;
+    int64_t duration;
 };
 
 struct EncoderSink {
-	std::string name;
-	int encChn;
-	bool IDR;
-	std::function<int(const H264NALUnit&)> data_available_callback;
+    std::string name;
+    int encChn;
+    bool IDR;
+    std::function<int(const H264NALUnit &)> data_available_callback;
 };
 
 class Encoder {
-	public:
-		Encoder(std::shared_ptr<CFG> cfg) : cfg(cfg) {};
+public:
+    Encoder(std::shared_ptr<CFG> cfg) : cfg(cfg) {};
 
-		void run();
-		
-		static void flush(int encChn) {
-			IMP_Encoder_RequestIDR(encChn);
-			IMP_Encoder_FlushStream(encChn);
-		}
+    void run();
 
-		template <class T>
-		static uint32_t connect_sink(T* c, std::string name, int encChn) {
-			LOG_DEBUG("Create Sink: " << Encoder::sink_id << ", encChn:" << encChn);
-			std::unique_lock<std::mutex> lck(Encoder::sinks_lock);
-			Encoder::sinks[Encoder::sink_id] = EncoderSink{name, encChn, false, [c](const H264NALUnit& nalu) { return c->on_data_available(nalu); }};
-			Encoder::flush(encChn);
-			return Encoder::sink_id++;
-		}
+    static void flush(int encChn) {
+	    IMP_Encoder_RequestIDR(encChn);
+	    IMP_Encoder_FlushStream(encChn);
+    }
 
-		static void remove_sink(uint32_t sinkId) {
-			LOG_DEBUG("Remove Sink: " << sinkId);
-			std::unique_lock<std::mutex> lck(sinks_lock);
-			sinks.erase(sinkId);
-		}
+    template<class T>
+    static uint32_t connect_sink(T *c, std::string name, int encChn) {
+	    LOG_DEBUG("Create Sink: " << Encoder::sink_id << ", encChn:" << encChn);
+	    std::unique_lock<std::mutex> lck(Encoder::sinks_lock);
+	    Encoder::sinks[Encoder::sink_id] = EncoderSink{name, encChn, false, [c](const H264NALUnit &nalu) { return c->on_data_available(nalu); }};
+	    Encoder::flush(encChn);
+	    return Encoder::sink_id++;
+    }
 
-	private:
-		std::shared_ptr<CFG> cfg;
-		OSD *stream0_osd;
-		OSD *stream1_osd;
-		Motion motion;
+    static void remove_sink(uint32_t sinkId) {
+	    LOG_DEBUG("Remove Sink: " << sinkId);
+	    std::unique_lock<std::mutex> lck(sinks_lock);
+	    sinks.erase(sinkId);
+    }
 
-		bool init();
-		void exit();
+private:
+    std::shared_ptr<CFG> cfg;
+    OSD *stream0_osd;
+    OSD *stream1_osd;
+    Motion motion;
 
-		int system_init();
-		int framesource_init();
-		int encoder_init();
-		int channel_init(int chn_nr, int grp_nr, IMPEncoderCHNAttr *chn_attr);
-		int channel_deinit(int chn_nr);
+    bool init();
 
-		static std::mutex cv_mtx;
-		static std::mutex sinks_lock;
-		static uint32_t sink_id;
+    void exit();
 
-	public:
-		static std::map<uint32_t, EncoderSink> sinks;
+    int system_init();
 
-	private:
-		struct timeval high_imp_time_base;
-		struct timeval low_imp_time_base;
+    int framesource_init();
 
-		IMPFSChnAttr create_fs_attr();
-		IMPSensorInfo create_sensor_info(std::string sensor);
-		
-		IMPCell high_fs = { DEV_ID_FS, 0, 0 };
-		IMPCell high_osd_cell = { DEV_ID_OSD, 0, 0 };
-		IMPCell high_enc = { DEV_ID_ENC, 0, 0 }; 
+    int encoder_init();
 
-		IMPCell low_fs = { DEV_ID_FS, 1, 0};
-		IMPCell low_osd_cell = { DEV_ID_OSD, 1, 0 };
-		IMPCell low_enc = { DEV_ID_ENC, 1, 0 };  	
+    int channel_init(int chn_nr, int grp_nr, IMPEncoderCHNAttr *chn_attr);
 
-		IMPSensorInfo sinfo;
-		
-		std::thread jpeg_thread;
-		void jpeg_snap(std::shared_ptr<CFG>& cfg);
+    int channel_deinit(int chn_nr);
 
-		bool osdStream0 = false;
-		bool osdStream1 = false;
-		bool motionInitialized{0};
-		
-		int stream0Status = 0;
-		int stream1Status = 0;
+    static std::mutex cv_mtx;
+    static std::mutex sinks_lock;
+    static uint32_t sink_id;
 
-		int errorCount = 0;
+public:
+    static std::map<uint32_t, EncoderSink> sinks;
+
+private:
+    struct timeval high_imp_time_base;
+    struct timeval low_imp_time_base;
+
+    IMPFSChnAttr create_fs_attr();
+
+    IMPSensorInfo create_sensor_info(std::string sensor);
+
+    IMPCell high_fs = {DEV_ID_FS, 0, 0};
+    IMPCell high_osd_cell = {DEV_ID_OSD, 0, 0};
+    IMPCell high_enc = {DEV_ID_ENC, 0, 0};
+
+    IMPCell low_fs = {DEV_ID_FS, 1, 0};
+    IMPCell low_osd_cell = {DEV_ID_OSD, 1, 0};
+    IMPCell low_enc = {DEV_ID_ENC, 1, 0};
+
+    IMPSensorInfo sinfo;
+
+    std::thread jpeg_thread;
+
+    void jpeg_snap(std::shared_ptr<CFG> &cfg);
+
+    bool osdStream0 = false;
+    bool osdStream1 = false;
+    bool motionInitialized{0};
+
+    int stream0Status = 0;
+    int stream1Status = 0;
+
+    int errorCount = 0;
 };
 
 #endif

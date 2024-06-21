@@ -291,8 +291,8 @@ int Encoder::system_init() {
 #if defined(AUDIO_SUPPORT)
 	/* Audio tuning */
 	/*     input    */
-	if (cfg->audio.input_enabled)
-	{
+    if (cfg->audio.input_enabled)
+    {
 	    ret = IMP_AI_Enable(0);
 	    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(0)");
 
@@ -311,49 +311,49 @@ int Encoder::system_init() {
 	    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain(0, 0, " << cfg->audio.input_alc_gain << ")");
 
 #endif
-	    if (cfg->audio.input_echo_cancellation)
-	    {
+	if (cfg->audio.input_echo_cancellation)
+	{
 		ret = IMP_AI_EnableAec(0, 0, 0, 0);
 		LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableAec(0)");
-	    }
-	    else
-	    {
+	}
+	else
+	{
 		ret = IMP_AI_DisableAec(0, 0);
 		LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableAec(0)");
 	    }
 
 	    IMPAudioIOAttr ioattr;
 	    ret = IMP_AI_GetPubAttr(0, &ioattr);
-	    if (ret == 0)
+	if (ret == 0)
+	{
+	    if (cfg->audio.input_noise_suppression)
 	    {
-		if (cfg->audio.input_noise_suppression)
-		{
 		    ret = IMP_AI_EnableNs(&ioattr, cfg->audio.input_noise_suppression);
 		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableNs(" << cfg->audio.input_noise_suppression << ")");
-		}
-		else
-		{
-		    ret = IMP_AI_DisableNs();
-		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableNs(0)");
-		}
-		if (cfg->audio.output_high_pass_filter)
-		{
-		    ret = IMP_AI_EnableHpf(&ioattr);
-		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableHpf(0)");
-		}
-		else
-		{
-		    ret = IMP_AI_DisableHpf();
-		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableHpf(0)");
-		}
 	    }
 	    else
 	    {
-		LOG_ERROR("IMP_AI_GetPubAttr failed.");
+		    ret = IMP_AI_DisableNs();
+		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableNs(0)");
+		}
+	    if (cfg->audio.output_high_pass_filter)
+	    {
+		    ret = IMP_AI_EnableHpf(&ioattr);
+		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableHpf(0)");
 	    }
+	    else
+	    {
+		    ret = IMP_AI_DisableHpf();
+		    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableHpf(0)");
+		}
 	}
 	else
 	{
+		LOG_ERROR("IMP_AI_GetPubAttr failed.");
+	    }
+    }
+    else
+    {
 
 	    ret = IMP_AI_DisableChn(0, 0);
 	    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableChn(0)");
@@ -363,8 +363,8 @@ int Encoder::system_init() {
 	}
 
 	/*    output    */
-	if (cfg->audio.output_enabled)
-	{
+    if (cfg->audio.output_enabled)
+    {
 	    ret = IMP_AO_Enable(0);
 	    LOG_DEBUG_OR_ERROR(ret, "IMP_AO_Enable(0)");
 
@@ -379,26 +379,26 @@ int Encoder::system_init() {
 
 	    IMPAudioIOAttr ioattr;
 	    ret = IMP_AO_GetPubAttr(0, &ioattr);
-	    if (ret == 0)
+	if (ret == 0)
+	{
+	    if (cfg->audio.output_high_pass_filter)
 	    {
-		if (cfg->audio.output_high_pass_filter)
-		{
 		    ret = IMP_AO_EnableHpf(&ioattr);
 		    LOG_DEBUG_OR_ERROR(ret, "IMP_AO_EnableHpf(0)");
-		}
-		else
-		{
-		    ret = IMP_AO_DisableHpf();
-		    LOG_DEBUG_OR_ERROR(ret, "IMP_AO_DisableHpf(0)");
-		}
 	    }
 	    else
 	    {
-		LOG_ERROR("IMP_AO_GetPubAttr failed.");
-	    }
+		    ret = IMP_AO_DisableHpf();
+		    LOG_DEBUG_OR_ERROR(ret, "IMP_AO_DisableHpf(0)");
+		}
 	}
 	else
 	{
+		LOG_ERROR("IMP_AO_GetPubAttr failed.");
+	    }
+    }
+    else
+    {
 
 	    ret = IMP_AO_DisableChn(0, 0);
 	    LOG_DEBUG_OR_ERROR(ret, "IMP_AO_DisableChn(0, 0)");
@@ -545,8 +545,8 @@ int Encoder::encoder_init() {
 
 #if defined(PLATFORM_T31)
 	/* Encoder preview channel */
-	if (cfg->stream2.enabled)
-	{
+    if (cfg->stream2.enabled)
+    {
 	    ret = IMP_Encoder_SetbufshareChn(2, 0);
 	    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, 0)")
 	}
@@ -754,14 +754,14 @@ static int save_jpeg_stream(int fd, IMPEncoderStream *stream) {
 #if defined(PLATFORM_T31)
 		IMPEncoderPack *pack = &stream->pack[i];
 		uint32_t remSize = 0; // Declare remSize here
-		if (pack->length)
-		{
+	if (pack->length)
+	{
 		    remSize = stream->streamSize - pack->offset;
 		    data_ptr = (void *)((char *)stream->virAddr + ((remSize < pack->length) ? 0 : pack->offset));
 		    data_len = (remSize < pack->length) ? remSize : pack->length;
-		}
-		else
-		{
+	}
+	else
+	{
 		    continue; // Skip empty packs
 		}
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
@@ -778,11 +778,11 @@ static int save_jpeg_stream(int fd, IMPEncoderStream *stream) {
 
 #if defined(PLATFORM_T31)
 		// Check the condition only under T31 platform, as remSize is used here
-		if (remSize && pack->length > remSize)
-		{
+	if (remSize && pack->length > remSize)
+	{
 		    ret = write(fd, (void *)((char *)stream->virAddr), pack->length - remSize);
-		    if (ret != static_cast<int>(pack->length - remSize))
-		    {
+	    if (ret != static_cast<int>(pack->length - remSize))
+	    {
 			printf("Stream write error (remaining part): %s\n", strerror(errno));
 			return -1;
 		    }
@@ -1022,30 +1022,30 @@ void Encoder::run() {
 #if defined(PLATFORM_T31)
 					if (stream0.pack[i].nalType.h264NalType == 5 || stream0.pack[i].nalType.h264NalType == 1)
 					{
-					    nalu0.duration = high_nal_ts - last_high_nal_ts;
+								    nalu0.duration = high_nal_ts - last_high_nal_ts;
 					}
 					else if (stream0.pack[i].nalType.h265NalType == 19 ||
-						stream0.pack[i].nalType.h265NalType == 20 ||
-						stream0.pack[i].nalType.h265NalType == 1)
+									stream0.pack[i].nalType.h265NalType == 20 ||
+						 stream0.pack[i].nalType.h265NalType == 1)
 					{
-					    nalu0.duration = high_nal_ts - last_high_nal_ts;
-					}
+								    nalu0.duration = high_nal_ts - last_high_nal_ts;
+								}
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23)
 					if (stream0.pack[i].dataType.h264Type == 5 || stream0.pack[i].dataType.h264Type == 1)
 					{
-					    nalu0.duration = high_nal_ts - last_high_nal_ts;
-					}
+								    nalu0.duration = high_nal_ts - last_high_nal_ts;
+								}
 #elif defined(PLATFORM_T30)
 					if (stream0.pack[i].dataType.h264Type == 5 || stream0.pack[i].dataType.h264Type == 1)
 					{
-					    nalu0.duration = high_nal_ts - last_high_nal_ts;
+								    nalu0.duration = high_nal_ts - last_high_nal_ts;
 					}
 					else if (stream0.pack[i].dataType.h265Type == 19 ||
-						stream0.pack[i].dataType.h265Type == 20 ||
-						stream0.pack[i].dataType.h265Type == 1)
+									stream0.pack[i].dataType.h265Type == 20 ||
+						 stream0.pack[i].dataType.h265Type == 1)
 					{
-					    nalu0.duration = high_nal_ts - last_high_nal_ts;
-					}
+								    nalu0.duration = high_nal_ts - last_high_nal_ts;
+								}
 #endif
 					// We use start+4 because the encoder inserts 4-byte MPEG
 					//'startcodes' at the beginning of each NAL. Live555 complains
@@ -1062,30 +1062,30 @@ void Encoder::run() {
 #if defined(PLATFORM_T31)
 								if (stream0.pack[i].nalType.h264NalType == 7 ||
 								    stream0.pack[i].nalType.h264NalType == 8 ||
-								    stream0.pack[i].nalType.h264NalType == 5)
-								{
+				stream0.pack[i].nalType.h264NalType == 5)
+			    {
 								    sink.IDR = true;
-								}
-								else if (stream0.pack[i].nalType.h265NalType == 32)
-								{
+			    }
+			    else if (stream0.pack[i].nalType.h265NalType == 32)
+			    {
 								    sink.IDR = true;
 								}
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23)
 								if (stream0.pack[i].dataType.h264Type == 7 ||
 								    stream0.pack[i].dataType.h264Type == 8 ||
-								    stream0.pack[i].dataType.h264Type == 5)
-								{
+				stream0.pack[i].dataType.h264Type == 5)
+			    {
 								    sink.IDR = true;
 								}
 #elif defined(PLATFORM_T30)
 								if (stream0.pack[i].dataType.h264Type == 7 ||
 								    stream0.pack[i].dataType.h264Type == 8 ||
-								    stream0.pack[i].dataType.h264Type == 5)
-								{
+				stream0.pack[i].dataType.h264Type == 5)
+			    {
 								    sink.IDR = true;
-								}
-								else if (stream0.pack[i].dataType.h265Type == 32)
-								{
+			    }
+			    else if (stream0.pack[i].dataType.h265Type == 32)
+			    {
 								    sink.IDR = true;
 								}
 #endif
@@ -1149,30 +1149,30 @@ void Encoder::run() {
 #if defined(PLATFORM_T31)
 					if (stream1.pack[i].nalType.h264NalType == 5 || stream1.pack[i].nalType.h264NalType == 1)
 					{
-					    nalu1.duration = low_nal_ts - last_low_nal_ts;
+								    nalu1.duration = low_nal_ts - last_low_nal_ts;
 					}
 					else if (stream1.pack[i].nalType.h265NalType == 19 ||
-						stream1.pack[i].nalType.h265NalType == 20 ||
-						stream1.pack[i].nalType.h265NalType == 1)
+									stream1.pack[i].nalType.h265NalType == 20 ||
+						 stream1.pack[i].nalType.h265NalType == 1)
 					{
-					    nalu1.duration = low_nal_ts - last_low_nal_ts;
-					}
+								    nalu1.duration = low_nal_ts - last_low_nal_ts;
+								}
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23)
 					if (stream1.pack[i].dataType.h264Type == 5 || stream1.pack[i].dataType.h264Type == 1)
 					{
-					    nalu1.duration = low_nal_ts - last_low_nal_ts;
-					}
+								    nalu1.duration = low_nal_ts - last_low_nal_ts;
+								}
 #elif defined(PLATFORM_T30)
 					if (stream1.pack[i].dataType.h264Type == 5 || stream1.pack[i].dataType.h264Type == 1)
 					{
-					    nalu1.duration = low_nal_ts - last_low_nal_ts;
+								    nalu1.duration = low_nal_ts - last_low_nal_ts;
 					}
 					else if (stream1.pack[i].dataType.h265Type == 19 ||
-						stream1.pack[i].dataType.h265Type == 20 ||
-						stream1.pack[i].dataType.h265Type == 1)
+									stream1.pack[i].dataType.h265Type == 20 ||
+						 stream1.pack[i].dataType.h265Type == 1)
 					{
-					    nalu1.duration = low_nal_ts - last_low_nal_ts;
-					}
+								    nalu1.duration = low_nal_ts - last_low_nal_ts;
+								}
 #endif
 					// We use start+4 because the encoder inserts 4-byte MPEG
 					//'startcodes' at the beginning of each NAL. Live555 complains
@@ -1189,30 +1189,30 @@ void Encoder::run() {
 #if defined(PLATFORM_T31)
 								if (stream1.pack[i].nalType.h264NalType == 7 ||
 								    stream1.pack[i].nalType.h264NalType == 8 ||
-								    stream1.pack[i].nalType.h264NalType == 5)
-								{
+				stream1.pack[i].nalType.h264NalType == 5)
+			    {
 								    sink.IDR = true;
-								}
-								else if (stream1.pack[i].nalType.h265NalType == 32)
-								{
+			    }
+			    else if (stream1.pack[i].nalType.h265NalType == 32)
+			    {
 								    sink.IDR = true;
 								}
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23)
 								if (stream1.pack[i].dataType.h264Type == 7 ||
 								    stream1.pack[i].dataType.h264Type == 8 ||
-								    stream1.pack[i].dataType.h264Type == 5)
-								{
+				stream1.pack[i].dataType.h264Type == 5)
+			    {
 								    sink.IDR = true;
 								}
 #elif defined(PLATFORM_T30)
 								if (stream1.pack[i].dataType.h264Type == 7 ||
 								    stream1.pack[i].dataType.h264Type == 8 ||
-								    stream1.pack[i].dataType.h264Type == 5)
-								{
+				stream1.pack[i].dataType.h264Type == 5)
+			    {
 								    sink.IDR = true;
-								}
-								else if (stream1.pack[i].dataType.h265Type == 32)
-								{
+			    }
+			    else if (stream1.pack[i].dataType.h265Type == 32)
+			    {
 								    sink.IDR = true;
 								}
 #endif
