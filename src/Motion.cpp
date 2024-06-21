@@ -78,7 +78,7 @@ void Motion::detect() {
 
 						ret = system(cfg->motion.script_path.c_str());
 						if (ret != 0) {
-							LOG_ERROR(std::string("Motion script failed:") + cfg->motion.script_path.c_str());
+							LOG_ERROR(std::string("Motion script failed:") + cfg->motion.script_path);
 						}
 					}
 					indicator = true;
