@@ -6,6 +6,9 @@
 #include <functional>
 #include <libconfig.h++>
 
+#define ONESECOND (1000 * 1000)
+#define TENSECONDS (ONESECOND * 10)
+
 //~65k
 #define ENABLE_LOG_DEBUG
 
