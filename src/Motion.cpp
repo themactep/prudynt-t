@@ -121,7 +121,7 @@ int Motion::init(std::shared_ptr<CFG> _cfg) {
 	cfg->motion_thread_signal.store(0);
 
 	ret = IMP_IVS_CreateGroup(0);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateGroup(0)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateGroup(0)")
 
 	memset(&move_param, 0, sizeof(IMP_IVS_MoveParam));
 	//OSD is affecting motion for some reason.
@@ -139,17 +139,17 @@ int Motion::init(std::shared_ptr<CFG> _cfg) {
 	move_intf = IMP_IVS_CreateMoveInterface(&move_param);
 
 	ret = IMP_IVS_CreateChn(0, move_intf);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateChn(0, move_intf)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateChn(0, move_intf)")
 
 	ret = IMP_IVS_RegisterChn(0, 0);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_RegisterChn(0, 0)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_RegisterChn(0, 0)")
 
 	ret = IMP_IVS_StartRecvPic(0);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_StartRecvPic(0)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_StartRecvPic(0)")
 
 	//Framesource -> IVS
 	ret = IMP_System_Bind(&fs, &ivs_cell);
-	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&fs, &ivs_cell)");
+	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&fs, &ivs_cell)")
 
 	//initialize and start
 	cfg->motion_thread_signal.fetch_or(1);
