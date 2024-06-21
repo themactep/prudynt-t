@@ -1137,7 +1137,7 @@ void Encoder::run()
             // really matter which NAL we select here as they
             // all have identical timestamps.
             int64_t low_nal_ts = stream1.pack[stream1.packCount - 1].timestamp;
-            if (low_nal_ts - last_low_nal_ts > 1.5 * (1000000 / cfg->stream0.fps))
+            if (low_nal_ts - last_low_nal_ts > 1.5 * (ONESECOND / cfg->stream0.fps))
             {
                 // Silence for now until further tests / THINGINO
                 // LOG_WARN("The encoder 1 dropped a frame. " << (low_nal_ts - last_low_nal_ts) << ", " << (1.5 * (ONESECOND / cfg->stream0.fps)));
