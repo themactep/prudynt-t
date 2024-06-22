@@ -7,7 +7,7 @@
 #ifndef __IMP_AUDIO_H__
 #define __IMP_AUDIO_H__
 
-#include <stdint.h>
+#include <cstdint>
 
 #ifdef __cplusplus
 #if __cplusplus

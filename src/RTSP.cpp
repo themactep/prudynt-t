@@ -26,8 +26,8 @@ void RTSP::run() {
 			if (cfg->rtsp.auth_required) {
 				UserAuthenticationDatabase *auth = new UserAuthenticationDatabase;
 				auth->addUserRecord(
-					cfg->rtsp.username.c_str(),
-					cfg->rtsp.password.c_str()
+					cfg->rtsp.username,
+					cfg->rtsp.password
 				);
 				rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, auth);
 			} else {
@@ -43,18 +43,16 @@ void RTSP::run() {
 			if (true) {
 				LOG_DEBUG("identify stream 0");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 0);
+				H264NALUnit pps;
 				H264NALUnit sps;
-				H264NALUnit pps; // Declare outside the loop!
 				H264NALUnit *vps = nullptr; // Use a pointer for VPS
-				bool have_vps = false;
-				bool have_sps = false;
 				bool have_pps = false;
+				bool have_sps = false;
+				bool have_vps = false;
 
 				// Read from the stream until we capture the SPS and PPS. Only capture VPS if needed.
 				while (!have_pps || !have_sps || (cfg->stream0.format == "H265" && !have_vps)) {
-					LOG_DEBUG("wait_read");
 					H264NALUnit unit = deviceSource->wait_read();
-					LOG_DEBUG("wait_read");
 					if (cfg->stream0.format == "H265") {
 						uint8_t nalType = (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
 						if (nalType == 33) { // SPS for H265
@@ -89,7 +87,7 @@ void RTSP::run() {
 				LOG_DEBUG("Got necessary NAL Units.");
 
 				ServerMediaSession *sms = ServerMediaSession::createNew(
-					*env, cfg->stream0.rtsp_endpoint.c_str(), "Main", cfg->rtsp.name.c_str()
+					*env, cfg->stream0.rtsp_endpoint, "Main", cfg->rtsp.name
 				);
 				IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
 					*env, (cfg->stream0.format == "H265" ? vps : nullptr), sps, pps, 0 // Conditional VPS
@@ -104,12 +102,12 @@ void RTSP::run() {
 			if (true) {
 				LOG_DEBUG("identify stream 1");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 1);
+				H264NALUnit pps;
 				H264NALUnit sps;
-				H264NALUnit pps; // Declare outside the loop!
 				H264NALUnit *vps = nullptr; // Use a pointer for VPS
-				bool have_vps = false;
-				bool have_sps = false;
 				bool have_pps = false;
+				bool have_sps = false;
+				bool have_vps = false;
 
 				// Read from the stream until we capture the SPS and PPS. Only capture VPS if needed.
 				while (!have_pps || !have_sps || (cfg->stream0.format == "H265" && !have_vps)) {
@@ -148,7 +146,7 @@ void RTSP::run() {
 				LOG_DEBUG("Got necessary NAL Units.");
 
 				ServerMediaSession *sms = ServerMediaSession::createNew(
-					*env, "ch1", "ch1", "ch1"
+					*env, cfg->stream1.rtsp_endpoint, "Sub", cfg->rtsp.name
 				);
 				IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
 					*env, (cfg->stream0.format == "H265" ? vps : nullptr), sps, pps, 1 // Conditional VPS

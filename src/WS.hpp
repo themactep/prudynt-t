@@ -49,7 +49,7 @@ private:
 
     static signed char stream_callback(struct lejp_ctx *ctx, char reason);
 
-    static signed char stream1_callback(struct lejp_ctx *ctx, char reason);
+    static signed char stream2_callback(struct lejp_ctx *ctx, char reason);
 
     static signed char osd_callback(struct lejp_ctx *ctx, char reason);
 

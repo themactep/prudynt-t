@@ -29,20 +29,13 @@
         }
 #else
 #define LOG_DEBUG(str) ((void)0)
-#define LOG_DEBUG_OR_ERROR(condition, str)  \
-	((condition) == 0 ? (void)0 : \
-	Logger::log(Logger::ERROR, FILENAME, LogMsg() << str))
-#define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) \
-	if ((condition) == 0) { \
-	    (void)0 \
-	} else { \
-	    Logger::log(Logger::ERROR, FILENAME, LogMsg() << str << " returns " << condition); \
-	    return condition; \
-	}
+#define LOG_DEBUG_OR_ERROR(condition, str) ((void)0);
+#define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) ((void)0);
 #endif
 
 struct LogMsg {
     LogMsg() = default;
+
     std::string log_str;
 
     LogMsg &operator<<(std::string a) {

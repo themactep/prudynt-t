@@ -7,8 +7,7 @@
 #ifndef __IMP_ENCODER_H__
 #define __IMP_ENCODER_H__
 
-#include <stdint.h>
-#include <stdbool.h>
+#include <cstdint>
 
 #ifdef __cplusplus
 #if __cplusplus

@@ -7,7 +7,7 @@
 #ifndef __SU_BASE_H__
 #define __SU_BASE_H__
 
-#include <stdint.h>
+#include <cstdint>
 
 #ifdef __cplusplus
 #if __cplusplus

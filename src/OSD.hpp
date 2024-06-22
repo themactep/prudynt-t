@@ -23,9 +23,9 @@ struct OSDItem {
 
 class OSD {
 public:
-    static OSD *createNew(std::shared_ptr<CFG::_osd> osd, int osdGrp, int encChn);
+    static OSD *createNew(_osd *osd, int osdGrp, int encChn);
 
-    OSD(std::shared_ptr<CFG::_osd> osd, int osdGrp, int encChn) : osd(osd), osdGrp(osdGrp), encChn(encChn) {
+    OSD(_osd *osd, int osdGrp, int encChn) : osd(osd), osdGrp(osdGrp), encChn(encChn) {
 	    init();
     }
 
@@ -44,7 +44,7 @@ public:
     static int get_abs_pos(int max, int size, int pos);
 
 private:
-    std::shared_ptr<CFG::_osd> osd;
+    _osd *osd;
 
     int last_updated_second;
 
@@ -73,7 +73,7 @@ private:
     std::map<char, FT_BBox> boxes;
     std::map<char, FT_Vector> advances;
 
-    bool initialized{0};
+    bool initialized{false};
     int osdGrp;
     int encChn;
 };

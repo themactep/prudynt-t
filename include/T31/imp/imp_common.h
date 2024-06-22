@@ -7,10 +7,10 @@
 #ifndef __IMP_COMMON_H__
 #define __IMP_COMMON_H__
 
-#include <stdint.h>
+#include <cstdint>
 #include <pthread.h>
 #include <linux/videodev2.h>
-#include <stdio.h>
+#include <cstdio>
 
 #ifdef __cplusplus
 #if __cplusplus

@@ -7,7 +7,6 @@
 #ifndef __IMP_ISP_H__
 #define __IMP_ISP_H__
 
-#include <stdbool.h>
 #include "imp_common.h"
 
 #ifdef __cplusplus
