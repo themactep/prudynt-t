@@ -37,7 +37,10 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, int &width, int &height, int ang
 		{width, height}
 	};
 
-	int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
+	int maxY = INT_MIN;
+	int minY = INT_MAX;
+	int minX = INT_MAX;
+	int maxX = INT_MIN;
 
 	for (int i = 0; i < 4; ++i) {
 		int x = originalCorners[i][0];
