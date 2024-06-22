@@ -35,6 +35,7 @@
 
 struct LogMsg {
     LogMsg() = default;
+
     std::string log_str;
 
     LogMsg &operator<<(std::string a) {
