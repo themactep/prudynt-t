@@ -82,7 +82,7 @@ int Encoder::system_init() {
 	ret = IMP_ISP_Open();
 	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Open()")
 
-	sinfo = create_sensor_info(cfg->sensor.model.c_str());
+	sinfo = create_sensor_info(cfg->sensor.model);
 	ret = IMP_ISP_AddSensor(&sinfo);
 	LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_AddSensor(&sinfo)")
 
