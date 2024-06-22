@@ -5,8 +5,6 @@
 #include "Encoder.hpp"
 #include "Config.hpp"
 
-#define PLATFORM_T31
-
 /*
     TODO: remove max_gop from config is set to 2xgop,
     add channel_attr.encAttr.profile to config
