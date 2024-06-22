@@ -51,7 +51,7 @@ FramedSource *IMPServerMediaSubsession::createNewStreamSource(
 	// Here we need to decide based on the format whether to use H264 or H265 framer
 	if (cfg->stream0.format == "H265") {
 		return H265VideoStreamDiscreteFramer::createNew(envir(), imp, false, false);
-	} else { // Lets assume the default is H264 if not H265
+	} else { // Let's assume the default is H264 if not H265
 		return H264VideoStreamDiscreteFramer::createNew(envir(), imp, false, false);
 	}
 }
@@ -63,7 +63,7 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(
 	FramedSource *fs
 ) {
 	increaseSendBufferTo(envir(), rtpGroupsock->socketNum(), cfg->rtsp.send_buffer_size);
-	// Use VPS only if it's available (non-nullptr and we are in H265 mode)
+	// Use VPS only if it's available (non-nullptr, and we are in H265 mode)
 	if (cfg->stream0.format == "H265" && vps) {
 		return H265VideoRTPSink::createNew(
 			envir(),
