@@ -113,7 +113,7 @@ IMPEncoderCHNAttr createEncoderProfile(_stream &stream) {
 	}
 
 	rc_attr->attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
-	rc_attr->attrHSkip.hSkipAttr.m = rc_high_attr->maxGop - 1;
+	rc_attr->attrHSkip.hSkipAttr.m = rc_attr->maxGop - 1;
 	rc_attr->attrHSkip.hSkipAttr.n = 1;
 	rc_attr->attrHSkip.hSkipAttr.maxSameSceneCnt = 6;
 	rc_attr->attrHSkip.hSkipAttr.bEnableScenecut = 0;
@@ -924,7 +924,7 @@ void Encoder::run() {
 			int64_t stream0_max_frame_duration = ONESECOND * 3 / 2 / cfg->stream0.fps;
 			if (stream0_nal_ts_delta > stream0_max_frame_duration) {
 				// Silence for now until further tests / THINGINO
-				// LOG_WARN("The encoder 0 dropped a frame. " << (high_nal_ts_delta) << ", " << (stream0_max_frame_duration));
+				// LOG_WARN("The encoder 0 dropped a frame. " << (stream0_nal_ts_delta) << ", " << (stream0_max_frame_duration));
 			}
 			struct timeval stream0_encode_time;
 			stream0_encode_time.tv_sec = stream0_nal_ts / ONESECOND;
@@ -958,12 +958,12 @@ void Encoder::run() {
 				    stream0.pack[i].dataType.h265Type == 1 ||
 				    stream0.pack[i].dataType.h265Type == 19 ||
 				    stream0.pack[i].dataType.h265Type == 20) {
-					nalu0.duration = high_nal_ts_delta;
+					nalu0.duration = stream0_nal_ts_delta;
 				}
 #else
 				if (stream0.pack[i].dataType.h264Type == 1 ||
 				    stream0.pack[i].dataType.h264Type == 5) {
-					nalu0.duration = high_nal_ts_delta;
+					nalu0.duration = stream0_nal_ts_delta;
 				}
 #endif
 				// We use start+4 because the encoder inserts 4-byte MPEG
