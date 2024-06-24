@@ -8,16 +8,16 @@
 
 #define FILENAME (strrchr("/" __FILE__, '/') + 1)
 #define LOG_EMER(str) Logger::log(Logger::EMERGENCY, FILENAME, LogMsg() << str)
-#define LOG_ALER(str)     Logger::log(Logger::ALERT, FILENAME, LogMsg() << str)
-#define LOG_CRIT(str)  Logger::log(Logger::CRITICAL, FILENAME, LogMsg() << str)
-#define LOG_ERROR(str)     Logger::log(Logger::ERROR, FILENAME, LogMsg() << str)
-#define LOG_WARN(str)      Logger::log(Logger::WARN, FILENAME, LogMsg() << str)
-#define LOG_NOTICE(str)    Logger::log(Logger::NOTICE, FILENAME, LogMsg() << str)
-#define LOG_INFO(str)      Logger::log(Logger::INFO, FILENAME, LogMsg() << str)
+#define LOG_ALER(str) Logger::log(Logger::ALERT, FILENAME, LogMsg() << str)
+#define LOG_CRIT(str) Logger::log(Logger::CRITICAL, FILENAME, LogMsg() << str)
+#define LOG_ERROR(str) Logger::log(Logger::ERROR, FILENAME, LogMsg() << str)
+#define LOG_WARN(str) Logger::log(Logger::WARN, FILENAME, LogMsg() << str)
+#define LOG_NOTICE(str) Logger::log(Logger::NOTICE, FILENAME, LogMsg() << str)
+#define LOG_INFO(str) Logger::log(Logger::INFO, FILENAME, LogMsg() << str)
 
 #if defined(ENABLE_LOG_DEBUG)
-#define LOG_DEBUG(str)     Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
-#define LOG_DEBUG_OR_ERROR(condition, str)  \
+#define LOG_DEBUG(str) Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
+#define LOG_DEBUG_OR_ERROR(condition, str) \
         ((condition) == 0 ? Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str) : \
         Logger::log(Logger::ERROR, FILENAME, LogMsg() << str))
 #define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str) \

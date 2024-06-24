@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include <libconfig.h++>
+#include <variant>
 #include "Config.hpp"
 #include "Logger.hpp"
 
@@ -94,14 +95,14 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
 		{"stream1.format", stream1.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
 		{"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
 		{"stream0.osd.font_path", stream0.osd.font_path, "/usr/share/fonts/UbuntuMono-Regular2.ttf", validateCharNotEmpty},
-		{"stream0.osd.time_format", stream0.osd.time_format, "%I:%M:%S%p %m/%d/%Y", validateCharNotEmpty},
+		{"stream0.osd.time_format", stream0.osd.time_format, "%F %T", validateCharNotEmpty},
 		{"stream0.osd.uptime_format", stream0.osd.uptime_format, "Uptime: %02lu:%02lu:%02lu", validateCharNotEmpty},
-		{"stream0.osd.user_text_format", stream0.osd.user_text_format, "thingino", validateCharNotEmpty},
+		{"stream0.osd.user_text_format", stream0.osd.user_text_format, "%hostname, ch 0", validateCharNotEmpty},
 		{"stream0.osd.logo_path", stream0.osd.logo_path, "/usr/share/thingino_logo_1.bgra", validateCharNotEmpty},
 		{"stream1.osd.font_path", stream1.osd.font_path, "/usr/share/fonts/UbuntuMono-Regular2.ttf", validateCharNotEmpty},
-		{"stream1.osd.time_format", stream1.osd.time_format, "%I:%M:%S%p %m/%d/%Y", validateCharNotEmpty},
+		{"stream1.osd.time_format", stream1.osd.time_format, "%F %T", validateCharNotEmpty},
 		{"stream1.osd.uptime_format", stream1.osd.uptime_format, "Uptime: %02lu:%02lu:%02lu", validateCharNotEmpty},
-		{"stream1.osd.user_text_format", stream1.osd.user_text_format, "thingino", validateCharNotEmpty},
+		{"stream1.osd.user_text_format", stream1.osd.user_text_format, "%hostname, ch 1", validateCharNotEmpty},
 		{"stream1.osd.logo_path", stream1.osd.logo_path, "/usr/share/thingino_logo_1.bgra", validateCharNotEmpty},
 		{"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
 		{"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
@@ -112,8 +113,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
 	return {
 		{"rtsp.port", rtsp.port, 554, [](const int &v) { return v > 0 && v <= 65535; }},
 		{"rtsp.est_bitrate", rtsp.est_bitrate, 5000, [](const int &v) { return v > 0; }},
-		{"rtsp.out_buffer_size", rtsp.out_buffer_size, 5000000, [](const int &v) { return v > 0; }},
-		{"rtsp.send_buffer_size", rtsp.send_buffer_size, 3072000, [](const int &v) { return v > 0; }},
+		{"rtsp.out_buffer_size", rtsp.out_buffer_size, 500000, [](const int &v) { return v > 0; }},
+		{"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, [](const int &v) { return v > 0; }},
 		{"sensor.fps", sensor.fps, 24, [](const int &v) { return v > 0 && v <= 60; }, "/proc/jz/sensor/max_fps"},
 		{"sensor.width", sensor.width, 1920, [](const int &v) { return v > 0; }, "/proc/jz/sensor/width"},
 		{"sensor.height", sensor.height, 1080, [](const int &v) { return v > 0; }, "/proc/jz/sensor/height"},
@@ -138,18 +139,12 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
 		{"image.wb_rgain", image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
 		{"image.wb_bgain", image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
 #if defined(WITH_AUDIO)
-		{"audio.input_vol", audio.input_vol, 0, [](const int &v)
-		 { return v >= -30 && v <= 120; }},
-		{"audio.input_gain", audio.input_gain, 0, [](const int &v)
-		 { return v >= 0 && v <= 31; }},
-		{"audio.input_alc_gain", audio.input_alc_gain, 0, [](const int &v)
-		 { return v >= 0 && v <= 7; }},
-		{"audio.output_vol", audio.output_vol, 0, [](const int &v)
-		 { return v >= -30 && v <= 120; }},
-		{"audio.output_gain", audio.output_gain, 0, [](const int &v)
-		 { return v >= 0 && v <= 31; }},
-		{"audio.input_noise_suppression", audio.input_noise_suppression, 0, [](const int &v)
-		 { return v >= 0 && v <= 3; }},
+		{"audio.input_vol", audio.input_vol, 0, [](const int &v) { return v >= -30 && v <= 120; }},
+		{"audio.input_gain", audio.input_gain, 0, [](const int &v) { return v >= 0 && v <= 31; }},
+		{"audio.input_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= 0 && v <= 7; }},
+		{"audio.output_vol", audio.output_vol, 0, [](const int &v) { return v >= -30 && v <= 120; }},
+		{"audio.output_gain", audio.output_gain, 0, [](const int &v) { return v >= 0 && v <= 31; }},
+		{"audio.input_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
 #endif
 		{"stream0.gop", stream0.gop, 20, [](const int &v) { return v > 0; }},
 		{"stream0.max_gop", stream0.max_gop, 60, [](const int &v) { return v > 0; }},
@@ -164,7 +159,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
 		{"stream1.fps", stream1.fps, 24, [](const int &v) { return v > 0 && v <= 60; }},
 		{"stream1.buffers", stream1.buffers, 1, [](const int &v) { return v > 0 && v <= 32; }},
 		{"stream1.width", stream1.width, 640, [](const int &v) { return v > 0; }},
-		{"stream1.height", stream1.height, 360, [](const int &v) { return v > 0; }},
+		{"stream1.height", stream1.height, 340, [](const int &v) { return v > 0; }},
 		{"stream1.bitrate", stream1.bitrate, 500, [](const int &v) { return v > 0; }},
 		{"stream1.profile", stream1.profile, 2, [](const int &v) { return v >= 0 && v <= 2; }},
 		{"stream0.osd.pos_time_x", stream0.osd.pos_time_x, 15, validateInt15360},
@@ -284,20 +279,17 @@ bool CFG::readConfig() {
 	try {
 		lc.readFile(cfgFilePath.c_str());
 		LOG_INFO("Loaded configuration from " + cfgFilePath.string());
-	}
-	catch (const libconfig::FileIOException &) {
+	} catch (const libconfig::FileIOException &) {
 		fs::path etcPath = "/etc/prudynt.cfg";
 		filePath = etcPath;
 		try {
 			lc.readFile(etcPath.c_str());
 			LOG_INFO("Loaded configuration from " + etcPath.string());
-		}
-		catch (...) {
+		} catch (...) {
 			LOG_WARN("Failed to load prudynt configuration file from /etc.");
 			return false; // Exit if configuration file is missing
 		}
-	}
-	catch (const libconfig::ParseException &pex) {
+	} catch (const libconfig::ParseException &pex) {
 		LOG_WARN("Parse error at " + std::string(pex.getFile()) + ":" + std::to_string(pex.getLine()) + " - " + pex.getError());
 		return false; // Exit on parsing error
 	}
@@ -330,7 +322,6 @@ bool processLine(const std::string &line, T &value) {
 
 template<typename T>
 void handleConfigItem(libconfig::Config &lc, ConfigItem<T> &item) {
-
 	bool readFromProc = false;
 	bool readFromConfig = false;
 	T configValue{};
@@ -348,7 +339,8 @@ void handleConfigItem(libconfig::Config &lc, ConfigItem<T> &item) {
 		}
 	}
 
-	if (!readFromConfig && item.procPath != nullptr && item.procPath[0] != '\0') { // If not read from config and procPath is set
+	if (!readFromConfig && item.procPath != nullptr && item.procPath[0] != '\0') {
+		// If not read from config and procPath is set
 		// Attempt to read from the proc filesystem
 		std::ifstream procFile(item.procPath);
 		if (procFile) {
@@ -434,6 +426,7 @@ void handleConfigItem2(libconfig::Config &lc, ConfigItem<T> &item) {
 	std::string entr = path.substr(pos + 1);
 
 	if (isDifferent && !readFromProc && !isDefault) {
+
 		ensurePathExists(lc.getRoot(), item.path);
 
 		libconfig::Setting &section = lc.lookup(sect);
@@ -490,7 +483,6 @@ bool CFG::updateConfig() {
 	libconfig::Setting &rois = root.add("rois", libconfig::Setting::TypeGroup);
 
 	for (int i = 0; i < motion.roi_count; i++) {
-
 		libconfig::Setting &entry = rois.add("roi_" + std::to_string(i), libconfig::Setting::TypeArray);
 		entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p0_x;
 		entry.add(libconfig::Setting::TypeInt) = motion.rois[i].p0_y;
@@ -505,7 +497,6 @@ bool CFG::updateConfig() {
 };
 
 CFG::CFG() {
-
 	boolItems = getBoolItems();
 	charItems = getCharItems();
 	intItems = getIntItems();
@@ -525,7 +516,6 @@ CFG::CFG() {
 	libconfig::Setting &root = lc.getRoot();
 
 	if (root.exists("rois")) {
-
 		libconfig::Setting &rois = root.lookup("rois");
 		for (int i = 0; i < motion.roi_count; i++) {
 			if (rois.exists("roi_" + std::to_string(i))) {

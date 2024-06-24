@@ -2,6 +2,7 @@
 
 #include <set>
 #include <atomic>
+#include <variant>
 #include <iostream>
 #include <functional>
 #include <libconfig.h++>
@@ -225,7 +226,8 @@ public:
     template<typename T>
     T get(const std::string &name) {
 	    T result;
-	    std::vector<ConfigItem<T>> *items = nullptr;
+	    std::vector<ConfigItem<T>>
+		    *items = nullptr;
 	    if constexpr (std::is_same_v<T, bool>) {
 		    items = &boolItems;
 	    } else if constexpr (std::is_same_v<T, const char *>) {
@@ -247,7 +249,8 @@ public:
 
     template<typename T>
     bool set(const std::string &name, T value) {
-	    std::vector<ConfigItem<T>> *items = nullptr;
+	    std::vector<ConfigItem<T>>
+		    *items = nullptr;
 	    if constexpr (std::is_same_v<T, bool>) {
 		    items = &boolItems;
 	    } else if constexpr (std::is_same_v<T, const char *>) {
