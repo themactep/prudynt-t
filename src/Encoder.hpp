@@ -5,6 +5,7 @@
 #include <memory>
 #include <ctime>
 #include <map>
+#include <utility>
 
 #include <sys/file.h>
 
@@ -65,9 +66,17 @@ struct EncoderSink {
     std::function<int(const H264NALUnit &)> data_available_callback;
 };
 
+struct CHN {
+    bool enabled;
+    int encChn = -1;
+    int64_t lastNalTs = 0;
+    struct timeval impTimeBase;
+    std::function<void()> updateOsd = nullptr;
+};
+
 class Encoder {
 public:
-    Encoder(std::shared_ptr<CFG> cfg) : cfg(cfg) {};
+    Encoder(std::shared_ptr<CFG> cfg) : cfg(std::move(cfg)) {};
 
     void run();
 
@@ -93,8 +102,8 @@ public:
 
 private:
     std::shared_ptr<CFG> cfg;
-    OSD *stream0_osd;
-    OSD *stream1_osd;
+    OSD *stream0_osd{};
+    OSD *stream1_osd{};
     Motion motion;
 
     bool init();
@@ -119,12 +128,12 @@ public:
     static std::map<uint32_t, EncoderSink> sinks;
 
 private:
-    struct timeval high_imp_time_base;
-    struct timeval low_imp_time_base;
+    struct timeval high_imp_time_base{};
+    struct timeval low_imp_time_base{};
 
     IMPFSChnAttr create_fs_attr();
 
-    IMPSensorInfo create_sensor_info(std::string sensor);
+    IMPSensorInfo create_sensor_info(const std::string& sensor);
 
     IMPCell high_fs = {DEV_ID_FS, 0, 0};
     IMPCell high_osd_cell = {DEV_ID_OSD, 0, 0};
@@ -134,7 +143,7 @@ private:
     IMPCell low_osd_cell = {DEV_ID_OSD, 1, 0};
     IMPCell low_enc = {DEV_ID_ENC, 1, 0};
 
-    IMPSensorInfo sinfo;
+    IMPSensorInfo sinfo{};
 
     std::thread jpeg_thread;
 
@@ -148,6 +157,7 @@ private:
     int stream1Status = 0;
 
     int errorCount = 0;
+    CHN channels[2] = {{false, 0, 0}, {false, 1, 0}};
 };
 
 #endif

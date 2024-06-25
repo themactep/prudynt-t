@@ -19,9 +19,6 @@
 #if defined(PLATFORM_T31)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
 #define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
-
-#if defined(PLATFORM_T31)
 #define picWidth uWidth
 #define picHeight uHeight
 #endif
@@ -42,9 +39,9 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, int &width, int &height, int ang
 	int minX = INT_MAX;
 	int maxX = INT_MIN;
 
-	for (int i = 0; i < 4; ++i) {
-		int x = originalCorners[i][0];
-		int y = originalCorners[i][1];
+	for (auto & originalCorner : originalCorners) {
+		int x = originalCorner[0];
+		int y = originalCorner[1];
 
 		int newX = static_cast<int>(x * std::cos(angleRad) - y * std::sin(angleRad));
 		int newY = static_cast<int>(x * std::sin(angleRad) + y * std::cos(angleRad));
@@ -64,7 +61,7 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, int &width, int &height, int ang
 	int newCenterX = newWidth / 2;
 	int newCenterY = newHeight / 2;
 
-	uint8_t *rotatedImage = new uint8_t[newWidth * newHeight * 4]();
+	auto *rotatedImage = new uint8_t[newWidth * newHeight * 4]();
 
 	for (int y = 0; y < newHeight; ++y) {
 		for (int x = 0; x < newWidth; ++x) {
@@ -88,10 +85,21 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, int &width, int &height, int ang
 	height = newHeight;
 }
 
-int OSD::get_abs_pos(int max, int size, int pos) {
+int OSD::get_abs_pos(int max, int size, int pos_original) {
+	int pos = pos_original;
 
-	if (pos == 0) return max / 2 - size / 2;
-	if (pos < 0) return max - size + pos;
+	if (pos == 0) {
+		pos = (max - size) / 2;
+	}
+
+	if (pos < 0) {
+		pos = max - size + pos;
+	}
+
+	if (pos_original < 0) {
+		LOG_DEBUG("OSD::get_abs_pos(): max: " << max << ", size: " << size << ". pos_in: " << pos_original << ", pos_out: " << pos);
+	}
+
 	return pos;
 }
 
@@ -101,7 +109,7 @@ void OSD::set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, int width, int height, i
 	IMP_Encoder_GetChnAttr(encChn, &chnAttr);
 
 	if (width == 0 || height == 0) {
-		width = rgnAttr->rect.p1.x - rgnAttr->rect.p0.x + 1;
+		width  = rgnAttr->rect.p1.x - rgnAttr->rect.p0.x + 1;
 		height = rgnAttr->rect.p1.y - rgnAttr->rect.p0.y + 1;
 	}
 
@@ -309,7 +317,7 @@ void OSD::draw_glyph(uint8_t *data, FT_BitmapGlyph bmg,
 	*pen_y += ((FT_Glyph) bmg)->advance.y >> 16;
 }
 
-void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, std::string text, int posX, int posY, int angle) {
+void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const std::string& text, int posX, int posY, int angle) {
 
 	//First, calculate the size of the bitmap surface we need
 	FT_BBox total_bbox = {0, 0, 0, 0};
@@ -391,8 +399,7 @@ OSD *OSD::createNew(
 }
 
 void OSD::init() {
-
-	int ret;
+	int ret = 0;
 	LOG_DEBUG("OSD init for  begin");
 
 	//cfg = _cfg;
@@ -415,19 +422,17 @@ void OSD::init() {
 	LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_CreateGroup(" << osdGrp << ")");
 
 	if (osd->time_enabled) {
-
 		/* OSD Time */
-		osdTime.data = NULL;
-		osdTime.imp_rgn = IMP_OSD_CreateRgn(NULL);
-		IMP_OSD_RegisterRgn(osdTime.imp_rgn, osdGrp, NULL);
+		osdTime.data = nullptr;
+		osdTime.imp_rgn = IMP_OSD_CreateRgn(nullptr);
+		IMP_OSD_RegisterRgn(osdTime.imp_rgn, osdGrp, nullptr);
 		osd->regions.time = osdTime.imp_rgn;
 
 		IMPOSDRgnAttr rgnAttr;
 		memset(&rgnAttr, 0, sizeof(IMPOSDRgnAttr));
 		rgnAttr.type = OSD_REG_PIC;
 		rgnAttr.fmt = PIX_FMT_BGRA;
-		set_text(&osdTime, &rgnAttr, osd->time_format,
-			 osd->pos_time_x, osd->pos_time_y, osd->time_rotation);
+		set_text(&osdTime, &rgnAttr, osd->time_format, osd->pos_time_x, osd->pos_time_y, osd->time_rotation);
 		IMP_OSD_SetRgnAttr(osdTime.imp_rgn, &rgnAttr);
 
 		IMPOSDGrpRgnAttr grpRgnAttr;
@@ -440,19 +445,17 @@ void OSD::init() {
 	}
 
 	if (osd->user_text_enabled) {
-
 		/* OSD Usertext */
-		osdUser.data = NULL;
-		osdUser.imp_rgn = IMP_OSD_CreateRgn(NULL);
-		IMP_OSD_RegisterRgn(osdUser.imp_rgn, osdGrp, NULL);
+		osdUser.data = nullptr;
+		osdUser.imp_rgn = IMP_OSD_CreateRgn(nullptr);
+		IMP_OSD_RegisterRgn(osdUser.imp_rgn, osdGrp, nullptr);
 		osd->regions.user = osdUser.imp_rgn;
 
 		IMPOSDRgnAttr rgnAttr;
 		memset(&rgnAttr, 0, sizeof(IMPOSDRgnAttr));
 		rgnAttr.type = OSD_REG_PIC;
 		rgnAttr.fmt = PIX_FMT_BGRA;
-		set_text(&osdUser, &rgnAttr, osd->user_text_format,
-			 osd->pos_user_text_x, osd->pos_user_text_y, osd->user_text_rotation);
+		set_text(&osdUser, &rgnAttr, osd->user_text_format, osd->pos_user_text_x, osd->pos_user_text_y, osd->user_text_rotation);
 		IMP_OSD_SetRgnAttr(osdUser.imp_rgn, &rgnAttr);
 
 		IMPOSDGrpRgnAttr grpRgnAttr;
@@ -465,19 +468,17 @@ void OSD::init() {
 	}
 
 	if (osd->uptime_enabled) {
-
 		/* OSD Uptime */
-		osdUptm.data = NULL;
-		osdUptm.imp_rgn = IMP_OSD_CreateRgn(NULL);
-		IMP_OSD_RegisterRgn(osdUptm.imp_rgn, osdGrp, NULL);
+		osdUptm.data = nullptr;
+		osdUptm.imp_rgn = IMP_OSD_CreateRgn(nullptr);
+		IMP_OSD_RegisterRgn(osdUptm.imp_rgn, osdGrp, nullptr);
 		osd->regions.uptime = osdUptm.imp_rgn;
 
 		IMPOSDRgnAttr rgnAttr;
 		memset(&rgnAttr, 0, sizeof(IMPOSDRgnAttr));
 		rgnAttr.type = OSD_REG_PIC;
 		rgnAttr.fmt = PIX_FMT_BGRA;
-		set_text(&osdUptm, &rgnAttr, osd->uptime_format,
-			 osd->pos_uptime_x, osd->pos_uptime_y, osd->uptime_rotation);
+		set_text(&osdUptm, &rgnAttr, osd->uptime_format, osd->pos_uptime_x, osd->pos_uptime_y, osd->uptime_rotation);
 		IMP_OSD_SetRgnAttr(osdUptm.imp_rgn, &rgnAttr);
 
 		IMPOSDGrpRgnAttr grpRgnAttr;
@@ -490,23 +491,22 @@ void OSD::init() {
 	}
 
 	if (osd->logo_enabled) {
-
 		/* OSD Logo */
-
 		size_t imageSize;
-		auto imageData = loadBGRAImage(osd->logo_path, imageSize);
+		std::unique_ptr<unsigned char[]> imageData;
+		imageData = loadBGRAImage(osd->logo_path, imageSize);
+		LOG_DEBUG("LOGO Image Size is " << imageSize);
 
-		osdLogo.data = NULL;
-		osdLogo.imp_rgn = IMP_OSD_CreateRgn(NULL);
-		IMP_OSD_RegisterRgn(osdLogo.imp_rgn, osdGrp, NULL);
+		osdLogo.data = nullptr;
+		osdLogo.imp_rgn = IMP_OSD_CreateRgn(nullptr);
+		IMP_OSD_RegisterRgn(osdLogo.imp_rgn, osdGrp, nullptr);
 		osd->regions.logo = osdLogo.imp_rgn;
 
 		IMPOSDRgnAttr rgnAttr;
 		memset(&rgnAttr, 0, sizeof(IMPOSDRgnAttr));
 
 		//Verify OSD logo size vs dimensions
-		if ((osd->logo_width * osd->logo_height * 4) == imageSize) {
-
+		if ((osd->logo_width * osd->logo_height * 4) == (int)imageSize) {
 			rgnAttr.type = OSD_REG_PIC;
 			rgnAttr.fmt = PIX_FMT_BGRA;
 			rgnAttr.data.picData.pData = imageData.get();
@@ -515,16 +515,13 @@ void OSD::init() {
 			int logo_width = osd->logo_width;
 			int logo_height = osd->logo_height;
 			if (osd->logo_rotation) {
-				uint8_t *imageData = static_cast<uint8_t *>(rgnAttr.data.picData.pData);
-				rotateBGRAImage(imageData, logo_width,
-						logo_height, osd->logo_rotation, false);
-				rgnAttr.data.picData.pData = imageData;
+				auto *imageData2 = static_cast<uint8_t *>(rgnAttr.data.picData.pData);
+				rotateBGRAImage(imageData2, logo_width, logo_height, osd->logo_rotation, false);
+				rgnAttr.data.picData.pData = imageData2;
 			}
 
-			set_pos(&rgnAttr, osd->pos_logo_x,
-				osd->pos_logo_y, logo_width, logo_height, encChn);
+			set_pos(&rgnAttr, osd->pos_logo_x, osd->pos_logo_y, logo_width, logo_height, encChn);
 		} else {
-
 			LOG_ERROR("Invalid OSD logo dimensions. Imagesize=" << imageSize << ", " << osd->logo_width << "*" <<
 									    osd->logo_height << "*4=" << (osd->logo_width * osd->logo_height * 4));
 		}
@@ -610,13 +607,13 @@ unsigned long getSystemUptime() {
 }
 
 int getIp(char *addressBuffer) {
-	struct ifaddrs *ifAddrStruct = NULL;
-	struct ifaddrs *ifa = NULL;
-	void *tmpAddrPtr = NULL;
+	struct ifaddrs *ifAddrStruct = nullptr;
+	struct ifaddrs *ifa = nullptr;
+	void *tmpAddrPtr = nullptr;
 
 	getifaddrs(&ifAddrStruct);
 
-	for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+	for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next) {
 		if (!ifa->ifa_addr) {
 			continue;
 		}
@@ -633,7 +630,7 @@ int getIp(char *addressBuffer) {
 }
 
 void OSD::updateDisplayEverySecond() {
-	time_t current = time(NULL);
+	time_t current = time(nullptr);
 	struct tm *ltime = localtime(&current);
 
 	// Check if we have moved to a new second

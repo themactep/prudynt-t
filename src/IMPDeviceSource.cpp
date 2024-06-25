@@ -35,8 +35,8 @@ void IMPDeviceSource::deinit() {
 	auto s = duration_cast<std::chrono::seconds>(streamEnd - streamStart - h - m);
 	auto ms = duration_cast<std::chrono::milliseconds>(streamEnd - streamStart - h - m - s);
 
-	LOG_DEBUG("IMPDeviceSource destruct after , encoder channel:" << encChn << ", id:" << sinkId << " after:"
-								      << h.count() << ":" << m.count() << ":" << s.count() << "." << ms.count());
+	LOG_DEBUG("IMPDeviceSource destruct after, encoder channel:" << encChn << ", id:" << sinkId << " after:"
+								     << h.count() << ":" << m.count() << ":" << s.count() << "." << ms.count());
 }
 
 void IMPDeviceSource::doGetNextFrame() {
@@ -48,9 +48,7 @@ void IMPDeviceSource::deliverFrame0(void *clientData) {
 }
 
 H264NALUnit IMPDeviceSource::wait_read() {
-
 	while (nalQueue.empty()) {
-
 		usleep(ONESECOND);
 		LOG_DEBUG("wait_read(), nalQueue.empty(), wait for data.");
 	}
@@ -61,13 +59,11 @@ H264NALUnit IMPDeviceSource::wait_read() {
 }
 
 void IMPDeviceSource::deliverFrame() {
-
 	if (!isCurrentlyAwaitingData()) return;
 
 	std::unique_lock<std::mutex> lock(queueMutex);
 
 	if (!nalQueue.empty()) {
-
 		H264NALUnit nal = nalQueue.front();
 		nalQueue.pop();
 		lock.unlock();

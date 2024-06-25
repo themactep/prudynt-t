@@ -5,6 +5,7 @@
 #include "Logger.hpp"
 #include "Config.hpp"
 #include <memory>
+#include <utility>
 #include "libwebsockets.h"
 #include <imp/imp_system.h>
 #include <imp/imp_common.h>
@@ -18,7 +19,7 @@ class WS {
 public:
     void run();
 
-    WS(std::shared_ptr<CFG> _cfg, std::shared_ptr<std::atomic<int>> _mts) : cfg(_cfg), main_thread_signal(_mts) {}
+    WS(std::shared_ptr<CFG> _cfg, std::shared_ptr<std::atomic<int>> _mts) : cfg(std::move(_cfg)), main_thread_signal(std::move(_mts)) {}
 
     void restartEncoder();
 
@@ -27,9 +28,9 @@ private:
     std::shared_ptr<CFG> cfg;
     std::shared_ptr<std::atomic<int>> main_thread_signal;
 
-    lws_protocols protocols;
+    lws_protocols protocols{};
     struct lws_context_creation_info info;
-    struct lws_context *context;
+    struct lws_context *context{};
 
     static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
 
@@ -60,7 +61,6 @@ private:
     static signed char info_callback(struct lejp_ctx *ctx, char reason);
 
     static signed char action_callback(struct lejp_ctx *ctx, char reason);
-
 };
 
 #endif

@@ -1093,7 +1093,7 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
 		auto *u_ctx = (struct user_ctx *) ctx->user;
 		u_ctx->path = u_ctx->path + "." + std::string(ctx->path);
 
-		// LOG_DEBUG("osd_callback: " << u_ctx->path << " = " << (char *) ctx->buf);
+		// LOG_DEBUG("osd_callback: " << u_ctx->path << " = " << (char *)ctx->buf << ", " << ctx->path_match);
 
 		append_message(
 			"%s\"%s\":", u_ctx->s ? "," : "", osd_keys[ctx->path_match - 1]);
@@ -1119,10 +1119,10 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
 							hnd = regions.user;
 							break;
 						case PNT_OSD_UPTIME_TRANSPARENCY:
-							hnd = regions.uptime;;
+							hnd = regions.uptime;
 							break;
 						case PNT_OSD_LOGO_TRANSPARENCY:
-							hnd = regions.logo;;
+							hnd = regions.logo;
 							break;
 					}
 

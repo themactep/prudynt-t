@@ -6,10 +6,11 @@
 #include "Encoder.hpp"
 #include "Logger.hpp"
 #include <queue>
+#include <utility>
 
 class RTSP {
 public:
-    RTSP(std::shared_ptr<CFG> _cfg) : cfg(_cfg) {};
+    explicit RTSP(std::shared_ptr<CFG> _cfg) : cfg(std::move(_cfg)) {};
 
     void run();
 

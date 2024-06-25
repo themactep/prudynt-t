@@ -39,7 +39,10 @@ void RTSP::run() {
 			}
 			OutPacketBuffer::maxSize = cfg->rtsp.out_buffer_size;
 
-
+			_stream streams[2] = {cfg->stream0, cfg->stream1};
+			for (_stream stream: {cfg->stream0, cfg->stream1}) {
+				LOG_DEBUG(stream.profile);
+			}
 			if (cfg->stream0.enabled) {
 				LOG_DEBUG("identify stream 0");
 				IMPDeviceSource *deviceSource = IMPDeviceSource::createNew(*env, 0);
@@ -51,9 +54,10 @@ void RTSP::run() {
 				bool have_vps = false;
 
 				// Read from the stream until we capture the SPS and PPS. Only capture VPS if needed.
-				while (!have_pps || !have_sps || (cfg->stream0.format == "H265" && !have_vps)) {
+				while (!have_pps || !have_sps || ((strcmp(cfg->stream0.format, "H265") == 0) && !have_vps)) {
+					LOG_DEBUG("wait_read");
 					H264NALUnit unit = deviceSource->wait_read();
-					if (cfg->stream0.format == "H265") {
+					if (strcmp(cfg->stream0.format, "H265") == 0) {
 						uint8_t nalType = (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
 						if (nalType == 33) { // SPS for H265
 							LOG_DEBUG("Got SPS (H265)");
@@ -90,7 +94,7 @@ void RTSP::run() {
 					*env, cfg->stream0.rtsp_endpoint, "Main", cfg->rtsp.name
 				);
 				IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
-					*env, (cfg->stream0.format == "H265" ? vps : nullptr), sps, pps, 0 // Conditional VPS
+					*env, (strcmp(cfg->stream0.format, "H265") == 0 ? vps : nullptr), sps, pps, 0 // Conditional VPS
 				);
 				sms->addSubsession(sub);
 				rtspServer->addServerMediaSession(sms);
@@ -110,9 +114,9 @@ void RTSP::run() {
 				bool have_vps = false;
 
 				// Read from the stream until we capture the SPS and PPS. Only capture VPS if needed.
-				while (!have_pps || !have_sps || (cfg->stream0.format == "H265" && !have_vps)) {
+				while (!have_pps || !have_sps || ((strcmp(cfg->stream0.format, "H265") == 0) && !have_vps)) {
 					H264NALUnit unit = deviceSource->wait_read();
-					if (cfg->stream0.format == "H265") {
+					if (strcmp(cfg->stream0.format, "H265") == 0) {
 						uint8_t nalType = (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
 						if (nalType == 33) { // SPS for H265
 							LOG_DEBUG("Got SPS (H265)");
@@ -149,7 +153,7 @@ void RTSP::run() {
 					*env, cfg->stream1.rtsp_endpoint, "Sub", cfg->rtsp.name
 				);
 				IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
-					*env, (cfg->stream0.format == "H265" ? vps : nullptr), sps, pps, 1 // Conditional VPS
+					*env, (strcmp(cfg->stream0.format, "H265") == 0 ? vps : nullptr), sps, pps, 1 // Conditional VPS
 				);
 
 				sms->addSubsession(sub);

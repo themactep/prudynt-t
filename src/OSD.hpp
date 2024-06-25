@@ -46,12 +46,12 @@ public:
 private:
     _osd *osd;
 
-    int last_updated_second;
+    int last_updated_second{};
 
-    OSDItem osdTime;
-    OSDItem osdUser;
-    OSDItem osdUptm;
-    OSDItem osdLogo;
+    OSDItem osdTime{};
+    OSDItem osdUser{};
+    OSDItem osdUptm{};
+    OSDItem osdLogo{};
 
     int freetype_init();
 
@@ -60,18 +60,18 @@ private:
 		    int item_height, int item_width,
 		    uint32_t color);
 
-    void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, std::string text, int posX, int posY, int angle);
+    void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const std::string& text, int posX, int posY, int angle);
 
-    FT_Library freetype;
-    FT_Face fontface;
-    FT_Stroker stroker;
+    FT_Library freetype{};
+    FT_Face fontface{};
+    FT_Stroker stroker{};
 
-    IMPEncoderCHNAttr channelAttributes;
+    IMPEncoderCHNAttr channelAttributes{};
 
-    std::map<char, FT_BitmapGlyph> bitmaps;
-    std::map<char, FT_BitmapGlyph> stroke_bitmaps;
-    std::map<char, FT_BBox> boxes;
-    std::map<char, FT_Vector> advances;
+    std::map<char, FT_BitmapGlyph> bitmaps{};
+    std::map<char, FT_BitmapGlyph> stroke_bitmaps{};
+    std::map<char, FT_BBox> boxes{};
+    std::map<char, FT_Vector> advances{};
 
     bool initialized{false};
     int osdGrp;
