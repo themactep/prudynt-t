@@ -84,16 +84,26 @@ deps() {
 	cp schrift.h $TOP/3rdparty/install/include/
 	cd ../../
 
-	echo "Install nlohmann/json"
+	echo "Build json-c"
 	cd 3rdparty
-	rm -rf nlohmann-json
-	if [[ ! -f nlohmann-json-3.11.3.tar.gz ]]; then
-		wget 'https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz' -O nlohmann-json-3.11.3.tar.gz;
+	rm -rf json-c
+	if [[ ! -f json-c-0.17.tar.gz ]]; then
+		wget 'https://github.com/json-c/json-c/archive/refs/tags/json-c-0.17-20230812.tar.gz' -O json-c-0.17.tar.gz;
 	fi
-	tar xf nlohmann-json-3.11.3.tar.gz
-	mkdir -p install/include/nlohmann
-	cp json/single_include/nlohmann/json.hpp install/include/nlohmann/
-	cd ../../
+	tar xf json-c-0.17.tar.gz
+	mv json-c-json-c-0.17-20230812 json-c
+	cd json-c
+	mkdir -p build
+	cd build
+	cmake -DCMAKE_SYSTEM_NAME=Linux \
+		-DCMAKE_C_COMPILER="${PRUDYNT_CROSS}gcc" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX="$TOP/3rdparty/install" \
+		-DBUILD_SHARED_LIBS=ON \
+		..
+	make -j$(nproc)
+	make install
+	cd ../../../
 
 	echo "Build live555"
 	cd 3rdparty

@@ -5,7 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <functional>
-#include <nlohmann/json.hpp>
+#include <json-c/json.h>
 #include <sys/time.h>
 #include <any>
 
@@ -279,9 +279,16 @@ struct _sysinfo {
 
 class CFG {
 	public:
+        // Destructor to clean up JSON object
+        ~CFG() {
+            if (jsonConfig) {
+                json_object_put(jsonConfig);
+                jsonConfig = nullptr;
+            }
+        }
 
         bool config_loaded = false;
-        nlohmann::json jsonConfig{};
+        json_object *jsonConfig = nullptr;
         std::string filePath{};
 
 		CFG();

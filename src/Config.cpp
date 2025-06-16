@@ -3,14 +3,13 @@
 #include <iostream>
 #include <vector>
 #include <functional>
-#include <nlohmann/json.hpp>
+#include <json-c/json.h>
 #include "Config.hpp"
 #include "Logger.hpp"
 
 #define MODULE "CONFIG"
 
 namespace fs = std::filesystem;
-using json = nlohmann::json;
 
 bool validateIntGe0(const int &v)
 {
@@ -339,47 +338,42 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems()
 
 bool CFG::readConfig()
 {
+    // Clean up any existing JSON object
+    if (jsonConfig) {
+        json_object_put(jsonConfig);
+        jsonConfig = nullptr;
+    }
+
     // Construct the path to the configuration file in the same directory as the program binary
     fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
     fs::path cfgFilePath = binaryPath / "prudynt.json";
     filePath = cfgFilePath;
 
     // Try to load the configuration file from the specified paths
-    std::ifstream configFile;
+    std::string configPath;
 
     // First try the binary directory
-    configFile.open(cfgFilePath);
-    if (!configFile.is_open())
-    {
+    if (fs::exists(cfgFilePath)) {
+        configPath = cfgFilePath.string();
+        LOG_INFO("Loaded configuration from " + configPath);
+    } else {
         // Try /etc/prudynt.json
         fs::path etcPath = "/etc/prudynt.json";
         filePath = etcPath;
-        configFile.open(etcPath);
 
-        if (!configFile.is_open())
-        {
+        if (fs::exists(etcPath)) {
+            configPath = etcPath.string();
+            LOG_INFO("Loaded configuration from " + configPath);
+        } else {
             LOG_WARN("Failed to load prudynt configuration file from both locations.");
             return false; // Exit if configuration file is missing
         }
-        else
-        {
-            LOG_INFO("Loaded configuration from " + etcPath.string());
-        }
-    }
-    else
-    {
-        LOG_INFO("Loaded configuration from " + cfgFilePath.string());
     }
 
-    try
-    {
-        configFile >> jsonConfig;
-        configFile.close();
-    }
-    catch (const json::parse_error& e)
-    {
-        LOG_WARN("JSON parse error: " + std::string(e.what()));
-        configFile.close();
+    // Parse JSON file using json-c
+    jsonConfig = json_object_from_file(configPath.c_str());
+    if (!jsonConfig) {
+        LOG_WARN("JSON parse error: Failed to parse " + configPath);
         return false; // Exit on parsing error
     }
 
@@ -421,11 +415,13 @@ bool processLine(const std::string &line, T &value)
 }
 
 template <typename T>
-void handleConfigItem(json &jsonConfig, ConfigItem<T> &item)
+void handleConfigItem(json_object *jsonConfig, ConfigItem<T> &item)
 {
     bool readFromProc = false;
     bool readFromConfig = false;
     T configValue{};
+
+    if (!jsonConfig) return;
 
     // Parse the path to navigate through nested JSON objects
     std::vector<std::string> pathParts;
@@ -438,38 +434,47 @@ void handleConfigItem(json &jsonConfig, ConfigItem<T> &item)
     pathParts.push_back(path);
 
     // Navigate through the JSON structure
-    json* currentJson = &jsonConfig;
+    json_object *currentJson = jsonConfig;
     for (size_t i = 0; i < pathParts.size() - 1; ++i) {
-        if (currentJson->contains(pathParts[i]) && (*currentJson)[pathParts[i]].is_object()) {
-            currentJson = &(*currentJson)[pathParts[i]];
+        json_object *nextObj = nullptr;
+        if (json_object_object_get_ex(currentJson, pathParts[i].c_str(), &nextObj)) {
+            if (json_object_is_type(nextObj, json_type_object)) {
+                currentJson = nextObj;
+            } else {
+                return; // Path doesn't exist or not an object
+            }
         } else {
-            break; // Path doesn't exist
+            return; // Path doesn't exist
         }
     }
 
     // Try to read the value from JSON
     const std::string& finalKey = pathParts.back();
-    if (currentJson->contains(finalKey)) {
+    json_object *valueObj = nullptr;
+    if (json_object_object_get_ex(currentJson, finalKey.c_str(), &valueObj)) {
         if constexpr (std::is_same_v<T, const char *>) {
-            if ((*currentJson)[finalKey].is_string()) {
-                std::string temp = (*currentJson)[finalKey];
-                item.value = strdup(temp.c_str());
+            if (json_object_is_type(valueObj, json_type_string)) {
+                const char *str = json_object_get_string(valueObj);
+                item.value = strdup(str);
                 readFromConfig = true;
             }
         } else if constexpr (std::is_same_v<T, bool>) {
-            if ((*currentJson)[finalKey].is_boolean()) {
-                item.value = (*currentJson)[finalKey];
+            if (json_object_is_type(valueObj, json_type_boolean)) {
+                item.value = json_object_get_boolean(valueObj);
                 readFromConfig = true;
             }
         } else if constexpr (std::is_same_v<T, int>) {
-            if ((*currentJson)[finalKey].is_number()) {
-                item.value = (*currentJson)[finalKey].get<int>();
+            if (json_object_is_type(valueObj, json_type_int)) {
+                item.value = json_object_get_int(valueObj);
                 readFromConfig = true;
             }
         } else if constexpr (std::is_same_v<T, unsigned int>) {
-            if ((*currentJson)[finalKey].is_number()) {
-                item.value = (*currentJson)[finalKey].get<unsigned int>();
-                readFromConfig = true;
+            if (json_object_is_type(valueObj, json_type_int)) {
+                int64_t val = json_object_get_int64(valueObj);
+                if (val >= 0) {
+                    item.value = static_cast<unsigned int>(val);
+                    readFromConfig = true;
+                }
             }
         }
     }
@@ -525,8 +530,10 @@ void handleConfigItem(json &jsonConfig, ConfigItem<T> &item)
 }
 
 template <typename T>
-void handleConfigItem2(json &jsonConfig, ConfigItem<T> &item)
+void handleConfigItem2(json_object *jsonConfig, ConfigItem<T> &item)
 {
+    if (!jsonConfig) return;
+
     // Parse the path to navigate through nested JSON objects
     std::vector<std::string> pathParts;
     std::string path = item.path;
@@ -538,26 +545,41 @@ void handleConfigItem2(json &jsonConfig, ConfigItem<T> &item)
     pathParts.push_back(path);
 
     // Navigate through the JSON structure, creating objects as needed
-    json* currentJson = &jsonConfig;
+    json_object *currentJson = jsonConfig;
     for (size_t i = 0; i < pathParts.size() - 1; ++i) {
-        if (!currentJson->contains(pathParts[i])) {
-            (*currentJson)[pathParts[i]] = json::object();
+        json_object *nextObj = nullptr;
+        if (!json_object_object_get_ex(currentJson, pathParts[i].c_str(), &nextObj)) {
+            // Create new object if it doesn't exist
+            nextObj = json_object_new_object();
+            json_object_object_add(currentJson, pathParts[i].c_str(), nextObj);
         }
-        currentJson = &(*currentJson)[pathParts[i]];
+        currentJson = nextObj;
     }
 
     // Set the final value
     const std::string& finalKey = pathParts.back();
+    json_object *valueObj = nullptr;
+
     if constexpr (std::is_same_v<T, const char *>) {
-        (*currentJson)[finalKey] = std::string(item.value);
-    } else {
-        (*currentJson)[finalKey] = item.value;
+        valueObj = json_object_new_string(item.value);
+    } else if constexpr (std::is_same_v<T, bool>) {
+        valueObj = json_object_new_boolean(item.value);
+    } else if constexpr (std::is_same_v<T, int>) {
+        valueObj = json_object_new_int(item.value);
+    } else if constexpr (std::is_same_v<T, unsigned int>) {
+        valueObj = json_object_new_int64(item.value);
+    }
+
+    if (valueObj) {
+        json_object_object_add(currentJson, finalKey.c_str(), valueObj);
     }
 }
 
 bool CFG::updateConfig()
 {
     config_loaded = readConfig();
+
+    if (!jsonConfig) return false;
 
     for (auto &item : boolItems)
         handleConfigItem2(jsonConfig, item);
@@ -569,31 +591,42 @@ bool CFG::updateConfig()
         handleConfigItem2(jsonConfig, item);
 
     // Handle ROIs
-    if (jsonConfig.contains("rois"))
-        jsonConfig.erase("rois");
+    json_object *roisObj = nullptr;
+    if (json_object_object_get_ex(jsonConfig, "rois", &roisObj)) {
+        json_object_object_del(jsonConfig, "rois");
+    }
 
-    jsonConfig["rois"] = json::object();
+    roisObj = json_object_new_object();
+    json_object_object_add(jsonConfig, "rois", roisObj);
 
     for (int i = 0; i < motion.roi_count; i++)
     {
         std::string roiKey = "roi_" + std::to_string(i);
-        jsonConfig["rois"][roiKey] = json::array({
-            motion.rois[i].p0_x,
-            motion.rois[i].p0_y,
-            motion.rois[i].p1_x,
-            motion.rois[i].p1_y
-        });
+        json_object *roiArray = json_object_new_array();
+
+        json_object_array_add(roiArray, json_object_new_int(motion.rois[i].p0_x));
+        json_object_array_add(roiArray, json_object_new_int(motion.rois[i].p0_y));
+        json_object_array_add(roiArray, json_object_new_int(motion.rois[i].p1_x));
+        json_object_array_add(roiArray, json_object_new_int(motion.rois[i].p1_y));
+
+        json_object_object_add(roisObj, roiKey.c_str(), roiArray);
     }
 
     // Write JSON to file
-    std::ofstream configFile(filePath);
-    if (configFile.is_open()) {
-        configFile << jsonConfig.dump(4); // Pretty print with 4 spaces
-        configFile.close();
-        LOG_DEBUG("Config is written to " << filePath);
-        return true;
+    const char *jsonString = json_object_to_json_string_ext(jsonConfig, JSON_C_TO_STRING_PRETTY);
+    if (jsonString) {
+        std::ofstream configFile(filePath);
+        if (configFile.is_open()) {
+            configFile << jsonString;
+            configFile.close();
+            LOG_DEBUG("Config is written to " << filePath);
+            return true;
+        } else {
+            LOG_ERROR("Failed to write config to " << filePath);
+            return false;
+        }
     } else {
-        LOG_ERROR("Failed to write config to " << filePath);
+        LOG_ERROR("Failed to serialize JSON config");
         return false;
     }
 };
@@ -612,14 +645,16 @@ void CFG::load()
 
     config_loaded = readConfig();
 
-    for (auto &item : boolItems)
-        handleConfigItem(jsonConfig, item);
-    for (auto &item : charItems)
-        handleConfigItem(jsonConfig, item);
-    for (auto &item : intItems)
-        handleConfigItem(jsonConfig, item);
-    for (auto &item : uintItems)
-        handleConfigItem(jsonConfig, item);
+    if (jsonConfig) {
+        for (auto &item : boolItems)
+            handleConfigItem(jsonConfig, item);
+        for (auto &item : charItems)
+            handleConfigItem(jsonConfig, item);
+        for (auto &item : intItems)
+            handleConfigItem(jsonConfig, item);
+        for (auto &item : uintItems)
+            handleConfigItem(jsonConfig, item);
+    }
 
     if (stream2.jpeg_channel == 0)
     {
@@ -633,20 +668,26 @@ void CFG::load()
     }
 
     // Handle ROIs from JSON
-    if (jsonConfig.contains("rois") && jsonConfig["rois"].is_object())
-    {
-        for (int i = 0; i < motion.roi_count; i++)
+    if (jsonConfig) {
+        json_object *roisObj = nullptr;
+        if (json_object_object_get_ex(jsonConfig, "rois", &roisObj) &&
+            json_object_is_type(roisObj, json_type_object))
         {
-            std::string roiKey = "roi_" + std::to_string(i);
-            if (jsonConfig["rois"].contains(roiKey) && jsonConfig["rois"][roiKey].is_array())
+            for (int i = 0; i < motion.roi_count; i++)
             {
-                auto roiArray = jsonConfig["rois"][roiKey];
-                if (roiArray.size() == 4)
+                std::string roiKey = "roi_" + std::to_string(i);
+                json_object *roiArray = nullptr;
+                if (json_object_object_get_ex(roisObj, roiKey.c_str(), &roiArray) &&
+                    json_object_is_type(roiArray, json_type_array))
                 {
-                    motion.rois[i].p0_x = roiArray[0];
-                    motion.rois[i].p0_y = roiArray[1];
-                    motion.rois[i].p1_x = roiArray[2];
-                    motion.rois[i].p1_y = roiArray[3];
+                    int arrayLen = json_object_array_length(roiArray);
+                    if (arrayLen == 4)
+                    {
+                        motion.rois[i].p0_x = json_object_get_int(json_object_array_get_idx(roiArray, 0));
+                        motion.rois[i].p0_y = json_object_get_int(json_object_array_get_idx(roiArray, 1));
+                        motion.rois[i].p1_x = json_object_get_int(json_object_array_get_idx(roiArray, 2));
+                        motion.rois[i].p1_y = json_object_get_int(json_object_array_get_idx(roiArray, 3));
+                    }
                 }
             }
         }

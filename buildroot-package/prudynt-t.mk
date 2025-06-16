@@ -13,7 +13,7 @@ endif
 
 PRUDYNT_T_GIT_SUBMODULES = YES
 
-PRUDYNT_T_DEPENDENCIES = json-for-modern-cpp thingino-live555 thingino-fonts ingenic-lib faac thingino-opus libhelix-aac
+PRUDYNT_T_DEPENDENCIES = json-c thingino-live555 thingino-fonts ingenic-lib faac thingino-opus libhelix-aac
 ifeq ($(BR2_PACKAGE_PRUDYNT_T_NG),y)
 	PRUDYNT_T_DEPENDENCIES += libwebsockets libschrift
 else
