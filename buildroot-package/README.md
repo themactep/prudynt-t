@@ -6,8 +6,7 @@ This directory contains the updated buildroot package files for prudynt-t with J
 
 ### Dependencies
 - **Removed**: `libconfig` dependency
-- **Added**: `json-for-modern-cpp` dependency
-- **Added**: GCC >= 4.9 and C++ standard library requirements
+- **Added**: `json-c` dependency (reuses existing firmware library)
 
 ### Configuration Format
 - **Old**: libconfig format (`.cfg` files)
@@ -16,12 +15,12 @@ This directory contains the updated buildroot package files for prudynt-t with J
 ### Files Updated
 
 #### Config.in
-- Replaced `BR2_PACKAGE_LIBCONFIG` with `BR2_PACKAGE_JSON_FOR_MODERN_CPP`
-- Added dependency requirements for C++11 support
+- Replaced `BR2_PACKAGE_LIBCONFIG` with `BR2_PACKAGE_JSON_C`
+- Removed C++11/GCC requirements (json-c is a C library)
 - Updated help text to mention JSON configuration
 
 #### prudynt-t.mk
-- Updated `PRUDYNT_T_DEPENDENCIES` to use `json-for-modern-cpp`
+- Updated `PRUDYNT_T_DEPENDENCIES` to use `json-c`
 - Modified install commands to handle `.json` files instead of `.cfg`
 - Simplified configuration processing (no more complex awk scripts)
 - Updated low-memory device buffer adjustment for JSON format
@@ -62,12 +61,12 @@ For existing installations with `.cfg` files:
 - **Standard Format**: JSON is widely supported and standardized
 - **Better Tooling**: JSON validation, formatting, and editing tools
 - **Cleaner Config**: No comments in config files for pure data format
-- **Smaller Dependencies**: Header-only library vs compiled libconfig++
-- **Modern C++**: Uses modern C++ JSON library with intuitive syntax
+- **Reuses Existing Library**: Uses json-c library already present in firmware
+- **Smaller Binary**: No additional library compilation needed
 
 ## Compatibility
 
-- Requires GCC 4.9+ for C++11 support
-- Requires C++ standard library
+- Uses standard C library (json-c) - no special compiler requirements
+- Reuses existing libjson-c.so library in firmware
 - All existing prudynt-t functionality remains unchanged
 - Only configuration file format changes
