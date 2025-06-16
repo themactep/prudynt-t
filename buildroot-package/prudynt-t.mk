@@ -80,14 +80,6 @@ define PRUDYNT_T_INSTALL_TARGET_CMDS
 		sed -i 's/"buffers": 2/"buffers": 1/g' $(TARGET_DIR)/etc/prudynt.json; \
 	fi
 
-	awk '{if(NR>1){gsub(/^[[:space:]]*/,"");if(match($$0,"^[[:space:]]*#")){$$0=""}}}{if(length($$0)){if(NR>1)printf("%s",$$0);else print $$0;}}' \
-		$(PRUDYNT_T_PKGDIR)/files/prudyntcfg.awk > $(PRUDYNT_T_PKGDIR)/files/prudyntcfg
-
-	$(INSTALL) -D -m 0755 $(PRUDYNT_T_PKGDIR)/files/prudyntcfg \
-		$(TARGET_DIR)/usr/bin/prudyntcfg
-
-	rm $(PRUDYNT_T_PKGDIR)/files/prudyntcfg
-
 	$(INSTALL) -D -m 0755 $(PRUDYNT_T_PKGDIR)/files/S95prudynt \
 		$(TARGET_DIR)/etc/init.d/S95prudynt
 

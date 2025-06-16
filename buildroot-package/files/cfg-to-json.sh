@@ -50,4 +50,10 @@ cat "$INPUT_FILE" | \
 
 echo "Conversion complete. Please review $OUTPUT_FILE manually."
 echo "Note: This is a basic conversion. Complex configurations may need manual adjustment."
+echo ""
 echo "Validate the JSON format using: jq . $OUTPUT_FILE"
+echo "Or use the thingino JSON config tool: jct $OUTPUT_FILE print"
+echo ""
+echo "To get/set values use:"
+echo "  jct $OUTPUT_FILE get motion.enabled"
+echo "  jct $OUTPUT_FILE set motion.enabled true"

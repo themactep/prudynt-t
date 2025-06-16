@@ -52,9 +52,26 @@ For existing installations with `.cfg` files:
 2. Validate the JSON:
    ```bash
    jq . /etc/prudynt.json
+   # OR use the thingino JSON config tool
+   jct /etc/prudynt.json print
    ```
 
 3. Review and adjust manually if needed
+
+## JSON Configuration Management
+
+The thingino firmware includes `jct` (JSON Config Tool) for easy configuration management:
+
+```bash
+# Get a configuration value
+jct /etc/prudynt.json get motion.enabled
+
+# Set a configuration value
+jct /etc/prudynt.json set motion.enabled true
+
+# Print entire configuration
+jct /etc/prudynt.json print
+```
 
 ## Benefits
 
