@@ -3,14 +3,14 @@
 #include <iostream>
 #include <vector>
 #include <functional>
-#include <libconfig.h++>
+#include <nlohmann/json.hpp>
 #include "Config.hpp"
 #include "Logger.hpp"
 
 #define MODULE "CONFIG"
 
 namespace fs = std::filesystem;
-using namespace libconfig;
+using json = nlohmann::json;
 
 bool validateIntGe0(const int &v)
 {
@@ -335,82 +335,51 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems()
     };
 };
 
-void ensurePathExists(Setting &root, const std::string &path)
-{
-    std::stringstream ss(path);
-    std::string segment;
-    Setting *current = &root;
 
-    while (std::getline(ss, segment, '.'))
+
+bool CFG::readConfig()
+{
+    // Construct the path to the configuration file in the same directory as the program binary
+    fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
+    fs::path cfgFilePath = binaryPath / "prudynt.json";
+    filePath = cfgFilePath;
+
+    // Try to load the configuration file from the specified paths
+    std::ifstream configFile;
+
+    // First try the binary directory
+    configFile.open(cfgFilePath);
+    if (!configFile.is_open())
     {
-        if (!current->exists(segment))
+        // Try /etc/prudynt.json
+        fs::path etcPath = "/etc/prudynt.json";
+        filePath = etcPath;
+        configFile.open(etcPath);
+
+        if (!configFile.is_open())
         {
-            current = &current->add(segment, Setting::TypeGroup);
+            LOG_WARN("Failed to load prudynt configuration file from both locations.");
+            return false; // Exit if configuration file is missing
         }
         else
         {
-            current = &current->lookup(segment);
-        }
-    }
-}
-
-bool findSetting(const std::string &path, const Setting *&foundSetting, Setting *root)
-{
-
-    std::string::size_type pos = path.find_first_of('.');
-    std::string currentPath = path.substr(0, pos);
-
-    if (root->exists(currentPath))
-    {
-        if (pos == std::string::npos)
-        {
-            foundSetting = &root->lookup(currentPath);
-            return true;
-        }
-        else
-        {
-            return findSetting(path.substr(pos + 1), foundSetting, &root->lookup(currentPath));
+            LOG_INFO("Loaded configuration from " + etcPath.string());
         }
     }
     else
     {
-        foundSetting = nullptr;
-        return false;
-    }
-}
-
-bool CFG::readConfig()
-{
-
-    // Construct the path to the configuration file in the same directory as the program binary
-    fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
-    fs::path cfgFilePath = binaryPath / "prudynt.cfg";
-    filePath = cfgFilePath;
-
-    // Try to load the configuration file from the specified paths
-    try
-    {
-        lc.readFile(cfgFilePath.c_str());
         LOG_INFO("Loaded configuration from " + cfgFilePath.string());
     }
-    catch (const FileIOException &)
+
+    try
     {
-        fs::path etcPath = "/etc/prudynt.cfg";
-        filePath = etcPath;
-        try
-        {
-            lc.readFile(etcPath.c_str());
-            LOG_INFO("Loaded configuration from " + etcPath.string());
-        }
-        catch (...)
-        {
-            LOG_WARN("Failed to load prudynt configuration file from /etc/config.");
-            return false; // Exit if configuration file is missing
-        }
+        configFile >> jsonConfig;
+        configFile.close();
     }
-    catch (const ParseException &pex)
+    catch (const json::parse_error& e)
     {
-        LOG_WARN("Parse error at " + std::string(pex.getFile()) + ":" + std::to_string(pex.getLine()) + " - " + pex.getError());
+        LOG_WARN("JSON parse error: " + std::string(e.what()));
+        configFile.close();
         return false; // Exit on parsing error
     }
 
@@ -452,27 +421,56 @@ bool processLine(const std::string &line, T &value)
 }
 
 template <typename T>
-void handleConfigItem(Config &lc, ConfigItem<T> &item)
+void handleConfigItem(json &jsonConfig, ConfigItem<T> &item)
 {
     bool readFromProc = false;
     bool readFromConfig = false;
     T configValue{};
 
-    if constexpr (std::is_same_v<T, const char *>)
-    {
-        std::string temp;
-        readFromConfig = lc.lookupValue(item.path, temp);
-        if (readFromConfig)
-        {
-            item.value = strdup(temp.c_str());
+    // Parse the path to navigate through nested JSON objects
+    std::vector<std::string> pathParts;
+    std::string path = item.path;
+    size_t pos = 0;
+    while ((pos = path.find('.')) != std::string::npos) {
+        pathParts.push_back(path.substr(0, pos));
+        path.erase(0, pos + 1);
+    }
+    pathParts.push_back(path);
+
+    // Navigate through the JSON structure
+    json* currentJson = &jsonConfig;
+    for (size_t i = 0; i < pathParts.size() - 1; ++i) {
+        if (currentJson->contains(pathParts[i]) && (*currentJson)[pathParts[i]].is_object()) {
+            currentJson = &(*currentJson)[pathParts[i]];
+        } else {
+            break; // Path doesn't exist
         }
     }
-    else
-    {
-        readFromConfig = lc.lookupValue(item.path, configValue);
-        if (readFromConfig)
-        {
-            item.value = configValue;
+
+    // Try to read the value from JSON
+    const std::string& finalKey = pathParts.back();
+    if (currentJson->contains(finalKey)) {
+        if constexpr (std::is_same_v<T, const char *>) {
+            if ((*currentJson)[finalKey].is_string()) {
+                std::string temp = (*currentJson)[finalKey];
+                item.value = strdup(temp.c_str());
+                readFromConfig = true;
+            }
+        } else if constexpr (std::is_same_v<T, bool>) {
+            if ((*currentJson)[finalKey].is_boolean()) {
+                item.value = (*currentJson)[finalKey];
+                readFromConfig = true;
+            }
+        } else if constexpr (std::is_same_v<T, int>) {
+            if ((*currentJson)[finalKey].is_number_integer()) {
+                item.value = (*currentJson)[finalKey];
+                readFromConfig = true;
+            }
+        } else if constexpr (std::is_same_v<T, unsigned int>) {
+            if ((*currentJson)[finalKey].is_number_unsigned()) {
+                item.value = (*currentJson)[finalKey];
+                readFromConfig = true;
+            }
         }
     }
 
@@ -527,48 +525,33 @@ void handleConfigItem(Config &lc, ConfigItem<T> &item)
 }
 
 template <typename T>
-void handleConfigItem2(Config &lc, ConfigItem<T> &item)
+void handleConfigItem2(json &jsonConfig, ConfigItem<T> &item)
 {
-    std::string path(item.path);
-    size_t pos = path.find_last_of('.');
-    std::string sect = path.substr(0, pos);
-    std::string entr = path.substr(pos + 1);
-
-    ensurePathExists(lc.getRoot(), item.path);
-
-    Setting &section = lc.lookup(sect);
-    if (section.exists(entr))
-    {
-        section.remove(entr);
+    // Parse the path to navigate through nested JSON objects
+    std::vector<std::string> pathParts;
+    std::string path = item.path;
+    size_t pos = 0;
+    while ((pos = path.find('.')) != std::string::npos) {
+        pathParts.push_back(path.substr(0, pos));
+        path.erase(0, pos + 1);
     }
+    pathParts.push_back(path);
 
-    Setting::Type type;
-    if constexpr (std::is_same_v<T, bool>)
-    {
-        type = Setting::TypeBoolean;
-    }
-    else if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, const char *>)
-    {
-        type = Setting::TypeString;
-    }
-    else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, unsigned int>)
-    {
-        type = Setting::TypeInt;
+    // Navigate through the JSON structure, creating objects as needed
+    json* currentJson = &jsonConfig;
+    for (size_t i = 0; i < pathParts.size() - 1; ++i) {
+        if (!currentJson->contains(pathParts[i])) {
+            (*currentJson)[pathParts[i]] = json::object();
+        }
+        currentJson = &(*currentJson)[pathParts[i]];
     }
 
-    Setting &newSetting = section.add(entr, type);
-    if constexpr (std::is_same_v<T, unsigned int>)
-    {
-        newSetting = static_cast<long>(item.value);
-        newSetting.setFormat(Setting::FormatHex);
-    }
-    else if constexpr (std::is_same_v<T, const char *>)
-    {
-        newSetting = std::string(item.value);
-    }
-    else
-    {
-        newSetting = item.value;
+    // Set the final value
+    const std::string& finalKey = pathParts.back();
+    if constexpr (std::is_same_v<T, const char *>) {
+        (*currentJson)[finalKey] = std::string(item.value);
+    } else {
+        (*currentJson)[finalKey] = item.value;
     }
 }
 
@@ -577,34 +560,42 @@ bool CFG::updateConfig()
     config_loaded = readConfig();
 
     for (auto &item : boolItems)
-        handleConfigItem2(lc, item);
+        handleConfigItem2(jsonConfig, item);
     for (auto &item : charItems)
-        handleConfigItem2(lc, item);
+        handleConfigItem2(jsonConfig, item);
     for (auto &item : intItems)
-        handleConfigItem2(lc, item);
+        handleConfigItem2(jsonConfig, item);
     for (auto &item : uintItems)
-        handleConfigItem2(lc, item);
+        handleConfigItem2(jsonConfig, item);
 
-    Setting &root = lc.getRoot();
+    // Handle ROIs
+    if (jsonConfig.contains("rois"))
+        jsonConfig.erase("rois");
 
-    if (root.exists("rois"))
-        root.remove("rois");
-
-    Setting &rois = root.add("rois", Setting::TypeGroup);
+    jsonConfig["rois"] = json::object();
 
     for (int i = 0; i < motion.roi_count; i++)
     {
-        Setting &entry = rois.add("roi_" + std::to_string(i), Setting::TypeArray);
-        entry.add(Setting::TypeInt) = motion.rois[i].p0_x;
-        entry.add(Setting::TypeInt) = motion.rois[i].p0_y;
-        entry.add(Setting::TypeInt) = motion.rois[i].p1_x;
-        entry.add(Setting::TypeInt) = motion.rois[i].p1_y;
+        std::string roiKey = "roi_" + std::to_string(i);
+        jsonConfig["rois"][roiKey] = json::array({
+            motion.rois[i].p0_x,
+            motion.rois[i].p0_y,
+            motion.rois[i].p1_x,
+            motion.rois[i].p1_y
+        });
     }
 
-    lc.writeFile(filePath);
-    LOG_DEBUG("Config is written to " << filePath);
-
-    return true;
+    // Write JSON to file
+    std::ofstream configFile(filePath);
+    if (configFile.is_open()) {
+        configFile << jsonConfig.dump(4); // Pretty print with 4 spaces
+        configFile.close();
+        LOG_DEBUG("Config is written to " << filePath);
+        return true;
+    } else {
+        LOG_ERROR("Failed to write config to " << filePath);
+        return false;
+    }
 };
 
 CFG::CFG()
@@ -622,40 +613,40 @@ void CFG::load()
     config_loaded = readConfig();
 
     for (auto &item : boolItems)
-        handleConfigItem(lc, item);
+        handleConfigItem(jsonConfig, item);
     for (auto &item : charItems)
-        handleConfigItem(lc, item);
+        handleConfigItem(jsonConfig, item);
     for (auto &item : intItems)
-        handleConfigItem(lc, item);
+        handleConfigItem(jsonConfig, item);
     for (auto &item : uintItems)
-        handleConfigItem(lc, item);
+        handleConfigItem(jsonConfig, item);
 
     if (stream2.jpeg_channel == 0)
     {
         stream2.width = stream0.width;
         stream2.height = stream0.height;
-    } 
+    }
     else
     {
         stream2.width = stream1.width;
-        stream2.height = stream1.height;        
+        stream2.height = stream1.height;
     }
 
-    Setting &root = lc.getRoot();
-
-    if (root.exists("rois"))
+    // Handle ROIs from JSON
+    if (jsonConfig.contains("rois") && jsonConfig["rois"].is_object())
     {
-        Setting &rois = root.lookup("rois");
         for (int i = 0; i < motion.roi_count; i++)
         {
-            if (rois.exists("roi_" + std::to_string(i)))
+            std::string roiKey = "roi_" + std::to_string(i);
+            if (jsonConfig["rois"].contains(roiKey) && jsonConfig["rois"][roiKey].is_array())
             {
-                if (rois[i].getLength() == 4)
+                auto roiArray = jsonConfig["rois"][roiKey];
+                if (roiArray.size() == 4)
                 {
-                    motion.rois[i].p0_x = rois[i][0];
-                    motion.rois[i].p0_y = rois[i][1];
-                    motion.rois[i].p1_x = rois[i][2];
-                    motion.rois[i].p1_y = rois[i][3];
+                    motion.rois[i].p0_x = roiArray[0];
+                    motion.rois[i].p0_y = roiArray[1];
+                    motion.rois[i].p1_x = roiArray[2];
+                    motion.rois[i].p1_y = roiArray[3];
                 }
             }
         }

@@ -5,7 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <functional>
-#include <libconfig.h++>
+#include <nlohmann/json.hpp>
 #include <sys/time.h>
 #include <any>
 
@@ -281,7 +281,7 @@ class CFG {
 	public:
 
         bool config_loaded = false;
-        libconfig::Config lc{};
+        nlohmann::json jsonConfig{};
         std::string filePath{};
 
 		CFG();

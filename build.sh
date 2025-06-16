@@ -84,18 +84,15 @@ deps() {
 	cp schrift.h $TOP/3rdparty/install/include/
 	cd ../../
 
-	echo "Build libconfig"
+	echo "Install nlohmann/json"
 	cd 3rdparty
-	rm -rf libconfig
-	if [[ ! -f libconfig-1.7.3.tar.gz ]]; then
-		wget 'https://github.com/hyperrealm/libconfig/releases/download/v1.7.3/libconfig-1.7.3.tar.gz';
+	rm -rf nlohmann-json
+	if [[ ! -f nlohmann-json-3.11.3.tar.gz ]]; then
+		wget 'https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz' -O nlohmann-json-3.11.3.tar.gz;
 	fi
-	tar xf libconfig-1.7.3.tar.gz
-	mv libconfig-1.7.3 libconfig
-	cd libconfig
-	CC="${PRUDYNT_CROSS}gcc" CXX="${PRUDYNT_CROSS}g++" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install"
-	make -j$(nproc)
-	make install
+	tar xf nlohmann-json-3.11.3.tar.gz
+	mkdir -p install/include/nlohmann
+	cp json/single_include/nlohmann/json.hpp install/include/nlohmann/
 	cd ../../
 
 	echo "Build live555"
