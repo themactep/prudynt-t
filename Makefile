@@ -11,7 +11,7 @@ CXX                     = ${CROSS_COMPILE}g++
 # --------------
 CFLAGS                 ?= -Wall -Wextra -Wno-unused-parameter -O2 -DNO_OPENSSL=1
 CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
-LDFLAGS                += -lrt -lpthread
+LDFLAGS                += -lrt -lpthread -latomic
 
 # Kernel Version Support
 # ----------------------
@@ -109,7 +109,8 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libopus.so \
                           -l:libfaac.so \
                           -l:libhelix-aac.so \
-                          -l:libjson-c.so
+                          -l:libjson-c.so \
+                          -latomic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
@@ -117,7 +118,7 @@ else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
 	# uClibc - no additional libraries needed
 else
 	# Default to musl
-LIBS                   += -l:libmuslshim.so
+LIBS                   += -l:libmuslshim.so -latomic
 endif
 
 # Error Handling

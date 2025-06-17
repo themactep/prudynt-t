@@ -101,6 +101,8 @@ struct _general {
     int imp_polling_timeout;
     bool memory_monitoring_enabled;
     bool allocation_tracking_enabled;
+    bool zero_copy_enabled;
+    int zero_copy_buffer_pool_size;
 };
 struct _rtsp {
     int port;

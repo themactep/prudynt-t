@@ -99,6 +99,9 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
 #endif
+        {"general.memory_monitoring_enabled", general.memory_monitoring_enabled, true, validateBool},
+        {"general.allocation_tracking_enabled", general.allocation_tracking_enabled, false, validateBool},
+        {"general.zero_copy_enabled", general.zero_copy_enabled, true, validateBool},
         {"image.vflip", image.vflip, false, validateBool},
         {"image.hflip", image.hflip, false, validateBool},
         {"motion.enabled", motion.enabled, false, validateBool},
@@ -205,6 +208,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
 #endif
         {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
         {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
+        {"general.zero_copy_buffer_pool_size", general.zero_copy_buffer_pool_size, 10, [](const int &v) { return v >= 1 && v <= 50; }},
         {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
         {"image.anti_flicker", image.anti_flicker, 2, validateInt2},
         {"image.backlight_compensation", image.backlight_compensation, 0, [](const int &v) { return v >= 0 && v <= 10; }},

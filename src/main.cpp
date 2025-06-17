@@ -7,6 +7,8 @@
 #include "Config.hpp"
 #include "BufferPool.hpp"
 #include "MemoryMonitor.hpp"
+#include "ZeroCopyBuffer.hpp"
+#include "ZeroCopyVideoWorker.hpp"
 #include "WS.hpp"
 #include "version.hpp"
 #include "ConfigWatcher.hpp"
@@ -122,6 +124,12 @@ int main(int argc, const char *argv[])
         MemoryMonitor::getInstance().startMonitoring();
         LOG_INFO("Memory monitoring started (allocation tracking: "
                  << (enable_allocation_tracking ? "enabled" : "disabled") << ")");
+    }
+
+    // Initialize zero-copy optimization system
+    if (!ZeroCopyIntegration::getInstance().initialize()) {
+        LOG_ERROR("Failed to initialize zero-copy system");
+        return 1;
     }
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");

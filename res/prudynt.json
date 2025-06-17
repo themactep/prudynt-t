@@ -21,7 +21,9 @@
     "imp_polling_timeout": 500,
     "loglevel": "INFO",
     "memory_monitoring_enabled": true,
-    "osd_pool_size": 1025
+    "osd_pool_size": 1025,
+    "zero_copy_buffer_pool_size": 10,
+    "zero_copy_enabled": true
   },
   "image": {
     "ae_compensation": 128,
