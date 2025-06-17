@@ -576,7 +576,7 @@ void OSD::init()
         memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
         grpRgnAttr.show = 1;
         grpRgnAttr.layer = 1;
-        grpRgnAttr.gAlphaEn = 0;
+        grpRgnAttr.gAlphaEn = 1;  // Enable alpha for time transparency
         grpRgnAttr.fgAlhpa = osd.time_transparency;
         IMP_OSD_SetGrpRgnAttr(osdTime.imp_rgn, osdGrp, &grpRgnAttr);
     }
