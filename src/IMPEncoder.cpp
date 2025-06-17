@@ -103,9 +103,12 @@ void IMPEncoder::initProfile()
         LOG_ERROR("unsupported stream->mode (" << stream->mode << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and CAPPED_QUALITY on T31");
     }
 
+    // Use adaptive GOP if enabled, otherwise use configured GOP
+    int effective_gop = stream->adaptive_gop ? (stream->fps * 2) : stream->gop;
+
     IMP_Encoder_SetDefaultParam(
         &chnAttr, encoderProfile, rcMode, stream->width, stream->height,
-        stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
+        stream->fps, 1, effective_gop, 2, -1, stream->bitrate);
 
     switch (rcMode)
     {
@@ -114,47 +117,60 @@ void IMPEncoder::initProfile()
         break;
     case IMP_ENC_RC_MODE_CBR:
         rcAttr->attrRcMode.attrCbr.uTargetBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrCbr.iInitialQP = -1;
-        rcAttr->attrRcMode.attrCbr.iMinQP = 34;
-        rcAttr->attrRcMode.attrCbr.iMaxQP = 51;
+        rcAttr->attrRcMode.attrCbr.iInitialQP = (stream->initial_qp > 0) ? stream->initial_qp : -1;
+        rcAttr->attrRcMode.attrCbr.iMinQP = (stream->min_qp > 0) ? stream->min_qp : 34;
+        rcAttr->attrRcMode.attrCbr.iMaxQP = (stream->max_qp > 0) ? stream->max_qp : 51;
         rcAttr->attrRcMode.attrCbr.iIPDelta = -1;
         rcAttr->attrRcMode.attrCbr.iPBDelta = -1;
-        // rcAttr->attrRcMode.attrCbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
+        // Enable scene change detection if configured
+        if (stream->scene_change_detection) {
+            rcAttr->attrRcMode.attrCbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
+        }
         rcAttr->attrRcMode.attrCbr.uMaxPictureSize = stream->bitrate;
         break;
     case IMP_ENC_RC_MODE_VBR:
         rcAttr->attrRcMode.attrVbr.uTargetBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrVbr.uMaxBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrVbr.iInitialQP = -1;
-        rcAttr->attrRcMode.attrVbr.iMinQP = 20;
-        rcAttr->attrRcMode.attrVbr.iMaxQP = 45;
+        // Use max_bitrate if configured, otherwise use 1.5x target bitrate for better quality
+        rcAttr->attrRcMode.attrVbr.uMaxBitRate = (stream->max_bitrate > 0) ? stream->max_bitrate : (stream->bitrate * 3 / 2);
+        rcAttr->attrRcMode.attrVbr.iInitialQP = (stream->initial_qp > 0) ? stream->initial_qp : -1;
+        rcAttr->attrRcMode.attrVbr.iMinQP = (stream->min_qp > 0) ? stream->min_qp : 20;
+        rcAttr->attrRcMode.attrVbr.iMaxQP = (stream->max_qp > 0) ? stream->max_qp : 45;
         rcAttr->attrRcMode.attrVbr.iIPDelta = 3;
         rcAttr->attrRcMode.attrVbr.iPBDelta = 3;
-        // rcAttr->attrRcMode.attrVbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
-        rcAttr->attrRcMode.attrVbr.uMaxPictureSize = stream->bitrate;
+        // Enable scene change detection if configured
+        if (stream->scene_change_detection) {
+            rcAttr->attrRcMode.attrVbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
+        }
+        rcAttr->attrRcMode.attrVbr.uMaxPictureSize = rcAttr->attrRcMode.attrVbr.uMaxBitRate;
         break;
     case IMP_ENC_RC_MODE_CAPPED_VBR:
         rcAttr->attrRcMode.attrCappedVbr.uTargetBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrCappedVbr.uMaxBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrCappedVbr.iInitialQP = -1;
-        rcAttr->attrRcMode.attrCappedVbr.iMinQP = 20;
-        rcAttr->attrRcMode.attrCappedVbr.iMaxQP = 45;
+        rcAttr->attrRcMode.attrCappedVbr.uMaxBitRate = (stream->max_bitrate > 0) ? stream->max_bitrate : (stream->bitrate * 3 / 2);
+        rcAttr->attrRcMode.attrCappedVbr.iInitialQP = (stream->initial_qp > 0) ? stream->initial_qp : -1;
+        rcAttr->attrRcMode.attrCappedVbr.iMinQP = (stream->min_qp > 0) ? stream->min_qp : 20;
+        rcAttr->attrRcMode.attrCappedVbr.iMaxQP = (stream->max_qp > 0) ? stream->max_qp : 45;
         rcAttr->attrRcMode.attrCappedVbr.iIPDelta = 3;
         rcAttr->attrRcMode.attrCappedVbr.iPBDelta = 3;
-        // rcAttr->attrRcMode.attrCappedVbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
-        rcAttr->attrRcMode.attrCappedVbr.uMaxPictureSize = stream->bitrate;
+        // Enable scene change detection if configured
+        if (stream->scene_change_detection) {
+            rcAttr->attrRcMode.attrCappedVbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
+        }
+        rcAttr->attrRcMode.attrCappedVbr.uMaxPictureSize = rcAttr->attrRcMode.attrCappedVbr.uMaxBitRate;
         rcAttr->attrRcMode.attrCappedVbr.uMaxPSNR = 42;
         break;
     case IMP_ENC_RC_MODE_CAPPED_QUALITY:
         rcAttr->attrRcMode.attrCappedQuality.uTargetBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrCappedQuality.uMaxBitRate = stream->bitrate;
-        rcAttr->attrRcMode.attrCappedQuality.iInitialQP = -1;
-        rcAttr->attrRcMode.attrCappedQuality.iMinQP = 20;
-        rcAttr->attrRcMode.attrCappedQuality.iMaxQP = 45;
+        rcAttr->attrRcMode.attrCappedQuality.uMaxBitRate = (stream->max_bitrate > 0) ? stream->max_bitrate : (stream->bitrate * 2);
+        rcAttr->attrRcMode.attrCappedQuality.iInitialQP = (stream->initial_qp > 0) ? stream->initial_qp : -1;
+        rcAttr->attrRcMode.attrCappedQuality.iMinQP = (stream->min_qp > 0) ? stream->min_qp : 20;
+        rcAttr->attrRcMode.attrCappedQuality.iMaxQP = (stream->max_qp > 0) ? stream->max_qp : 45;
         rcAttr->attrRcMode.attrCappedQuality.iIPDelta = 3;
         rcAttr->attrRcMode.attrCappedQuality.iPBDelta = 4;
-        // rcAttr->attrRcMode.attrCappedQuality.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
-        rcAttr->attrRcMode.attrCappedQuality.uMaxPictureSize = stream->bitrate;
+        // Enable scene change detection if configured
+        if (stream->scene_change_detection) {
+            rcAttr->attrRcMode.attrCappedQuality.eRcOptions = IMP_ENC_RC_SCN_CHG_RES | IMP_ENC_RC_OPT_SC_PREVENTION;
+        }
+        rcAttr->attrRcMode.attrCappedQuality.uMaxPictureSize = rcAttr->attrRcMode.attrCappedQuality.uMaxBitRate;
         rcAttr->attrRcMode.attrCappedQuality.uMaxPSNR = 42;
         break;
     case IMP_ENC_RC_MODE_INVALID:
@@ -231,8 +247,8 @@ void IMPEncoder::initProfile()
         case ENC_RC_MODE_CBR:
             rcAttr->attrRcMode.rcMode = ENC_RC_MODE_CBR;
             rcAttr->attrRcMode.attrH264Cbr.outBitRate = stream->bitrate;
-            rcAttr->attrRcMode.attrH264Cbr.maxQp = 45;
-            rcAttr->attrRcMode.attrH264Cbr.minQp = 15;
+            rcAttr->attrRcMode.attrH264Cbr.maxQp = (stream->max_qp > 0) ? stream->max_qp : 45;
+            rcAttr->attrRcMode.attrH264Cbr.minQp = (stream->min_qp > 0) ? stream->min_qp : 15;
             rcAttr->attrRcMode.attrH264Cbr.iBiasLvl = 0;
             rcAttr->attrRcMode.attrH264Cbr.frmQPStep = 3;
             rcAttr->attrRcMode.attrH264Cbr.gopQPStep = 15;
@@ -241,23 +257,23 @@ void IMPEncoder::initProfile()
             break;
         case ENC_RC_MODE_VBR:
             rcAttr->attrRcMode.rcMode = ENC_RC_MODE_VBR;
-            rcAttr->attrRcMode.attrH264Vbr.maxQp = 45;
-            rcAttr->attrRcMode.attrH264Vbr.minQp = 15;
+            rcAttr->attrRcMode.attrH264Vbr.maxQp = (stream->max_qp > 0) ? stream->max_qp : 45;
+            rcAttr->attrRcMode.attrH264Vbr.minQp = (stream->min_qp > 0) ? stream->min_qp : 15;
             rcAttr->attrRcMode.attrH264Vbr.staticTime = 2;
-            rcAttr->attrRcMode.attrH264Vbr.maxBitRate = stream->bitrate;
+            rcAttr->attrRcMode.attrH264Vbr.maxBitRate = (stream->max_bitrate > 0) ? stream->max_bitrate : (stream->bitrate * 3 / 2);
             rcAttr->attrRcMode.attrH264Vbr.iBiasLvl = 0;
             rcAttr->attrRcMode.attrH264Vbr.changePos = 80;
-            rcAttr->attrRcMode.attrH264Vbr.qualityLvl = 2;
+            rcAttr->attrRcMode.attrH264Vbr.qualityLvl = (stream->quality_level >= 0) ? stream->quality_level : 2;
             rcAttr->attrRcMode.attrH264Vbr.frmQPStep = 3;
             rcAttr->attrRcMode.attrH264Vbr.gopQPStep = 15;
             rcAttr->attrRcMode.attrH264Vbr.gopRelation = false;
             break;
         case ENC_RC_MODE_SMART:
             rcAttr->attrRcMode.rcMode = ENC_RC_MODE_SMART;
-            rcAttr->attrRcMode.attrH264Smart.maxQp = 45;
-            rcAttr->attrRcMode.attrH264Smart.minQp = 24;
+            rcAttr->attrRcMode.attrH264Smart.maxQp = (stream->max_qp > 0) ? stream->max_qp : 45;
+            rcAttr->attrRcMode.attrH264Smart.minQp = (stream->min_qp > 0) ? stream->min_qp : 24;
             rcAttr->attrRcMode.attrH264Smart.staticTime = 2;
-            rcAttr->attrRcMode.attrH264Smart.maxBitRate = stream->bitrate;
+            rcAttr->attrRcMode.attrH264Smart.maxBitRate = (stream->max_bitrate > 0) ? stream->max_bitrate : (stream->bitrate * 2);
             rcAttr->attrRcMode.attrH264Smart.iBiasLvl = 0;
             rcAttr->attrRcMode.attrH264Smart.changePos = 80;
             rcAttr->attrRcMode.attrH264Smart.qualityLvl = 2;

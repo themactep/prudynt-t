@@ -113,6 +113,9 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"stream0.osd.time_enabled", stream0.osd.time_enabled, true, validateBool},
         {"stream0.osd.uptime_enabled", stream0.osd.uptime_enabled, true, validateBool},
         {"stream0.osd.user_text_enabled", stream0.osd.user_text_enabled, true, validateBool},
+        // Advanced Quality Control Booleans for Stream0
+        {"stream0.adaptive_gop", stream0.adaptive_gop, false, validateBool},
+        {"stream0.scene_change_detection", stream0.scene_change_detection, false, validateBool},
 #if defined(AUDIO_SUPPORT)
         {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
 #endif
@@ -123,6 +126,9 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"stream1.osd.time_enabled", stream1.osd.time_enabled, true, validateBool},
         {"stream1.osd.uptime_enabled", stream1.osd.uptime_enabled, true, validateBool},
         {"stream1.osd.user_text_enabled", stream1.osd.user_text_enabled, true, validateBool},
+        // Advanced Quality Control Booleans for Stream1
+        {"stream1.adaptive_gop", stream1.adaptive_gop, false, validateBool},
+        {"stream1.scene_change_detection", stream1.scene_change_detection, false, validateBool},
         {"stream2.enabled", stream2.enabled, true, validateBool},
         {"websocket.enabled", websocket.enabled, true, validateBool},
         {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
@@ -280,6 +286,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream0.rotation", stream0.rotation, 0, validateInt2},
         {"stream0.width", stream0.width, 1920, validateIntGe0, false, "/proc/jz/sensor/width"},
         {"stream0.profile", stream0.profile, 2, validateInt2},
+        // Advanced Quality Control for Stream0
+        {"stream0.min_qp", stream0.min_qp, -1, [](const int &v) { return v >= -1 && v <= 51; }},
+        {"stream0.max_qp", stream0.max_qp, -1, [](const int &v) { return v >= -1 && v <= 51; }},
+        {"stream0.initial_qp", stream0.initial_qp, -1, [](const int &v) { return v >= -1 && v <= 51; }},
+        {"stream0.max_bitrate", stream0.max_bitrate, -1, [](const int &v) { return v >= -1 && v <= 50000; }},
+        {"stream0.i_frame_interval", stream0.i_frame_interval, 0, [](const int &v) { return v >= 0 && v <= 300; }},
+        {"stream0.quality_level", stream0.quality_level, 2, [](const int &v) { return v >= 0 && v <= 6; }},
         {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
         {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1, validateInt32},
         {"stream1.fps", stream1.fps, 25, validateInt120},
@@ -313,6 +326,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream1.rotation", stream1.rotation, 0, validateInt2},
         {"stream1.width", stream1.width, 640, validateIntGe0},
         {"stream1.profile", stream1.profile, 2, validateInt2},
+        // Advanced Quality Control for Stream1
+        {"stream1.min_qp", stream1.min_qp, -1, [](const int &v) { return v >= -1 && v <= 51; }},
+        {"stream1.max_qp", stream1.max_qp, -1, [](const int &v) { return v >= -1 && v <= 51; }},
+        {"stream1.initial_qp", stream1.initial_qp, -1, [](const int &v) { return v >= -1 && v <= 51; }},
+        {"stream1.max_bitrate", stream1.max_bitrate, -1, [](const int &v) { return v >= -1 && v <= 50000; }},
+        {"stream1.i_frame_interval", stream1.i_frame_interval, 0, [](const int &v) { return v >= 0 && v <= 300; }},
+        {"stream1.quality_level", stream1.quality_level, 2, [](const int &v) { return v >= 0 && v <= 6; }},
         {"stream2.jpeg_channel", stream2.jpeg_channel, 0, validateIntGe0},
         {"stream2.jpeg_quality", stream2.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
         {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},

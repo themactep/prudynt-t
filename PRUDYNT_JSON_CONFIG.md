@@ -302,6 +302,41 @@ Both stream0 and stream1 follow the same configuration structure. Stream0 is typ
 - `1`: 90 degrees
 - `2`: 270 degrees
 
+### Advanced Quality Control Parameters
+
+For fine-tuning stream quality, the following advanced parameters are available:
+
+```json
+{
+  "stream0": {
+    "min_qp": 20,
+    "max_qp": 45,
+    "initial_qp": -1,
+    "max_bitrate": 6000,
+    "i_frame_interval": 0,
+    "quality_level": 2,
+    "adaptive_gop": false,
+    "scene_change_detection": false
+  }
+}
+```
+
+**min_qp** (integer): Minimum quantization parameter (0-51). Lower values = higher quality. Use -1 for auto.
+
+**max_qp** (integer): Maximum quantization parameter (0-51). Higher values = lower quality. Use -1 for auto.
+
+**initial_qp** (integer): Initial quantization parameter (0-51). Use -1 for auto.
+
+**max_bitrate** (integer): Maximum bitrate for VBR modes in kbps. Use -1 for auto (1.5x target bitrate).
+
+**i_frame_interval** (integer): I-frame interval in seconds (0-300). 0 = use GOP setting.
+
+**quality_level** (integer): Quality level for SMART mode (0-6). Higher = better quality but larger files.
+
+**adaptive_gop** (boolean): Enable adaptive GOP sizing based on frame rate (GOP = FPS × 2).
+
+**scene_change_detection** (boolean): Enable scene change detection for better quality transitions.
+
 ### OSD (On-Screen Display) Settings
 
 Each stream can have its own OSD configuration:

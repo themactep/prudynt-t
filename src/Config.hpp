@@ -168,8 +168,8 @@ struct _audio {
     int output_sample_rate;
 #endif
 };
-#endif      
-struct _osd {            
+#endif
+struct _osd {
     int font_size;
     int font_xscale;
     int font_yscale;
@@ -193,12 +193,12 @@ struct _osd {
     int pos_logo_y;
     int logo_transparency;
     int logo_rotation;
-    int start_delay;            
-    bool enabled;            
+    int start_delay;
+    bool enabled;
     bool time_enabled;
     bool user_text_enabled;
     bool uptime_enabled;
-    bool logo_enabled;         
+    bool logo_enabled;
     const char *font_path;
     const char *time_format;
     const char *uptime_format;
@@ -209,7 +209,7 @@ struct _osd {
     _regions regions;
     _stream_stats stats;
     std::atomic<int> thread_signal;
-};  
+};
 struct _stream {
     int gop;
     int max_gop;
@@ -230,6 +230,17 @@ struct _stream {
     const char *rtsp_endpoint;
     const char *rtsp_info;
     const char *format{"JPEG"};
+
+    // Advanced Quality Control Parameters
+    int min_qp;                 // Minimum QP value (lower = higher quality)
+    int max_qp;                 // Maximum QP value (higher = lower quality)
+    int initial_qp;             // Initial QP value (-1 = auto)
+    int max_bitrate;            // Maximum bitrate for VBR modes (kbps)
+    int i_frame_interval;       // I-frame interval (0 = auto)
+    int quality_level;          // Quality level 0-6 (higher = better quality)
+    bool adaptive_gop;          // Enable adaptive GOP based on content
+    bool scene_change_detection; // Enable scene change detection
+
     /* JPEG stream*/
     int jpeg_quality;
     int jpeg_refresh;
@@ -238,10 +249,10 @@ struct _stream {
     const char *jpeg_path;
     _osd osd;
     _stream_stats stats;
-#if defined(AUDIO_SUPPORT)    
+#if defined(AUDIO_SUPPORT)
     bool audio_enabled;
 #endif
-};	
+};
 struct _motion {
     int monitor_stream;
     int debounce_time;
@@ -299,7 +310,7 @@ class CFG {
 
 #if defined(AUDIO_SUPPORT)
         _audio audio{};
-#endif  
+#endif
 		_general general{};
 		_rtsp rtsp{};
 		_sensor sensor{};

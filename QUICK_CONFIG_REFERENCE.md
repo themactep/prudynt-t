@@ -13,15 +13,34 @@ jct /etc/prudynt.json set motion.cooldown_time 10
 ### Change Stream Quality
 
 ```bash
-# High quality stream
+# Ultra High Quality (for local recording)
 jct /etc/prudynt.json set stream0.bitrate 8000
 jct /etc/prudynt.json set stream0.mode "VBR"
 jct /etc/prudynt.json set stream0.profile 2
+jct /etc/prudynt.json set stream0.max_bitrate 12000
+jct /etc/prudynt.json set stream0.min_qp 18
+jct /etc/prudynt.json set stream0.max_qp 35
 
-# Low bandwidth stream  
+# High Quality (for fast internet)
+jct /etc/prudynt.json set stream0.bitrate 5000
+jct /etc/prudynt.json set stream0.mode "VBR"
+jct /etc/prudynt.json set stream0.max_bitrate 7500
+jct /etc/prudynt.json set stream0.min_qp 20
+jct /etc/prudynt.json set stream0.max_qp 40
+
+# Balanced Quality (default)
+jct /etc/prudynt.json set stream0.bitrate 3000
+jct /etc/prudynt.json set stream0.mode "CBR"
+jct /etc/prudynt.json set stream0.min_qp 25
+jct /etc/prudynt.json set stream0.max_qp 45
+
+# Low Bandwidth (for slow internet)
 jct /etc/prudynt.json set stream1.bitrate 500
 jct /etc/prudynt.json set stream1.width 640
 jct /etc/prudynt.json set stream1.height 360
+jct /etc/prudynt.json set stream1.mode "CBR"
+jct /etc/prudynt.json set stream1.min_qp 30
+jct /etc/prudynt.json set stream1.max_qp 50
 ```
 
 ### Configure RTSP Authentication
@@ -85,6 +104,34 @@ jct /etc/prudynt.json set websocket.port 8089
 jct /etc/prudynt.json set stream2.enabled true
 jct /etc/prudynt.json set stream2.jpeg_quality 85
 jct /etc/prudynt.json set stream2.jpeg_refresh 500
+```
+
+### Advanced Quality Tuning
+
+```bash
+# Enable adaptive features for better quality
+jct /etc/prudynt.json set stream0.adaptive_gop true
+jct /etc/prudynt.json set stream0.scene_change_detection true
+
+# Fine-tune QP for specific scenarios
+# For security cameras (prioritize detail)
+jct /etc/prudynt.json set stream0.min_qp 15
+jct /etc/prudynt.json set stream0.max_qp 35
+
+# For wildlife cameras (balance quality/battery)
+jct /etc/prudynt.json set stream0.min_qp 25
+jct /etc/prudynt.json set stream0.max_qp 45
+
+# For indoor monitoring (consistent quality)
+jct /etc/prudynt.json set stream0.mode "CBR"
+jct /etc/prudynt.json set stream0.min_qp 28
+jct /etc/prudynt.json set stream0.max_qp 42
+
+# For outdoor monitoring (variable conditions)
+jct /etc/prudynt.json set stream0.mode "VBR"
+jct /etc/prudynt.json set stream0.max_bitrate 6000
+jct /etc/prudynt.json set stream0.min_qp 20
+jct /etc/prudynt.json set stream0.max_qp 50
 ```
 
 ## Quick Checks
