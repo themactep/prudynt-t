@@ -315,7 +315,7 @@ For fine-tuning stream quality, the following advanced parameters are available:
     "max_bitrate": 6000,
     "i_frame_interval": 0,
     "quality_level": 2,
-    "adaptive_gop": false,
+    "adaptive_gop": true,
     "scene_change_detection": false
   }
 }
@@ -333,7 +333,7 @@ For fine-tuning stream quality, the following advanced parameters are available:
 
 **quality_level** (integer): Quality level for SMART mode (0-6). Higher = better quality but larger files.
 
-**adaptive_gop** (boolean): Enable adaptive GOP sizing based on frame rate (GOP = FPS × 2).
+**adaptive_gop** (boolean): Enable adaptive GOP sizing based on frame rate (GOP = FPS × 2). Default: true.
 
 **scene_change_detection** (boolean): Enable scene change detection for better quality transitions.
 

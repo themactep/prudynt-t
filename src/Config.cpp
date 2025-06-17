@@ -114,7 +114,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"stream0.osd.uptime_enabled", stream0.osd.uptime_enabled, true, validateBool},
         {"stream0.osd.user_text_enabled", stream0.osd.user_text_enabled, true, validateBool},
         // Advanced Quality Control Booleans for Stream0
-        {"stream0.adaptive_gop", stream0.adaptive_gop, false, validateBool},
+        {"stream0.adaptive_gop", stream0.adaptive_gop, true, validateBool},
         {"stream0.scene_change_detection", stream0.scene_change_detection, false, validateBool},
 #if defined(AUDIO_SUPPORT)
         {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
@@ -127,7 +127,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"stream1.osd.uptime_enabled", stream1.osd.uptime_enabled, true, validateBool},
         {"stream1.osd.user_text_enabled", stream1.osd.user_text_enabled, true, validateBool},
         // Advanced Quality Control Booleans for Stream1
-        {"stream1.adaptive_gop", stream1.adaptive_gop, false, validateBool},
+        {"stream1.adaptive_gop", stream1.adaptive_gop, true, validateBool},
         {"stream1.scene_change_detection", stream1.scene_change_detection, false, validateBool},
         {"stream2.enabled", stream2.enabled, true, validateBool},
         {"websocket.enabled", websocket.enabled, true, validateBool},
