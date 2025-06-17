@@ -5,6 +5,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
+#include "BufferPool.hpp"
 #include "globals.hpp"
 
 #define MODULE "VideoWorker"
@@ -231,6 +232,16 @@ void *VideoWorker::thread_entry(void *arg)
     int encChn = sh->encChn;
 
     LOG_DEBUG("Start stream_grabber thread for stream " << encChn);
+
+    // Optimize buffer count based on current memory conditions
+    std::string stream_name = "stream" + std::to_string(encChn);
+    int optimal_buffers = GET_OPTIMAL_BUFFER_COUNT(stream_name, global_video[encChn]->stream->buffers);
+    if (optimal_buffers != global_video[encChn]->stream->buffers) {
+        LOG_INFO("Adjusting " << stream_name << " buffer count from "
+                 << global_video[encChn]->stream->buffers << " to " << optimal_buffers
+                 << " based on memory conditions");
+        global_video[encChn]->stream->buffers = optimal_buffers;
+    }
 
     int ret;
 

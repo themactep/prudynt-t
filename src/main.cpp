@@ -5,6 +5,7 @@
 #include "RTSP.hpp"
 #include "Logger.hpp"
 #include "Config.hpp"
+#include "BufferPool.hpp"
 #include "WS.hpp"
 #include "version.hpp"
 #include "ConfigWatcher.hpp"
@@ -101,6 +102,12 @@ int main(int argc, const char *argv[])
     if (!imp_system)
     {
         imp_system = IMPSystem::createNew();
+    }
+
+    // Initialize dynamic buffer pool
+    if (!BufferPool::getInstance().initialize()) {
+        LOG_ERROR("Failed to initialize buffer pool");
+        return 1;
     }
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
