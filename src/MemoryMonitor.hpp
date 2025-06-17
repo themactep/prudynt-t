@@ -10,6 +10,7 @@
 #include <fstream>
 #include "Logger.hpp"
 
+#undef MODULE
 #define MODULE "MEMMONITOR"
 
 /**

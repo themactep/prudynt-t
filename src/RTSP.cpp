@@ -2,6 +2,7 @@
 #include "IMPBackchannel.hpp"
 #include "BackchannelServerMediaSubsession.hpp"
 
+#undef MODULE
 #define MODULE "RTSP"
 
 void RTSP::addSubsession(int chnNr, _stream &stream)
@@ -105,6 +106,11 @@ void RTSP::start()
 {
     scheduler = BasicTaskScheduler::createNew();
     env = BasicUsageEnvironment::createNew(*scheduler);
+
+    // Initialize adaptive bitrate manager
+    if (!AdaptiveBitrateManager::getInstance().initialize()) {
+        LOG_ERROR("Failed to initialize adaptive bitrate manager");
+    }
     
     if (cfg->rtsp.auth_required)
     {

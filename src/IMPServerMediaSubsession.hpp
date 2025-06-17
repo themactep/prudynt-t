@@ -6,6 +6,7 @@
 #include "StreamReplicator.hh"
 #include "ServerMediaSession.hh"
 #include "OnDemandServerMediaSubsession.hh"
+#include "AdaptiveRTCPHandler.hpp"
 
 class IMPServerMediaSubsession : public OnDemandServerMediaSubsession
 {
@@ -45,10 +46,20 @@ protected:
         OnDemandServerMediaSubsession::startStream(clientSessionId, streamToken, rtcpRRHandler, rtcpRRHandlerClientData,
                                                    rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler,
                                                    serverRequestAlternativeByteHandlerClientData);
-        
+
+        // Register session with adaptive RTCP handler
+        AdaptiveRTCPHandler::getInstance().registerSession(clientSessionId, encChn);
+
         //request idr frame every second for the next x seconds
-        global_video[encChn]->idr_fix = 5; 
+        global_video[encChn]->idr_fix = 5;
         IMPEncoder::flush(encChn);
+    }
+
+    virtual void deleteStream(unsigned clientSessionId, void*& streamToken) override {
+        // Unregister session from adaptive RTCP handler
+        AdaptiveRTCPHandler::getInstance().unregisterSession(clientSessionId);
+
+        OnDemandServerMediaSubsession::deleteStream(clientSessionId, streamToken);
     }
 private:
     H264NALUnit *vps; // Change to pointer for optional VPS

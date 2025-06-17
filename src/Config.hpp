@@ -112,6 +112,10 @@ struct _rtsp {
     const char *username;
     const char *password;
     const char *name;
+    bool adaptive_bitrate_enabled;
+    int adaptation_interval_seconds;
+    float packet_loss_threshold;
+    float bandwidth_margin;
 };
 struct _sensor {
     int fps;
@@ -336,6 +340,8 @@ class CFG {
             items = &intItems;
         } else if constexpr (std::is_same_v<T, unsigned int>) {
             items = &uintItems;
+        } else if constexpr (std::is_same_v<T, float>) {
+            items = &floatItems;
         } else {
             return result;
         }
@@ -359,6 +365,8 @@ class CFG {
             items = &intItems;
         } else if constexpr (std::is_same_v<T, unsigned int>) {
             items = &uintItems;
+        } else if constexpr (std::is_same_v<T, float>) {
+            items = &floatItems;
         } else {
             return false;
         }
@@ -382,11 +390,13 @@ class CFG {
         std::vector<ConfigItem<const char *>> charItems{};
         std::vector<ConfigItem<int>> intItems{};
         std::vector<ConfigItem<unsigned int>> uintItems{};
+        std::vector<ConfigItem<float>> floatItems{};
 
         std::vector<ConfigItem<bool>> getBoolItems();
         std::vector<ConfigItem<const char *>> getCharItems() ;
         std::vector<ConfigItem<int>> getIntItems();
         std::vector<ConfigItem<unsigned int>> getUintItems();
+        std::vector<ConfigItem<float>> getFloatItems();
 };
 
 // The configuration is kept in a global singleton that's accessed via this

@@ -8,6 +8,7 @@
 #include "IMPDeviceSource.hpp"
 #include "IMPEncoder.hpp"
 #include "Logger.hpp"
+#include "AdaptiveBitrate.hpp"
 
 class RTSP
 {

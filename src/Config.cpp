@@ -103,6 +103,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"image.hflip", image.hflip, false, validateBool},
         {"motion.enabled", motion.enabled, false, validateBool},
         {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
+        {"rtsp.adaptive_bitrate_enabled", rtsp.adaptive_bitrate_enabled, true, validateBool},
 #if defined(AUDIO_SUPPORT)
         {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
 #endif
@@ -149,8 +150,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
             std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"};
             return a.count(std::string(v)) == 1;
         }},
-        {"general.memory_monitoring_enabled", general.memory_monitoring_enabled, true, validateBool},
-        {"general.allocation_tracking_enabled", general.allocation_tracking_enabled, false, validateBool},
         {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
         {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
         {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},
@@ -247,6 +246,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"rtsp.port", rtsp.port, 554, validateInt65535},
         {"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, validateIntGe0},
         {"rtsp.session_reclaim", rtsp.session_reclaim, 65, validateIntGe0},
+        {"rtsp.adaptation_interval_seconds", rtsp.adaptation_interval_seconds, 5, [](const int &v) { return v >= 2 && v <= 30; }},
         {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false, "/proc/jz/sensor/i2c_bus"},
         {"sensor.fps", sensor.fps, 25, validateInt120, false, "/proc/jz/sensor/max_fps"},
         {"sensor.height", sensor.height, 1080, validateIntGe0, false, "/proc/jz/sensor/height"},
@@ -441,7 +441,6 @@ void handleConfigItem(json_object *jsonConfig, ConfigItem<T> &item)
 {
     bool readFromProc = false;
     bool readFromConfig = false;
-    T configValue{};
 
     if (!jsonConfig) return;
 
@@ -497,6 +496,14 @@ void handleConfigItem(json_object *jsonConfig, ConfigItem<T> &item)
                     item.value = static_cast<unsigned int>(val);
                     readFromConfig = true;
                 }
+            }
+        } else if constexpr (std::is_same_v<T, float>) {
+            if (json_object_is_type(valueObj, json_type_double)) {
+                item.value = static_cast<float>(json_object_get_double(valueObj));
+                readFromConfig = true;
+            } else if (json_object_is_type(valueObj, json_type_int)) {
+                item.value = static_cast<float>(json_object_get_int(valueObj));
+                readFromConfig = true;
             }
         }
     }
@@ -590,6 +597,8 @@ void handleConfigItem2(json_object *jsonConfig, ConfigItem<T> &item)
         valueObj = json_object_new_int(item.value);
     } else if constexpr (std::is_same_v<T, unsigned int>) {
         valueObj = json_object_new_int64(item.value);
+    } else if constexpr (std::is_same_v<T, float>) {
+        valueObj = json_object_new_double(item.value);
     }
 
     if (valueObj) {
@@ -610,6 +619,8 @@ bool CFG::updateConfig()
     for (auto &item : intItems)
         handleConfigItem2(jsonConfig, item);
     for (auto &item : uintItems)
+        handleConfigItem2(jsonConfig, item);
+    for (auto &item : floatItems)
         handleConfigItem2(jsonConfig, item);
 
     // Handle ROIs
@@ -653,6 +664,14 @@ bool CFG::updateConfig()
     }
 };
 
+std::vector<ConfigItem<float>> CFG::getFloatItems()
+{
+    return {
+        {"rtsp.packet_loss_threshold", rtsp.packet_loss_threshold, 0.05f, [](const float &v) { return v >= 0.0f && v <= 1.0f; }},
+        {"rtsp.bandwidth_margin", rtsp.bandwidth_margin, 1.2f, [](const float &v) { return v >= 1.0f && v <= 3.0f; }},
+    };
+};
+
 CFG::CFG()
 {
     load();
@@ -664,6 +683,7 @@ void CFG::load()
     charItems = getCharItems();
     intItems = getIntItems();
     uintItems = getUintItems();
+    floatItems = getFloatItems();
 
     config_loaded = readConfig();
 
@@ -675,6 +695,8 @@ void CFG::load()
         for (auto &item : intItems)
             handleConfigItem(jsonConfig, item);
         for (auto &item : uintItems)
+            handleConfigItem(jsonConfig, item);
+        for (auto &item : floatItems)
             handleConfigItem(jsonConfig, item);
     }
 

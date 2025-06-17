@@ -8,6 +8,7 @@
 #include <chrono>
 #include "Logger.hpp"
 
+#undef MODULE
 #define MODULE "BUFFERPOOL"
 
 /**

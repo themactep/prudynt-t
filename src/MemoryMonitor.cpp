@@ -91,7 +91,11 @@ void MemoryMonitor::monitoringLoop() {
             if (now - last_analysis_ > std::chrono::minutes(5)) {
                 analyzeMemoryTrends();
                 if (allocation_tracking_enabled_.load()) {
-                    detectMemoryLeaks();
+                    auto leak_report = detectLeaks();
+                    if (!leak_report.suspected_leaks.empty()) {
+                        LOG_WARN("Memory leak detection found " << leak_report.suspected_leaks.size()
+                                 << " potential leaks totaling " << leak_report.total_leaked_bytes << " bytes");
+                    }
                 }
                 last_analysis_ = now;
                 analysis_count_++;

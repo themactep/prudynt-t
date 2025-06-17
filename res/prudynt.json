@@ -68,10 +68,14 @@
     "skip_frame_count": 5
   },
   "rtsp": {
+    "adaptation_interval_seconds": 5,
+    "adaptive_bitrate_enabled": true,
     "auth_required": true,
+    "bandwidth_margin": 1.2,
     "est_bitrate": 5000,
     "name": "thingino prudynt",
     "out_buffer_size": 500000,
+    "packet_loss_threshold": 0.05,
     "password": "thingino",
     "port": 554,
     "send_buffer_size": 307200,
