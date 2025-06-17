@@ -99,6 +99,8 @@ struct _general {
     const char *loglevel;
     int osd_pool_size;
     int imp_polling_timeout;
+    bool memory_monitoring_enabled;
+    bool allocation_tracking_enabled;
 };
 struct _rtsp {
     int port;

@@ -6,6 +6,7 @@
 #include "Logger.hpp"
 #include "Config.hpp"
 #include "BufferPool.hpp"
+#include "MemoryMonitor.hpp"
 #include "WS.hpp"
 #include "version.hpp"
 #include "ConfigWatcher.hpp"
@@ -108,6 +109,19 @@ int main(int argc, const char *argv[])
     if (!BufferPool::getInstance().initialize()) {
         LOG_ERROR("Failed to initialize buffer pool");
         return 1;
+    }
+
+    // Initialize memory monitoring if enabled
+    if (cfg->general.memory_monitoring_enabled) {
+        bool enable_allocation_tracking = cfg->general.allocation_tracking_enabled ||
+                                         (strcmp(cfg->general.loglevel, "DEBUG") == 0);
+        if (!MemoryMonitor::getInstance().initialize(enable_allocation_tracking)) {
+            LOG_ERROR("Failed to initialize memory monitor");
+            return 1;
+        }
+        MemoryMonitor::getInstance().startMonitoring();
+        LOG_INFO("Memory monitoring started (allocation tracking: "
+                 << (enable_allocation_tracking ? "enabled" : "disabled") << ")");
     }
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
@@ -278,6 +292,12 @@ int main(int argc, const char *argv[])
             }
         }
     }
+
+    // Cleanup and final memory report
+    LOG_INFO("Shutting down performance monitoring systems");
+    MemoryMonitor::getInstance().logMemoryStatus();
+    MemoryMonitor::getInstance().shutdown();
+    BufferPool::getInstance().shutdown();
 
     return 0;
 }

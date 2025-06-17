@@ -149,6 +149,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
             std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"};
             return a.count(std::string(v)) == 1;
         }},
+        {"general.memory_monitoring_enabled", general.memory_monitoring_enabled, true, validateBool},
+        {"general.allocation_tracking_enabled", general.allocation_tracking_enabled, false, validateBool},
         {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
         {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
         {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},

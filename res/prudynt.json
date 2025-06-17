@@ -17,8 +17,10 @@
     "output_sample_rate": 16000
   },
   "general": {
+    "allocation_tracking_enabled": false,
     "imp_polling_timeout": 500,
     "loglevel": "INFO",
+    "memory_monitoring_enabled": true,
     "osd_pool_size": 1025
   },
   "image": {
