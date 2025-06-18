@@ -1,4 +1,5 @@
 #include "AdaptiveBitrate.hpp"
+#include "globals.hpp"
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
@@ -28,25 +29,81 @@ bool AdaptiveBitrateManager::initialize() {
 
 void AdaptiveBitrateManager::initializeDefaultQualityLevels() {
     std::lock_guard<std::mutex> lock(quality_mutex_);
-    
-    // Create quality levels for stream 0 (main stream)
-    quality_levels_[0] = {
-        QualityPresets::ULTRA_LOW,
-        QualityPresets::LOW,
-        QualityPresets::MEDIUM,
-        QualityPresets::HIGH,
-        QualityPresets::ULTRA_HIGH
-    };
-    
-    // Create quality levels for stream 1 (secondary stream)
-    quality_levels_[1] = {
-        {"Ultra Low", 150, 320, 240, 10, 35, 51, 1.5f, 0.15f, 800},
-        {"Low", 300, 480, 270, 15, 30, 45, 1.3f, 0.10f, 600},
-        {"Medium", 600, 640, 360, 20, 25, 40, 1.2f, 0.08f, 400},
-        {"High", 1000, 854, 480, 25, 22, 35, 1.15f, 0.05f, 300}
-    };
-    
-    LOG_DEBUG("Initialized default quality levels for streams 0 and 1");
+
+    // Create quality levels based on actual stream configurations
+    for (int stream_id = 0; stream_id < NUM_VIDEO_CHANNELS; stream_id++) {
+        if (global_video[stream_id] && global_video[stream_id]->stream) {
+            auto stream = global_video[stream_id]->stream;
+
+            // Use actual stream configuration as base
+            int base_width = stream->width;
+            int base_height = stream->height;
+            int base_fps = stream->fps;
+            int base_bitrate = stream->bitrate;
+
+            LOG_INFO("Creating quality levels for stream " << stream_id
+                     << " based on actual config: " << base_width << "x" << base_height
+                     << "@" << base_fps << "fps, " << base_bitrate << "kbps");
+
+            // Create scaled quality levels based on actual stream config
+            quality_levels_[stream_id] = {
+                // Ultra Low: 25% resolution, 20% bitrate, reduced fps
+                {"Ultra Low",
+                 std::max(150, base_bitrate * 20 / 100),
+                 base_width / 4, base_height / 4,
+                 std::max(10, base_fps / 2),
+                 35, 51, 1.5f, 0.15f, 800},
+
+                // Low: 50% resolution, 40% bitrate, reduced fps
+                {"Low",
+                 std::max(300, base_bitrate * 40 / 100),
+                 base_width / 2, base_height / 2,
+                 std::max(15, base_fps * 2 / 3),
+                 30, 45, 1.3f, 0.10f, 600},
+
+                // Medium: 75% resolution, 60% bitrate, same fps
+                {"Medium",
+                 std::max(500, base_bitrate * 60 / 100),
+                 base_width * 3 / 4, base_height * 3 / 4,
+                 base_fps,
+                 25, 40, 1.2f, 0.08f, 400},
+
+                // High: 100% resolution, 85% bitrate, same fps
+                {"High",
+                 std::max(800, base_bitrate * 85 / 100),
+                 base_width, base_height,
+                 base_fps,
+                 22, 35, 1.15f, 0.05f, 300},
+
+                // Ultra High: 100% resolution, 100% bitrate, same fps
+                {"Ultra High",
+                 base_bitrate,
+                 base_width, base_height,
+                 base_fps,
+                 20, 30, 1.1f, 0.03f, 200}
+            };
+        } else {
+            // Fallback to hardcoded presets if stream config not available
+            if (stream_id == 0) {
+                quality_levels_[0] = {
+                    QualityPresets::ULTRA_LOW,
+                    QualityPresets::LOW,
+                    QualityPresets::MEDIUM,
+                    QualityPresets::HIGH,
+                    QualityPresets::ULTRA_HIGH
+                };
+            } else {
+                quality_levels_[stream_id] = {
+                    {"Ultra Low", 150, 320, 240, 10, 35, 51, 1.5f, 0.15f, 800},
+                    {"Low", 300, 480, 270, 15, 30, 45, 1.3f, 0.10f, 600},
+                    {"Medium", 600, 640, 360, 20, 25, 40, 1.2f, 0.08f, 400},
+                    {"High", 1000, 854, 480, 25, 22, 35, 1.15f, 0.05f, 300}
+                };
+            }
+        }
+    }
+
+    LOG_DEBUG("Initialized quality levels for " << quality_levels_.size() << " streams");
 }
 
 void AdaptiveBitrateManager::registerClient(unsigned session_id, int stream_channel) {
@@ -70,12 +127,18 @@ void AdaptiveBitrateManager::registerClient(unsigned session_id, int stream_chan
     session->conditions.congestion_level = 0.0f;
     session->conditions.last_update = std::chrono::steady_clock::now();
     
-    // Start with medium quality
+    // Start with Ultra High quality and downgrade if needed
     auto quality_levels = getQualityLevels(stream_channel);
     if (!quality_levels.empty()) {
-        size_t medium_index = quality_levels.size() / 2;
-        session->current_quality = quality_levels[medium_index];
+        // Start with the highest quality (Ultra High)
+        session->current_quality = quality_levels.back();
         session->target_quality = session->current_quality;
+
+        LOG_INFO("Starting with highest quality for stream " << stream_channel
+                 << ": " << session->current_quality.name
+                 << " (" << session->current_quality.bitrate << "kbps, "
+                 << session->current_quality.width << "x" << session->current_quality.height
+                 << "@" << session->current_quality.fps << "fps)");
     }
     
     client_sessions_[session_id] = std::move(session);
@@ -221,20 +284,44 @@ bool AdaptiveBitrateManager::shouldUpgradeQuality(const ClientSession& session) 
 
 bool AdaptiveBitrateManager::shouldDowngradeQuality(const ClientSession& session) {
     const auto& conditions = session.conditions;
-    
+
+    // More aggressive downgrading when starting from Ultra High quality
+    auto quality_levels = getQualityLevels(session.stream_channel);
+    bool is_ultra_high = !quality_levels.empty() &&
+                        session.current_quality.name == quality_levels.back().name;
+
+    // Adjust thresholds based on current quality level
+    float packet_loss_limit = is_ultra_high ? packet_loss_threshold_ * 0.5f : packet_loss_threshold_;
+    float congestion_limit = is_ultra_high ? 0.5f : 0.7f;
+    float rtt_multiplier = is_ultra_high ? 0.8f : 1.0f;
+
     // Check if network conditions require downgrade
-    bool poor_conditions = 
-        conditions.packet_loss_rate > packet_loss_threshold_ ||
-        conditions.rtt_ms > session.current_quality.max_rtt_ms ||
-        conditions.congestion_level > 0.7f;
-    
+    bool poor_conditions =
+        conditions.packet_loss_rate > packet_loss_limit ||
+        conditions.rtt_ms > session.current_quality.max_rtt_ms * rtt_multiplier ||
+        conditions.congestion_level > congestion_limit;
+
     if (poor_conditions) {
+        LOG_DEBUG("Downgrade triggered for " << session.current_quality.name
+                 << " - packet_loss: " << conditions.packet_loss_rate
+                 << ", rtt: " << conditions.rtt_ms
+                 << ", congestion: " << conditions.congestion_level);
         return true;
     }
-    
-    // Check if current bandwidth is insufficient
+
+    // Check if current bandwidth is insufficient (more strict for ultra high)
     uint64_t required_bandwidth = AdaptiveUtils::estimateRequiredBandwidth(session.current_quality);
-    return conditions.bandwidth_bps < required_bandwidth * (2.0f - bandwidth_margin_);
+    float bandwidth_multiplier = is_ultra_high ? 1.3f : 1.0f; // Need 30% more bandwidth for ultra high
+    bool insufficient_bandwidth = conditions.bandwidth_bps < required_bandwidth * bandwidth_multiplier * (2.0f - bandwidth_margin_);
+
+    if (insufficient_bandwidth) {
+        LOG_DEBUG("Bandwidth insufficient for " << session.current_quality.name
+                 << " - available: " << conditions.bandwidth_bps
+                 << ", required: " << (required_bandwidth * bandwidth_multiplier));
+        return true;
+    }
+
+    return false;
 }
 
 QualityLevel AdaptiveBitrateManager::getTargetQuality(unsigned session_id) {

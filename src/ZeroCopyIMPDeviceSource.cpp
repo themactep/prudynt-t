@@ -51,17 +51,19 @@ void ZeroCopyDeviceSourceBase::deliverFrame() {
     if (readNextFrame()) {
         delivery_stats_.zero_copy_deliveries++;
         consecutive_zero_copy_failures_ = 0;
-        return;
+        return; // readNextFrame() already called afterGetting()
     }
 
-    // No frame available
+    // No frame available - schedule retry
     consecutive_zero_copy_failures_++;
     if (consecutive_zero_copy_failures_ > MAX_ZERO_COPY_FAILURES) {
         zero_copy_preferred_ = false;
         LOG_WARN("Disabling zero-copy for channel " << encChn << " due to failures");
     }
 
-    fFrameSize = 0;
+    // No frame available - follow correct Live555 pattern
+    // Don't call afterGetting() or schedule retry - just wait for onDataAvailable() callback
+    // This prevents race condition and follows Live555 event-driven architecture
 }
 
 // ZeroCopyVideoSource implementation

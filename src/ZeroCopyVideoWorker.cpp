@@ -239,10 +239,12 @@ bool ZeroCopyIntegration::initialize() {
     // Initialize zero-copy buffer pool
     ZeroCopyBufferPool::getInstance();
 
-    // Enable zero-copy for all video streams by default
+    // Re-enable zero-copy now that RTP packetization is fixed
     for (int i = 0; i < NUM_VIDEO_CHANNELS; i++) {
         zero_copy_enabled_[i] = true;
     }
+
+    LOG_INFO("Zero-copy re-enabled with proper RTP flow control");
     
     initialized_.store(true);
     LOG_INFO("Zero-copy integration system initialized");
