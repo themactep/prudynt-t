@@ -1,4 +1,5 @@
 #include "ZeroCopyBuffer.hpp"
+#include "ZeroCopyMemoryAnalyzer.hpp"
 #include <algorithm>
 #include <cstdlib>
 
@@ -6,10 +7,17 @@ std::atomic<uint32_t> ZeroCopyBuffer::next_buffer_id_{1};
 
 ZeroCopyBuffer::ZeroCopyBuffer(uint8_t* data, size_t size, bool owns_memory)
     : data_(data), size_(size), owns_memory_(owns_memory), buffer_id_(next_buffer_id_++) {
+
+    // Track memory allocation
+    ZEROCOPY_TRACK_ALLOCATION(buffer_id_, size_, true, "buffer");
+
     LOG_DEBUG("Created ZeroCopyBuffer " << buffer_id_ << " size=" << size << " owns=" << owns_memory);
 }
 
 ZeroCopyBuffer::~ZeroCopyBuffer() {
+    // Track memory deallocation
+    ZEROCOPY_TRACK_DEALLOCATION(buffer_id_);
+
     if (owns_memory_ && data_) {
         std::free(data_);
         LOG_DEBUG("Freed ZeroCopyBuffer " << buffer_id_ << " size=" << size_);
@@ -67,6 +75,10 @@ std::shared_ptr<ZeroCopyBuffer> ZeroCopyBuffer::slice(size_t offset, size_t leng
     return sliced;
 }
 
+void ZeroCopyBuffer::trackAccess() {
+    ZEROCOPY_TRACK_ACCESS(buffer_id_);
+}
+
 void ZeroCopyBuffer::copyTo(uint8_t* dest, size_t dest_size) const {
     if (!dest || dest_size == 0) {
         LOG_ERROR("Invalid destination for copyTo");
@@ -109,30 +121,37 @@ ZeroCopyNALUnit ZeroCopyNALUnit::fromLegacy(const std::vector<uint8_t>& data) {
 std::shared_ptr<ZeroCopyBuffer> ZeroCopyBufferPool::getBuffer(size_t size) {
     if (size > MAX_BUFFER_SIZE) {
         LOG_WARN("Requested buffer size " << size << " exceeds maximum " << MAX_BUFFER_SIZE);
+        ZEROCOPY_TRACK_POOL_MISS(size);
         return ZeroCopyBuffer::create(size);
     }
-    
+
     std::lock_guard<std::mutex> global_lock(global_mutex_);
     auto& pool_entry = buffer_pools_[size];
-    
+
     std::lock_guard<std::mutex> pool_lock(pool_entry.mutex);
-    
+
     if (!pool_entry.buffers.empty()) {
         auto buffer = pool_entry.buffers.back();
         pool_entry.buffers.pop_back();
         reuse_count_++;
-        
+
+        // Track pool hit
+        ZEROCOPY_TRACK_POOL_HIT(size);
+
         LOG_DEBUG("Reused buffer from pool, size=" << size << " remaining=" << pool_entry.buffers.size());
         return buffer;
     }
-    
+
     // No buffer available, create new one
     auto buffer = ZeroCopyBuffer::create(size);
     if (buffer) {
         allocation_count_++;
         total_buffers_++;
+
+        // Track pool miss
+        ZEROCOPY_TRACK_POOL_MISS(size);
     }
-    
+
     LOG_DEBUG("Created new buffer, size=" << size);
     return buffer;
 }

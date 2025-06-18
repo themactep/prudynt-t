@@ -9,6 +9,7 @@
 #include "MemoryMonitor.hpp"
 #include "ZeroCopyBuffer.hpp"
 #include "ZeroCopyVideoWorker.hpp"
+#include "ZeroCopyMemoryAnalyzer.hpp"
 #include "WS.hpp"
 #include "version.hpp"
 #include "ConfigWatcher.hpp"
@@ -130,6 +131,33 @@ int main(int argc, const char *argv[])
     if (!ZeroCopyIntegration::getInstance().initialize()) {
         LOG_ERROR("Failed to initialize zero-copy system");
         return 1;
+    }
+
+    // Initialize memory monitoring if enabled
+    if (cfg->general.zero_copy_enabled) {
+        auto& memory_monitor = ZeroCopyMemoryMonitor::getInstance();
+
+        ZeroCopyMemoryMonitor::MonitorConfig monitor_config;
+        monitor_config.memory_warning_threshold_mb = 50;
+        monitor_config.memory_critical_threshold_mb = 80;
+        monitor_config.auto_cleanup_enabled = true;
+        monitor_config.performance_alerts_enabled = false; // Reduce log noise
+        monitor_config.leak_detection_interval_seconds = 300.0; // Check every 5 minutes
+        monitor_config.stats_update_interval_seconds = 30.0; // Update every 30 seconds
+
+        // Set up alert callback
+        memory_monitor.setAlertCallback([](ZeroCopyMemoryMonitor::AlertType type, const std::string& message) {
+            LOG_WARN("Memory Alert: " << message);
+
+            // Generate memory report on critical alerts
+            if (type == ZeroCopyMemoryMonitor::AlertType::MEMORY_CRITICAL ||
+                type == ZeroCopyMemoryMonitor::AlertType::MEMORY_LEAK_DETECTED) {
+                ZeroCopyMemoryAnalyzer::getInstance().generateMemoryReport();
+            }
+        });
+
+        memory_monitor.startMonitoring(monitor_config);
+        LOG_INFO("Zero-copy memory monitoring enabled");
     }
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");

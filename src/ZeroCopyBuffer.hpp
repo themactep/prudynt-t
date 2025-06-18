@@ -39,10 +39,17 @@ public:
     static std::shared_ptr<ZeroCopyBuffer> createFromEncoder(uint8_t* encoder_data, size_t size, size_t offset = 4);
     
     // Get raw data pointer (read-only)
-    const uint8_t* data() const { return data_; }
-    
+    const uint8_t* data() const {
+        // Track buffer access for memory analysis
+        const_cast<ZeroCopyBuffer*>(this)->trackAccess();
+        return data_;
+    }
+
     // Get mutable data pointer (use with caution)
-    uint8_t* mutableData() { return data_; }
+    uint8_t* mutableData() {
+        trackAccess();
+        return data_;
+    }
     
     // Get buffer size
     size_t size() const { return size_; }
@@ -64,6 +71,9 @@ public:
 
 private:
     ZeroCopyBuffer(uint8_t* data, size_t size, bool owns_memory);
+
+    // Internal method to track buffer access
+    void trackAccess();
     
     // Prevent copying (use shared_ptr instead)
     ZeroCopyBuffer(const ZeroCopyBuffer&) = delete;
