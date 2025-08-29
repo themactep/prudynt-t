@@ -76,13 +76,18 @@ void Motion::detect()
                         moving = true;
                         LOG_INFO("Motion Start");
 
-                        char cmd[128];
-                        memset(cmd, 0, sizeof(cmd));
-                        snprintf(cmd, sizeof(cmd), "%s start", cfg->motion.script_path);
-                        ret = system(cmd);
-                        if (ret != 0)
-                        {
-                            LOG_ERROR("Motion script failed:" << cmd);
+                        // Validate script_path before using it
+                        if (cfg->motion.script_path == nullptr) {
+                            LOG_ERROR("Motion script path is null - cannot execute motion start script");
+                        } else {
+                            char cmd[128];
+                            memset(cmd, 0, sizeof(cmd));
+                            snprintf(cmd, sizeof(cmd), "%s start", cfg->motion.script_path);
+                            ret = system(cmd);
+                            if (ret != 0)
+                            {
+                                LOG_ERROR("Motion script failed:" << cmd);
+                            }
                         }
                     }
                     indicator = true;
@@ -98,13 +103,19 @@ void Motion::detect()
             if (moving && duration >= cfg->motion.min_time && duration >= cfg->motion.post_time)
             {
                 LOG_INFO("End of Motion");
-                char cmd[128];
-                memset(cmd, 0, sizeof(cmd));
-                snprintf(cmd, sizeof(cmd), "%s stop", cfg->motion.script_path);
-                ret = system(cmd);
-                if (ret != 0)
-                {
-                    LOG_ERROR("Motion script failed:" << cmd);
+
+                // Validate script_path before using it
+                if (cfg->motion.script_path == nullptr) {
+                    LOG_ERROR("Motion script path is null - cannot execute motion stop script");
+                } else {
+                    char cmd[128];
+                    memset(cmd, 0, sizeof(cmd));
+                    snprintf(cmd, sizeof(cmd), "%s stop", cfg->motion.script_path);
+                    ret = system(cmd);
+                    if (ret != 0)
+                    {
+                        LOG_ERROR("Motion script failed:" << cmd);
+                    }
                 }
                 moving = false;
                 indicator = false;
