@@ -7,10 +7,25 @@ IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name)
 {
     IMPSensorInfo out;
     memset(&out, 0, sizeof(IMPSensorInfo));
+
+    // Validate cfg->sensor.model before using it
+    if (cfg->sensor.model == nullptr) {
+        LOG_ERROR("Sensor model is null - cannot create sensor info");
+        return out; // Return zeroed structure
+    }
+
     LOG_INFO("Sensor: " << cfg->sensor.model);
-    strcpy(out.name, cfg->sensor.model);
+
+    // Use safe string copy with bounds checking for out.name (32 bytes)
+    strncpy(out.name, cfg->sensor.model, sizeof(out.name) - 1);
+    out.name[sizeof(out.name) - 1] = '\0'; // Ensure null termination
+
     out.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
-    strcpy(out.i2c.type, cfg->sensor.model);
+
+    // Use safe string copy with bounds checking for out.i2c.type (20 bytes)
+    strncpy(out.i2c.type, cfg->sensor.model, sizeof(out.i2c.type) - 1);
+    out.i2c.type[sizeof(out.i2c.type) - 1] = '\0'; // Ensure null termination
+
     out.i2c.addr = cfg->sensor.i2c_address;
 
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
