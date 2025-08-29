@@ -65,6 +65,20 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame()
     FrameType nal;
     if (stream->msgChannel->read(&nal))
     {
+        // Validate fTo pointer before using it
+        if (fTo == nullptr) {
+            LOG_ERROR("fTo is null in deliverFrame - cannot copy frame data");
+            fFrameSize = 0;
+            return;
+        }
+
+        // Validate nal.data is not empty
+        if (nal.data.empty()) {
+            LOG_WARN("NAL data is empty in deliverFrame");
+            fFrameSize = 0;
+            return;
+        }
+
         if (nal.data.size() > fMaxSize)
         {
             fFrameSize = fMaxSize;
@@ -79,7 +93,8 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame()
         fPresentationTime = nal.time;
         */
         gettimeofday(&fPresentationTime, NULL);
-        
+
+        // Safe to copy now - we've validated both pointers and size
         memcpy(fTo, &nal.data[0], fFrameSize);
 
         if (fFrameSize > 0)
