@@ -5,6 +5,14 @@ CXXFLAGS += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
 LDFLAGS += -lrt -lpthread
 
 CFLAGS ?= -Wall -Wextra -Wno-unused-parameter -O2 -DNO_OPENSSL=1
+
+# Memory safety and security flags (enable with make DEBUG=1)
+ifdef DEBUG
+CFLAGS += -g -O0 -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer
+CFLAGS += -Wnull-dereference -Wformat=2 -Wformat-security -Wstack-protector
+CFLAGS += -fstack-protector-strong -D_FORTIFY_SOURCE=2
+LDFLAGS += -fsanitize=address -fsanitize=undefined
+endif
 ifeq ($(KERNEL_VERSION_4),y)
 CFLAGS += -DKERNEL_VERSION_4
 endif
