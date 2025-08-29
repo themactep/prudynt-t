@@ -253,6 +253,15 @@ int OSD::libschrift_init()
 
 void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, int posX, int posY, int angle)
 {
+    // Input validation
+    if (osdItem == nullptr) {
+        LOG_ERROR("osdItem is null in set_text");
+        return;
+    }
+    if (text == nullptr) {
+        LOG_ERROR("text is null in set_text");
+        return;
+    }
 
     // size and stroke
     uint8_t stroke_width = osd.font_stroke;
@@ -266,8 +275,21 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, 
 
     int item_size = item_width * item_height * 4;
 
+    // Validate item_size to prevent integer overflow
+    if (item_size <= 0 || item_width == 0 || item_height == 0) {
+        LOG_ERROR("Invalid item size calculated: " << item_size << " (width=" << item_width << ", height=" << item_height << ")");
+        return;
+    }
+
     free(osdItem->data);
     osdItem->data = (uint8_t *)malloc(item_size);
+
+    // Critical: Check if malloc succeeded
+    if (osdItem->data == nullptr) {
+        LOG_ERROR("Failed to allocate memory for OSD item data (size: " << item_size << " bytes)");
+        return;
+    }
+
     memset(osdItem->data, 0, item_size);
 
     drawText(osdItem->data, text, item_width, item_height, stroke_width);
