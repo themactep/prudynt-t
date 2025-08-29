@@ -29,9 +29,9 @@ bool global_restart_rtsp = false;
 bool global_restart_video = false;
 bool global_restart_audio = false;
 
-bool global_osd_thread_signal = false;
-bool global_main_thread_signal = false;
-bool global_motion_thread_signal = false;
+std::atomic<bool> global_osd_thread_signal{false};
+std::atomic<bool> global_main_thread_signal{false};
+std::atomic<bool> global_motion_thread_signal{false};
 std::atomic<char> global_rtsp_thread_signal{1};
 
 std::shared_ptr<jpeg_stream> global_jpeg[NUM_VIDEO_CHANNELS] = {nullptr};
@@ -228,17 +228,17 @@ int main(int argc, const char *argv[])
         if (global_restart_video)
         {
             // stop motion thread
-            if (global_motion_thread_signal)
+            if (global_motion_thread_signal.load())
             {
-                global_motion_thread_signal = false;
+                global_motion_thread_signal.store(false);
                 int ret = pthread_join(motion_thread, NULL);
                 LOG_DEBUG_OR_ERROR(ret, "join motion thread");
             }
 
             // stop osd thread
-            if (global_osd_thread_signal)
+            if (global_osd_thread_signal.load())
             {
-                global_osd_thread_signal = false;
+                global_osd_thread_signal.store(false);
                 int ret = pthread_join(osd_thread, NULL);
                 LOG_DEBUG_OR_ERROR(ret, "join osd thread");
             }

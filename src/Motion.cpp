@@ -22,8 +22,8 @@ void Motion::detect()
 
     if(init() != 0) return;
 
-    global_motion_thread_signal = true;
-    while (global_motion_thread_signal)
+    global_motion_thread_signal.store(true);
+    while (global_motion_thread_signal.load())
     {
 
         ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout);

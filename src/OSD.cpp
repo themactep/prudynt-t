@@ -902,8 +902,8 @@ void OSD::updateDisplayEverySecond()
 void *OSD::thread_entry(void *arg) {
     LOG_DEBUG("start osd update thread.");
 
-    global_osd_thread_signal = true;
-    while (global_osd_thread_signal) {
+    global_osd_thread_signal.store(true);
+    while (global_osd_thread_signal.load()) {
         for (auto v : global_video)
         {
             if (v != nullptr)
