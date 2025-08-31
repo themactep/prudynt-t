@@ -1,5 +1,7 @@
 #include "VideoWorker.hpp"
 
+#include <chrono>
+#include <thread>
 #include "Config.hpp"
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
@@ -266,6 +268,37 @@ void *VideoWorker::thread_entry(void *arg)
 
     if (global_video[encChn]->imp_framesource)
     {
+        // Drain any remaining frames to prevent atomic context violation during shutdown
+        // This addresses the "BUG: scheduling while atomic" kernel panic in tx_isp_t31 module
+        int drain_attempts = 0;
+        const int max_drain_attempts = 3;
+        const int drain_timeout_ms = 50;
+
+        LOG_DDEBUG("Draining encoder pipeline before shutdown, channel: " << encChn);
+
+        while (drain_attempts < max_drain_attempts) {
+            if (IMP_Encoder_PollingStream(encChn, drain_timeout_ms) == 0) {
+                IMPEncoderStream stream;
+                if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) == 0) {
+                    IMP_Encoder_ReleaseStream(encChn, &stream);
+                    LOG_DDEBUG("Drained frame during shutdown, channel: " << encChn << ", attempt: " << (drain_attempts + 1));
+                } else {
+                    LOG_DDEBUG("Failed to get stream during drain, channel: " << encChn);
+                    break;
+                }
+            } else {
+                // No more frames available
+                LOG_DDEBUG("No more frames to drain, channel: " << encChn);
+                break;
+            }
+            drain_attempts++;
+        }
+
+        // Always add a safety delay to ensure ISP pipeline is stable before disable
+        // This prevents synchronize_irq() from being called in atomic context
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        LOG_DDEBUG("Disabling frame source after pipeline drain, channel: " << encChn);
         global_video[encChn]->imp_framesource->disable();
 
         if (global_video[encChn]->imp_encoder)
