@@ -582,43 +582,89 @@ bool get_snapshot(std::vector<unsigned char> &image)
     return false;
 }
 
-template <typename... Args>
-void append_session_msg(std::string &ws_send_msg, const char *t, Args &&...a)
-{
-    char message[256];
-    std::memset(message, 0, sizeof(message));
-    std::snprintf(message, sizeof(message), t, std::forward<Args>(a)...);
-    ws_send_msg += message;
+// Type-safe WebSocket message formatting functions
+// These functions use compile-time safe format strings to eliminate warnings
+
+void append_string_literal(std::string &ws_send_msg, const char *str) {
+    if (str) {
+        ws_send_msg += str;
+    }
+}
+
+void append_quoted_string(std::string &ws_send_msg, const char *str) {
+    ws_send_msg += '"';
+    if (str) {
+        // Escape any quotes in the string for JSON safety
+        for (const char *p = str; *p; ++p) {
+            if (*p == '"' || *p == '\\') {
+                ws_send_msg += '\\';
+            }
+            ws_send_msg += *p;
+        }
+    }
+    ws_send_msg += '"';
+}
+
+void append_integer(std::string &ws_send_msg, int value) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%d", value);
+    ws_send_msg += buffer;
+}
+
+void append_unsigned_hex(std::string &ws_send_msg, unsigned int value) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "\"%#x\"", value);
+    ws_send_msg += buffer;
+}
+
+void append_fps_bps(std::string &ws_send_msg, unsigned char fps, unsigned int bps) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "{\"fps\":%d,\"Bps\":%d}", static_cast<int>(fps), bps);
+    ws_send_msg += buffer;
+}
+
+void append_roi_coordinates(std::string &ws_send_msg, int p0_x, int p0_y, int p1_x, int p1_y) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "[%d,%d,%d,%d]", p0_x, p0_y, p1_x, p1_y);
+    ws_send_msg += buffer;
+}
+
+void append_json_key_value(std::string &ws_send_msg, bool separator, const char *key, const char *opener = "") {
+    if (separator) {
+        ws_send_msg += ',';
+    }
+    ws_send_msg += '"';
+    if (key) {
+        ws_send_msg += key;
+    }
+    ws_send_msg += "\":";
+    if (opener) {
+        ws_send_msg += opener;
+    }
 }
 
 void add_json_null(std::string &message) {
-    append_session_msg(
-        message, "%s", pnt_ws_msg[PNT_WS_MSG_NULL]);    
+    append_string_literal(message, pnt_ws_msg[PNT_WS_MSG_NULL]);
 }
 
 void add_json_bool(std::string &message, bool bl) {
-    append_session_msg(
-        message, "%s", bl ? pnt_ws_msg[PNT_WS_MSG_TRUE] : pnt_ws_msg[PNT_WS_MSG_FALSE]);   
+    append_string_literal(message, bl ? pnt_ws_msg[PNT_WS_MSG_TRUE] : pnt_ws_msg[PNT_WS_MSG_FALSE]);
 }
 
 void add_json_str(std::string &message, const char *value) {
-    append_session_msg(
-        message, "\"%s\"", value);   
+    append_quoted_string(message, value);
 }
 
 void add_json_num(std::string &message, int value) {
-    append_session_msg(
-        message, "%d", value);   
+    append_integer(message, value);
 }
 
 void add_json_uint(std::string &message, unsigned int value) {
-    append_session_msg(
-        message, "\"%#x\"", value);   
+    append_unsigned_hex(message, value);
 }
 
 void add_json_key(std::string &message, bool separator, const char *key, const char * opener = "") {
-    append_session_msg(
-        message, "%s\"%s\":%s", separator ? "," : "", key, opener);
+    append_json_key_value(message, separator, key, opener);
 }
 
 // Helper function to safely combine path components
@@ -1360,8 +1406,7 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason)
                         fps = cfg->stream1.stats.fps;
                         bps = cfg->stream1.stats.bps;
                     }
-                    append_session_msg(
-                        u_ctx->message, "{\"fps\":%d,\"Bps\":%d}", fps, bps);
+                    append_fps_bps(u_ctx->message, fps, bps);
                 }
                 break;                
             default:
@@ -1460,8 +1505,7 @@ signed char WS::stream2_callback(struct lejp_ctx *ctx, char reason)
                     fps = cfg->stream2.stats.fps;
                     bps = cfg->stream2.stats.bps;
                 }
-                append_session_msg(
-                    u_ctx->message, "{\"fps\":%d,\"Bps\":%d}", fps, bps);
+                append_fps_bps(u_ctx->message, fps, bps);
             }
             break;
         default:
@@ -1753,8 +1797,7 @@ signed char WS::motion_roi_callback(struct lejp_ctx *ctx, char reason)
             if ((u_ctx->flag & PNT_FLAG_SEPARATOR))
                 u_ctx->message.append(",");
 
-            append_session_msg(
-                u_ctx->message, "[%d,%d,%d,%d]", cfg->motion.rois[i].p0_x, cfg->motion.rois[i].p0_y,
+            append_roi_coordinates(u_ctx->message, cfg->motion.rois[i].p0_x, cfg->motion.rois[i].p0_y,
                 cfg->motion.rois[i].p1_x, cfg->motion.rois[i].p1_y);
             u_ctx->flag |= PNT_FLAG_SEPARATOR;
         }
@@ -1821,8 +1864,11 @@ signed char WS::motion_roi_callback(struct lejp_ctx *ctx, char reason)
                 // we read 4 roi values add to message
                 if (u_ctx->vidx >= 4)
                 {
-                    append_session_msg(
-                        u_ctx->message, "%d,%d,%d,%d", u_ctx->region.p0_x, u_ctx->region.p0_y, u_ctx->region.p1_x, u_ctx->region.p1_y);
+                    // Format coordinates without brackets for this context
+                    char coord_buffer[64];
+                    std::snprintf(coord_buffer, sizeof(coord_buffer), "%d,%d,%d,%d",
+                        u_ctx->region.p0_x, u_ctx->region.p0_y, u_ctx->region.p1_x, u_ctx->region.p1_y);
+                    u_ctx->message += coord_buffer;
                 }
                 u_ctx->message.append("]");
 

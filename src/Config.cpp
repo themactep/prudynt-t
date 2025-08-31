@@ -6,6 +6,9 @@
 #include <libconfig.h++>
 #include "Config.hpp"
 #include "Logger.hpp"
+#include <set>
+#include <regex>
+#include <map>
 
 #define MODULE "CONFIG"
 
@@ -88,6 +91,106 @@ bool validateSampleRate(const int &v)
     return allowed_rates.count(v) == 1;
 }
 
+// Format string validation functions for security
+bool validateTimeFormat(const char* format) {
+    if (!format || strlen(format) == 0) {
+        return false;
+    }
+
+    // Define allowed strftime format specifiers
+    static const std::set<std::string> allowedTimeSpecs = {
+        "%a", "%A", "%b", "%B", "%c", "%C", "%d", "%D", "%e", "%F", "%g", "%G",
+        "%h", "%H", "%I", "%j", "%k", "%l", "%m", "%M", "%n", "%p", "%P", "%r",
+        "%R", "%s", "%S", "%t", "%T", "%u", "%U", "%V", "%w", "%W", "%x", "%X",
+        "%y", "%Y", "%z", "%Z", "%%"
+    };
+
+    std::string fmt(format);
+    size_t pos = 0;
+
+    // Check for dangerous format specifiers
+    if (fmt.find("%n") != std::string::npos) {
+        LOG_WARN("Dangerous format specifier %n found in time format: " << format);
+        return false;
+    }
+
+    // Validate all % sequences
+    while ((pos = fmt.find('%', pos)) != std::string::npos) {
+        if (pos + 1 >= fmt.length()) {
+            return false; // Incomplete format specifier
+        }
+
+        std::string spec = fmt.substr(pos, 2);
+        if (allowedTimeSpecs.find(spec) == allowedTimeSpecs.end()) {
+            LOG_WARN("Invalid time format specifier found: " << spec);
+            return false;
+        }
+        pos += 2;
+    }
+
+    return true;
+}
+
+bool validateUptimeFormat(const char* format) {
+    if (!format || strlen(format) == 0) {
+        return false;
+    }
+
+    std::string fmt(format);
+
+    // Check for dangerous format specifiers
+    if (fmt.find("%n") != std::string::npos) {
+        LOG_WARN("Dangerous format specifier %n found in uptime format: " << format);
+        return false;
+    }
+
+    // Count expected format specifiers for uptime (should be exactly 3: days, hours, minutes)
+    size_t pos = 0;
+    int formatCount = 0;
+
+    while ((pos = fmt.find('%', pos)) != std::string::npos) {
+        if (pos + 1 >= fmt.length()) {
+            return false; // Incomplete format specifier
+        }
+
+        char nextChar = fmt[pos + 1];
+        if (nextChar == '%') {
+            pos += 2; // Skip literal %
+            continue;
+        }
+
+        // Check for valid unsigned long format specifiers
+        if (nextChar == 'l' && pos + 2 < fmt.length() && fmt[pos + 2] == 'u') {
+            formatCount++;
+            pos += 3;
+        } else if (nextChar == 'u' || nextChar == 'd') {
+            formatCount++;
+            pos += 2;
+        } else if (isdigit(nextChar)) {
+            // Handle width specifiers like %02lu
+            pos += 2;
+            while (pos < fmt.length() && (isdigit(fmt[pos]) || fmt[pos] == 'l')) {
+                pos++;
+            }
+            if (pos < fmt.length() && (fmt[pos] == 'u' || fmt[pos] == 'd')) {
+                formatCount++;
+                pos++;
+            }
+        } else {
+            LOG_WARN("Invalid uptime format specifier found at position " << pos);
+            return false;
+        }
+    }
+
+    // Uptime format should have exactly 3 format specifiers (days, hours, minutes)
+    if (formatCount != 3) {
+        LOG_WARN("Uptime format should have exactly 3 format specifiers, found: " << formatCount);
+        return false;
+    }
+
+    return true;
+}
+
 std::vector<ConfigItem<bool>> CFG::getBoolItems()
 {
     return {
@@ -152,8 +255,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
         {"stream0.format", stream0.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
         {"stream0.osd.font_path", stream0.osd.font_path, "/usr/share/fonts/UbuntuMono-Regular2.ttf", validateCharNotEmpty},
         {"stream0.osd.logo_path", stream0.osd.logo_path, "/usr/share/images/thingino_logo_1.bgra", validateCharNotEmpty},
-        {"stream0.osd.time_format", stream0.osd.time_format, "%F %T", validateCharNotEmpty},
-        {"stream0.osd.uptime_format", stream0.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
+        {"stream0.osd.time_format", stream0.osd.time_format, "%F %T", validateTimeFormat},
+        {"stream0.osd.uptime_format", stream0.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateUptimeFormat},
         {"stream0.osd.user_text_format", stream0.osd.user_text_format, "%hostname", validateCharNotEmpty},
         {"stream0.mode", stream0.mode, DEFAULT_ENC_MODE_0, [](const char *v) {
             std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
@@ -164,8 +267,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
         {"stream1.format", stream1.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
         {"stream1.osd.font_path", stream1.osd.font_path, "/usr/share/fonts/NotoSansDisplay-Condensed2.ttf", validateCharNotEmpty},
         {"stream1.osd.logo_path", stream1.osd.logo_path, "/usr/share/images/thingino_logo_1.bgra", validateCharNotEmpty},
-        {"stream1.osd.time_format", stream1.osd.time_format, "%F %T", validateCharNotEmpty},
-        {"stream1.osd.uptime_format", stream1.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
+        {"stream1.osd.time_format", stream1.osd.time_format, "%F %T", validateTimeFormat},
+        {"stream1.osd.uptime_format", stream1.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateUptimeFormat},
         {"stream1.osd.user_text_format", stream1.osd.user_text_format, "%hostname", validateCharNotEmpty},
         {"stream1.mode", stream1.mode, DEFAULT_ENC_MODE_1, [](const char *v) {
             std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};

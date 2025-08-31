@@ -11,6 +11,9 @@
 #include <arpa/inet.h>
 #include <sys/sysinfo.h>
 #include "schrift.h"
+#include <regex>
+#include <set>
+#include <map>
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
@@ -84,6 +87,12 @@ private:
 
     void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, int posX, int posY, int angle);
     std::string getConfigPath(const char *itemName);
+
+    // Format string security functions
+    static bool isValidTimeFormat(const char* format);
+    static bool isValidUptimeFormat(const char* format);
+    static int safeStrftime(char* buffer, size_t bufferSize, const char* format, const struct tm* timeptr);
+    static int safeSnprintfUptime(char* buffer, size_t bufferSize, const char* format, unsigned long days, unsigned long hours, unsigned long minutes);
 
     IMPEncoderCHNAttr channelAttributes;
 

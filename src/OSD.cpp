@@ -831,7 +831,7 @@ void OSD::updateDisplayEverySecond()
             // Format and update system time
             if ((flag & 1) && osd.time_enabled)
             {
-                strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, ltime);
+                safeStrftime(timeFormatted, sizeof(timeFormatted), osd.time_format, ltime);
 
                 set_text(&osdTime, nullptr, timeFormatted,
                          osd.pos_time_x, osd.pos_time_y, osd.time_rotation);
@@ -887,7 +887,7 @@ void OSD::updateDisplayEverySecond()
                 unsigned long minutes = (currentUptime % 3600) / 60;
                 //unsigned long seconds = currentUptime % 60;
 
-                snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, days, hours, minutes);
+                safeSnprintfUptime(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, days, hours, minutes);
 
                 set_text(&osdUptm, nullptr, uptimeFormatted,
                          osd.pos_uptime_x, osd.pos_uptime_y, osd.uptime_rotation);
@@ -936,4 +936,237 @@ void *OSD::thread_entry(void *arg) {
 
     LOG_DEBUG("exit osd update thread.");
     return 0;
+}
+
+// Format string security validation functions
+bool OSD::isValidTimeFormat(const char* format) {
+    if (!format || strlen(format) == 0) {
+        return false;
+    }
+
+    // Define allowed strftime format specifiers
+    static const std::set<std::string> allowedTimeSpecs = {
+        "%a", "%A", "%b", "%B", "%c", "%C", "%d", "%D", "%e", "%F", "%g", "%G",
+        "%h", "%H", "%I", "%j", "%k", "%l", "%m", "%M", "%n", "%p", "%P", "%r",
+        "%R", "%s", "%S", "%t", "%T", "%u", "%U", "%V", "%w", "%W", "%x", "%X",
+        "%y", "%Y", "%z", "%Z", "%%"
+    };
+
+    std::string fmt(format);
+    size_t pos = 0;
+
+    // Check for dangerous format specifiers
+    if (fmt.find("%n") != std::string::npos || fmt.find("%s") != std::string::npos) {
+        LOG_WARN("Potentially dangerous format specifier found in time format: " << format);
+        return false;
+    }
+
+    // Validate all % sequences
+    while ((pos = fmt.find('%', pos)) != std::string::npos) {
+        if (pos + 1 >= fmt.length()) {
+            return false; // Incomplete format specifier
+        }
+
+        std::string spec = fmt.substr(pos, 2);
+        if (allowedTimeSpecs.find(spec) == allowedTimeSpecs.end()) {
+            LOG_WARN("Invalid time format specifier found: " << spec);
+            return false;
+        }
+        pos += 2;
+    }
+
+    return true;
+}
+
+bool OSD::isValidUptimeFormat(const char* format) {
+    if (!format || strlen(format) == 0) {
+        return false;
+    }
+
+    std::string fmt(format);
+
+    // Check for dangerous format specifiers
+    if (fmt.find("%n") != std::string::npos || fmt.find("%s") != std::string::npos) {
+        LOG_WARN("Potentially dangerous format specifier found in uptime format: " << format);
+        return false;
+    }
+
+    // Count expected format specifiers for uptime (should be exactly 3: days, hours, minutes)
+    size_t pos = 0;
+    int formatCount = 0;
+
+    while ((pos = fmt.find('%', pos)) != std::string::npos) {
+        if (pos + 1 >= fmt.length()) {
+            return false; // Incomplete format specifier
+        }
+
+        char nextChar = fmt[pos + 1];
+        if (nextChar == '%') {
+            pos += 2; // Skip literal %
+            continue;
+        }
+
+        // Check for valid unsigned long format specifiers
+        if (nextChar == 'l' && pos + 2 < fmt.length() && fmt[pos + 2] == 'u') {
+            formatCount++;
+            pos += 3;
+        } else if (nextChar == 'u' || nextChar == 'd') {
+            formatCount++;
+            pos += 2;
+        } else if (isdigit(nextChar)) {
+            // Handle width specifiers like %02lu
+            pos += 2;
+            while (pos < fmt.length() && (isdigit(fmt[pos]) || fmt[pos] == 'l')) {
+                pos++;
+            }
+            if (pos < fmt.length() && (fmt[pos] == 'u' || fmt[pos] == 'd')) {
+                formatCount++;
+                pos++;
+            }
+        } else {
+            LOG_WARN("Invalid uptime format specifier found at position " << pos);
+            return false;
+        }
+    }
+
+    // Uptime format should have exactly 3 format specifiers (days, hours, minutes)
+    if (formatCount != 3) {
+        LOG_WARN("Uptime format should have exactly 3 format specifiers, found: " << formatCount);
+        return false;
+    }
+
+    return true;
+}
+
+int OSD::safeStrftime(char* buffer, size_t bufferSize, const char* format, const struct tm* timeptr) {
+    if (!buffer || bufferSize == 0 || !format || !timeptr) {
+        LOG_ERROR("Invalid parameters for safeStrftime");
+        return -1;
+    }
+
+    // Map user format strings to safe predefined formats
+    static const std::map<std::string, const char*> safeTimeFormats = {
+        {"%F %T", "%F %T"},           // ISO format: 2023-12-25 14:30:45
+        {"%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"}, // Same as above
+        {"%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S"}, // DD/MM/YYYY HH:MM:SS
+        {"%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M:%S"}, // MM/DD/YYYY HH:MM:SS
+        {"%Y-%m-%d", "%Y-%m-%d"},     // Date only
+        {"%H:%M:%S", "%H:%M:%S"},     // Time only
+        {"%H:%M", "%H:%M"},           // Time without seconds
+        {"%a %b %d %H:%M:%S %Y", "%a %b %d %H:%M:%S %Y"}, // Full format
+        {"%c", "%Y-%m-%d %H:%M:%S"},  // Replace locale format with Y2K-safe format
+        {"%x %X", "%Y-%m-%d %H:%M:%S"}, // Replace locale format with Y2K-safe format
+    };
+
+    // Check if the format is in our safe list
+    auto it = safeTimeFormats.find(format);
+    const char* safeFormat;
+    if (it != safeTimeFormats.end()) {
+        safeFormat = it->second;
+    } else {
+        // Validate the format string for basic safety
+        if (!isValidTimeFormat(format)) {
+            LOG_WARN("Invalid time format detected, using default: " << format);
+            safeFormat = "%F %T"; // Use safe default
+        } else {
+            safeFormat = format; // Use validated format
+        }
+    }
+
+    // Use the safe format with compile-time literal
+    size_t result;
+    if (safeFormat == format && it != safeTimeFormats.end()) {
+        // Use compile-time safe format
+        if (strcmp(safeFormat, "%F %T") == 0) {
+            result = strftime(buffer, bufferSize, "%F %T", timeptr);
+        } else if (strcmp(safeFormat, "%Y-%m-%d %H:%M:%S") == 0) {
+            result = strftime(buffer, bufferSize, "%Y-%m-%d %H:%M:%S", timeptr);
+        } else if (strcmp(safeFormat, "%d/%m/%Y %H:%M:%S") == 0) {
+            result = strftime(buffer, bufferSize, "%d/%m/%Y %H:%M:%S", timeptr);
+        } else if (strcmp(safeFormat, "%m/%d/%Y %H:%M:%S") == 0) {
+            result = strftime(buffer, bufferSize, "%m/%d/%Y %H:%M:%S", timeptr);
+        } else if (strcmp(safeFormat, "%Y-%m-%d") == 0) {
+            result = strftime(buffer, bufferSize, "%Y-%m-%d", timeptr);
+        } else if (strcmp(safeFormat, "%H:%M:%S") == 0) {
+            result = strftime(buffer, bufferSize, "%H:%M:%S", timeptr);
+        } else if (strcmp(safeFormat, "%H:%M") == 0) {
+            result = strftime(buffer, bufferSize, "%H:%M", timeptr);
+        } else if (strcmp(safeFormat, "%a %b %d %H:%M:%S %Y") == 0) {
+            result = strftime(buffer, bufferSize, "%a %b %d %H:%M:%S %Y", timeptr);
+        } else if (strcmp(safeFormat, "%Y-%m-%d %H:%M:%S") == 0) {
+            // Handle both %c and %x %X mappings with Y2K-safe format
+            result = strftime(buffer, bufferSize, "%Y-%m-%d %H:%M:%S", timeptr);
+        } else {
+            // Fallback to default
+            result = strftime(buffer, bufferSize, "%F %T", timeptr);
+        }
+    } else {
+        // Use default format for safety
+        result = strftime(buffer, bufferSize, "%F %T", timeptr);
+    }
+
+    if (result == 0 && bufferSize > 0) {
+        // strftime failed, use minimal safe format
+        result = strftime(buffer, bufferSize, "%F %T", timeptr);
+    }
+
+    return static_cast<int>(result);
+}
+
+int OSD::safeSnprintfUptime(char* buffer, size_t bufferSize, const char* format, unsigned long days, unsigned long hours, unsigned long minutes) {
+    if (!buffer || bufferSize == 0 || !format) {
+        LOG_ERROR("Invalid parameters for safeSnprintfUptime");
+        return -1;
+    }
+
+    // Map user format strings to safe predefined formats
+    static const std::map<std::string, int> safeUptimeFormats = {
+        {"Up: %02lud %02lu:%02lu", 1},     // Default format
+        {"Uptime: %02lud %02lu:%02lu", 2}, // Alternative format
+        {"%lud %lu:%lu", 3},               // Simple format
+        {"%lu days %lu hours %lu minutes", 4}, // Verbose format
+        {"%lud %02lu:%02lu", 5},           // Compact format
+    };
+
+    // Check if the format is in our safe list
+    auto it = safeUptimeFormats.find(format);
+    int result;
+
+    if (it != safeUptimeFormats.end()) {
+        // Use compile-time safe format based on the mapped value
+        switch (it->second) {
+            case 1:
+                result = std::snprintf(buffer, bufferSize, "Up: %02lud %02lu:%02lu", days, hours, minutes);
+                break;
+            case 2:
+                result = std::snprintf(buffer, bufferSize, "Uptime: %02lud %02lu:%02lu", days, hours, minutes);
+                break;
+            case 3:
+                result = std::snprintf(buffer, bufferSize, "%lud %lu:%lu", days, hours, minutes);
+                break;
+            case 4:
+                result = std::snprintf(buffer, bufferSize, "%lu days %lu hours %lu minutes", days, hours, minutes);
+                break;
+            case 5:
+                result = std::snprintf(buffer, bufferSize, "%lud %02lu:%02lu", days, hours, minutes);
+                break;
+            default:
+                result = std::snprintf(buffer, bufferSize, "Up: %02lud %02lu:%02lu", days, hours, minutes);
+                break;
+        }
+    } else {
+        // Validate the format string for basic safety
+        if (!isValidUptimeFormat(format)) {
+            LOG_WARN("Invalid uptime format detected, using default: " << format);
+        }
+        // Use safe default format for any non-whitelisted format
+        result = std::snprintf(buffer, bufferSize, "Up: %02lud %02lu:%02lu", days, hours, minutes);
+    }
+
+    if (result < 0 || static_cast<size_t>(result) >= bufferSize) {
+        LOG_WARN("snprintf failed or truncated, using minimal format");
+        result = std::snprintf(buffer, bufferSize, "Up: %lud %lu:%lu", days, hours, minutes);
+    }
+
+    return result;
 }
