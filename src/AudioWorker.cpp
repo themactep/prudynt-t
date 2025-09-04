@@ -242,9 +242,18 @@ void *AudioWorker::thread_entry(void *arg)
               << global_audio[encChn]->devId << " and channel " << global_audio[encChn]->aiChn
               << " and encoder " << global_audio[encChn]->aeChn);
 
-    global_audio[encChn]->imp_audio = IMPAudio::createNew(global_audio[encChn]->devId,
-                                                          global_audio[encChn]->aiChn,
-                                                          global_audio[encChn]->aeChn);
+    try {
+        global_audio[encChn]->imp_audio = IMPAudio::createNew(global_audio[encChn]->devId,
+                                                              global_audio[encChn]->aiChn,
+                                                              global_audio[encChn]->aeChn);
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to initialize audio: " << e.what());
+        global_audio[encChn]->imp_audio = nullptr;
+        global_audio[encChn]->running = false;
+        // inform main that initialization is complete (even though it failed)
+        sh->has_started.release();
+        return nullptr;
+    }
 
     // inform main that initialization is complete
     sh->has_started.release();
