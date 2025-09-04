@@ -5,7 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <functional>
-#include <libconfig.h++>
+#include <json-c/json.h>
 #include <sys/time.h>
 #include <any>
 
@@ -110,6 +110,8 @@ struct _rtsp {
     const char *username;
     const char *password;
     const char *name;
+    float packet_loss_threshold;
+    float bandwidth_margin;
 };
 struct _sensor {
     int fps;
@@ -168,8 +170,8 @@ struct _audio {
     int output_sample_rate;
 #endif
 };
-#endif      
-struct _osd {            
+#endif
+struct _osd {
     int font_size;
     int font_xscale;
     int font_yscale;
@@ -193,12 +195,12 @@ struct _osd {
     int pos_logo_y;
     int logo_transparency;
     int logo_rotation;
-    int start_delay;            
-    bool enabled;            
+    int start_delay;
+    bool enabled;
     bool time_enabled;
     bool user_text_enabled;
     bool uptime_enabled;
-    bool logo_enabled;         
+    bool logo_enabled;
     const char *font_path;
     const char *time_format;
     const char *uptime_format;
@@ -209,7 +211,7 @@ struct _osd {
     _regions regions;
     _stream_stats stats;
     std::atomic<int> thread_signal;
-};  
+};
 struct _stream {
     int gop;
     int max_gop;
@@ -238,10 +240,10 @@ struct _stream {
     const char *jpeg_path;
     _osd osd;
     _stream_stats stats;
-#if defined(AUDIO_SUPPORT)    
+#if defined(AUDIO_SUPPORT)
     bool audio_enabled;
 #endif
-};	
+};
 struct _motion {
     int monitor_stream;
     int debounce_time;
@@ -279,9 +281,16 @@ struct _sysinfo {
 
 class CFG {
 	public:
+        // Destructor to clean up JSON object
+        ~CFG() {
+            if (jsonConfig) {
+                json_object_put(jsonConfig);
+                jsonConfig = nullptr;
+            }
+        }
 
         bool config_loaded = false;
-        libconfig::Config lc{};
+        json_object *jsonConfig = nullptr;
         std::string filePath{};
 
 		CFG();
@@ -292,7 +301,7 @@ class CFG {
 
 #if defined(AUDIO_SUPPORT)
         _audio audio{};
-#endif  
+#endif
 		_general general{};
 		_rtsp rtsp{};
 		_sensor sensor{};
@@ -316,6 +325,8 @@ class CFG {
             items = &intItems;
         } else if constexpr (std::is_same_v<T, unsigned int>) {
             items = &uintItems;
+        } else if constexpr (std::is_same_v<T, float>) {
+            items = &floatItems;
         } else {
             return result;
         }
@@ -339,6 +350,8 @@ class CFG {
             items = &intItems;
         } else if constexpr (std::is_same_v<T, unsigned int>) {
             items = &uintItems;
+        } else if constexpr (std::is_same_v<T, float>) {
+            items = &floatItems;
         } else {
             return false;
         }
@@ -362,11 +375,13 @@ class CFG {
         std::vector<ConfigItem<const char *>> charItems{};
         std::vector<ConfigItem<int>> intItems{};
         std::vector<ConfigItem<unsigned int>> uintItems{};
+        std::vector<ConfigItem<float>> floatItems{};
 
         std::vector<ConfigItem<bool>> getBoolItems();
         std::vector<ConfigItem<const char *>> getCharItems() ;
         std::vector<ConfigItem<int>> getIntItems();
         std::vector<ConfigItem<unsigned int>> getUintItems();
+        std::vector<ConfigItem<float>> getFloatItems();
 };
 
 // The configuration is kept in a global singleton that's accessed via this

@@ -84,19 +84,26 @@ deps() {
 	cp schrift.h $TOP/3rdparty/install/include/
 	cd ../../
 
-	echo "Build libconfig"
+	echo "Build json-c"
 	cd 3rdparty
-	rm -rf libconfig
-	if [[ ! -f libconfig-1.7.3.tar.gz ]]; then
-		wget 'https://github.com/hyperrealm/libconfig/releases/download/v1.7.3/libconfig-1.7.3.tar.gz';
+	rm -rf json-c
+	if [[ ! -f json-c-0.17.tar.gz ]]; then
+		wget 'https://github.com/json-c/json-c/archive/refs/tags/json-c-0.17-20230812.tar.gz' -O json-c-0.17.tar.gz;
 	fi
-	tar xf libconfig-1.7.3.tar.gz
-	mv libconfig-1.7.3 libconfig
-	cd libconfig
-	CC="${PRUDYNT_CROSS}gcc" CXX="${PRUDYNT_CROSS}g++" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install"
+	tar xf json-c-0.17.tar.gz
+	mv json-c-json-c-0.17-20230812 json-c
+	cd json-c
+	mkdir -p build
+	cd build
+	cmake -DCMAKE_SYSTEM_NAME=Linux \
+		-DCMAKE_C_COMPILER="${PRUDYNT_CROSS}gcc" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX="$TOP/3rdparty/install" \
+		-DBUILD_SHARED_LIBS=ON \
+		..
 	make -j$(nproc)
 	make install
-	cd ../../
+	cd ../../../
 
 	echo "Build live555"
 	cd 3rdparty

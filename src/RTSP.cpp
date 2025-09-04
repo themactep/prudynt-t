@@ -2,6 +2,7 @@
 #include "IMPBackchannel.hpp"
 #include "BackchannelServerMediaSubsession.hpp"
 
+#undef MODULE
 #define MODULE "RTSP"
 
 void RTSP::addSubsession(int chnNr, _stream &stream)

@@ -7,6 +7,7 @@
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
+#undef MODULE
 #define MODULE "VideoWorker"
 
 VideoWorker::VideoWorker(int chn)
