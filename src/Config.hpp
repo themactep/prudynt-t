@@ -124,6 +124,9 @@ struct _sensor {
     int i2c_bus;
     int video_interface;
     int gpio_reset;
+    const char *chip_id;
+    const char *version;
+    int min_fps;
 };
 struct _image {
     int contrast;

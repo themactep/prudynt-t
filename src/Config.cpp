@@ -147,7 +147,9 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
         {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
         {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},
         {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
-        {"sensor.model", sensor.model, "gc2053", validateCharNotEmpty, false, "/proc/jz/sensor/name"},
+        {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/name"},
+        {"sensor.chip_id", sensor.chip_id, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/chip_id"},
+        {"sensor.version", sensor.version, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/version"},
         {"stream0.format", stream0.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
         {"stream0.osd.font_path", stream0.osd.font_path, "/usr/share/fonts/UbuntuMono-Regular2.ttf", validateCharNotEmpty},
         {"stream0.osd.logo_path", stream0.osd.logo_path, "/usr/share/images/thingino_logo_1.bgra", validateCharNotEmpty},
@@ -241,12 +243,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"rtsp.session_reclaim", rtsp.session_reclaim, 65, validateIntGe0},
         {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false, "/proc/jz/sensor/i2c_bus"},
         {"sensor.fps", sensor.fps, 25, validateInt120, false, "/proc/jz/sensor/max_fps"},
+        {"sensor.min_fps", sensor.min_fps, 5, validateInt120, false, "/proc/jz/sensor/min_fps"},
         {"sensor.height", sensor.height, 1080, validateIntGe0, false, "/proc/jz/sensor/height"},
         {"sensor.width", sensor.width, 1920, validateIntGe0, false, "/proc/jz/sensor/width"},
         {"sensor.boot", sensor.boot, 0, validateIntGe0, false, "/proc/jz/sensor/boot"},
         {"sensor.mclk", sensor.mclk, 1, validateIntGe0, false, "/proc/jz/sensor/mclk"},
         {"sensor.video_interface", sensor.video_interface, 0, validateIntGe0, false, "/proc/jz/sensor/video_interface"},
-        {"sensor.gpio_reset", sensor.gpio_reset, 91, validateIntGe0, false, "/proc/jz/sensor/reset_gpio"},
+        {"sensor.gpio_reset", sensor.gpio_reset, -1, [](const int &v) { return v >= -1; }, false, "/proc/jz/sensor/reset_gpio"},
         {"stream0.bitrate", stream0.bitrate, 3000, validateIntGe0},
         {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0, [](const int &v) { return v >= 1 && v <= 8; }},
         {"stream0.fps", stream0.fps, 25, validateInt120},
@@ -412,6 +415,14 @@ bool processLine(const std::string &line, T &value)
     }
 }
 
+// Helper function to check if this is a sensor parameter with proc path
+template <typename T>
+bool isSensorProcParameter(const ConfigItem<T> &item) {
+    return item.procPath != nullptr &&
+           item.procPath[0] != '\0' &&
+           std::string(item.procPath).find("/proc/jz/sensor/") == 0;
+}
+
 template <typename T>
 void handleConfigItem(json_object *jsonConfig, ConfigItem<T> &item)
 {
@@ -420,88 +431,106 @@ void handleConfigItem(json_object *jsonConfig, ConfigItem<T> &item)
 
     if (!jsonConfig) return;
 
-    // Parse the path to navigate through nested JSON objects
-    std::vector<std::string> pathParts;
-    std::string path = item.path;
-    size_t pos = 0;
-    while ((pos = path.find('.')) != std::string::npos) {
-        pathParts.push_back(path.substr(0, pos));
-        path.erase(0, pos + 1);
-    }
-    pathParts.push_back(path);
-
-    // Navigate through the JSON structure
-    json_object *currentJson = jsonConfig;
-    for (size_t i = 0; i < pathParts.size() - 1; ++i) {
-        json_object *nextObj = nullptr;
-        if (json_object_object_get_ex(currentJson, pathParts[i].c_str(), &nextObj)) {
-            if (json_object_is_type(nextObj, json_type_object)) {
-                currentJson = nextObj;
-            } else {
-                return; // Path doesn't exist or not an object
+    // For sensor parameters with proc paths, prioritize proc files over JSON
+    if (isSensorProcParameter(item)) {
+        // Try proc file first for sensor parameters
+        std::ifstream procFile(item.procPath);
+        if (procFile) {
+            T value;
+            std::string line;
+            if (std::getline(procFile, line)) {
+                if (processLine(line, value)) {
+                    if constexpr (std::is_same_v<T, const char *>) {
+                        item.value = strdup(value);
+                    } else {
+                        item.value = value;
+                    }
+                    readFromProc = true;
+                }
             }
-        } else {
-            return; // Path doesn't exist
         }
     }
 
-    // Try to read the value from JSON
-    const std::string& finalKey = pathParts.back();
-    json_object *valueObj = nullptr;
-    if (json_object_object_get_ex(currentJson, finalKey.c_str(), &valueObj)) {
-        if constexpr (std::is_same_v<T, const char *>) {
-            if (json_object_is_type(valueObj, json_type_string)) {
-                const char *str = json_object_get_string(valueObj);
-                item.value = strdup(str);
-                readFromConfig = true;
+    // Only read from JSON if proc file failed or this is not a sensor proc parameter
+    if (!readFromProc) {
+        // Parse the path to navigate through nested JSON objects
+        std::vector<std::string> pathParts;
+        std::string path = item.path;
+        size_t pos = 0;
+        while ((pos = path.find('.')) != std::string::npos) {
+            pathParts.push_back(path.substr(0, pos));
+            path.erase(0, pos + 1);
+        }
+        pathParts.push_back(path);
+
+        // Navigate through the JSON structure
+        json_object *currentJson = jsonConfig;
+        for (size_t i = 0; i < pathParts.size() - 1; ++i) {
+            json_object *nextObj = nullptr;
+            if (json_object_object_get_ex(currentJson, pathParts[i].c_str(), &nextObj)) {
+                if (json_object_is_type(nextObj, json_type_object)) {
+                    currentJson = nextObj;
+                } else {
+                    return; // Path doesn't exist or not an object
+                }
+            } else {
+                return; // Path doesn't exist
             }
-        } else if constexpr (std::is_same_v<T, bool>) {
-            if (json_object_is_type(valueObj, json_type_boolean)) {
-                item.value = json_object_get_boolean(valueObj);
-                readFromConfig = true;
-            }
-        } else if constexpr (std::is_same_v<T, int>) {
-            if (json_object_is_type(valueObj, json_type_int)) {
-                item.value = json_object_get_int(valueObj);
-                readFromConfig = true;
-            }
-        } else if constexpr (std::is_same_v<T, unsigned int>) {
-            if (json_object_is_type(valueObj, json_type_int)) {
-                int64_t val = json_object_get_int64(valueObj);
-                if (val >= 0) {
-                    item.value = static_cast<unsigned int>(val);
+        }
+
+        // Try to read the value from JSON
+        const std::string& finalKey = pathParts.back();
+        json_object *valueObj = nullptr;
+        if (json_object_object_get_ex(currentJson, finalKey.c_str(), &valueObj)) {
+            if constexpr (std::is_same_v<T, const char *>) {
+                if (json_object_is_type(valueObj, json_type_string)) {
+                    const char *str = json_object_get_string(valueObj);
+                    item.value = strdup(str);
+                    readFromConfig = true;
+                }
+            } else if constexpr (std::is_same_v<T, bool>) {
+                if (json_object_is_type(valueObj, json_type_boolean)) {
+                    item.value = json_object_get_boolean(valueObj);
+                    readFromConfig = true;
+                }
+            } else if constexpr (std::is_same_v<T, int>) {
+                if (json_object_is_type(valueObj, json_type_int)) {
+                    item.value = json_object_get_int(valueObj);
+                    readFromConfig = true;
+                }
+            } else if constexpr (std::is_same_v<T, unsigned int>) {
+                if (json_object_is_type(valueObj, json_type_int)) {
+                    int64_t val = json_object_get_int64(valueObj);
+                    if (val >= 0) {
+                        item.value = static_cast<unsigned int>(val);
+                        readFromConfig = true;
+                    }
+                }
+            } else if constexpr (std::is_same_v<T, float>) {
+                if (json_object_is_type(valueObj, json_type_double)) {
+                    item.value = static_cast<float>(json_object_get_double(valueObj));
+                    readFromConfig = true;
+                } else if (json_object_is_type(valueObj, json_type_int)) {
+                    item.value = static_cast<float>(json_object_get_int(valueObj));
                     readFromConfig = true;
                 }
             }
-        } else if constexpr (std::is_same_v<T, float>) {
-            if (json_object_is_type(valueObj, json_type_double)) {
-                item.value = static_cast<float>(json_object_get_double(valueObj));
-                readFromConfig = true;
-            } else if (json_object_is_type(valueObj, json_type_int)) {
-                item.value = static_cast<float>(json_object_get_int(valueObj));
-                readFromConfig = true;
-            }
         }
     }
 
-    if (!readFromConfig && item.procPath != nullptr && item.procPath[0] != '\0')
-    { // If not read from config and procPath is set
+    // For non-sensor parameters, try proc file as fallback if JSON failed
+    if (!readFromConfig && !readFromProc && !isSensorProcParameter(item) &&
+        item.procPath != nullptr && item.procPath[0] != '\0') {
         // Attempt to read from the proc filesystem
         std::ifstream procFile(item.procPath);
-        if (procFile)
-        {
+        if (procFile) {
             T value;
             std::string line;
-            if (std::getline(procFile, line))
-            {
-                if (processLine(line, value))
-                {
-                    if constexpr (std::is_same_v<T, const char *>)
-                    {
+            if (std::getline(procFile, line)) {
+                if (processLine(line, value)) {
+                    if constexpr (std::is_same_v<T, const char *>) {
                         item.value = strdup(value);
-                    }
-                    else
-                    {
+                    } else {
                         item.value = value;
                     }
                     readFromProc = true;

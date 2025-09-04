@@ -86,15 +86,10 @@
   },
   "sensor": {
     "boot": 0,
-    "fps": 25,
-    "gpio_reset": 91,
-    "height": 1080,
-    "i2c_address": 55,
+    "gpio_reset": -1,
     "i2c_bus": 0,
     "mclk": 1,
-    "model": "gc2053",
-    "video_interface": 0,
-    "width": 1920
+    "video_interface": 0
   },
   "stream0": {
     "adaptive_gop": true,
