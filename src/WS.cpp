@@ -15,6 +15,13 @@
 #include <sys/inotify.h>
 
 #include <iomanip>
+#include <cerrno>
+#include <cstring>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 #define MODULE "WEBSOCKET"
 
@@ -505,22 +512,22 @@ int flag;                           // bitmask info store e.g. JSON separator ("
     }
 };
 
-const char* generateToken(int length) 
+const char* generateToken()
 {
     static const char characters[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    static const int maxIndex = sizeof(characters) - 1;  
+    static const size_t charCount = strlen(characters); // exclude terminating null
     static char tokenBuffer[WEBSOCKET_TOKEN_LENGTH + 1];
 
     std::random_device rd;
     std::mt19937 generator(rd());
-    std::uniform_int_distribution<> distribution(0, maxIndex);
+    std::uniform_int_distribution<size_t> distribution(0, charCount - 1);
 
-    // Generate random characters
-    for (int i = 0; i < length; i++) 
+    // Always generate exactly WEBSOCKET_TOKEN_LENGTH characters
+    for (int i = 0; i < WEBSOCKET_TOKEN_LENGTH; i++)
     {
         tokenBuffer[i] = characters[distribution(generator)];
     }
-    tokenBuffer[length] = '\0';  // Ensure null termination
+    tokenBuffer[WEBSOCKET_TOKEN_LENGTH] = '\0';
 
     return tokenBuffer;
 }
@@ -2484,33 +2491,69 @@ void WS::start()
     // create websocket authentication token and write it into /run/
     // only websocket connect with token parameter accepted
     // ws://<ip>:<port>/?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    std::string generatedToken = generateToken(WEBSOCKET_TOKEN_LENGTH);
-    memset(token, 0, sizeof(token));  // Clear the token buffer first
-    memcpy(token, generatedToken.c_str(), std::min(generatedToken.length(), (size_t)WEBSOCKET_TOKEN_LENGTH));
+    const char* generatedToken = generateToken();
+    memset(token, 0, sizeof(token));
+    memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
     std::ofstream outFile("/run/prudynt_websocket_token");
-    outFile << token;
+    outFile.write(token, WEBSOCKET_TOKEN_LENGTH);
     outFile.close();
-    LOG_DEBUG("Generated token length: " << generatedToken.length() << ", Token: '" << token << "'");
+    LOG_DEBUG("Generated token length: " << WEBSOCKET_TOKEN_LENGTH << ", Token: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
 
-    lws_set_log_level(cfg->websocket.loglevel, lwsl_emit_stderr);
+    // Hook libwebsockets logging into our logger for visibility
+    auto lws_emit = [](int /*level*/, const char *line) {
+        Logger::log(Logger::DEBUG, FILENAME, LogMsg() << "[lws] " << std::string(line ? line : ""));
+    };
+    lws_set_log_level(0x7FFFFFFF, lws_emit);
+    LOG_INFO("libwebsockets version: " << lws_get_library_version());
 
-    protocols.name = cfg->websocket.name;
-    protocols.callback = ws_callback;
-    protocols.per_session_data_size = sizeof(user_ctx);
-    protocols.rx_buffer_size = 65536;
+    // Preflight: detect if port is already in use to give a clearer error
+    int test_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (test_fd >= 0) {
+        int opt = 1; setsockopt(test_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        sockaddr_in sin{}; sin.sin_family = AF_INET; sin.sin_addr.s_addr = htonl(INADDR_ANY);
+        sin.sin_port = htons(cfg->websocket.port);
+        if (bind(test_fd, (sockaddr*)&sin, sizeof(sin)) < 0) {
+            LOG_ERROR("Port " << cfg->websocket.port << " appears busy: " << strerror(errno) << " (errno=" << errno << ")");
+        } else {
+            close(test_fd); // free it for lws
+        }
+    }
+
+    // Initialize member protocols_ array (lifetime >= context)
+    memset(protocols_, 0, sizeof(protocols_));
+    protocols_[0].name = (cfg->websocket.name && cfg->websocket.name[0]) ? cfg->websocket.name : "prudynt";
+    protocols_[0].callback = ws_callback;
+    protocols_[0].per_session_data_size = sizeof(user_ctx);
+    protocols_[0].rx_buffer_size = 2048; // compact buffer
 
     memset(&info, 0, sizeof(info));
     info.port = cfg->websocket.port;
-    info.iface = ip;
-    info.protocols = &protocols;
-    info.gid = -1;
-    info.uid = -1;
+    info.iface = ip; // null = all interfaces
+    info.protocols = protocols_; // array with terminating empty entry
+    info.options = 0; // No special options - let libwebsockets use defaults
+    // Don't set any privilege-related fields - let libwebsockets handle it
+    // Reduce LWS context memory usage on low-RAM devices
+    info.count_threads = 1;
+    info.fd_limit_per_thread = 4;         // ultra small fd table
+    info.pt_serv_buf_size = 256;          // default 4096 -> 256
+    info.max_http_header_data = 2048;     // allow larger browser headers (User-Agent, etc)
+    info.max_http_header_data2 = 2048;    // 32-bit mirror
+    info.max_http_header_pool = 4;        // small pool but > 1 to avoid contention
+    info.max_http_header_pool2 = 4;       // 32-bit mirror
+    info.extensions = NULL;               // disable extensions to reduce memory
+
+    // Dump context info before creation
+    LOG_INFO("WS context info: port=" << info.port
+             << " iface=" << (info.iface ? info.iface : (char*)"<any>")
+             << " proto0=" << (protocols_[0].name ? protocols_[0].name : "<null>")
+             << " options=" << (int)info.options);
 
     context = lws_create_context(&info);
 
     if (!context)
     {
-        LOG_ERROR("lws init failed");
+        LOG_ERROR("lws init failed (errno=" << errno << ")");
+        return; // do not claim started; exit thread
     }
 
     LOG_INFO("Server started on port " << cfg->websocket.port);
@@ -2520,8 +2563,7 @@ void WS::start()
         lws_service(context, 50);
     }
 
-    LOG_INFO("Server stopped.");
-
+    // Never reached in normal flow
     lws_context_destroy(context);
 }
 
