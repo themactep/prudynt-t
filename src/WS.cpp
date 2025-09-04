@@ -529,7 +529,7 @@ int restart_threads_by_signal(int &flag)
 {
     // inform main to restart threads
     std::unique_lock lck(mutex_main);
-    if (!global_restart_rtsp && !global_restart_video && !global_restart_audio) 
+    if (!global_restart_rtsp && !global_restart_video && !global_restart_audio)
     {
         if ((flag & PNT_FLAG_RESTART_RTSP) || (flag & PNT_FLAG_RESTART_VIDEO) || (flag & PNT_FLAG_RESTART_AUDIO))
         {
@@ -593,27 +593,27 @@ void append_session_msg(std::string &ws_send_msg, const char *t, Args &&...a)
 
 void add_json_null(std::string &message) {
     append_session_msg(
-        message, "%s", pnt_ws_msg[PNT_WS_MSG_NULL]);    
+        message, "%s", pnt_ws_msg[PNT_WS_MSG_NULL]);
 }
 
 void add_json_bool(std::string &message, bool bl) {
     append_session_msg(
-        message, "%s", bl ? pnt_ws_msg[PNT_WS_MSG_TRUE] : pnt_ws_msg[PNT_WS_MSG_FALSE]);   
+        message, "%s", bl ? pnt_ws_msg[PNT_WS_MSG_TRUE] : pnt_ws_msg[PNT_WS_MSG_FALSE]);
 }
 
 void add_json_str(std::string &message, const char *value) {
     append_session_msg(
-        message, "\"%s\"", value);   
+        message, "\"%s\"", value);
 }
 
 void add_json_num(std::string &message, int value) {
     append_session_msg(
-        message, "%d", value);   
+        message, "%d", value);
 }
 
 void add_json_uint(std::string &message, unsigned int value) {
     append_session_msg(
-        message, "\"%#x\"", value);   
+        message, "\"%#x\"", value);
 }
 
 void add_json_key(std::string &message, bool separator, const char *key, const char * opener = "") {
@@ -651,7 +651,7 @@ signed char WS::general_callback(struct lejp_ctx *ctx, char reason)
                 cfg->set<int>(u_ctx->path, atoi(ctx->buf));
             add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         }
-        else 
+        else
         {
             switch (ctx->path_match)
             {
@@ -663,8 +663,8 @@ signed char WS::general_callback(struct lejp_ctx *ctx, char reason)
                         Logger::setLevel(ctx->buf);
                     }
                 }
-                add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));                
-                break;                    
+                add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+                break;
             default:
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
                 break;
@@ -747,7 +747,7 @@ signed char WS::rtsp_callback(struct lejp_ctx *ctx, char reason)
                 break;
             }
         }
-        
+
     }
     else if (reason == LEJPCB_OBJECT_END)
     {
@@ -791,8 +791,8 @@ signed char WS::sensor_callback(struct lejp_ctx *ctx, char reason)
                 break;
             default:
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-                break;                
-            }            
+                break;
+            }
         }
     }
     else if (reason == LEJPCB_OBJECT_END)
@@ -910,9 +910,9 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                     }
                 }
                 add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-                break;               
+                break;
             case PNT_IMAGE_SINTER_STRENGTH:
-#if !defined(PLATFORM_T21)             
+#if !defined(PLATFORM_T21)
                 if (reason == LEJPCB_VAL_NUM_INT)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
@@ -922,7 +922,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 }
                 add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
 #else
-                add_json_null(u_ctx->message);                
+                add_json_null(u_ctx->message);
 #endif
                 break;
             case PNT_IMAGE_TEMPER_STRENGTH:
@@ -1082,7 +1082,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 break;
             default:
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-                break;                 
+                break;
             }
         }
     }
@@ -1132,7 +1132,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason)
             add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
         }
         // integer values
-        else if (ctx->path_match == PNT_AUDIO_INPUT_NOISE_SUPPRESSION || 
+        else if (ctx->path_match == PNT_AUDIO_INPUT_NOISE_SUPPRESSION ||
                  ctx->path_match == PNT_AUDIO_INPUT_SAMPLE_RATE ||
                  ctx->path_match == PNT_AUDIO_INPUT_BITRATE ||
                  ctx->path_match == PNT_AUDIO_OUTPUT_SAMPLE_RATE )
@@ -1263,10 +1263,10 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason)
                 if (reason == LEJPCB_VAL_STR_END)
                     cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
                 add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-                break;                
+                break;
             default:
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-                break;                  
+                break;
             }
         }
         u_ctx->flag |= PNT_FLAG_SEPARATOR;
@@ -1323,7 +1323,7 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason)
                 if (reason == LEJPCB_VAL_STR_END)
                     cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
                 add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-                break;                
+                break;
             case PNT_STREAM_SCALE_ENABLED:
                 if (reason == LEJPCB_VAL_TRUE)
                 {
@@ -1344,7 +1344,7 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason)
                 if (reason == LEJPCB_VAL_STR_END)
                     cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
                 add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-                break;                
+                break;
             case PNT_STREAM_STATS:
                 if (reason == LEJPCB_VAL_NULL)
                 {
@@ -1363,10 +1363,10 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason)
                     append_session_msg(
                         u_ctx->message, "{\"fps\":%d,\"Bps\":%d}", fps, bps);
                 }
-                break;                
+                break;
             default:
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-                break;                
+                break;
             };
         }
     }
@@ -1440,7 +1440,7 @@ signed char WS::stream2_callback(struct lejp_ctx *ctx, char reason)
                 }
             }
             add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-            break;       
+            break;
         case PNT_STREAM2_JPEG_CHANNEL:
             if (reason == LEJPCB_VAL_NUM_INT)
             {
@@ -1466,7 +1466,7 @@ signed char WS::stream2_callback(struct lejp_ctx *ctx, char reason)
             break;
         default:
             u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-            break;             
+            break;
         }
     }
     else if (reason == LEJPCB_OBJECT_END)
@@ -1647,7 +1647,7 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason)
                 break;
             default:
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-                break;                 
+                break;
             };
         }
     }
@@ -1717,7 +1717,7 @@ signed char WS::motion_callback(struct lejp_ctx *ctx, char reason)
         }
         else
         {
-            u_ctx->flag &= ~PNT_FLAG_SEPARATOR;             
+            u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
         }
     }
     else if (reason == LECPCB_PAIR_NAME && ctx->path_match == PNT_MOTION_ROIS)
@@ -1858,11 +1858,11 @@ signed char WS::info_callback(struct lejp_ctx *ctx, char reason)
     if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match)
     {
         combine_path(u_ctx->path, u_ctx->root, ctx->path);
-        
+
         add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR), info_keys[ctx->path_match - 1]);
 
         u_ctx->flag |= PNT_FLAG_SEPARATOR;
-        
+
         switch (ctx->path_match)
         {
         case PNT_INFO_IMP_SYSTEM_VERSION:
@@ -1881,7 +1881,7 @@ signed char WS::info_callback(struct lejp_ctx *ctx, char reason)
             break;
         default:
             u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-            break;               
+            break;
         }
     }
     else if (reason == LEJPCB_OBJECT_END)
@@ -1935,7 +1935,7 @@ signed char WS::action_callback(struct lejp_ctx *ctx, char reason)
                 {
                     msg_id = PNT_WS_MSG_ERROR;
                 }
-                add_json_str(u_ctx->message, pnt_ws_msg[msg_id]);                                          
+                add_json_str(u_ctx->message, pnt_ws_msg[msg_id]);
             }
             else
             {
@@ -1944,15 +1944,15 @@ signed char WS::action_callback(struct lejp_ctx *ctx, char reason)
             break;
         case PNT_SAVE_CONFIG:
             cfg->updateConfig();
-            add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]); 
+            add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]);
             break;
         case PNT_CAPTURE:
             u_ctx->flag |= PNT_FLAG_WS_REQUEST_PREVIEW;
-            add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]); 
+            add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]);
             break;
         default:
             u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-            break;               
+            break;
         }
     }
     else if (reason == LEJPCB_OBJECT_END)
@@ -2037,20 +2037,20 @@ signed char WS::root_callback(struct lejp_ctx *ctx, char reason)
     return 0;
 }
 
-const char* generateSessionID() 
+const char* generateSessionID()
 {
     static char idBuffer[SESSION_ID_LENGTH + 1];
     std::random_device rd;
     std::mt19937 eng(rd());
     std::uniform_int_distribution<uint32_t> distr;
-    
+
     uint32_t randomValue = distr(eng);
     uint32_t timeStamp = (uint32_t)std::time(nullptr);
-    
+
     // Format: 8 chars from random + 8 chars from timestamp
-    snprintf(idBuffer, sizeof(idBuffer), "%08x%08x", 
+    snprintf(idBuffer, sizeof(idBuffer), "%08x%08x",
              randomValue, timeStamp);
-    
+
     return idBuffer;
 }
 
@@ -2114,14 +2114,14 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         break;
 
     case LWS_CALLBACK_RECEIVE:
-        LOG_DDEBUGWS("LWS_CALLBACK_RECEIVE " << 
-            " id:" << u_ctx->id << 
-            " ,flag:" << u_ctx->flag << 
-            " ,ip:" << client_ip << 
-            " ,len:" << len << 
+        LOG_DDEBUGWS("LWS_CALLBACK_RECEIVE " <<
+            " id:" << u_ctx->id <<
+            " ,flag:" << u_ctx->flag <<
+            " ,ip:" << client_ip <<
+            " ,len:" << len <<
             " ,last:" << lws_is_final_fragment(wsi));
 
-        /* larger requests can be segmented into several requests, 
+        /* larger requests can be segmented into several requests,
          * so we have to collect all the data until we reach the last segment.
          * On receiving the first segment we should clear the rx_message
          */
@@ -2131,7 +2131,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         u_ctx->rx_message.append((char *)in, len);
 
         if (!lws_is_final_fragment(wsi))
-            return 0;    
+            return 0;
 
         LOG_DDEBUGWS("u_ctx->rx_message: id:" << u_ctx->id << ", rx:" << u_ctx->rx_message);
 
@@ -2139,7 +2139,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         //u_ctx->flag |= PNT_FLAG_WS_REQUEST_PENDING;
 
         // parse json and write response into u_ctx->message
-        u_ctx->message = "{";               // open response json 
+        u_ctx->message = "{";               // open response json
         lejp_construct(&ctx, root_callback, u_ctx, root_keys, LWS_ARRAY_SIZE(root_keys));
         lejp_parse(&ctx, (uint8_t *)u_ctx->rx_message.c_str(), u_ctx->rx_message.length());
         lejp_destruct(&ctx);
@@ -2166,7 +2166,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 return 0;
             };
 
-            // set prview pending flag 
+            // set prview pending flag
             u_ctx->flag |= PNT_FLAG_WS_PREVIEW_PENDING;
 
             /* 'first_request_delay'
@@ -2203,10 +2203,10 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 u_ctx->snapshot.last_snapshot_request = now;
                 u_ctx->snapshot.rps = u_ctx->snapshot.r;
                 u_ctx->snapshot.r = 0;
-                
+
                 u_ctx->snapshot.throttle +=
                     global_jpeg[0]->stream->stats.fps - u_ctx->snapshot.rps;
-                
+
                 if (u_ctx->snapshot.throttle > 100)
                 {
                     u_ctx->snapshot.throttle = 100;
@@ -2223,9 +2223,9 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
             LOG_DDEBUGWS("shedule preview image. id:" << u_ctx->id << " delay:" << delay);
             lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->sul, send_snapshot, delay);
 
-            // send response for the image request 
+            // send response for the image request
             u_ctx->tx_message.append(u_ctx->message);
-            lws_callback_on_writable(wsi);                             
+            lws_callback_on_writable(wsi);
         } else {
 
             // send response for all 'non image request' json requests
@@ -2244,8 +2244,8 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
             u_ctx->flag &= ~PNT_FLAG_WS_REQUEST_PENDING;
 
             /* send all outstanding messages
-             * if messages faster received than an answer can be send, they will append to 
-             * tx_message and separated with a ";". now we split them and send each 
+             * if messages faster received than an answer can be send, they will append to
+             * tx_message and separated with a ";". now we split them and send each
              * segment separate
              */
             std::stringstream ss(u_ctx->tx_message);
@@ -2257,7 +2257,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 lws_write(wsi, (unsigned char *)item.c_str() + LWS_PRE, item.length() - LWS_PRE, LWS_WRITE_TEXT);
             }
 
-            u_ctx->tx_message.clear();            
+            u_ctx->tx_message.clear();
         }
 
         // delayed snapshot request via websocket, sending the image
@@ -2277,7 +2277,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
     case LWS_CALLBACK_CLOSED:
         LOG_DDEBUGWS("LWS_CALLBACK_CLOSED id:" << u_ctx->id << ", ip:" << client_ip << ", flag:" << u_ctx->flag);
 
-        // cleanup delete possibly existing shedules for this session    
+        // cleanup delete possibly existing shedules for this session
         lws_sul_cancel(&u_ctx->sul);
 
         u_ctx->~user_ctx();
@@ -2383,7 +2383,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
             /* copy response into u_ctx->message into u_ctx->tx_message
              * can be helpfull to handle overlapping requests in future
-             */ 
+             */
             u_ctx->tx_message = u_ctx->message;
             u_ctx->tx_message.clear();
 

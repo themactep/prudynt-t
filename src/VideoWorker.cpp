@@ -33,14 +33,14 @@ void VideoWorker::run()
 
     while (global_video[encChn]->running)
     {
-        /* bool helper to check if this is the active jpeg channel and a jpeg is requested while 
+        /* bool helper to check if this is the active jpeg channel and a jpeg is requested while
          * the channel is inactive
          */
         run_for_jpeg = (encChn == global_jpeg[0]->streamChn && global_video[encChn]->run_for_jpeg);
 
-        /* now we need to verify that 
+        /* now we need to verify that
          * 1. a client is connected (hasDataCallback)
-         * 2. a jpeg is requested 
+         * 2. a jpeg is requested
          */
         if (global_video[encChn]->hasDataCallback || run_for_jpeg)
         {
@@ -139,9 +139,9 @@ void VideoWorker::run()
                             }
                         }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
-                        /* Since the audio stream is permanently in use by the stream replicator, 
+                        /* Since the audio stream is permanently in use by the stream replicator,
                          * and the audio grabber and encoder standby is also controlled by the video threads
-                         * we need to wakeup the audio thread 
+                         * we need to wakeup the audio thread
                         */
                         if (cfg->audio.input_enabled && !global_audio[0]->active && !global_restart)
                         {
@@ -255,7 +255,7 @@ void *VideoWorker::thread_entry(void *arg)
 
     /* 'active' indicates, the thread is activly polling and grabbing images
      * 'running' describes the runlevel of the thread, if this value is set to false
-     *           the thread exits and cleanup all ressources 
+     *           the thread exits and cleanup all ressources
      */
     global_video[encChn]->active = true;
     global_video[encChn]->running = true;

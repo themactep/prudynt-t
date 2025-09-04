@@ -57,7 +57,7 @@ public:
     static uint16_t get_abs_pos(const uint16_t max,const uint16_t size,const int pos);
     int startup_delay{0};
     bool is_started = false;
-    
+
 private:
 
     // libschrift
@@ -75,7 +75,7 @@ private:
 
     _osd &osd;
     int last_updated_second;
-    
+
 
     OSDItem osdTime{};
     OSDItem osdUser{};
@@ -91,7 +91,7 @@ private:
     int osdGrp{};
     int encChn{};
     const char *parent;
-    
+
     char hostname[64];
     char ip[INET_ADDRSTRLEN]{};
 
