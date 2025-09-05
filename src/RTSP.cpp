@@ -100,10 +100,32 @@ void RTSP::addSubsession(int chnNr, _stream &stream)
 
     char *url = rtspServer->rtspURL(sms);
     LOG_INFO("stream " << chnNr << " available at: " << url);
+
+    // Update RTSP status interface
+    RTSPStatus::StreamInfo streamInfo;
+    streamInfo.format = stream.format;
+    streamInfo.fps = stream.fps;
+    streamInfo.width = stream.width;
+    streamInfo.height = stream.height;
+    streamInfo.endpoint = stream.rtsp_endpoint;
+    streamInfo.url = url;
+    streamInfo.bitrate = stream.bitrate;
+    streamInfo.mode = stream.mode;
+    streamInfo.enabled = stream.enabled;
+
+    std::string streamName = "stream" + std::to_string(chnNr);
+    RTSPStatus::updateStreamStatus(streamName, streamInfo);
+
+    delete[] url; // Free the URL string allocated by rtspURL()
 }
 
 void RTSP::start()
 {
+    // Initialize RTSP status interface
+    if (!RTSPStatus::initialize()) {
+        LOG_WARN("Failed to initialize RTSP status interface");
+    }
+
     scheduler = BasicTaskScheduler::createNew();
     env = BasicUsageEnvironment::createNew(*scheduler);
 
@@ -175,6 +197,9 @@ void RTSP::start()
     */
 
     LOG_DEBUG("Stop RTSP Server.");
+
+    // Cleanup RTSP status interface
+    RTSPStatus::cleanup();
 
     // Cleanup RTSP server and environment
     Medium::close(rtspServer);

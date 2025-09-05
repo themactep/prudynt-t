@@ -8,6 +8,7 @@
 #include "IMPDeviceSource.hpp"
 #include "IMPEncoder.hpp"
 #include "Logger.hpp"
+#include "RTSPStatus.hpp"
 
 class RTSP
 {
