@@ -21,7 +21,9 @@ endif
 
 # Binary Type Configuration
 # -------------------------
-ifneq ($(filter -DBINARY_STATIC -DBINARY_HYBRID -DBINARY_DYNAMIC,$(CFLAGS)),)
+# Default to dynamic linking unless explicitly specified
+ifneq ($(filter -DBINARY_STATIC -DBINARY_HYBRID,$(CFLAGS)),)
+# Static or hybrid build explicitly requested
 else
 override CFLAGS        += -DBINARY_DYNAMIC
 endif
@@ -95,21 +97,22 @@ endif
 # Dynamic Binary Configuration
 # ----------------------------
 else ifneq (,$(findstring -DBINARY_DYNAMIC,$(CFLAGS)))
-LIBS                    = -Wl,-Bdynamic \
-                          -l:libimp.so \
-                          -l:libalog.so \
-                          -l:libaudioProcess.so \
-                          -l:libsysutils.so \
-                          -l:libliveMedia.so \
-                          -l:libgroupsock.so \
-                          -l:libUsageEnvironment.so \
-                          -l:libBasicUsageEnvironment.so \
-                          -l:libwebsockets.so \
-                          -l:libschrift.so \
-                          -l:libopus.so \
-                          -l:libfaac.so \
-                          -l:libhelix-aac.so \
-                          -l:libjson-c.so \
+# Force dynamic linking and prevent static fallback
+override LDFLAGS       += -Wl,-Bdynamic -Wl,--as-needed
+LIBS                    = -limp \
+                          -lalog \
+                          -laudioProcess \
+                          -lsysutils \
+                          -lliveMedia \
+                          -lgroupsock \
+                          -lUsageEnvironment \
+                          -lBasicUsageEnvironment \
+                          -lwebsockets \
+                          -lschrift \
+                          -lopus \
+                          -lfaac \
+                          -lhelix-aac \
+                          -ljson-c \
                           -latomic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
@@ -118,7 +121,8 @@ else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
 	# uClibc - no additional libraries needed
 else
 	# Default to musl
-LIBS                   += -l:libmuslshim.so -latomic
+LIBS                   += -l:libmuslshim.so \
+                          -latomic
 endif
 
 # Error Handling
@@ -131,9 +135,7 @@ endif
 
 # Platform-Specific Include Directories
 # =====================================
-ifneq (,$(findstring -DPLATFORM_T31,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T31/1.1.6/en
-else ifneq (,$(findstring -DPLATFORM_C100,$(CFLAGS)))
+ifneq (,$(findstring -DPLATFORM_C100,$(CFLAGS)))
 	LIBIMP_INC_DIR          = ./include/C100/2.1.0/en
 else ifneq (,$(or $(findstring -DPLATFORM_T20,$(CFLAGS)), $(findstring -DPLATFORM_T10,$(CFLAGS))))
 	LIBIMP_INC_DIR          = ./include/T20/3.12.0/zh
@@ -143,6 +145,8 @@ else ifneq (,$(findstring -DPLATFORM_T23,$(CFLAGS)))
 	LIBIMP_INC_DIR          = ./include/T23/1.1.0/zh
 else ifneq (,$(findstring -DPLATFORM_T30,$(CFLAGS)))
 	LIBIMP_INC_DIR          = ./include/T30/1.0.5/zh
+else ifneq (,$(findstring -DPLATFORM_T31,$(CFLAGS)))
+	LIBIMP_INC_DIR          = ./include/T31/1.1.6/en
 else ifneq (,$(findstring -DPLATFORM_T40,$(CFLAGS)))
 	LIBIMP_INC_DIR          = ./include/T40/1.2.0/zh
 else ifneq (,$(findstring -DPLATFORM_T41,$(CFLAGS)))
@@ -157,7 +161,6 @@ endif
 SRC_DIR                 = ./src
 OBJ_DIR                 = ./obj
 BIN_DIR                 = ./bin
-THIRDPARTY_INC_DIR      = ./3rdparty/install/include
 
 # Source and Object Files
 # =======================
@@ -178,6 +181,7 @@ commit_tag              = $(shell git rev-parse --short HEAD)
 endif
 
 VERSION_FILE            = $(LIBIMP_INC_DIR)/version.hpp
+THIRDPARTY_INC_DIR      = ./3rdparty/install/include
 
 # Build Options
 # =============
@@ -190,8 +194,9 @@ STRIP_FLAG              := $(if $(filter 0,$(DEBUG_STRIP)),,"-s")
 # Version File Generation
 # -----------------------
 $(VERSION_FILE): $(SRC_DIR)/version.tpl.hpp
-	@if ! grep -q "$(commit_tag)" version.h > /dev/null 2>&1; then \
-		echo "Updating version.h to $(commit_tag)"; \
+	@mkdir -p $(dir $(VERSION_FILE))
+	@if ! grep -q "$(commit_tag)" $(VERSION_FILE) > /dev/null 2>&1; then \
+		echo "Updating $(VERSION_FILE) to $(commit_tag)"; \
 		sed 's/COMMIT_TAG/"$(commit_tag)"/g' $(SRC_DIR)/version.tpl.hpp > $(VERSION_FILE); \
 	fi
 
