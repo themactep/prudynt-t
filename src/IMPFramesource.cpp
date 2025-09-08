@@ -50,12 +50,14 @@ int IMPFramesource::init()
     chnAttr.crop.width = sensor->width;
     chnAttr.crop.height = sensor->height;
 
-    // Initialize frame-crop (fcrop) explicitly
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    // Initialize frame-crop (fcrop) explicitly (only available on newer platforms)
     chnAttr.fcrop.enable = 0;
     chnAttr.fcrop.top = 0;
     chnAttr.fcrop.left = 0;
     chnAttr.fcrop.width = chnAttr.picWidth;
     chnAttr.fcrop.height = chnAttr.picHeight;
+#endif
 
     // Scaler config (only if dimensions differ)
     chnAttr.scaler.enable = scale ? 1 : 0;
