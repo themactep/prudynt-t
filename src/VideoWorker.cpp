@@ -253,6 +253,12 @@ void *VideoWorker::thread_entry(void *arg)
     if (ret != 0)
         return 0;
 
+    // Proactively request an IDR to ensure SPS/PPS are emitted promptly
+    IMP_Encoder_RequestIDR(encChn);
+    LOG_DEBUG("IMP_Encoder_RequestIDR(" << encChn << ")");
+    // Also schedule a couple more IDR requests in the first seconds, just in case
+    global_video[encChn]->idr_fix = 2;
+
     /* 'active' indicates, the thread is activly polling and grabbing images
      * 'running' describes the runlevel of the thread, if this value is set to false
      *           the thread exits and cleanup all ressources
