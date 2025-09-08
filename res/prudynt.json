@@ -38,6 +38,7 @@
     "hflip": false,
     "highlight_depress": 0,
     "hue": 128,
+    "isp_bypass": true,
     "max_again": 160,
     "max_dgain": 80,
     "running_mode": 0,

@@ -136,6 +136,7 @@ struct _image {
     int hue;
     int sinter_strength;
     int temper_strength;
+    bool isp_bypass;
     bool vflip;
     bool hflip;
     int running_mode;
@@ -151,7 +152,6 @@ struct _image {
     int core_wb_mode;
     int wb_rgain;
     int wb_bgain;
-
 };
 #if defined(AUDIO_SUPPORT)
 struct _audio {

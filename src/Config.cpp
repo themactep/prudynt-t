@@ -99,6 +99,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
 #endif
+        {"image.isp_bypass", image.isp_bypass, true, validateBool},
         {"image.vflip", image.vflip, false, validateBool},
         {"image.hflip", image.hflip, false, validateBool},
         {"motion.enabled", motion.enabled, false, validateBool},
