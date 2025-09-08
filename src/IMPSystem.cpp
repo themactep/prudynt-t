@@ -191,8 +191,17 @@ int IMPSystem::init()
 
     LOG_DEBUG("ISP Tuning Defaults set");
 
-    ret = IMP_ISP_Tuning_SetSensorFPS(cfg->sensor.fps, 1);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetSensorFPS(" << cfg->sensor.fps << ", 1)");
+    // Clamp sensor FPS to a sane value based on stream0 desired FPS and sensor limits
+    int desired_sensor_fps = cfg->stream0.fps > 0 ? cfg->stream0.fps : 25;
+    // cfg->sensor.fps is read from /proc/jz/sensor/max_fps; min from min_fps
+    if (cfg->sensor.min_fps > 0 && desired_sensor_fps < cfg->sensor.min_fps) {
+        desired_sensor_fps = cfg->sensor.min_fps;
+    }
+    if (cfg->sensor.fps > 0 && desired_sensor_fps > (int)cfg->sensor.fps) {
+        desired_sensor_fps = cfg->sensor.fps;
+    }
+    ret = IMP_ISP_Tuning_SetSensorFPS(desired_sensor_fps, 1);
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetSensorFPS(" << desired_sensor_fps << ", 1)");
 
 #if defined(PLATFORM_T21)
     //T20 T21 only set FPS if it is read after set.

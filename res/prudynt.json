@@ -87,6 +87,7 @@
   },
   "sensor": {
     "boot": 0,
+    "fps": 25,
     "gpio_reset": -1,
     "i2c_bus": 0,
     "mclk": 1,
