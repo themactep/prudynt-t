@@ -62,6 +62,8 @@ int IMPAudio::init()
     {
         format = IMPAudioFormat::OPUS;
         bitrate = cfg->audio.input_bitrate;
+        // Opus works best with 20 ms packets over RTP (RFC 7587). Use 20 ms frames.
+        frameDuration = 0.020f;
         encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
     }
     else if (strcmp(cfg->audio.input_format, "AAC") == 0)
