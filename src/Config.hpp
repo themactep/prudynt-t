@@ -273,10 +273,9 @@ struct _websocket {
     bool ws_secured;
     bool http_secured;
     int port;
-    int loglevel;
     int first_image_delay;
     const char *name;
-    const char *usertoken{""};
+    const char *token{"auto"};
 };
 struct _sysinfo {
     const char *cpu = nullptr;

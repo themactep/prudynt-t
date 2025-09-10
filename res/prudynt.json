@@ -21,7 +21,7 @@
     "imp_polling_timeout": 500,
     "loglevel": "INFO",
     "memory_monitoring_enabled": true,
-    "osd_pool_size": 1025,
+    "osd_pool_size": 256,
     "zero_copy_buffer_pool_size": 10,
     "zero_copy_enabled": true
   },
@@ -77,11 +77,11 @@
     "bandwidth_margin": 1.2,
     "est_bitrate": 5000,
     "name": "thingino prudynt",
-    "out_buffer_size": 500000,
+    "out_buffer_size": 200000,
     "packet_loss_threshold": 0.05,
     "password": "thingino",
     "port": 554,
-    "send_buffer_size": 307200,
+    "send_buffer_size": 153600,
     "session_reclaim": 65,
     "username": "thingino"
   },
@@ -233,8 +233,8 @@
   },
   "websocket": {
     "enabled": true,
-    "loglevel": 4096,
     "port": 8089,
-    "secured": false
+    "secured": false,
+    "token": "auto"
   }
 }

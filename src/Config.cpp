@@ -7,6 +7,8 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 
+#define WEBSOCKET_TOKEN_LENGTH 32
+
 #define MODULE "CONFIG"
 
 namespace fs = std::filesystem;
@@ -177,8 +179,9 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
         {"stream1.rtsp_info", stream1.rtsp_info, "stream1", validateCharNotEmpty},
        {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
         {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
-        {"websocket.usertoken", websocket.usertoken, "", [](const char *v) {
-            return std::string(v).length() < 32;
+        {"websocket.token", websocket.token, "auto", [](const char *v) {
+            std::string token(v);
+            return token == "auto" || token.empty() || token.length() == WEBSOCKET_TOKEN_LENGTH;
         }},
     };
 };
@@ -321,7 +324,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream2.jpeg_quality", stream2.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
         {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
         {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
-        {"websocket.loglevel", websocket.loglevel, 4096, [](const int &v) { return v > 0 && v <= 4096; }},
         {"websocket.port", websocket.port, 8089, validateInt65535},
         {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
     };
