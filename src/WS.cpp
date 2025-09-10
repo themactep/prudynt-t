@@ -2093,21 +2093,34 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         lws_hdr_copy(wsi, content_type, sizeof(content_type), WSI_TOKEN_HTTP_CONTENT_TYPE);
     }
 
+    // Add debug logging for all WebSocket callbacks
+    if (reason != LWS_CALLBACK_HTTP_WRITEABLE && reason != LWS_CALLBACK_SERVER_WRITEABLE) {
+        LOG_DEBUG("WS Callback: reason=" << reason << ", ip=" << client_ip);
+    }
+
+    // Special handling for critical WebSocket callbacks
+    if (reason == 71) {
+        LOG_DEBUG("Connection error detected (reason=71) - ignoring");
+        // Don't return early, let it fall through to normal processing
+    }
+
     switch (reason)
     {
     // ############################ WEBSOCKET ###############################
     case LWS_CALLBACK_ESTABLISHED:
-        LOG_DDEBUGWS("LWS_CALLBACK_ESTABLISHED id:" << u_ctx->id << ", ip:" << client_ip);
+        LOG_DEBUG("LWS_CALLBACK_ESTABLISHED ip:" << client_ip);
 
         // check if security is required and validate token
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
-        LOG_DEBUG("url_token: " << url_token);
-        if (strcmp(token, url_token) == 0 || (strcmp(cfg->websocket.usertoken, "") != 0 && strcmp(cfg->websocket.usertoken, url_token) == 0))
+        LOG_DEBUG("Expected token: " << std::string(token, WEBSOCKET_TOKEN_LENGTH));
+        LOG_DEBUG("Received token: " << url_token);
+        if (strcmp(token, url_token) == 0 || (strcmp(cfg->websocket.token, "auto") != 0 && strcmp(cfg->websocket.token, "") != 0 && strcmp(cfg->websocket.token, url_token) == 0))
         {
             /* initialize new u_ctx session structure.
              * assign current wsi and a new sessionid
              */
             new (user) user_ctx(generateSessionID(), wsi);
+            LOG_DEBUG("WebSocket connection authenticated and user context initialized");
         }
         else
         {
@@ -2117,7 +2130,21 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 LOG_DEBUG("Connection refused.");
                 return -1;
             }
+            else
+            {
+                LOG_DEBUG("Allowing unauthenticated connection (ws_secured=false)");
+                new (user) user_ctx(generateSessionID(), wsi);
+            }
         }
+        // Immediately send a small server ack so clients can verify the socket is usable
+        // and tools like wscat show incoming data right after connect.
+        u_ctx = (user_ctx *)user; // per-session data already placement-new'ed above
+        u_ctx->tx_message.append("{\"hello\":\"prudynt\",\"session\":\"");
+        u_ctx->tx_message.append(u_ctx->id);
+        u_ctx->tx_message.append("\"}");
+        lws_callback_on_writable(wsi);
+
+        LOG_DEBUG("LWS_CALLBACK_ESTABLISHED completed successfully");
         break;
 
     case LWS_CALLBACK_RECEIVE:
@@ -2134,6 +2161,12 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
          */
         if (lws_is_first_fragment(wsi))
             u_ctx->rx_message.clear();
+
+        // Prevent unbounded message growth
+        if (u_ctx->rx_message.size() + len > MAX_WS_MESSAGE_SIZE) {
+            LOG_ERROR("WebSocket message too large, dropping connection");
+            return -1;
+        }
 
         u_ctx->rx_message.append((char *)in, len);
 
@@ -2157,6 +2190,12 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         // splitt overlapping responses with a ";"
         if(u_ctx->flag & PNT_FLAG_WS_REQUEST_PENDING) {
             u_ctx->tx_message.append(";");
+        }
+
+        // Prevent unbounded tx_message growth
+        if (u_ctx->tx_message.size() > MAX_WS_TX_QUEUE_SIZE) {
+            LOG_ERROR("WebSocket TX queue too large, clearing queue");
+            u_ctx->tx_message.clear();
         }
 
         u_ctx->flag |= PNT_FLAG_WS_REQUEST_PENDING;
@@ -2282,7 +2321,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         break;
 
     case LWS_CALLBACK_CLOSED:
-        LOG_DDEBUGWS("LWS_CALLBACK_CLOSED id:" << u_ctx->id << ", ip:" << client_ip << ", flag:" << u_ctx->flag);
+        LOG_DEBUG("LWS_CALLBACK_CLOSED ip:" << client_ip << " - WebSocket connection closed");
 
         // cleanup delete possibly existing shedules for this session
         lws_sul_cancel(&u_ctx->sul);
@@ -2293,11 +2332,20 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
     // ############################ HTTP ###############################
     case LWS_CALLBACK_HTTP:
+    {
+
         LOG_DDEBUGWS("LWS_CALLBACK_HTTP ip:" << client_ip << " url:" << (char *)url_ptr << " method:" << request_method);
 
         // check if security is required and validate token
+        // If this is actually an Upgrade: websocket request, do not handle as HTTP
+        char upgrade_hdr[32] = {0};
+        if (lws_hdr_copy(wsi, upgrade_hdr, sizeof(upgrade_hdr), WSI_TOKEN_UPGRADE) > 0) {
+            LOG_DEBUG("HTTP request contains Upgrade:'" << upgrade_hdr << "' — deferring to WS handshake");
+            return 0; // let lws drive the websocket upgrade path
+        }
+
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
-        if (strcmp(token, url_token) == 0 || (strcmp(cfg->websocket.usertoken, "") != 0 && strcmp(cfg->websocket.usertoken, url_token) == 0))
+        if (strcmp(token, url_token) == 0 || (strcmp(cfg->websocket.token, "auto") != 0 && strcmp(cfg->websocket.token, "") != 0 && strcmp(cfg->websocket.token, url_token) == 0))
         {
             /* initialize new u_ctx session structure.
             * assign current wsi and a new sessionid
@@ -2366,10 +2414,17 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         u_ctx->flag |= PNT_FLAG_HTTP_SEND_INVALID;
         lws_callback_on_writable(wsi);
         return 0;
+        }
+
         break;
 
     case LWS_CALLBACK_HTTP_BODY:
         LOG_DDEBUGWS("LWS_CALLBACK_HTTP_BODY ip:" << client_ip);
+        // Prevent unbounded HTTP body growth
+        if (u_ctx->rx_message.size() + len > MAX_WS_MESSAGE_SIZE) {
+            LOG_ERROR("HTTP body too large, dropping connection");
+            return -1;
+        }
         u_ctx->rx_message.append((char *)in, len);
         break;
 
@@ -2488,22 +2543,86 @@ void WS::start()
 {
     char *ip = NULL;
 
-    // create websocket authentication token and write it into /run/
+    // create websocket authentication token and write it into /run/prudynt/
     // only websocket connect with token parameter accepted
     // ws://<ip>:<port>/?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    const char* generatedToken = generateToken();
+
     memset(token, 0, sizeof(token));
-    memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
-    std::ofstream outFile("/run/prudynt_websocket_token");
-    outFile.write(token, WEBSOCKET_TOKEN_LENGTH);
-    outFile.close();
-    LOG_DEBUG("Generated token length: " << WEBSOCKET_TOKEN_LENGTH << ", Token: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+
+    // Check if user has configured a specific token (not "auto" or empty)
+    if (cfg->websocket.token &&
+        strcmp(cfg->websocket.token, "auto") != 0 &&
+        strcmp(cfg->websocket.token, "") != 0 &&
+        strlen(cfg->websocket.token) == WEBSOCKET_TOKEN_LENGTH) {
+        memcpy(token, cfg->websocket.token, WEBSOCKET_TOKEN_LENGTH);
+        LOG_DEBUG("Using configured token: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+    }
+    else {
+        // Token is "auto" or empty, use boot-session persistent token
+        // Create /run/prudynt directory if it doesn't exist
+        std::filesystem::create_directories("/run/prudynt");
+
+        const char* tokenFile = "/run/prudynt/websocket_token";
+        std::ifstream inFile(tokenFile);
+
+        if (inFile.is_open() && inFile.good()) {
+            // Try to read existing boot-session token
+            inFile.read(token, WEBSOCKET_TOKEN_LENGTH);
+            if (inFile.gcount() == WEBSOCKET_TOKEN_LENGTH) {
+                LOG_DEBUG("Reusing boot-session token: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+            } else {
+                // File exists but is invalid, generate new token for this boot session
+                const char* generatedToken = generateToken();
+                memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
+                LOG_DEBUG("Invalid boot-session token, generated new: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+            }
+            inFile.close();
+        } else {
+            // No existing token file, generate new token for this boot session
+            const char* generatedToken = generateToken();
+            memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
+            LOG_DEBUG("No boot-session token, generated new: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+        }
+
+        // Save the token for this boot session (survives app restart, not reboot)
+        std::ofstream outFile(tokenFile);
+        if (outFile.is_open()) {
+            outFile.write(token, WEBSOCKET_TOKEN_LENGTH);
+            outFile.close();
+        }
+    }
+
+    // Always write the token to legacy location for backward compatibility
+    std::ofstream legacyFile("/run/prudynt_websocket_token");
+    if (legacyFile.is_open()) {
+        legacyFile.write(token, WEBSOCKET_TOKEN_LENGTH);
+        legacyFile.close();
+    }
 
     // Hook libwebsockets logging into our logger for visibility
     auto lws_emit = [](int /*level*/, const char *line) {
         Logger::log(Logger::DEBUG, FILENAME, LogMsg() << "[lws] " << std::string(line ? line : ""));
     };
-    lws_set_log_level(0x7FFFFFFF, lws_emit);
+
+    uint32_t lmask = LLL_ERR;
+    switch (Logger::level) {
+        case Logger::DEBUG:
+            lmask = 0x7FFFFFFF; // everything compiled in
+            break;
+        case Logger::INFO:
+            lmask = LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO;
+            break;
+        case Logger::NOTICE:
+            lmask = LLL_ERR | LLL_WARN | LLL_NOTICE;
+            break;
+        case Logger::WARN:
+            lmask = LLL_ERR | LLL_WARN;
+            break;
+        default:
+            lmask = LLL_ERR;
+            break;
+    }
+    lws_set_log_level(lmask, lws_emit);
     LOG_INFO("libwebsockets version: " << lws_get_library_version());
 
     // Preflight: detect if port is already in use to give a clearer error
@@ -2521,32 +2640,42 @@ void WS::start()
 
     // Initialize member protocols_ array (lifetime >= context)
     memset(protocols_, 0, sizeof(protocols_));
-    protocols_[0].name = (cfg->websocket.name && cfg->websocket.name[0]) ? cfg->websocket.name : "prudynt";
+    // Put our websocket protocol first so clients without Sec-WebSocket-Protocol still bind to it
+    protocols_[0].name = "ws"; // simple, valid token; matches typical clients
     protocols_[0].callback = ws_callback;
     protocols_[0].per_session_data_size = sizeof(user_ctx);
-    protocols_[0].rx_buffer_size = 2048; // compact buffer
+    protocols_[0].rx_buffer_size = 2048;
+
+    // Accept legacy client subprotocol too, if requested
+    // Route plain HTTP traffic to dedicated http-only protocol (kept last)
+    protocols_[1].name = "http-only";
+    protocols_[1].callback = ws_callback;
+    protocols_[1].per_session_data_size = sizeof(user_ctx);
+    protocols_[1].rx_buffer_size = 2048;
+
 
     memset(&info, 0, sizeof(info));
     info.port = cfg->websocket.port;
     info.iface = ip; // null = all interfaces
     info.protocols = protocols_; // array with terminating empty entry
-    info.options = 0; // No special options - let libwebsockets use defaults
+    info.options = 0; // Use default options
     // Don't set any privilege-related fields - let libwebsockets handle it
     // Reduce LWS context memory usage on low-RAM devices
     info.count_threads = 1;
-    info.fd_limit_per_thread = 4;         // ultra small fd table
-    info.pt_serv_buf_size = 256;          // default 4096 -> 256
-    info.max_http_header_data = 2048;     // allow larger browser headers (User-Agent, etc)
-    info.max_http_header_data2 = 2048;    // 32-bit mirror
-    info.max_http_header_pool = 4;        // small pool but > 1 to avoid contention
-    info.max_http_header_pool2 = 4;       // 32-bit mirror
+    info.fd_limit_per_thread = 8;         // allow a few concurrent connections
+    info.pt_serv_buf_size = 2048;
+    info.max_http_header_data = 2048;
+    info.max_http_header_data2 = 2048;
+    info.max_http_header_pool = 4;
+    info.max_http_header_pool2 = 4;
     info.extensions = NULL;               // disable extensions to reduce memory
+    info.ka_time = 60;                    // enable keepalive - 60 seconds
+    info.ka_probes = 3;                   // 3 keepalive probes
+    info.ka_interval = 10;                // 10 seconds between probes
 
     // Dump context info before creation
-    LOG_INFO("WS context info: port=" << info.port
-             << " iface=" << (info.iface ? info.iface : (char*)"<any>")
-             << " proto0=" << (protocols_[0].name ? protocols_[0].name : "<null>")
-             << " options=" << (int)info.options);
+    LOG_INFO("WS context: port=" << info.port
+             << " iface=" << (info.iface ? info.iface : (char*)"<any>"));
 
     context = lws_create_context(&info);
 
