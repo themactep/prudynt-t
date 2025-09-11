@@ -172,6 +172,9 @@ struct _audio {
     bool output_enabled;
     int output_sample_rate;
 #endif
+    // Buffer tuning (in 20 ms frames per channel)
+    int buffer_warn_frames;
+    int buffer_cap_frames;
 };
 #endif
 struct _osd {
