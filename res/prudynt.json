@@ -77,7 +77,7 @@
     "bandwidth_margin": 1.2,
     "est_bitrate": 5000,
     "name": "thingino prudynt",
-    "out_buffer_size": 200000,
+    "out_buffer_size": 1000000,
     "packet_loss_threshold": 0.05,
     "password": "thingino",
     "port": 554,
