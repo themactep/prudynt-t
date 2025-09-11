@@ -135,7 +135,7 @@ deps() {
 	echo "Build live555"
 	cd 3rdparty
 	rm -rf live
-	git clone https://github.com/themactep/live555.git live
+	git clone https://github.com/themactep/thingino-live555.git live
 	cd live
 
 	if [[ -f Makefile ]]; then
