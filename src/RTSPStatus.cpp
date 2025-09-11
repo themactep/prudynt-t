@@ -178,6 +178,25 @@ bool RTSPStatus::writeParameter(const std::string& streamName,
     }
 }
 
+bool RTSPStatus::writeCustomParameter(const std::string& streamName,
+                                      const std::string& parameter,
+                                      const std::string& value) {
+    std::lock_guard<std::mutex> lock(statusMutex);
+
+    if (!ensureBaseDirectory()) {
+        RTSP_STATUS_LOG_ERROR("Base directory not available");
+        return false;
+    }
+
+    if (!createStreamDirectory(streamName)) {
+        RTSP_STATUS_LOG_ERROR("Failed to create stream directory for: " << streamName);
+        return false;
+    }
+
+    return writeParameter(streamName, parameter, value);
+}
+
+
 bool RTSPStatus::removeStreamDirectory(const std::string& streamName) {
     std::string streamDir = STATUS_BASE_DIR + streamName + "/";
 
