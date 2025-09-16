@@ -54,12 +54,9 @@ void VideoWorker::run()
                     continue;
                 }
 
-                /* timestamp fix, can be removed if solved
-                int64_t nal_ts = stream.pack[stream.packCount - 1].timestamp;
-                struct timeval encoder_time;
-                encoder_time.tv_sec = nal_ts / 1000000;
-                encoder_time.tv_usec = nal_ts % 1000000;
-                */
+
+                struct timeval monotonic_time;
+                WorkerUtils::getMonotonicTimeOfDay(&monotonic_time);
 
                 for (uint32_t i = 0; i < stream.packCount; ++i)
                 {
@@ -76,12 +73,9 @@ void VideoWorker::run()
                         uint8_t *start = (uint8_t *) stream.pack[i].virAddr;
                         uint8_t *end = (uint8_t *) stream.pack[i].virAddr + stream.pack[i].length;
 #endif
-                        H264NALUnit nalu;
 
-                        /* timestamp fix, can be removed if solved
-                        nalu.imp_ts = stream.pack[i].timestamp;
-                        nalu.time = encoder_time;
-                        */
+                        H264NALUnit nalu;
+                        nalu.time = monotonic_time;
 
                         // We use start+4 because the encoder inserts 4-byte MPEG
                         //'startcodes' at the beginning of each NAL. Live555 complains
@@ -155,7 +149,7 @@ void VideoWorker::run()
 
                 IMP_Encoder_ReleaseStream(encChn, &stream);
 
-                ms = WorkerUtils::tDiffInMs(&global_video[encChn]->stream->stats.ts);
+                ms = WorkerUtils::getMonotonicTimeDiffInMs(&global_video[encChn]->stream->stats.ts);
                 if (ms > 1000)
                 {
                     /* currently we write into osd and stream stats,
@@ -168,7 +162,7 @@ void VideoWorker::run()
 
                     fps = 0;
                     bps = 0;
-                    gettimeofday(&global_video[encChn]->stream->stats.ts, NULL);
+                    WorkerUtils::getMonotonicTimeOfDay(&global_video[encChn]->stream->stats.ts);
                     global_video[encChn]->stream->osd.stats.ts = global_video[encChn]
                                                                      ->stream->stats.ts;
                     /*

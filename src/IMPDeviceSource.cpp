@@ -1,6 +1,7 @@
 #include "IMPDeviceSource.hpp"
 #include <iostream>
 #include "GroupsockHelper.hh"
+#include "WorkerUtils.hpp"
 
 // explicit instantiation
 template class IMPDeviceSource<H264NALUnit, video_stream>;
@@ -75,10 +76,7 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame()
             fFrameSize = nal.data.size();
         }
 
-        /* timestamp fix, can be removed if solved
         fPresentationTime = nal.time;
-        */
-        gettimeofday(&fPresentationTime, NULL);
 
         memcpy(fTo, &nal.data[0], fFrameSize);
 

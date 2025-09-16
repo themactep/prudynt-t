@@ -22,6 +22,7 @@ AudioWorker::~AudioWorker()
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
 {
+    // Monotomic time not appropriate here as these must sync with the video frame
     int64_t audio_ts = frame.timeStamp;
     struct timeval encoder_time;
     encoder_time.tv_sec = audio_ts / 1000000;
