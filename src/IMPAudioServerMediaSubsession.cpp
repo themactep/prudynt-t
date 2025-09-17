@@ -83,10 +83,15 @@ RTPSink* IMPAudioServerMediaSubsession::createNewRTPSink(
         rtpPayloadFormatName = "G726-16";
         break;
     case IMPAudioFormat::OPUS:
-        // RFC 7587: Use 48 kHz RTP timestamp base and one Opus packet per RTP payload
+        // RFC 7587: Opus over RTP MUST use a 48 kHz RTP timestamp clock, regardless of
+        // the encoder's input sample rate. With unified 20 ms packetization, each RTP
+        // timestamp MUST advance by 960 ticks (0.020 * 48000) per packet.
+        // Application-level frames (IMPAudio/AudioWorker) use wall-clock PTS based on
+        // the actual input sample rate for accumulation and pacing; live555 maps these
+        // to RTP timestamps using the frequency specified below (48000).
         rtpTimestampFrequency = 48000;
         rtpPayloadFormatName = "OPUS";
-        allowMultipleFramesPerPacket = false;
+        allowMultipleFramesPerPacket = false; // one Opus packet per RTP packet
         outChnCnt = cfg->audio.force_stereo ? 2 : 1;
         break;
     case IMPAudioFormat::AAC:

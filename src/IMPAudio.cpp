@@ -41,8 +41,16 @@ int IMPAudio::init()
         .samplerate = static_cast<IMPAudioSampleRate>(cfg->audio.input_sample_rate),
         .bitwidth = AUDIO_BIT_WIDTH_16,
         .soundmode = AUDIO_SOUND_MODE_MONO,
-        .frmNum = 30,
-        .numPerFrm = 0,
+#if defined(PLATFORM_T23)
+        .frmNum = 2,   // T23: Minimum possible buffer (2 is minimum allowed)
+#else
+        .frmNum = 30,  // Other platforms: keep original
+#endif
+#if defined(PLATFORM_T23)
+        .numPerFrm = 160,  // T23: Force 10ms frames (160 samples at 16kHz)
+#else
+        .numPerFrm = 0,    // Other platforms: auto-calculate
+#endif
         .chnCnt = 1
     };
     IMPAudioEncChnAttr encattr = {
@@ -50,7 +58,8 @@ int IMPAudio::init()
         .bufSize = 20,
         .value = 0
     };
-    float frameDuration = 0.040;
+    // Unified Opus packetization: 20ms across all platforms (RFC 7587 recommendation)
+    float frameDuration = 0.020f;
 
     // Berechne PCM Bitrate basierend auf outChnCnt
     bitrate = (int)ioattr.bitwidth * (int)ioattr.samplerate * outChnCnt / 1000;
@@ -62,8 +71,9 @@ int IMPAudio::init()
     {
         format = IMPAudioFormat::OPUS;
         bitrate = cfg->audio.input_bitrate;
-        // Opus works best with 20 ms packets over RTP (RFC 7587). Use 20 ms frames.
+        // RFC 7587: Use 20 ms Opus packets over RTP (unified across all platforms)
         frameDuration = 0.020f;
+        LOG_INFO("Opus: Using 20ms frame duration per RFC 7587 across all platforms");
         encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
     }
     else if (strcmp(cfg->audio.input_format, "AAC") == 0)
@@ -96,7 +106,12 @@ int IMPAudio::init()
         ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
         bitrate = 16;
     }
-    else if (strcmp(cfg->audio.input_format, "PCM") != 0)
+    else if (strcmp(cfg->audio.input_format, "PCM") == 0)
+    {
+        // PCM format - keep the default format = IMPAudioFormat::PCM set above
+        LOG_INFO("Using PCM format (no encoding)");
+    }
+    else
     {
         LOG_ERROR("unsupported audio->input_format (" << cfg->audio.input_format
             << "). we only support OPUS, AAC, G711A, G711U, G726, and PCM.");
@@ -135,12 +150,28 @@ int IMPAudio::init()
         LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
     }
 
+#if defined(PLATFORM_T23)
+    // T23 CRITICAL: Both digital and analog MIC have noise issues
+    // Allow testing both via configuration or force one based on testing
+    // Current test: analog MIC still has noise, try digital MIC
+    if (devId == 1) {
+        LOG_INFO("T23: Analog MIC has noise, trying digital MIC (devId=0)");
+        devId = 0;  // Test digital MIC instead
+    }
+    LOG_INFO("T23: Using audio devId=" << devId << " (0=digital MIC, 1=analog MIC)");
+#endif
     ret = IMP_AI_SetPubAttr(devId, &ioattr);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetPubAttr(" << devId << ")");
     if (ret != 0) {
         LOG_ERROR("Failed to set audio public attributes, cannot continue audio initialization");
         return ret;
     }
+
+#if defined(PLATFORM_T23)
+    // T23 CRITICAL: Add delay to stabilize audio clock after configuration
+    usleep(100000);  // 100ms delay for T23 audio hardware stabilization
+    LOG_INFO("T23: Audio hardware stabilization delay applied");
+#endif
 
     memset(&ioattr, 0x0, sizeof(ioattr));
     ret = IMP_AI_GetPubAttr(devId, &ioattr);
@@ -158,7 +189,15 @@ int IMPAudio::init()
     }
 
     IMPAudioIChnParam chnParam = {
-        .usrFrmDepth = 30, // frame buffer depth
+#if defined(PLATFORM_T23)
+        .usrFrmDepth = 2,  // T23: Minimum possible frame buffer depth
+        // T23 CRITICAL: AEC channel setting may cause DMA buffer corruption
+        // Use FIRST_LEFT but this will be ignored since we're not using AEC
+        .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT,  // Required for compilation, but AEC disabled
+#else
+        .usrFrmDepth = 30, // Other platforms: keep original
+        .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT,
+#endif
         .Rev = 0
     };
 
@@ -184,8 +223,18 @@ int IMPAudio::init()
         return ret;
     }
 
+#if defined(PLATFORM_T23)
+    // T23 analog MIC needs higher volume settings to work properly
+    int t23_vol = (devId == 1) ? 90 : cfg->audio.input_vol;
+    ret = IMP_AI_SetVol(devId, inChn, t23_vol);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", " << t23_vol << ")");
+    if (devId == 1) {
+        LOG_INFO("T23: Using higher volume for analog MIC: " << t23_vol);
+    }
+#else
     ret = IMP_AI_SetVol(devId, inChn, cfg->audio.input_vol);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", " << cfg->audio.input_vol << ")");
+#endif
     if (ret != 0) {
         LOG_ERROR("Failed to set audio volume, cannot continue audio initialization");
         return ret;
@@ -201,8 +250,19 @@ int IMPAudio::init()
 
     if(cfg->audio.input_gain >= 0)
     {
+#if defined(PLATFORM_T23)
+        // T23 analog MIC needs moderate gain to avoid hardware noise
+        // Limit gain to prevent T23 audio hardware artifacts
+        int t23_gain = (devId == 1) ? 20 : cfg->audio.input_gain;  // Reduced from 30 to 20
+        ret = IMP_AI_SetGain(devId, inChn, t23_gain);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", " << t23_gain << ")");
+        if (devId == 1) {
+            LOG_INFO("T23: Using higher gain for analog MIC: " << t23_gain);
+        }
+#else
         ret = IMP_AI_SetGain(devId, inChn, cfg->audio.input_gain);
         LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", " << cfg->audio.input_gain << ")");
+#endif
         if (ret != 0) {
             LOG_ERROR("Failed to set audio gain, cannot continue audio initialization");
             return ret;

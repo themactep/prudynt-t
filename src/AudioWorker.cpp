@@ -4,6 +4,7 @@
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
+#include "RTSPStatus.hpp"
 
 #define MODULE "AudioWorker"
 
@@ -20,7 +21,7 @@ AudioWorker::~AudioWorker()
     LOG_DEBUG("AudioWorker destroyed for channel " << encChn);
 }
 
-void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
+void AudioWorker::process_audio_frame_direct(IMPAudioFrame &frame)
 {
     // Monotomic time not appropriate here as these must sync with the video frame
     int64_t audio_ts = frame.timeStamp;
@@ -95,6 +96,105 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
 
 void AudioWorker::process_frame(IMPAudioFrame &frame)
 {
+    // Handle Opus frame accumulation (320 -> 960 samples) to fix timing drift
+    if (global_audio[encChn]->imp_audio->format == IMPAudioFormat::OPUS && targetSamplesPerChannel > 0) {
+        int samplesPerChannel = (frame.len / sizeof(int16_t)) / global_audio[encChn]->imp_audio->outChnCnt;
+
+        // If this is the first frame in the buffer, save the timestamp
+        if (frameBuffer.empty()) {
+            bufferStartTimestamp = frame.timeStamp;
+            LOG_DEBUG("Starting new Opus frame accumulation: " << samplesPerChannel << " samples per channel");
+        }
+
+        // Buffer safety: bound growth and drop oldest on overflow
+        int outCh = global_audio[encChn]->imp_audio->outChnCnt;
+        int16_t *samples = (int16_t*)frame.virAddr;
+        int totalSamples = frame.len / sizeof(int16_t);
+        int currentSamplesPerChannel = frameBuffer.size() / outCh;
+        int incomingSamplesPerChannel = totalSamples / outCh;
+        int predictedSamplesPerChannel = currentSamplesPerChannel + incomingSamplesPerChannel;
+
+        if (warnBufferSamplesPerChannel > 0 && predictedSamplesPerChannel >= warnBufferSamplesPerChannel) {
+            LOG_WARN("AudioWorker buffer nearing capacity: " << predictedSamplesPerChannel
+                     << "/" << maxBufferSamplesPerChannel << " samples/ch (" << bufferDropCount.load() << " drops so far)");
+        }
+
+        // Drop oldest samples to keep within capacity
+        while (maxBufferSamplesPerChannel > 0 && predictedSamplesPerChannel > maxBufferSamplesPerChannel && !frameBuffer.empty()) {
+            int dropSamplesPerChannel = std::max(targetSamplesPerChannel, predictedSamplesPerChannel - maxBufferSamplesPerChannel);
+            int dropTotalSamples = dropSamplesPerChannel * outCh;
+            dropTotalSamples = std::min(dropTotalSamples, (int)frameBuffer.size());
+            frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + dropTotalSamples);
+            predictedSamplesPerChannel -= dropSamplesPerChannel;
+            bufferDropCount.fetch_add(1);
+            // Advance buffer start PTS accordingly
+            bufferStartTimestamp += (int64_t) ( (dropSamplesPerChannel * 1000000LL) / global_audio[encChn]->imp_audio->sample_rate );
+            // Expose metrics via RTSPStatus
+            {
+                std::string streamName = std::string("audio") + std::to_string(encChn);
+                RTSPStatus::writeCustomParameter(streamName, "buffer_drop_count", std::to_string(bufferDropCount.load()));
+                RTSPStatus::writeCustomParameter(streamName, "buffer_level_samples_per_channel", std::to_string(predictedSamplesPerChannel));
+            }
+            LOG_WARN("AudioWorker dropped " << dropSamplesPerChannel << " samples/ch to bound buffer");
+        }
+
+        // Add samples to buffer
+        frameBuffer.insert(frameBuffer.end(), samples, samples + totalSamples);
+
+        currentSamplesPerChannel = frameBuffer.size() / outCh;
+
+        // Check if we have enough samples for a complete Opus frame
+        // CRITICAL FIX: Use while loop to process multiple accumulated frames
+        while (currentSamplesPerChannel >= targetSamplesPerChannel) {
+            // Create a new frame with exactly the right number of samples
+            int targetTotalSamples = targetSamplesPerChannel * global_audio[encChn]->imp_audio->outChnCnt;
+            int targetBytes = targetTotalSamples * sizeof(int16_t);
+
+            IMPAudioFrame opusFrame = frame;
+            opusFrame.virAddr = (uint32_t*)frameBuffer.data();
+            opusFrame.len = targetBytes;
+            // Keep original timestamp - the monotonic PTS will be applied in process_audio_frame_direct
+            opusFrame.timeStamp = bufferStartTimestamp;
+
+            LOG_DEBUG("Opus frame ready: accumulated " << currentSamplesPerChannel
+                     << " samples per channel, sending " << targetSamplesPerChannel);
+
+            // Analyze raw PCM data for corruption patterns
+            static int analysis_count = 0;
+            if (analysis_count < 5) {
+                int16_t *samples = (int16_t*)frameBuffer.data();
+                int16_t min_val = samples[0], max_val = samples[0];
+                int zero_count = 0, clip_count = 0;
+
+                for (int i = 0; i < targetTotalSamples; i++) {
+                    if (samples[i] == 0) zero_count++;
+                    if (samples[i] >= 32767 || samples[i] <= -32768) clip_count++;
+                    if (samples[i] < min_val) min_val = samples[i];
+                    if (samples[i] > max_val) max_val = samples[i];
+                }
+
+                LOG_DEBUG("Raw PCM analysis " << analysis_count << ": min=" << min_val
+                         << ", max=" << max_val << ", zeros=" << zero_count
+                         << ", clipped=" << clip_count << "/" << targetTotalSamples);
+                analysis_count++;
+            }
+
+            // Process the accumulated frame
+            process_audio_frame_direct(opusFrame);
+
+            // Remove processed samples from buffer
+            frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + targetTotalSamples);
+
+            // Update timestamp for next frame
+            bufferStartTimestamp += (targetSamplesPerChannel * 1000000LL) / global_audio[encChn]->imp_audio->sample_rate;
+
+            // Recalculate remaining samples for next iteration
+            currentSamplesPerChannel = frameBuffer.size() / global_audio[encChn]->imp_audio->outChnCnt;
+        }
+
+        return; // Don't process the original frame
+    }
+
     if (global_audio[encChn]->imp_audio->outChnCnt == 2 && frame.soundmode == AUDIO_SOUND_MODE_MONO)
     {
         size_t sample_size = frame.bitwidth / 8;
@@ -116,12 +216,12 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
         stereo_frame.len = stereo_size;
         stereo_frame.soundmode = AUDIO_SOUND_MODE_STEREO;
 
-        process_audio_frame(stereo_frame);
+        process_audio_frame_direct(stereo_frame);
         delete[] stereo_buffer;
     }
     else
     {
-        process_audio_frame(frame);
+        process_audio_frame_direct(frame);
     }
 }
 
@@ -141,6 +241,38 @@ void AudioWorker::run()
     else
     {
         LOG_DEBUG("AudioReframer not needed or imp_audio not ready for channel " << encChn);
+    }
+
+    // Initialize frame accumulator for Opus
+    // RFC 7587 COMPLIANCE NOTE: OPUS RTP timestamps MUST always use 48kHz clock rate
+    // for signaling purposes, but the actual input sampling rate can be different
+    // (8kHz, 16kHz, 24kHz, 48kHz, etc.). The frame accumulator must collect samples
+    // based on the ACTUAL input sample rate, not the RTP clock rate.
+    // For 20ms frames: required_samples = actual_input_rate * 0.020
+    if (global_audio[encChn]->imp_audio->format == IMPAudioFormat::OPUS) {
+        // Calculate samples for 20ms at the actual input sample rate
+        targetSamplesPerChannel = global_audio[encChn]->imp_audio->sample_rate * 0.020;
+        frameBuffer.clear();
+        // Compute buffer bounds (configurable via cfg->audio.* if provided)
+        int warnFrames = 3;
+        int capFrames  = 5;
+        // Optional config overrides
+        if (cfg && cfg->config_loaded) {
+            warnFrames = std::max(1, cfg->audio.buffer_warn_frames);
+            capFrames  = std::max(warnFrames + 1, cfg->audio.buffer_cap_frames);
+        }
+        warnBufferSamplesPerChannel = targetSamplesPerChannel * warnFrames;
+        maxBufferSamplesPerChannel  = targetSamplesPerChannel * capFrames;
+        LOG_DEBUG("Opus frame accumulator initialized: target=" << targetSamplesPerChannel
+                 << " samples per channel (20ms at " << global_audio[encChn]->imp_audio->sample_rate << "Hz), "
+                 << "warn@" << warnBufferSamplesPerChannel << ", cap@" << maxBufferSamplesPerChannel);
+        // Expose initial metrics and thresholds
+        {
+            std::string streamName = std::string("audio") + std::to_string(encChn);
+            RTSPStatus::writeCustomParameter(streamName, "buffer_warn_samples_per_channel", std::to_string(warnBufferSamplesPerChannel));
+            RTSPStatus::writeCustomParameter(streamName, "buffer_cap_samples_per_channel", std::to_string(maxBufferSamplesPerChannel));
+            RTSPStatus::writeCustomParameter(streamName, "buffer_drop_count", std::to_string(bufferDropCount.load()));
+        }
     }
 
     while (global_audio[encChn]->running)
