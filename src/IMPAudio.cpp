@@ -194,11 +194,14 @@ int IMPAudio::init()
         // T23 CRITICAL: AEC channel setting may cause DMA buffer corruption
         // Use FIRST_LEFT but this will be ignored since we're not using AEC
         .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT,  // Required for compilation, but AEC disabled
+        .Rev = 0
+#elif defined(PLATFORM_T31)
+        .usrFrmDepth = 30, // T31: Standard frame buffer depth
+        .Rev = 0           // T31 doesn't support aecChn field in IMPAudioIChnParam
 #else
         .usrFrmDepth = 30, // Other platforms: keep original
-        .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT,
-#endif
         .Rev = 0
+#endif
     };
 
     ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
