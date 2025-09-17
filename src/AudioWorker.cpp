@@ -164,6 +164,10 @@ void AudioWorker::run()
                                                  << global_audio[encChn]->aiChn << ") failed");
                 }
 
+                struct timeval monotonic_time;
+                WorkerUtils::getMonotonicTimeOfDay(&monotonic_time);
+                frame.timeStamp = static_cast<int64_t>(monotonic_time.tv_sec) * 1000000 + monotonic_time.tv_usec;
+
                 if (reframer)
                 {
                     reframer->addFrame(reinterpret_cast<uint8_t *>(frame.virAddr), frame.timeStamp);
