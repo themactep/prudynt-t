@@ -18,10 +18,12 @@
   },
   "general": {
     "allocation_tracking_enabled": false,
+    "audio_debug_verbose": false,
     "imp_polling_timeout": 500,
     "loglevel": "INFO",
     "memory_monitoring_enabled": true,
     "osd_pool_size": 256,
+    "timestamp_validation_enabled": true,
     "zero_copy_buffer_pool_size": 10,
     "zero_copy_enabled": true
   },

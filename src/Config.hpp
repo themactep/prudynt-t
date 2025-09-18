@@ -99,6 +99,8 @@ struct _general {
     const char *loglevel;
     int osd_pool_size;
     int imp_polling_timeout;
+    bool timestamp_validation_enabled;
+    bool audio_debug_verbose;
 };
 struct _rtsp {
     int port;

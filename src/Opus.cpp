@@ -4,7 +4,7 @@
 #include <atomic>
 #include "RTSPStatus.hpp"
 
-namespace { std::atomic<uint64_t> g_opusMismatches{0}; }
+namespace { std::atomic<uint32_t> g_opusMismatches{0}; }
 
 Opus* Opus::createNew(int sampleRate, int numChn)
 {
