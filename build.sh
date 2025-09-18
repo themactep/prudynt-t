@@ -10,6 +10,19 @@ prudynt() {
 	cd $TOP
 	make clean
 
+	# Rebuild live555 to ensure latest changes are included
+	echo "Rebuilding live555 with latest changes..."
+	cd 3rdparty/live
+	if [[ -f Makefile ]]; then
+		make clean
+		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make -j$(nproc)
+		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make install
+		echo "live555 rebuilt successfully"
+	else
+		echo "Warning: live555 Makefile not found, skipping live555 rebuild"
+	fi
+	cd $TOP
+
 	# Parse build type flags - default to dynamic linking (ideal for buildroot/firmware)
 	BIN_TYPE=""
 	for arg in "$@"; do
@@ -42,6 +55,11 @@ prudynt() {
 	-isystem ./3rdparty/install/include/BasicUsageEnvironment" \
 	LDFLAGS=" -L./3rdparty/install/lib" \
 	-C $PWD all
+
+	echo "DONE. COPYING BINARY TO NFS"
+  cp -vf bin/prudynt /nfs/
+  cp -vf res/prudynt.json /nfs/
+
 	exit 0
 }
 
@@ -92,10 +110,17 @@ deps() {
 
 	echo "Build libschrift"
 	cd 3rdparty
-	rm -rf libschrift
-	git clone --depth=1 https://github.com/tomolt/libschrift/
-	cd libschrift
-	git apply ../../res/libschrift.patch
+
+	# Smart libschrift handling
+	if [[ ! -d libschrift ]]; then
+		echo "Cloning libschrift..."
+		git clone --depth=1 https://github.com/tomolt/libschrift/
+		cd libschrift
+		git apply ../../res/libschrift.patch
+	else
+		echo "libschrift directory exists, using existing version..."
+		cd libschrift
+	fi
 	mkdir -p $TOP/3rdparty/install/lib
 	mkdir -p $TOP/3rdparty/install/include
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
@@ -134,9 +159,26 @@ deps() {
 
 	echo "Build live555"
 	cd 3rdparty
-	rm -rf live
-	git clone https://github.com/themactep/thingino-live555.git live
-	cd live
+
+	# Smart live555 handling - only clone if directory doesn't exist
+	if [[ ! -d live ]]; then
+		echo "Cloning live555..."
+		git clone https://github.com/themactep/thingino-live555.git live
+		cd live
+		# Apply PRUDYNT-T patch for shared RTP timestamp base
+		echo "Applying PRUDYNT-T RTP timestamp patch..."
+		git apply ../../res/live555-rtpsink-shared-timestamp.patch
+	else
+		echo "live555 directory exists, checking for updates..."
+		cd live
+		# Reset to clean state and pull latest changes
+		git reset --hard HEAD
+		git clean -fd
+		git pull origin master
+		# Reapply PRUDYNT-T patch for shared RTP timestamp base
+		echo "Reapplying PRUDYNT-T RTP timestamp patch..."
+		git apply ../../res/live555-rtpsink-shared-timestamp.patch
+	fi
 
 	if [[ -f Makefile ]]; then
 		make distclean
@@ -221,21 +263,35 @@ deps() {
 
 	echo "import libaudioshim"
 	cd 3rdparty
-	rm -rf libaudioshim
+
+	# Smart libaudioshim handling
 	if [[ ! -d libaudioshim ]]; then
-	git clone --depth=1 https://github.com/gtxaspec/libaudioshim
-	cd libaudioshim
+		echo "Cloning libaudioshim..."
+		git clone --depth=1 https://github.com/gtxaspec/libaudioshim
+		cd libaudioshim
 		make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
-	cp libaudioshim.* ../install/lib/
+		cp libaudioshim.* ../install/lib/
+	else
+		echo "libaudioshim directory exists, using existing version..."
+		cd libaudioshim
+		make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+		cp libaudioshim.* ../install/lib/
 	fi
 	cd $TOP
 
 	echo "Build faac"
 	cd 3rdparty
-	rm -rf faac
-	git clone --depth=1 https://github.com/knik0/faac.git
-	cd faac
-	sed -i 's/^#define MAX_CHANNELS 64/#define MAX_CHANNELS 2/' libfaac/coder.h
+
+	# Smart faac handling
+	if [[ ! -d faac ]]; then
+		echo "Cloning faac..."
+		git clone --depth=1 https://github.com/knik0/faac.git
+		cd faac
+		sed -i 's/^#define MAX_CHANNELS 64/#define MAX_CHANNELS 2/' libfaac/coder.h
+	else
+		echo "faac directory exists, using existing version..."
+		cd faac
+	fi
 	./bootstrap
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
 		CC="${PRUDYNT_CROSS}gcc" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install" --enable-static --disable-shared
@@ -270,8 +326,5 @@ elif [[ "$1" == "full" ]]; then
 	deps "${@:2}"
 	prudynt "${@:2}"
 fi
-
-echo "DONE. COPYING BINARY TO NFS"
-cp -vf bin/prudynt /nfs/
 
 exit 0

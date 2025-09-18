@@ -177,7 +177,10 @@ TARGET                  = $(BIN_DIR)/prudynt
 # Version Management
 # ==================
 ifndef commit_tag
-commit_tag              = $(shell git rev-parse --short HEAD)
+# Always use timestamp for development builds to track local changes
+current_timestamp       = $(shell date +%s)
+git_hash                = $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+commit_tag              = $(git_hash)-dev$(current_timestamp)
 endif
 
 VERSION_FILE            = $(LIBIMP_INC_DIR)/version.hpp

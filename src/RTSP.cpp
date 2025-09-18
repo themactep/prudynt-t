@@ -1,6 +1,10 @@
 #include "RTSP.hpp"
 #include "IMPBackchannel.hpp"
 #include "BackchannelServerMediaSubsession.hpp"
+#include "GroupsockHelper.hh"
+#include <stdlib.h>
+#include <stdio.h>
+#include <iomanip>
 
 #undef MODULE
 #define MODULE "RTSP"
@@ -147,6 +151,18 @@ void RTSP::start()
         return;
     }
     OutPacketBuffer::maxSize = cfg->rtsp.out_buffer_size;
+
+    // PRUDYNT-T: Set shared timestamp base for A-V sync
+    // Generate a single timestamp base that both audio and video RTPSinks will use
+    // This eliminates the massive A-V sync differences caused by random timestamp bases
+    uint32_t sharedTimestampBase = our_random32();
+    char timestampBaseStr[16];
+    snprintf(timestampBaseStr, sizeof(timestampBaseStr), "%u", sharedTimestampBase);
+    setenv("PRUDYNT_SHARED_TIMESTAMP_BASE", timestampBaseStr, 1);
+
+    char logMsg[64];
+    snprintf(logMsg, sizeof(logMsg), "Set shared RTP timestamp base: %u (0x%08x)", sharedTimestampBase, sharedTimestampBase);
+    LOG_INFO(logMsg);
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
     if (cfg->audio.input_enabled)

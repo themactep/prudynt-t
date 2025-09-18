@@ -3,8 +3,10 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
+#include "TimestampManager.hpp"
 #include "globals.hpp"
 #include "RTSPStatus.hpp"
+#include <chrono>
 
 #define MODULE "AudioWorker"
 
@@ -23,11 +25,12 @@ AudioWorker::~AudioWorker()
 
 void AudioWorker::process_audio_frame_direct(IMPAudioFrame &frame)
 {
-    // Monotomic time not appropriate here as these must sync with the video frame
-    int64_t audio_ts = frame.timeStamp;
+    // SINGLE SOURCE OF TRUTH: Use TimestampManager (same as video)
     struct timeval encoder_time;
-    encoder_time.tv_sec = audio_ts / 1000000;
-    encoder_time.tv_usec = audio_ts % 1000000;
+    TimestampManager::getInstance().getTimestamp(&encoder_time);
+
+    // TIMESTAMP DEBUG: Log audio frame processing
+    LOG_DEBUG("AUDIO_TIMESTAMP_2_PROCESS: frame.timeStamp=" << frame.timeStamp << " encoder_time.tv_sec=" << encoder_time.tv_sec << " encoder_time.tv_usec=" << encoder_time.tv_usec);
 
     AudioFrame af;
     af.time = encoder_time;
@@ -102,8 +105,16 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
 
         // If this is the first frame in the buffer, save the timestamp
         if (frameBuffer.empty()) {
-            bufferStartTimestamp = frame.timeStamp;
-            LOG_DEBUG("Starting new Opus frame accumulation: " << samplesPerChannel << " samples per channel");
+            // SINGLE SOURCE OF TRUTH: Use TimestampManager timestamp
+            bufferStartTimestamp = TimestampManager::getInstance().getTimestampUs();
+            // Only log if verbose audio debugging is enabled
+            if (cfg->general.audio_debug_verbose) {
+                static int accumulationLogCount = 0;
+                if (accumulationLogCount < 3) {
+                    LOG_DEBUG("Starting new Opus frame accumulation: " << samplesPerChannel << " samples per channel");
+                    accumulationLogCount++;
+                }
+            }
         }
 
         // Buffer safety: bound growth and drop oldest on overflow
@@ -115,8 +126,16 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
         int predictedSamplesPerChannel = currentSamplesPerChannel + incomingSamplesPerChannel;
 
         if (warnBufferSamplesPerChannel > 0 && predictedSamplesPerChannel >= warnBufferSamplesPerChannel) {
-            LOG_WARN("AudioWorker buffer nearing capacity: " << predictedSamplesPerChannel
-                     << "/" << maxBufferSamplesPerChannel << " samples/ch (" << bufferDropCount.load() << " drops so far)");
+            // Rate-limit buffer capacity warnings to avoid log spam
+            static auto lastWarnTime = std::chrono::steady_clock::now();
+            auto now = std::chrono::steady_clock::now();
+            auto timeSinceLastWarn = std::chrono::duration_cast<std::chrono::seconds>(now - lastWarnTime);
+
+            if (timeSinceLastWarn.count() >= 5) { // Warn at most every 5 seconds
+                LOG_WARN("AudioWorker buffer nearing capacity: " << predictedSamplesPerChannel
+                         << "/" << maxBufferSamplesPerChannel << " samples/ch (" << bufferDropCount.load() << " drops so far)");
+                lastWarnTime = now;
+            }
         }
 
         // Drop oldest samples to keep within capacity
@@ -156,8 +175,15 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
             // Keep original timestamp - the monotonic PTS will be applied in process_audio_frame_direct
             opusFrame.timeStamp = bufferStartTimestamp;
 
-            LOG_DEBUG("Opus frame ready: accumulated " << currentSamplesPerChannel
-                     << " samples per channel, sending " << targetSamplesPerChannel);
+            // Only log if verbose audio debugging is enabled
+            if (cfg->general.audio_debug_verbose) {
+                static int readyLogCount = 0;
+                if (readyLogCount < 3) {
+                    LOG_DEBUG("Opus frame ready: accumulated " << currentSamplesPerChannel
+                             << " samples per channel, sending " << targetSamplesPerChannel);
+                    readyLogCount++;
+                }
+            }
 
             // Analyze raw PCM data for corruption patterns
             static int analysis_count = 0;
@@ -229,6 +255,9 @@ void AudioWorker::run()
 {
     LOG_DEBUG("Start audio processing run loop for channel " << encChn);
 
+    // Using global TimestampManager for unified audio/video timeline
+    LOG_DEBUG("AudioWorker using TimestampManager for unified timeline");
+
     // Initialize AudioReframer only if needed, store in member variable
     if (global_audio[encChn]->imp_audio->format == IMPAudioFormat::AAC)
     {
@@ -296,13 +325,15 @@ void AudioWorker::run()
                                                  << global_audio[encChn]->aiChn << ") failed");
                 }
 
-                struct timeval monotonic_time;
-                WorkerUtils::getMonotonicTimeOfDay(&monotonic_time);
-                frame.timeStamp = static_cast<int64_t>(monotonic_time.tv_sec) * 1000000 + monotonic_time.tv_usec;
+                // Hardware timestamps are already monotonic (from IMP_System_RebaseTimeStamp)
+                // Use them directly - no conversion needed with 64-bit approach
+                // DeepSeek's recommendation: use hardware timestamps as-is since they're already monotonic
 
                 if (reframer)
                 {
-                    reframer->addFrame(reinterpret_cast<uint8_t *>(frame.virAddr), frame.timeStamp);
+                    // SINGLE SOURCE OF TRUTH: Use TimestampManager timestamp
+                    uint64_t unified_timestamp = TimestampManager::getInstance().getTimestampUs();
+                    reframer->addFrame(reinterpret_cast<uint8_t *>(frame.virAddr), unified_timestamp);
                     while (reframer->hasMoreFrames())
                     {
                         size_t frameLen = 1024 * sizeof(uint16_t)
@@ -383,6 +414,12 @@ void *AudioWorker::thread_entry(void *arg)
         global_audio[encChn]->imp_audio = IMPAudio::createNew(global_audio[encChn]->devId,
                                                               global_audio[encChn]->aiChn,
                                                               global_audio[encChn]->aeChn);
+        // Keep global devId in sync with actual initialized device (IMPAudio may adjust devId on some platforms)
+        if (global_audio[encChn]->imp_audio && global_audio[encChn]->devId != global_audio[encChn]->imp_audio->devId) {
+            LOG_INFO("AudioWorker: remapping devId from " << global_audio[encChn]->devId
+                     << " to " << global_audio[encChn]->imp_audio->devId << " based on hardware init");
+            global_audio[encChn]->devId = global_audio[encChn]->imp_audio->devId;
+        }
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to initialize audio: " << e.what());
         global_audio[encChn]->imp_audio = nullptr;

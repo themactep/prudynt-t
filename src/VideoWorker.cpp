@@ -5,6 +5,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
+#include "TimestampManager.hpp"
 #include "globals.hpp"
 
 #undef MODULE
@@ -55,8 +56,13 @@ void VideoWorker::run()
                 }
 
 
+                // SINGLE SOURCE OF TRUTH: Use TimestampManager (which uses IMP hardware timestamps)
                 struct timeval monotonic_time;
-                WorkerUtils::getMonotonicTimeOfDay(&monotonic_time);
+                TimestampManager::getInstance().getTimestamp(&monotonic_time);
+
+                // TIMESTAMP DEBUG: Log video frame processing (use first pack timestamp)
+                int64_t pack_timestamp = (stream.packCount > 0) ? stream.pack[0].timestamp : -1;
+                LOG_DEBUG("VIDEO_TIMESTAMP_1_PROCESS: pack_timestamp=" << pack_timestamp << " monotonic_time.tv_sec=" << monotonic_time.tv_sec << " monotonic_time.tv_usec=" << monotonic_time.tv_usec);
 
                 for (uint32_t i = 0; i < stream.packCount; ++i)
                 {

@@ -3,6 +3,9 @@
 
 #define MODULE "IMP_SYSTEM"
 
+// Static member definition
+int64_t IMPSystem::impTimestampBase = 0;
+
 IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name)
 {
     IMPSensorInfo out;

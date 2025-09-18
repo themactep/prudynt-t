@@ -15,6 +15,7 @@ class IMPSystem
 {
 public:
     static IMPSystem *createNew();
+    static int64_t getIMPTimestampBase() { return impTimestampBase; }
 
     IMPSystem()
     {
@@ -33,6 +34,9 @@ public:
         IMP_System_RebaseTimeStamp(imp_time_base);
 
         LOG_DEBUG("IMP_System_RebaseTimeStamp(" << imp_time_base << ");");
+
+        // Store the IMP timestamp base for TimestampManager
+        impTimestampBase = imp_time_base;
     }
 
     ~IMPSystem()
@@ -46,6 +50,7 @@ public:
 private:
     IMPSensorInfo sinfo{};
     IMPSensorInfo create_sensor_info(const char *sensor_name);
+    static int64_t impTimestampBase;
 };
 
 #endif

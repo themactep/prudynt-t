@@ -36,7 +36,7 @@ private:
     int warnBufferSamplesPerChannel = 0;    // e.g., 3 * targetSamplesPerChannel
 
     // Diagnostics / metrics
-    std::atomic<uint64_t> bufferDropCount{0};
+    std::atomic<uint32_t> bufferDropCount{0};
 };
 
 #endif // AUDIO_SUPPORT

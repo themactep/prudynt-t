@@ -78,6 +78,9 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame()
 
         fPresentationTime = nal.time;
 
+        // TIMESTAMP DEBUG: Log RTP presentation time assignment
+        LOG_DEBUG("RTP_TIMESTAMP_3_PRESENTATION: fPresentationTime.tv_sec=" << fPresentationTime.tv_sec << " fPresentationTime.tv_usec=" << fPresentationTime.tv_usec);
+
         memcpy(fTo, &nal.data[0], fFrameSize);
 
         if (fFrameSize > 0)
