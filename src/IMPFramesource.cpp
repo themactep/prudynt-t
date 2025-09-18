@@ -27,12 +27,13 @@ int IMPFramesource::init()
 
     (void)IMP_FrameSource_GetChnAttr(chnNr, &chnAttr);
 
-    // Determine if we need scaling
-    if ((sensor->width != stream->width) || (sensor->height != stream->height)) {
-        scale = 1;
-    } else {
-        scale = 0;
-    }
+    // That's a great idea but it does not work as intended. Needs more investigation.
+    //if ((sensor->width != stream->width) || (sensor->height != stream->height)) {
+    //    scale = 1;
+    //} else {
+    //    scale = 0;
+    //}
+    scale = 1;
 
     // Set required base attributes
     chnAttr.picWidth = stream->width;
