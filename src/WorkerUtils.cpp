@@ -1,4 +1,5 @@
 #include "WorkerUtils.hpp"
+#include "TimestampManager.hpp"
 
 #include <cstddef>
 #include <time.h>
@@ -7,10 +8,8 @@ namespace WorkerUtils {
 
 void getMonotonicTimeOfDay(struct timeval *tv)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    tv->tv_sec = ts.tv_sec;
-    tv->tv_usec = ts.tv_nsec / 1000;
+    // SINGLE SOURCE OF TRUTH: Use TimestampManager
+    TimestampManager::getInstance().getTimestamp(tv);
 }
 
 unsigned long long getMonotonicTimeDiffInMs(struct timeval *startTime)

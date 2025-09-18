@@ -17,6 +17,7 @@
 #include "Motion.hpp"
 #include "WorkerUtils.hpp"
 #include "IMPBackchannel.hpp"
+#include "TimestampManager.hpp"
 using namespace std::chrono;
 
 std::mutex mutex_main;
@@ -101,6 +102,13 @@ int main(int argc, const char *argv[])
     if (!imp_system)
     {
         imp_system = IMPSystem::createNew();
+    }
+
+    // Initialize the global timestamp manager after IMP system is ready
+    // This ensures all audio/video timestamps use a single monotonic timeline
+    if (TimestampManager::getInstance().initialize() != 0) {
+        LOG_ERROR("Failed to initialize TimestampManager");
+        return 1;
     }
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
