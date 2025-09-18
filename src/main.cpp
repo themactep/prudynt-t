@@ -119,13 +119,13 @@ int main(int argc, const char *argv[])
     {
         global_restart = true;
 #if defined(AUDIO_SUPPORT)
-        if (cfg->audio.output_enabled && (global_restart_audio || startup))
+        if (cfg->audio.output_enabled && !cfg->privacy.enabled && (global_restart_audio || startup))
         {
              int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
              LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
         }
 
-        if (cfg->audio.input_enabled && (global_restart_audio || startup))
+        if (cfg->audio.input_enabled && !cfg->privacy.enabled && (global_restart_audio || startup))
         {
             StartHelper sh{0};
             int ret = pthread_create(&global_audio[0]->thread, nullptr, AudioWorker::thread_entry, static_cast<void *>(&sh));
@@ -155,13 +155,13 @@ int main(int argc, const char *argv[])
                 sh.has_started.acquire();
             }
 
-            if (cfg->stream0.osd.enabled || cfg->stream1.osd.enabled)
+            if (cfg->stream0.osd.enabled || cfg->stream1.osd.enabled || cfg->privacy.enabled)
             {
                 int ret = pthread_create(&osd_thread, nullptr, OSD::thread_entry, NULL);
                 LOG_DEBUG_OR_ERROR(ret, "create osd thread");
             }
 
-            if (cfg->motion.enabled)
+            if (cfg->motion.enabled && !cfg->privacy.enabled)
             {
                 int ret = pthread_create(&motion_thread, nullptr, Motion::run, &motion);
                 LOG_DEBUG_OR_ERROR(ret, "create motion thread");
