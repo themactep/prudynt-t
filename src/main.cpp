@@ -76,7 +76,7 @@ void start_video(int encChn)
 
 int main(int argc, const char *argv[])
 {
-    LOG_INFO("PRUDYNT-T Next-Gen Video Daemon: " << VERSION);
+    LOG_INFO("PRUDYNT-T Next-Gen Video Daemon: " << FULL_VERSION_STRING);
 
     pthread_t cw_thread;
     pthread_t ws_thread;
