@@ -25,12 +25,22 @@ AudioWorker::~AudioWorker()
 
 void AudioWorker::process_audio_frame_direct(IMPAudioFrame &frame)
 {
-    // SINGLE SOURCE OF TRUTH: Use TimestampManager (same as video)
+    // AUDIO SYNC FIX: Use frame's timestamp if it's from accumulated Opus frames,
+    // otherwise use fresh TimestampManager timestamp for direct frames
     struct timeval encoder_time;
-    TimestampManager::getInstance().getTimestamp(&encoder_time);
 
-    // TIMESTAMP DEBUG: Log audio frame processing
-    LOG_DEBUG("AUDIO_TIMESTAMP_2_PROCESS: frame.timeStamp=" << frame.timeStamp << " encoder_time.tv_sec=" << encoder_time.tv_sec << " encoder_time.tv_usec=" << encoder_time.tv_usec);
+    if (frame.timeStamp > 0) {
+        // This is an accumulated frame with pre-calculated timestamp - use it!
+        encoder_time.tv_sec = frame.timeStamp / 1000000;
+        encoder_time.tv_usec = frame.timeStamp % 1000000;
+        LOG_DEBUG("AUDIO_TIMESTAMP_ACCUMULATED: using frame.timeStamp=" << frame.timeStamp
+                 << " tv_sec=" << encoder_time.tv_sec << " tv_usec=" << encoder_time.tv_usec);
+    } else {
+        // Direct frame - use fresh timestamp
+        TimestampManager::getInstance().getTimestamp(&encoder_time);
+        LOG_DEBUG("AUDIO_TIMESTAMP_DIRECT: fresh timestamp tv_sec=" << encoder_time.tv_sec
+                 << " tv_usec=" << encoder_time.tv_usec);
+    }
 
     AudioFrame af;
     af.time = encoder_time;
@@ -107,14 +117,8 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
         if (frameBuffer.empty()) {
             // SINGLE SOURCE OF TRUTH: Use TimestampManager timestamp
             bufferStartTimestamp = TimestampManager::getInstance().getTimestampUs();
-            // Only log if verbose audio debugging is enabled
-            if (cfg->general.audio_debug_verbose) {
-                static int accumulationLogCount = 0;
-                if (accumulationLogCount < 3) {
-                    LOG_DEBUG("Starting new Opus frame accumulation: " << samplesPerChannel << " samples per channel");
-                    accumulationLogCount++;
-                }
-            }
+            // AUDIO SYNC DEBUG: Always log frame accumulation start for sync debugging
+            LOG_DEBUG("AUDIO_SYNC_ACCUMULATION_START: " << samplesPerChannel << " samples per channel, timestamp=" << bufferStartTimestamp);
         }
 
         // Buffer safety: bound growth and drop oldest on overflow
@@ -175,15 +179,10 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
             // Keep original timestamp - the monotonic PTS will be applied in process_audio_frame_direct
             opusFrame.timeStamp = bufferStartTimestamp;
 
-            // Only log if verbose audio debugging is enabled
-            if (cfg->general.audio_debug_verbose) {
-                static int readyLogCount = 0;
-                if (readyLogCount < 3) {
-                    LOG_DEBUG("Opus frame ready: accumulated " << currentSamplesPerChannel
-                             << " samples per channel, sending " << targetSamplesPerChannel);
-                    readyLogCount++;
-                }
-            }
+            // AUDIO SYNC DEBUG: Always log frame ready for sync debugging
+            LOG_DEBUG("AUDIO_SYNC_FRAME_READY: accumulated " << currentSamplesPerChannel
+                     << " samples per channel, sending " << targetSamplesPerChannel
+                     << ", timestamp=" << bufferStartTimestamp);
 
             // Analyze raw PCM data for corruption patterns
             static int analysis_count = 0;

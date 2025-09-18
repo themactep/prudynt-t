@@ -72,14 +72,25 @@ void TimestampManager::getTimestamp(struct timeval* tv) {
     tv->tv_sec = impTimestamp / 1000000;
     tv->tv_usec = impTimestamp % 1000000;
 
-    // TIMESTAMP DEBUG: Log TimestampManager output (rate-limited)
+    // TIMESTAMP DEBUG: Log TimestampManager output (improved rate limiting for sync debugging)
     static int log_count = 0;
-    if (log_count < 10 || log_count % 100 == 0) {
-        LOG_DEBUG("TIMESTAMP_MANAGER_0_SOURCE: impTimestamp=" << impTimestamp << " tv_sec=" << tv->tv_sec << " tv_usec=" << tv->tv_usec);
-        log_count++;
-    } else {
+    static auto last_log_time = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_log_time);
+
+    // Log first 20 calls, then every 1 second, or if there's a significant timestamp jump
+    static int64_t last_timestamp = 0;
+    int64_t timestamp_diff = std::abs(impTimestamp - last_timestamp);
+    bool significant_jump = (last_timestamp > 0 && timestamp_diff > 100000); // >100ms jump
+
+    if (log_count < 20 || time_since_last.count() >= 1000 || significant_jump) {
+        LOG_DEBUG("TIMESTAMP_MANAGER_SOURCE: impTimestamp=" << impTimestamp
+                 << " tv_sec=" << tv->tv_sec << " tv_usec=" << tv->tv_usec
+                 << " diff_from_last=" << (impTimestamp - last_timestamp));
+        last_log_time = now;
         log_count++;
     }
+    last_timestamp = impTimestamp;
 }
 
 
