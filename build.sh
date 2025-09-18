@@ -164,10 +164,6 @@ deps() {
 	if [[ ! -d live ]]; then
 		echo "Cloning live555..."
 		git clone https://github.com/themactep/thingino-live555.git live
-		cd live
-		# Apply PRUDYNT-T patch for shared RTP timestamp base
-		echo "Applying PRUDYNT-T RTP timestamp patch..."
-		git apply ../../res/live555-rtpsink-shared-timestamp.patch
 	else
 		echo "live555 directory exists, checking for updates..."
 		cd live
@@ -175,9 +171,6 @@ deps() {
 		git reset --hard HEAD
 		git clean -fd
 		git pull origin master
-		# Reapply PRUDYNT-T patch for shared RTP timestamp base
-		echo "Reapplying PRUDYNT-T RTP timestamp patch..."
-		git apply ../../res/live555-rtpsink-shared-timestamp.patch
 	fi
 
 	if [[ -f Makefile ]]; then
