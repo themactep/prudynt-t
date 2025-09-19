@@ -13,7 +13,7 @@
     "input_noise_suppression": 0,
     "input_sample_rate": 16000,
     "input_vol": 80,
-    "output_enabled": false,
+    "output_enabled": true,
     "output_sample_rate": 16000
   },
   "general": {

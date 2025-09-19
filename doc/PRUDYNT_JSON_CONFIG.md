@@ -520,7 +520,7 @@ Each stream can have its own OSD configuration:
     "input_agc_compression_gain_db": 0,
     "input_noise_suppression": 0,
     "force_stereo": false,
-    "output_enabled": false,
+    "output_enabled": true,
     "output_sample_rate": 16000
   }
 }
