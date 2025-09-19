@@ -276,6 +276,7 @@ void *AudioWorker::thread_entry(void *arg)
     if (global_audio[encChn]->imp_audio)
     {
         delete global_audio[encChn]->imp_audio;
+        global_audio[encChn]->imp_audio = nullptr;
     }
 
     return 0;
