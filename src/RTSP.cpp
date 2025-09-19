@@ -79,13 +79,13 @@ void RTSP::addSubsession(int chnNr, _stream &stream)
     sms->addSubsession(sub);
 
 #if defined(AUDIO_SUPPORT)
-    if (cfg->audio.input_enabled && stream.audio_enabled) {
+    if (cfg->audio.input_enabled && stream.audio_enabled && !cfg->privacy.enabled) {
         IMPAudioServerMediaSubsession *audioSub = IMPAudioServerMediaSubsession::createNew(*env, 0);
         sms->addSubsession(audioSub);
         LOG_INFO("Audio stream " << chnNr << " added to session");
     }
 
-    if (cfg->audio.output_enabled && stream.audio_enabled)
+    if (cfg->audio.output_enabled && stream.audio_enabled && !cfg->privacy.enabled)
     {
         #define ADD_BACKCHANNEL_SUBSESSION(EnumName, NameString, PayloadType, Frequency, MimeType) \
             { \
@@ -165,7 +165,7 @@ void RTSP::start()
     LOG_INFO(logMsg);
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
-    if (cfg->audio.input_enabled)
+    if (cfg->audio.input_enabled && !cfg->privacy.enabled)
     {
         audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(*env, 0, global_audio[audioChn], "audio");
 

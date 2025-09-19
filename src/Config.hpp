@@ -102,6 +102,10 @@ struct _general {
     bool timestamp_validation_enabled;
     bool audio_debug_verbose;
 };
+struct _privacy {
+    bool enabled;
+    const char *text_format;
+};
 struct _rtsp {
     int port;
     int est_bitrate;
@@ -310,6 +314,7 @@ class CFG {
         _audio audio{};
 #endif
 		_general general{};
+		_privacy privacy{};
 		_rtsp rtsp{};
 		_sensor sensor{};
         _image image{};
