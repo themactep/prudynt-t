@@ -57,8 +57,8 @@ prudynt() {
 	-C $PWD all
 
 	echo "DONE. COPYING BINARY TO NFS"
-  cp -vf bin/prudynt /nfs/
-  cp -vf res/prudynt.json /nfs/
+	cp -vf bin/prudynt /nfs/
+	cp -vf res/prudynt.json /nfs/
 
 	exit 0
 }
