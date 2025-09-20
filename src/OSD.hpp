@@ -67,11 +67,9 @@ private:
     int load_font();
     int libschrift_init();
     int renderGlyph(const char* characters);
-    void drawOutline(uint8_t* image, const Glyph& g, int x, int y, int outlineSize, int WIDTH, int HEIGHT);
+    void drawOutline(uint8_t* image, const Glyph& g, int x, int y, int outlineSize, int WIDTH, int HEIGHT, const uint8_t* strokeColor);
     int calculateTextSize(const char* text, uint16_t& width, uint16_t& height, int outlineSize);
-    int drawText(uint8_t* image, const char* text, int WIDTH, int HEIGHT, int outlineSize);
-    uint8_t BGRA_STROKE[4];
-    uint8_t BGRA_TEXT[4];
+    int drawText(uint8_t* image, const char* text, int WIDTH, int HEIGHT, int outlineSize, unsigned int font_color, unsigned int font_stroke_color);
 
     _osd &osd;
     int last_updated_second;
@@ -82,7 +80,7 @@ private:
     OSDItem osdUptm{};
     OSDItem osdLogo{};
 
-    void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, int posX, int posY, int angle);
+    void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, int posX, int posY, int angle, unsigned int font_color, unsigned int font_stroke_color);
     std::string getConfigPath(const char *itemName);
 
     IMPEncoderCHNAttr channelAttributes;

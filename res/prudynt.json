@@ -121,11 +121,9 @@
     "width": 1920,
     "osd": {
       "enabled": true,
-      "font_color": 4294967295,
       "font_path": "/usr/share/fonts/default.ttf",
       "font_size": 32,
       "font_stroke": 1,
-      "font_stroke_color": 4278190080,
       "font_stroke_enabled": true,
       "font_stroke_size": 32,
       "font_xscale": 100,
@@ -149,15 +147,18 @@
       "time_enabled": true,
       "time_format": "%F %T",
       "time_rotation": 0,
-      "time_transparency": 128,
+      "time_font_color": "#FFFFFF80",
+      "time_font_stroke_color": "#00000080",
       "uptime_enabled": true,
       "uptime_format": "Uptime: %02lu:%02lu:%02lu",
       "uptime_rotation": 0,
-      "uptime_transparency": 128,
+      "uptime_font_color": "#FFFFFF80",
+      "uptime_font_stroke_color": "#00000080",
       "user_text_enabled": true,
       "user_text_format": "%hostname",
       "user_text_rotation": 0,
-      "user_text_transparency": 128
+      "user_text_font_color": "#FFFFFF80",
+      "user_text_font_stroke_color": "#00000080"
     }
   },
   "stream1": {
@@ -186,11 +187,9 @@
     "width": 640,
     "osd": {
       "enabled": true,
-      "font_color": 4294967295,
       "font_path": "/usr/share/fonts/default.ttf",
       "font_size": 13,
       "font_stroke": 1,
-      "font_stroke_color": 4278190080,
       "font_stroke_enabled": true,
       "font_stroke_size": 13,
       "font_xscale": 100,
@@ -214,15 +213,18 @@
       "time_enabled": true,
       "time_format": "%F %T",
       "time_rotation": 0,
-      "time_transparency": 128,
+      "time_font_color": "#FFFFFF80",
+      "time_font_stroke_color": "#00000080",
       "uptime_enabled": true,
       "uptime_format": "Uptime: %02lu:%02lu:%02lu",
       "uptime_rotation": 0,
-      "uptime_transparency": 128,
+      "uptime_font_color": "#FFFFFF80",
+      "uptime_font_stroke_color": "#00000080",
       "user_text_enabled": true,
       "user_text_format": "%hostname",
       "user_text_rotation": 0,
-      "user_text_transparency": 128
+      "user_text_font_color": "#FFFFFF80",
+      "user_text_font_stroke_color": "#00000080"
     }
   },
   "stream2": {
