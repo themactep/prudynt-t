@@ -216,6 +216,8 @@ struct _osd {
     const char *user_text_format;
     const char *logo_path;
     // Individual color settings for each text element
+    unsigned int privacy_font_color;
+    unsigned int privacy_font_stroke_color;
     unsigned int time_font_color;
     unsigned int time_font_stroke_color;
     unsigned int uptime_font_color;

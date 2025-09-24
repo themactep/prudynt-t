@@ -408,6 +408,8 @@ static const char *const osd_keys[] = {
     "logo_path",
 
     // Individual color settings for each text element
+    "privacy_font_color",
+    "privacy_font_stroke_color",
     "time_font_color",
     "time_font_stroke_color",
     "uptime_font_color",

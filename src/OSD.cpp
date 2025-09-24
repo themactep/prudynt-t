@@ -626,7 +626,8 @@ void OSD::init()
         posPrivacyTextY -= round(text_height / 2);
 
         set_text(&osdPrivText, &osdPrivText.rgnAttr, privacy_text.c_str(),
-                 posPrivacyTextX, posPrivacyTextY, 0, osd.time_font_color, osd.time_font_stroke_color);
+                 posPrivacyTextX, posPrivacyTextY, 0,
+                 osd.privacy_font_color, osd.privacy_font_stroke_color);
 
         privacy_text.clear();
 

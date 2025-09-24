@@ -392,6 +392,8 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems()
     return {
         {"sensor.i2c_address", sensor.i2c_address, 0x37, [](const unsigned int &v) { return v <= 0x7F; }, false, "/proc/jz/sensor/i2c_addr"},
         // Individual color settings for stream0 text elements
+        {"stream0.osd.privacy_font_color", stream0.osd.privacy_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream0.osd.privacy_font_stroke_color", stream0.osd.privacy_font_stroke_color, 0xFF000000, validateOSDColor},
         {"stream0.osd.time_font_color", stream0.osd.time_font_color, 0xFFFFFFFF, validateOSDColor},
         {"stream0.osd.time_font_stroke_color", stream0.osd.time_font_stroke_color, 0xFF000000, validateOSDColor},
         {"stream0.osd.uptime_font_color", stream0.osd.uptime_font_color, 0xFFFFFFFF, validateOSDColor},
@@ -399,6 +401,8 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems()
         {"stream0.osd.user_text_font_color", stream0.osd.user_text_font_color, 0xFFFFFFFF, validateOSDColor},
         {"stream0.osd.user_text_font_stroke_color", stream0.osd.user_text_font_stroke_color, 0xFF000000, validateOSDColor},
         // Individual color settings for stream1 text elements
+        {"stream1.osd.privacy_font_color", stream1.osd.privacy_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream1.osd.privacy_font_stroke_color", stream1.osd.privacy_font_stroke_color, 0xFF000000, validateOSDColor},
         {"stream1.osd.time_font_color", stream1.osd.time_font_color, 0xFFFFFFFF, validateOSDColor},
         {"stream1.osd.time_font_stroke_color", stream1.osd.time_font_stroke_color, 0xFF000000, validateOSDColor},
         {"stream1.osd.uptime_font_color", stream1.osd.uptime_font_color, 0xFFFFFFFF, validateOSDColor},
