@@ -102,6 +102,10 @@ struct _general {
     bool timestamp_validation_enabled;
     bool audio_debug_verbose;
 };
+struct _privacy {
+    bool enabled;
+    const char *text_format;
+};
 struct _rtsp {
     int port;
     int est_bitrate;
@@ -212,6 +216,8 @@ struct _osd {
     const char *user_text_format;
     const char *logo_path;
     // Individual color settings for each text element
+    unsigned int privacy_font_color;
+    unsigned int privacy_font_stroke_color;
     unsigned int time_font_color;
     unsigned int time_font_stroke_color;
     unsigned int uptime_font_color;
@@ -312,6 +318,7 @@ class CFG {
         _audio audio{};
 #endif
 		_general general{};
+		_privacy privacy{};
 		_rtsp rtsp{};
 		_sensor sensor{};
         _image image{};

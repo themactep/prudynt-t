@@ -86,6 +86,7 @@ enum
 enum
 {
     PNT_GENERAL = 1,
+    PNT_PRIVACY,
     PNT_RTSP,
     PNT_SENSOR,
     PNT_IMAGE,
@@ -100,6 +101,7 @@ enum
 
 static const char *const root_keys[] = {
     "general",
+    "privacy",
     "rtsp",
     "sensor",
     "image",
@@ -123,6 +125,18 @@ static const char *const general_keys[] = {
     "loglevel",
     "osd_pool_size",
     "imp_polling_timeout"};
+
+/* Privacy */
+enum
+{
+    PNT_PRIVACY_ENABLED = 1,
+    PNT_PRIVACY_TEXT_FORMAT
+};
+
+static const char *const privacy_keys[] = {
+    "enabled",
+    "text_format"
+};
 
 /* RTSP */
 enum
@@ -394,6 +408,8 @@ static const char *const osd_keys[] = {
     "logo_path",
 
     // Individual color settings for each text element
+    "privacy_font_color",
+    "privacy_font_stroke_color",
     "time_font_color",
     "time_font_stroke_color",
     "uptime_font_color",
@@ -679,6 +695,59 @@ signed char WS::general_callback(struct lejp_ctx *ctx, char reason)
                 u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
                 break;
             }
+        }
+    }
+    else if (reason == LEJPCB_OBJECT_END)
+    {
+        u_ctx->flag |= PNT_FLAG_SEPARATOR;
+        u_ctx->message.append("}");
+        lejp_parser_pop(ctx);
+    }
+
+    return 0;
+}
+
+signed char WS::privacy_callback(struct lejp_ctx *ctx, char reason)
+{
+    struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+    if ((reason & LEJP_FLAG_CB_IS_VALUE) && ctx->path_match)
+    {
+        combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+        add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR), privacy_keys[ctx->path_match - 1]);
+
+        u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+        switch (ctx->path_match)
+        {
+        case PNT_PRIVACY_ENABLED:
+            if (reason == LEJPCB_VAL_TRUE)
+            {
+                if (cfg->set<bool>(u_ctx->path, true))
+                {
+                }
+            }
+            else if (reason == LEJPCB_VAL_FALSE)
+            {
+                if (cfg->set<bool>(u_ctx->path, false))
+                {
+                }
+            }
+            add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+            break;
+        case PNT_PRIVACY_TEXT_FORMAT:
+            if (reason == LEJPCB_VAL_STR_END)
+            {
+                if (cfg->set<const char *>(u_ctx->path, strdup(ctx->buf)))
+                {
+                }
+            }
+            add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+            break;
+        default:
+            u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+            break;
         }
     }
     else if (reason == LEJPCB_OBJECT_END)
@@ -1993,6 +2062,10 @@ signed char WS::root_callback(struct lejp_ctx *ctx, char reason)
         case PNT_GENERAL:
             lejp_parser_push(ctx, u_ctx,
                              general_keys, LWS_ARRAY_SIZE(general_keys), general_callback);
+            break;
+        case PNT_PRIVACY:
+            lejp_parser_push(ctx, u_ctx,
+                             privacy_keys, LWS_ARRAY_SIZE(privacy_keys), privacy_callback);
             break;
         case PNT_RTSP:
             lejp_parser_push(ctx, u_ctx,
