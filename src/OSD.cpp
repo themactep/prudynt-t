@@ -626,7 +626,7 @@ void OSD::init()
         posPrivacyTextY -= round(text_height / 2);
 
         set_text(&osdPrivText, &osdPrivText.rgnAttr, privacy_text.c_str(),
-                 posPrivacyTextX, posPrivacyTextY, 0);
+                 posPrivacyTextX, posPrivacyTextY, 0, osd.time_font_color, osd.time_font_stroke_color);
 
         privacy_text.clear();
 
@@ -636,8 +636,9 @@ void OSD::init()
         memset(&grpRgnAttrText, 0, sizeof(IMPOSDGrpRgnAttr));
         grpRgnAttrText.show = 1;
         grpRgnAttrText.layer = 2;
-        grpRgnAttrText.gAlphaEn = 1;
-        grpRgnAttrText.fgAlhpa = osd.user_text_transparency;
+        grpRgnAttrText.gAlphaEn = 1;  // Enable alpha blending for per-pixel transparency
+        grpRgnAttrText.fgAlhpa = 255; // Full foreground alpha to allow per-pixel alpha control
+        grpRgnAttrText.bgAlhpa = 0;   // Transparent background
         IMP_OSD_SetGrpRgnAttr(osdPrivText.imp_rgn, osdGrp, &grpRgnAttrText);
 
         osdPrivText.is_show = true;
