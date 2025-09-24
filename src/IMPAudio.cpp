@@ -224,7 +224,7 @@ int IMPAudio::init()
         ret = IMP_AI_SetAlcGain(devId, inChn, cfg->audio.input_alc_gain);
         LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain(" << devId << ", " << inChn << ", " << cfg->audio.input_alc_gain << ")");
     }
-#endif        
+#endif
 #endif //LIB_AUDIO_PROCESSING
     return 0;
 }

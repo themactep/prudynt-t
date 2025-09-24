@@ -2,6 +2,7 @@
 #include "IMPBackchannel.hpp"
 #include "BackchannelServerMediaSubsession.hpp"
 
+#undef MODULE
 #define MODULE "RTSP"
 
 void RTSP::addSubsession(int chnNr, _stream &stream)
@@ -105,7 +106,7 @@ void RTSP::start()
 {
     scheduler = BasicTaskScheduler::createNew();
     env = BasicUsageEnvironment::createNew(*scheduler);
-    
+
     if (cfg->rtsp.auth_required)
     {
         UserAuthenticationDatabase *auth = new UserAuthenticationDatabase;
@@ -131,7 +132,7 @@ void RTSP::start()
         audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(*env, 0, global_audio[audioChn], "audio");
 
         if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
-            audioSource = (IMPDeviceSource<AudioFrame, audio_stream> *)EndianSwap16::createNew(*env, audioSource);    
+            audioSource = (IMPDeviceSource<AudioFrame, audio_stream> *)EndianSwap16::createNew(*env, audioSource);
 
         global_audio[audioChn]->streamReplicator = StreamReplicator::createNew(*env, audioSource, false);
     }
@@ -157,7 +158,7 @@ void RTSP::start()
         {
             global_audio[audioChn]->streamReplicator->detachInputSource();
         }
-        if(audioSource != nullptr) 
+        if(audioSource != nullptr)
         {
             delete audioSource;
             audioSource = nullptr;

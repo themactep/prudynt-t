@@ -16,7 +16,7 @@ public:
     void addSubsession(int chnNr, _stream &stream);
     void start();
     static void *run(void* arg);
-    
+
 private:
     UsageEnvironment *env{};
     TaskScheduler *scheduler{};
