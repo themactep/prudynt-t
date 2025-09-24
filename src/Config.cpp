@@ -83,6 +83,67 @@ bool validateUint(const unsigned int &v)
     return true;
 }
 
+// Utility function to validate hexadecimal color format (#RRGGBBAA)
+bool isValidHexColor(const char* str) {
+    if (!str || strlen(str) != 9) {
+        return false;
+    }
+
+    if (str[0] != '#') {
+        return false;
+    }
+
+    for (int i = 1; i < 9; i++) {
+        char c = str[i];
+        if (!((c >= '0' && c <= '9') ||
+              (c >= 'A' && c <= 'F') ||
+              (c >= 'a' && c <= 'f'))) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// Utility function to convert RGBA hexadecimal color string to unsigned int
+unsigned int hexColorToUint(const char* str) {
+    if (!isValidHexColor(str)) {
+        return 0;
+    }
+
+    // Parse RGBA format: #RRGGBBAA
+    // Extract each component separately to handle RGBA format correctly
+    char rStr[3] = {str[1], str[2], '\0'};  // RR
+    char gStr[3] = {str[3], str[4], '\0'};  // GG
+    char bStr[3] = {str[5], str[6], '\0'};  // BB
+    char aStr[3] = {str[7], str[8], '\0'};  // AA
+
+    unsigned int r = strtoul(rStr, nullptr, 16);
+    unsigned int g = strtoul(gStr, nullptr, 16);
+    unsigned int b = strtoul(bStr, nullptr, 16);
+    unsigned int a = strtoul(aStr, nullptr, 16);
+
+    // Pack into ARGB format for internal use (A in bits 24-31, R in 16-23, G in 8-15, B in 0-7)
+    // This matches the bit extraction logic used in OSD::drawText()
+    return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
+// Validation function for OSD color fields that accepts both integer and hex string formats
+bool validateOSDColor(const unsigned int &v) {
+    // For unsigned int values, any value is valid (same as validateUint)
+    return true;
+}
+
+// Validation function for OSD color fields when parsing from JSON string
+bool validateOSDColorString(const char* str) {
+    if (!str) {
+        return false;
+    }
+
+    // Check if it's a valid hexadecimal color format
+    return isValidHexColor(str);
+}
+
 bool validateSampleRate(const int &v)
 {
     std::set<int> allowed_rates = {8000, 16000, 24000, 44100, 48000};
@@ -94,7 +155,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
     return {
 #if defined(AUDIO_SUPPORT)
         {"audio.input_enabled", audio.input_enabled, true, validateBool},
-        {"audio.output_enabled", audio.output_enabled, false, validateBool},
+        {"audio.output_enabled", audio.output_enabled, true, validateBool},
         {"audio.force_stereo", audio.force_stereo, false, validateBool},
 #if defined(LIB_AUDIO_PROCESSING)
         {"audio.input_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
@@ -282,11 +343,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream0.osd.pos_user_text_y", stream0.osd.pos_user_text_y, OSD_AUTO_VALUE, validateInt15360},
         {"stream0.osd.start_delay", stream0.osd.start_delay, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
         {"stream0.osd.time_rotation", stream0.osd.time_rotation, 0, validateInt360},
-        {"stream0.osd.time_transparency", stream0.osd.time_transparency, 255, validateInt255},
         {"stream0.osd.uptime_rotation", stream0.osd.uptime_rotation, 0, validateInt360},
-        {"stream0.osd.uptime_transparency", stream0.osd.uptime_transparency, 255, validateInt255},
         {"stream0.osd.user_text_rotation", stream0.osd.user_text_rotation, 0, validateInt360},
-        {"stream0.osd.user_text_transparency", stream0.osd.user_text_transparency, 255, validateInt255},
         {"stream0.rotation", stream0.rotation, 0, validateInt2},
         {"stream0.width", stream0.width, 1920, validateIntGe0},
         {"stream0.profile", stream0.profile, 2, validateInt2},
@@ -315,10 +373,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream1.osd.pos_user_text_y", stream1.osd.pos_user_text_y, OSD_AUTO_VALUE, validateInt15360},
         {"stream1.osd.start_delay", stream1.osd.start_delay, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
         {"stream1.osd.time_rotation", stream1.osd.time_rotation, 0, validateInt360},
-        {"stream1.osd.time_transparency", stream1.osd.time_transparency, 255, validateInt255},
         {"stream1.osd.uptime_rotation", stream1.osd.uptime_rotation, 0, validateInt360},
-        {"stream1.osd.uptime_transparency", stream1.osd.uptime_transparency, 255, validateInt255},
-        {"stream1.osd.user_text_transparency", stream1.osd.user_text_transparency, 255, validateInt255},
         {"stream1.osd.user_text_rotation", stream1.osd.user_text_rotation, 0, validateInt360},
         {"stream1.rotation", stream1.rotation, 0, validateInt2},
         {"stream1.width", stream1.width, 640, validateIntGe0},
@@ -336,10 +391,20 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems()
 {
     return {
         {"sensor.i2c_address", sensor.i2c_address, 0x37, [](const unsigned int &v) { return v <= 0x7F; }, false, "/proc/jz/sensor/i2c_addr"},
-        {"stream0.osd.font_stroke_color", stream0.osd.font_stroke_color, 0xFF000000, validateUint},
-        {"stream0.osd.font_color", stream0.osd.font_color, 0xFFFFFFFF, validateUint},
-        {"stream1.osd.font_color", stream1.osd.font_color, 0xFFFFFFFF, validateUint},
-        {"stream1.osd.font_stroke_color", stream1.osd.font_stroke_color, 0xFF000000, validateUint},
+        // Individual color settings for stream0 text elements
+        {"stream0.osd.time_font_color", stream0.osd.time_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream0.osd.time_font_stroke_color", stream0.osd.time_font_stroke_color, 0xFF000000, validateOSDColor},
+        {"stream0.osd.uptime_font_color", stream0.osd.uptime_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream0.osd.uptime_font_stroke_color", stream0.osd.uptime_font_stroke_color, 0xFF000000, validateOSDColor},
+        {"stream0.osd.user_text_font_color", stream0.osd.user_text_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream0.osd.user_text_font_stroke_color", stream0.osd.user_text_font_stroke_color, 0xFF000000, validateOSDColor},
+        // Individual color settings for stream1 text elements
+        {"stream1.osd.time_font_color", stream1.osd.time_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream1.osd.time_font_stroke_color", stream1.osd.time_font_stroke_color, 0xFF000000, validateOSDColor},
+        {"stream1.osd.uptime_font_color", stream1.osd.uptime_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream1.osd.uptime_font_stroke_color", stream1.osd.uptime_font_stroke_color, 0xFF000000, validateOSDColor},
+        {"stream1.osd.user_text_font_color", stream1.osd.user_text_font_color, 0xFFFFFFFF, validateOSDColor},
+        {"stream1.osd.user_text_font_stroke_color", stream1.osd.user_text_font_stroke_color, 0xFF000000, validateOSDColor},
     };
 };
 
@@ -510,6 +575,17 @@ void handleConfigItem(json_object *jsonConfig, ConfigItem<T> &item)
                     if (val >= 0) {
                         item.value = static_cast<unsigned int>(val);
                         readFromConfig = true;
+                    }
+                } else if (json_object_is_type(valueObj, json_type_string)) {
+                    // Check if this is an OSD color field that might be in hex format
+                    std::string path = item.path;
+                    if (path.find("font_color") != std::string::npos ||
+                        path.find("font_stroke_color") != std::string::npos) {
+                        const char *str = json_object_get_string(valueObj);
+                        if (isValidHexColor(str)) {
+                            item.value = hexColorToUint(str);
+                            readFromConfig = true;
+                        }
                     }
                 }
             } else if constexpr (std::is_same_v<T, float>) {
@@ -683,6 +759,181 @@ std::vector<ConfigItem<float>> CFG::getFloatItems()
     };
 };
 
+void CFG::migrateOldColorSettings()
+{
+    // Helper function to combine RGB color with alpha transparency
+    // Creates ARGB format for internal use (matches OSD::drawText() bit extraction)
+    auto combineColorWithAlpha = [](unsigned int rgb_color, int transparency) -> unsigned int {
+        // Extract RGB components from the input color
+        unsigned int r = (rgb_color >> 16) & 0xFF;
+        unsigned int g = (rgb_color >> 8) & 0xFF;
+        unsigned int b = rgb_color & 0xFF;
+
+        // Combine with alpha (transparency is 0-255, where 255 = opaque)
+        unsigned int alpha = (unsigned int)transparency & 0xFF;
+
+        // Pack into ARGB format for internal use (A in bits 24-31)
+        return (alpha << 24) | (r << 16) | (g << 8) | b;
+    };
+
+    // Check for old configuration format and migrate
+    json_object *stream0Obj = nullptr;
+    json_object *stream1Obj = nullptr;
+
+    if (json_object_object_get_ex(jsonConfig, "stream0", &stream0Obj)) {
+        json_object *osdObj = nullptr;
+        if (json_object_object_get_ex(stream0Obj, "osd", &osdObj)) {
+            // Check if old format exists (font_color + transparency fields)
+            json_object *fontColorObj = nullptr;
+            json_object *fontStrokeColorObj = nullptr;
+            json_object *timeTransparencyObj = nullptr;
+            json_object *uptimeTransparencyObj = nullptr;
+            json_object *userTextTransparencyObj = nullptr;
+
+            bool hasOldFormat = json_object_object_get_ex(osdObj, "font_color", &fontColorObj) &&
+                               json_object_object_get_ex(osdObj, "font_stroke_color", &fontStrokeColorObj) &&
+                               (json_object_object_get_ex(osdObj, "time_transparency", &timeTransparencyObj) ||
+                                json_object_object_get_ex(osdObj, "uptime_transparency", &uptimeTransparencyObj) ||
+                                json_object_object_get_ex(osdObj, "user_text_transparency", &userTextTransparencyObj));
+
+            if (hasOldFormat) {
+                unsigned int fontColor = 0xFFFFFFFF;  // Default white
+                unsigned int fontStrokeColor = 0xFF000000;  // Default black
+                int timeTransparency = 255;
+                int uptimeTransparency = 255;
+                int userTextTransparency = 255;
+
+                // Read old values
+                if (json_object_is_type(fontColorObj, json_type_int)) {
+                    fontColor = json_object_get_int64(fontColorObj);
+                } else if (json_object_is_type(fontColorObj, json_type_string)) {
+                    const char *str = json_object_get_string(fontColorObj);
+                    if (isValidHexColor(str)) {
+                        fontColor = hexColorToUint(str);
+                    }
+                }
+
+                if (json_object_is_type(fontStrokeColorObj, json_type_int)) {
+                    fontStrokeColor = json_object_get_int64(fontStrokeColorObj);
+                } else if (json_object_is_type(fontStrokeColorObj, json_type_string)) {
+                    const char *str = json_object_get_string(fontStrokeColorObj);
+                    if (isValidHexColor(str)) {
+                        fontStrokeColor = hexColorToUint(str);
+                    }
+                }
+
+                if (timeTransparencyObj && json_object_is_type(timeTransparencyObj, json_type_int)) {
+                    timeTransparency = json_object_get_int(timeTransparencyObj);
+                }
+                if (uptimeTransparencyObj && json_object_is_type(uptimeTransparencyObj, json_type_int)) {
+                    uptimeTransparency = json_object_get_int(uptimeTransparencyObj);
+                }
+                if (userTextTransparencyObj && json_object_is_type(userTextTransparencyObj, json_type_int)) {
+                    userTextTransparency = json_object_get_int(userTextTransparencyObj);
+                }
+
+                // Create new individual color settings
+                json_object_object_add(osdObj, "time_font_color",
+                    json_object_new_int64(combineColorWithAlpha(fontColor, timeTransparency)));
+                json_object_object_add(osdObj, "time_font_stroke_color",
+                    json_object_new_int64(combineColorWithAlpha(fontStrokeColor, timeTransparency)));
+                json_object_object_add(osdObj, "uptime_font_color",
+                    json_object_new_int64(combineColorWithAlpha(fontColor, uptimeTransparency)));
+                json_object_object_add(osdObj, "uptime_font_stroke_color",
+                    json_object_new_int64(combineColorWithAlpha(fontStrokeColor, uptimeTransparency)));
+                json_object_object_add(osdObj, "user_text_font_color",
+                    json_object_new_int64(combineColorWithAlpha(fontColor, userTextTransparency)));
+                json_object_object_add(osdObj, "user_text_font_stroke_color",
+                    json_object_new_int64(combineColorWithAlpha(fontStrokeColor, userTextTransparency)));
+
+                // Remove old settings
+                json_object_object_del(osdObj, "font_color");
+                json_object_object_del(osdObj, "font_stroke_color");
+                json_object_object_del(osdObj, "time_transparency");
+                json_object_object_del(osdObj, "uptime_transparency");
+                json_object_object_del(osdObj, "user_text_transparency");
+            }
+        }
+    }
+
+    // Repeat for stream1
+    if (json_object_object_get_ex(jsonConfig, "stream1", &stream1Obj)) {
+        json_object *osdObj = nullptr;
+        if (json_object_object_get_ex(stream1Obj, "osd", &osdObj)) {
+            // Similar migration logic for stream1
+            json_object *fontColorObj = nullptr;
+            json_object *fontStrokeColorObj = nullptr;
+            json_object *timeTransparencyObj = nullptr;
+            json_object *uptimeTransparencyObj = nullptr;
+            json_object *userTextTransparencyObj = nullptr;
+
+            bool hasOldFormat = json_object_object_get_ex(osdObj, "font_color", &fontColorObj) &&
+                               json_object_object_get_ex(osdObj, "font_stroke_color", &fontStrokeColorObj) &&
+                               (json_object_object_get_ex(osdObj, "time_transparency", &timeTransparencyObj) ||
+                                json_object_object_get_ex(osdObj, "uptime_transparency", &uptimeTransparencyObj) ||
+                                json_object_object_get_ex(osdObj, "user_text_transparency", &userTextTransparencyObj));
+
+            if (hasOldFormat) {
+                unsigned int fontColor = 0xFFFFFFFF;
+                unsigned int fontStrokeColor = 0xFF000000;
+                int timeTransparency = 255;
+                int uptimeTransparency = 255;
+                int userTextTransparency = 255;
+
+                // Read old values (similar to stream0)
+                if (json_object_is_type(fontColorObj, json_type_int)) {
+                    fontColor = json_object_get_int64(fontColorObj);
+                } else if (json_object_is_type(fontColorObj, json_type_string)) {
+                    const char *str = json_object_get_string(fontColorObj);
+                    if (isValidHexColor(str)) {
+                        fontColor = hexColorToUint(str);
+                    }
+                }
+
+                if (json_object_is_type(fontStrokeColorObj, json_type_int)) {
+                    fontStrokeColor = json_object_get_int64(fontStrokeColorObj);
+                } else if (json_object_is_type(fontStrokeColorObj, json_type_string)) {
+                    const char *str = json_object_get_string(fontStrokeColorObj);
+                    if (isValidHexColor(str)) {
+                        fontStrokeColor = hexColorToUint(str);
+                    }
+                }
+
+                if (timeTransparencyObj && json_object_is_type(timeTransparencyObj, json_type_int)) {
+                    timeTransparency = json_object_get_int(timeTransparencyObj);
+                }
+                if (uptimeTransparencyObj && json_object_is_type(uptimeTransparencyObj, json_type_int)) {
+                    uptimeTransparency = json_object_get_int(uptimeTransparencyObj);
+                }
+                if (userTextTransparencyObj && json_object_is_type(userTextTransparencyObj, json_type_int)) {
+                    userTextTransparency = json_object_get_int(userTextTransparencyObj);
+                }
+
+                // Create new individual color settings
+                json_object_object_add(osdObj, "time_font_color",
+                    json_object_new_int64(combineColorWithAlpha(fontColor, timeTransparency)));
+                json_object_object_add(osdObj, "time_font_stroke_color",
+                    json_object_new_int64(combineColorWithAlpha(fontStrokeColor, timeTransparency)));
+                json_object_object_add(osdObj, "uptime_font_color",
+                    json_object_new_int64(combineColorWithAlpha(fontColor, uptimeTransparency)));
+                json_object_object_add(osdObj, "uptime_font_stroke_color",
+                    json_object_new_int64(combineColorWithAlpha(fontStrokeColor, uptimeTransparency)));
+                json_object_object_add(osdObj, "user_text_font_color",
+                    json_object_new_int64(combineColorWithAlpha(fontColor, userTextTransparency)));
+                json_object_object_add(osdObj, "user_text_font_stroke_color",
+                    json_object_new_int64(combineColorWithAlpha(fontStrokeColor, userTextTransparency)));
+
+                // Remove old settings
+                json_object_object_del(osdObj, "font_color");
+                json_object_object_del(osdObj, "font_stroke_color");
+                json_object_object_del(osdObj, "time_transparency");
+                json_object_object_del(osdObj, "uptime_transparency");
+                json_object_object_del(osdObj, "user_text_transparency");
+            }
+        }
+    }
+}
+
 CFG::CFG()
 {
     load();
@@ -699,6 +950,9 @@ void CFG::load()
     config_loaded = readConfig();
 
     if (jsonConfig) {
+        // Handle backward compatibility migration first
+        migrateOldColorSettings();
+
         for (auto &item : boolItems)
             handleConfigItem(jsonConfig, item);
         for (auto &item : charItems)

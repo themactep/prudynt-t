@@ -69,6 +69,11 @@ public:
      */
     static bool updateStreamStatus(const std::string& streamName, const StreamInfo& info);
 
+    // Write a custom parameter file under a given stream directory (e.g., "audio0")
+    static bool writeCustomParameter(const std::string& streamName,
+                                     const std::string& parameter,
+                                     const std::string& value);
+
     /**
      * Remove status for a specific stream
      * @param streamName Stream identifier to remove

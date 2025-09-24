@@ -376,9 +376,6 @@ enum
 };
 
 static const char *const osd_keys[] = {
-    "time_transparency",
-    "user_text_transparency",
-    "uptime_transparency",
     "logo_transparency",
 
     "font_size",
@@ -409,8 +406,14 @@ static const char *const osd_keys[] = {
     "uptime_format",
     "user_text_format",
     "logo_path",
-    "font_color",
-    "font_stroke_color",
+
+    // Individual color settings for each text element
+    "time_font_color",
+    "time_font_stroke_color",
+    "uptime_font_color",
+    "uptime_font_stroke_color",
+    "user_text_font_color",
+    "user_text_font_stroke_color",
 };
 
 /* MOTION */

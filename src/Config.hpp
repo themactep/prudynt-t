@@ -99,6 +99,8 @@ struct _general {
     const char *loglevel;
     int osd_pool_size;
     int imp_polling_timeout;
+    bool timestamp_validation_enabled;
+    bool audio_debug_verbose;
 };
 struct _privacy {
     bool enabled;
@@ -176,6 +178,9 @@ struct _audio {
     bool output_enabled;
     int output_sample_rate;
 #endif
+    // Buffer tuning (in 20 ms frames per channel)
+    int buffer_warn_frames;
+    int buffer_cap_frames;
 };
 #endif
 struct _osd {
@@ -188,15 +193,12 @@ struct _osd {
     int logo_width;
     int pos_time_x;
     int pos_time_y;
-    int time_transparency;
     int time_rotation;
     int pos_user_text_x;
     int pos_user_text_y;
-    int user_text_transparency;
     int user_text_rotation;
     int pos_uptime_x;
     int pos_uptime_y;
-    int uptime_transparency;
     int uptime_rotation;
     int pos_logo_x;
     int pos_logo_y;
@@ -213,8 +215,13 @@ struct _osd {
     const char *uptime_format;
     const char *user_text_format;
     const char *logo_path;
-    unsigned int font_color;
-    unsigned int font_stroke_color;
+    // Individual color settings for each text element
+    unsigned int time_font_color;
+    unsigned int time_font_stroke_color;
+    unsigned int uptime_font_color;
+    unsigned int uptime_font_stroke_color;
+    unsigned int user_text_font_color;
+    unsigned int user_text_font_stroke_color;
     _regions regions;
     _stream_stats stats;
     std::atomic<int> thread_signal;
@@ -389,6 +396,7 @@ class CFG {
         std::vector<ConfigItem<int>> getIntItems();
         std::vector<ConfigItem<unsigned int>> getUintItems();
         std::vector<ConfigItem<float>> getFloatItems();
+        void migrateOldColorSettings();
 };
 
 // The configuration is kept in a global singleton that's accessed via this
