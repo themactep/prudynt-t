@@ -151,8 +151,13 @@ deps() {
 	else
 		SHARED=ON
 	fi
+
+	# Extract compiler path without ccache for cmake
+	COMPILER_PATH=$(echo "${PRUDYNT_CROSS}" | sed 's/ccache //')
+
 	cmake -DCMAKE_SYSTEM_NAME=Linux \
-		-DCMAKE_C_COMPILER="${PRUDYNT_CROSS}gcc" \
+		-DCMAKE_C_COMPILER_LAUNCHER=$(which ccache) \
+		-DCMAKE_C_COMPILER="${COMPILER_PATH}gcc" \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DCMAKE_INSTALL_PREFIX="$TOP/3rdparty/install" \
 		-DBUILD_SHARED_LIBS=${SHARED} \
