@@ -3,6 +3,8 @@
 #include <iostream>
 #include <vector>
 #include <functional>
+#include <algorithm>
+#include <cmath>
 #include <cjson/cJSON.h>
 #include "Config.hpp"
 #include "Logger.hpp"
@@ -668,29 +670,147 @@ void handleConfigItem2(cJSON *jsonConfig, ConfigItem<T> &item)
         currentJson = nextObj;
     }
 
-    // Set the final value
+    // Update the final value in place to preserve JSON structure
     const std::string& finalKey = pathParts.back();
-    cJSON *valueObj = nullptr;
+    cJSON *existingItem = cJSON_GetObjectItem(currentJson, finalKey.c_str());
 
     if constexpr (std::is_same_v<T, const char *>) {
-        valueObj = cJSON_CreateString(item.value);
-    } else if constexpr (std::is_same_v<T, bool>) {
-        valueObj = cJSON_CreateBool(item.value);
-    } else if constexpr (std::is_same_v<T, int>) {
-        valueObj = cJSON_CreateNumber(item.value);
-    } else if constexpr (std::is_same_v<T, unsigned int>) {
-        valueObj = cJSON_CreateNumber(item.value);
-    } else if constexpr (std::is_same_v<T, float>) {
-        valueObj = cJSON_CreateNumber(item.value);
-    }
-
-    if (valueObj) {
-        // Check if the key already exists and remove it to prevent duplicates
-        cJSON *existingItem = cJSON_GetObjectItem(currentJson, finalKey.c_str());
-        if (existingItem) {
-            cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+        if (existingItem && cJSON_IsString(existingItem)) {
+            // Update existing string value in place
+            cJSON_SetValuestring(existingItem, item.value);
+        } else {
+            // Create new string item
+            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateString(item.value));
         }
-        cJSON_AddItemToObject(currentJson, finalKey.c_str(), valueObj);
+    } else if constexpr (std::is_same_v<T, bool>) {
+        if (existingItem && cJSON_IsBool(existingItem)) {
+            // Update existing boolean value in place
+            if (item.value) {
+                existingItem->type = cJSON_True;
+            } else {
+                existingItem->type = cJSON_False;
+            }
+        } else {
+            // Create new boolean item
+            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateBool(item.value));
+        }
+    } else if constexpr (std::is_same_v<T, int>) {
+        if (existingItem && cJSON_IsNumber(existingItem)) {
+            // Update existing number value in place
+            cJSON_SetNumberValue(existingItem, static_cast<double>(item.value));
+        } else {
+            // Create new number item
+            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateNumber(static_cast<double>(item.value)));
+        }
+    } else if constexpr (std::is_same_v<T, unsigned int>) {
+        // Check if this is a color field that should be formatted as hex string
+        std::string path = item.path;
+        bool isColorField = (path.find("font_color") != std::string::npos ||
+                            path.find("font_stroke_color") != std::string::npos);
+
+        if (isColorField) {
+            // Format as hex string: #RRGGBBAA
+            char hexStr[10];
+            unsigned int value = item.value;
+            // Extract ARGB components (internal format is ARGB)
+            unsigned int a = (value >> 24) & 0xFF;
+            unsigned int r = (value >> 16) & 0xFF;
+            unsigned int g = (value >> 8) & 0xFF;
+            unsigned int b = value & 0xFF;
+            snprintf(hexStr, sizeof(hexStr), "#%02X%02X%02X%02X", r, g, b, a);
+
+            if (existingItem && cJSON_IsString(existingItem)) {
+                // Update existing string value in place
+                cJSON_SetValuestring(existingItem, hexStr);
+            } else {
+                // Create new string item
+                if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+                cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateString(hexStr));
+            }
+        } else {
+            // Regular unsigned int - format as number
+            if (existingItem && cJSON_IsNumber(existingItem)) {
+                // Update existing number value in place
+                cJSON_SetNumberValue(existingItem, static_cast<double>(item.value));
+            } else {
+                // Create new number item
+                if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+                cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateNumber(static_cast<double>(item.value)));
+            }
+        }
+    } else if constexpr (std::is_same_v<T, float>) {
+        // Clean up floating-point precision issues for common decimal values
+        double clean_value = static_cast<double>(item.value);
+
+        // Round to 6 decimal places to eliminate floating-point representation errors
+        // This handles cases like 1.2000000476837158 -> 1.2 and 0.05000000074505806 -> 0.05
+        clean_value = std::round(clean_value * 1000000.0) / 1000000.0;
+
+        // Further clean up: if the value is very close to a simple decimal, use that
+        double rounded_2dp = std::round(clean_value * 100.0) / 100.0;
+        if (std::abs(clean_value - rounded_2dp) < 1e-10) {
+            clean_value = rounded_2dp;
+        }
+
+        if (existingItem && cJSON_IsNumber(existingItem)) {
+            cJSON_SetNumberValue(existingItem, clean_value);
+        } else {
+            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateNumber(clean_value));
+        }
+    }
+}
+
+// Recursively sort all JSON objects to maintain alphabetical key order
+void CFG::sortJsonObjectsRecursively(cJSON *json)
+{
+    if (!json) return;
+
+    if (cJSON_IsObject(json)) {
+        // Collect all key-value pairs
+        std::vector<std::pair<std::string, cJSON*>> items;
+
+        cJSON *child = json->child;
+        while (child) {
+            cJSON *next = child->next; // Store next before we modify the list
+            items.emplace_back(child->string ? child->string : "", child);
+            child = next;
+        }
+
+        // Sort by key name
+        std::sort(items.begin(), items.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
+
+        // Clear the original child list
+        json->child = nullptr;
+
+        // Re-add items in sorted order
+        cJSON *prev = nullptr;
+        for (const auto& item : items) {
+            cJSON *node = item.second;
+            node->next = nullptr;
+            node->prev = prev;
+
+            if (prev) {
+                prev->next = node;
+            } else {
+                json->child = node;
+            }
+            prev = node;
+
+            // Recursively sort child objects
+            sortJsonObjectsRecursively(node);
+        }
+    } else if (cJSON_IsArray(json)) {
+        // For arrays, just recursively sort child objects
+        cJSON *child = json->child;
+        while (child) {
+            sortJsonObjectsRecursively(child);
+            child = child->next;
+        }
     }
 }
 
@@ -702,6 +822,7 @@ bool CFG::updateConfig()
 
     if (!jsonConfig) return false;
 
+    // First, update all values in the existing JSON structure
     for (auto &item : boolItems)
         handleConfigItem2(jsonConfig, item);
     for (auto &item : charItems)
@@ -712,6 +833,9 @@ bool CFG::updateConfig()
         handleConfigItem2(jsonConfig, item);
     for (auto &item : floatItems)
         handleConfigItem2(jsonConfig, item);
+
+    // Now sort all JSON objects to ensure alphabetical key order
+    sortJsonObjectsRecursively(jsonConfig);
 
     // Handle ROIs
     cJSON *roisObj = cJSON_GetObjectItem(jsonConfig, "rois");
@@ -738,19 +862,9 @@ bool CFG::updateConfig()
     // Write JSON to file
     char *jsonString = cJSON_Print(jsonConfig);
     if (jsonString) {
-        // Convert tabs to spaces for better readability (2 spaces per tab)
-        std::string formattedJson;
-        for (const char* p = jsonString; *p; ++p) {
-            if (*p == '\t') {
-                formattedJson += "  "; // Replace tab with 2 spaces
-            } else {
-                formattedJson += *p;
-            }
-        }
-
         std::ofstream configFile(filePath);
         if (configFile.is_open()) {
-            configFile << formattedJson;
+            configFile << jsonString;
             configFile.close();
             free(jsonString); // cJSON_Print allocates memory that must be freed
             LOG_DEBUG("Config is written to " << filePath);

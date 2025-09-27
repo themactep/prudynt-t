@@ -374,6 +374,8 @@ class CFG {
     }
 
     private:
+        // Helper function to recursively sort JSON objects alphabetically
+        void sortJsonObjectsRecursively(cJSON *json);
 
         std::vector<ConfigItem<bool>> boolItems{};
         std::vector<ConfigItem<const char *>> charItems{};
