@@ -659,6 +659,11 @@ void handleConfigItem2(cJSON *jsonConfig, ConfigItem<T> &item)
             // Create new object if it doesn't exist
             nextObj = cJSON_CreateObject();
             cJSON_AddItemToObject(currentJson, pathParts[i].c_str(), nextObj);
+        } else if (!cJSON_IsObject(nextObj)) {
+            // If the item exists but is not an object, replace it with an object
+            cJSON_DeleteItemFromObject(currentJson, pathParts[i].c_str());
+            nextObj = cJSON_CreateObject();
+            cJSON_AddItemToObject(currentJson, pathParts[i].c_str(), nextObj);
         }
         currentJson = nextObj;
     }
@@ -680,12 +685,19 @@ void handleConfigItem2(cJSON *jsonConfig, ConfigItem<T> &item)
     }
 
     if (valueObj) {
+        // Check if the key already exists and remove it to prevent duplicates
+        cJSON *existingItem = cJSON_GetObjectItem(currentJson, finalKey.c_str());
+        if (existingItem) {
+            cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
+        }
         cJSON_AddItemToObject(currentJson, finalKey.c_str(), valueObj);
     }
 }
 
 bool CFG::updateConfig()
 {
+    std::lock_guard<std::mutex> lock(configMutex);
+
     config_loaded = readConfig();
 
     if (!jsonConfig) return false;
@@ -726,9 +738,19 @@ bool CFG::updateConfig()
     // Write JSON to file
     char *jsonString = cJSON_Print(jsonConfig);
     if (jsonString) {
+        // Convert tabs to spaces for better readability (2 spaces per tab)
+        std::string formattedJson;
+        for (const char* p = jsonString; *p; ++p) {
+            if (*p == '\t') {
+                formattedJson += "  "; // Replace tab with 2 spaces
+            } else {
+                formattedJson += *p;
+            }
+        }
+
         std::ofstream configFile(filePath);
         if (configFile.is_open()) {
-            configFile << jsonString;
+            configFile << formattedJson;
             configFile.close();
             free(jsonString); // cJSON_Print allocates memory that must be freed
             LOG_DEBUG("Config is written to " << filePath);

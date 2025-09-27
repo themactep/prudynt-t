@@ -8,6 +8,7 @@
 #include <cjson/cJSON.h>
 #include <sys/time.h>
 #include <any>
+#include <mutex>
 
 //~65k
 #define ENABLE_LOG_DEBUG
@@ -294,6 +295,7 @@ class CFG {
         bool config_loaded = false;
         cJSON *jsonConfig = nullptr;
         std::string filePath{};
+        mutable std::mutex configMutex;
 
 		CFG();
         void load();
