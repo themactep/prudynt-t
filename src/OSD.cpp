@@ -554,6 +554,24 @@ void OSD::init()
     stream_width = channelAttributes.encAttr.picWidth;
     stream_height = channelAttributes.encAttr.picHeight;
 
+    // Calculate realistic OSD pool size based on typical usage
+    // Estimate: ~10% of screen area for OSD elements (text, logos, etc.)
+    // Formula: (width * height * 4 bytes * 0.1) / 1024 + safety margin
+    int estimated_usage = (stream_width * stream_height * 4 * 0.1) / 1024; // 10% screen coverage
+    int safety_margin = 256; // 256KB safety margin
+    int recommended_pool_size = estimated_usage + safety_margin;
+    int configured_pool_size = cfg->general.osd_pool_size;
+
+    // Only warn if configured size is significantly smaller than recommended
+    if (configured_pool_size < recommended_pool_size) {
+        LOG_WARN("OSD pool size (" << configured_pool_size << "KB) may be insufficient for "
+                 << stream_width << "x" << stream_height << " resolution with large fonts/logos. "
+                 << "Consider increasing to " << recommended_pool_size << "KB for optimal performance");
+    } else {
+        LOG_DEBUG("OSD pool size (" << configured_pool_size << "KB) is adequate for "
+                  << stream_width << "x" << stream_height << " resolution");
+    }
+
     // picWidth, picHeight cpp macro !!
     LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: " << stream_width
                                                                  << "x" << stream_height);
@@ -561,7 +579,7 @@ void OSD::init()
     ret = IMP_OSD_CreateGroup(osdGrp);
 
     int fontSize = autoFontSize(channelAttributes.encAttr.picWidth);
-    int autoOffset = round((float)(channelAttributes.encAttr.picWidth * 0.004));
+    // int autoOffset = round((float)(channelAttributes.encAttr.picWidth * 0.004)); // Currently unused
 
     if (osd.font_size == OSD_AUTO_VALUE)
     {
@@ -717,9 +735,10 @@ void OSD::init()
             LOG_ERROR("Invalid OSD logo dimensions. Imagesize=" << imageSize << ", " << osd.logo_width
                                                                 << "*" << osd.logo_height << "*4=" << (osd.logo_width * osd.logo_height * 4));
         }
-            // Parse logo_position string "x,y"
-            int logoPosX = 0, logoPosY = 0;
+            // Parse logo_position string "x,y" - TODO: implement position parsing
+            // int logoPosX = 0, logoPosY = 0;
             if (osd.logo_position && *osd.logo_position) {
+                // TODO: Parse position string and set logo position
             }
 
         IMP_OSD_SetRgnAttr(osdLogo.imp_rgn, &osdLogo.rgnAttr);
