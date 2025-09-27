@@ -144,6 +144,11 @@ deps() {
 	rm -rf cJSON
 	git clone --depth=1 https://github.com/DaveGamble/cJSON.git cJSON
 	cd cJSON
+
+	# Apply patch to use spaces instead of tabs for formatting
+	echo "Applying cJSON spaces patch..."
+	patch -p1 < ../../res/cjson-spaces.patch
+
 	mkdir -p build
 	cd build
 	if [[ $STATIC_BUILD -eq 1 ]]; then
