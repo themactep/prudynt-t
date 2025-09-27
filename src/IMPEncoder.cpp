@@ -421,8 +421,16 @@ int IMPEncoder::destroy()
 
     int ret;
 
-    ret = IMP_Encoder_DestroyGroup(encChn);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_DestroyGroup(" << encChn << ")");
+    // Only destroy group for non-JPEG streams (JPEG streams don't create groups)
+    if (strcmp(stream->format, "JPEG") != 0)
+    {
+        ret = IMP_Encoder_DestroyGroup(encGrp);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_DestroyGroup(" << encGrp << ")");
+    }
+    else
+    {
+        ret = 0; // No group to destroy for JPEG
+    }
 
     return ret;
 }
