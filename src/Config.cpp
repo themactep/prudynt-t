@@ -5,7 +5,9 @@
 #include <functional>
 #include <algorithm>
 #include <cmath>
-#include <cjson/cJSON.h>
+#include <cstdint>
+#include <iomanip>
+#include <json_config.h>
 #include "Config.hpp"
 #include "Logger.hpp"
 
@@ -14,6 +16,9 @@
 #define MODULE "CONFIG"
 
 namespace fs = std::filesystem;
+
+// Forward declaration
+std::string jsonValueToString(JsonValue *value);
 
 bool validateIntGe0(const int &v)
 {
@@ -397,7 +402,7 @@ bool CFG::readConfig()
 {
     // Clean up any existing JSON object
     if (jsonConfig) {
-        cJSON_Delete(jsonConfig);
+        free_json_value(jsonConfig);
         jsonConfig = nullptr;
     }
 
@@ -427,25 +432,10 @@ bool CFG::readConfig()
         }
     }
 
-    // Parse JSON file using cJSON
-    std::ifstream configFile(configPath);
-    if (!configFile.is_open()) {
-        LOG_WARN("Failed to open configuration file: " + configPath);
-        return false;
-    }
-
-    std::string jsonContent((std::istreambuf_iterator<char>(configFile)),
-                            std::istreambuf_iterator<char>());
-    configFile.close();
-
-    jsonConfig = cJSON_Parse(jsonContent.c_str());
+    // Load JSON using JCT
+    jsonConfig = load_config(configPath.c_str());
     if (!jsonConfig) {
-        const char *error_ptr = cJSON_GetErrorPtr();
-        if (error_ptr != nullptr) {
-            LOG_WARN("JSON parse error: " + std::string(error_ptr) + " in " + configPath);
-        } else {
-            LOG_WARN("JSON parse error: Failed to parse " + configPath);
-        }
+        LOG_WARN("JSON parse error: Failed to parse " + configPath);
         return false; // Exit on parsing error
     }
 
@@ -495,7 +485,7 @@ bool isSensorProcParameter(const ConfigItem<T> &item) {
 }
 
 template <typename T>
-void handleConfigItem(cJSON *jsonConfig, ConfigItem<T> &item)
+void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item)
 {
     bool readFromProc = false;
     bool readFromConfig = false;
@@ -524,71 +514,39 @@ void handleConfigItem(cJSON *jsonConfig, ConfigItem<T> &item)
 
     // Only read from JSON if proc file failed or this is not a sensor proc parameter
     if (!readFromProc) {
-        // Parse the path to navigate through nested JSON objects
-        std::vector<std::string> pathParts;
-        std::string path = item.path;
-        size_t pos = 0;
-        while ((pos = path.find('.')) != std::string::npos) {
-            pathParts.push_back(path.substr(0, pos));
-            path.erase(0, pos + 1);
-        }
-        pathParts.push_back(path);
-
-        // Navigate through the JSON structure
-        cJSON *currentJson = jsonConfig;
-        for (size_t i = 0; i < pathParts.size() - 1; ++i) {
-            cJSON *nextObj = cJSON_GetObjectItem(currentJson, pathParts[i].c_str());
-            if (nextObj && cJSON_IsObject(nextObj)) {
-                currentJson = nextObj;
-            } else {
-                return; // Path doesn't exist or not an object
-            }
-        }
-
-        // Try to read the value from JSON
-        const std::string& finalKey = pathParts.back();
-        cJSON *valueObj = cJSON_GetObjectItem(currentJson, finalKey.c_str());
+        // Use JCT to get nested value
+        JsonValue *valueObj = getNestedValue(jsonConfig, item.path);
         if (valueObj) {
             if constexpr (std::is_same_v<T, const char *>) {
-                if (cJSON_IsString(valueObj)) {
-                    const char *str = cJSON_GetStringValue(valueObj);
-                    item.value = strdup(str);
+                std::string str = jsonValueToString(valueObj);
+                if (!str.empty()) {
+                    item.value = strdup(str.c_str());
                     readFromConfig = true;
                 }
             } else if constexpr (std::is_same_v<T, bool>) {
-                if (cJSON_IsBool(valueObj)) {
-                    item.value = cJSON_IsTrue(valueObj);
-                    readFromConfig = true;
-                }
+                item.value = jsonValueToBool(valueObj, item.defaultValue);
+                readFromConfig = true;
             } else if constexpr (std::is_same_v<T, int>) {
-                if (cJSON_IsNumber(valueObj)) {
-                    item.value = static_cast<int>(cJSON_GetNumberValue(valueObj));
-                    readFromConfig = true;
-                }
+                item.value = jsonValueToNumber<int>(valueObj, item.defaultValue);
+                readFromConfig = true;
             } else if constexpr (std::is_same_v<T, unsigned int>) {
-                if (cJSON_IsNumber(valueObj)) {
-                    double val = cJSON_GetNumberValue(valueObj);
-                    if (val >= 0) {
-                        item.value = static_cast<unsigned int>(val);
-                        readFromConfig = true;
-                    }
-                } else if (cJSON_IsString(valueObj)) {
+                if (valueObj->type == JSON_NUMBER && valueObj->value.number >= 0) {
+                    item.value = static_cast<unsigned int>(valueObj->value.number);
+                    readFromConfig = true;
+                } else if (valueObj->type == JSON_STRING && valueObj->value.string) {
                     // Check if this is an OSD color field that might be in hex format
                     std::string path = item.path;
                     if (path.find("font_color") != std::string::npos ||
                         path.find("font_stroke_color") != std::string::npos) {
-                        const char *str = cJSON_GetStringValue(valueObj);
-                        if (isValidHexColor(str)) {
-                            item.value = hexColorToUint(str);
+                        if (isValidHexColor(valueObj->value.string)) {
+                            item.value = hexColorToUint(valueObj->value.string);
                             readFromConfig = true;
                         }
                     }
                 }
             } else if constexpr (std::is_same_v<T, float>) {
-                if (cJSON_IsNumber(valueObj)) {
-                    item.value = static_cast<float>(cJSON_GetNumberValue(valueObj));
-                    readFromConfig = true;
-                }
+                item.value = jsonValueToNumber<float>(valueObj, item.defaultValue);
+                readFromConfig = true;
             }
         }
     }
@@ -639,72 +597,19 @@ void handleConfigItem(cJSON *jsonConfig, ConfigItem<T> &item)
 }
 
 template <typename T>
-void handleConfigItem2(cJSON *jsonConfig, ConfigItem<T> &item)
+void handleConfigItem2(JsonValue *jsonConfig, ConfigItem<T> &item)
 {
     if (!jsonConfig) return;
 
-    // Parse the path to navigate through nested JSON objects
-    std::vector<std::string> pathParts;
-    std::string path = item.path;
-    size_t pos = 0;
-    while ((pos = path.find('.')) != std::string::npos) {
-        pathParts.push_back(path.substr(0, pos));
-        path.erase(0, pos + 1);
-    }
-    pathParts.push_back(path);
-
-    // Navigate through the JSON structure, creating objects as needed
-    cJSON *currentJson = jsonConfig;
-    for (size_t i = 0; i < pathParts.size() - 1; ++i) {
-        cJSON *nextObj = cJSON_GetObjectItem(currentJson, pathParts[i].c_str());
-        if (!nextObj) {
-            // Create new object if it doesn't exist
-            nextObj = cJSON_CreateObject();
-            cJSON_AddItemToObject(currentJson, pathParts[i].c_str(), nextObj);
-        } else if (!cJSON_IsObject(nextObj)) {
-            // If the item exists but is not an object, replace it with an object
-            cJSON_DeleteItemFromObject(currentJson, pathParts[i].c_str());
-            nextObj = cJSON_CreateObject();
-            cJSON_AddItemToObject(currentJson, pathParts[i].c_str(), nextObj);
-        }
-        currentJson = nextObj;
-    }
-
-    // Update the final value in place to preserve JSON structure
-    const std::string& finalKey = pathParts.back();
-    cJSON *existingItem = cJSON_GetObjectItem(currentJson, finalKey.c_str());
+    // Use JCT to set nested values - it handles path creation automatically
+    std::string valueStr;
 
     if constexpr (std::is_same_v<T, const char *>) {
-        if (existingItem && cJSON_IsString(existingItem)) {
-            // Update existing string value in place
-            cJSON_SetValuestring(existingItem, item.value);
-        } else {
-            // Create new string item
-            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
-            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateString(item.value));
-        }
+        valueStr = item.value ? std::string(item.value) : "";
     } else if constexpr (std::is_same_v<T, bool>) {
-        if (existingItem && cJSON_IsBool(existingItem)) {
-            // Update existing boolean value in place
-            if (item.value) {
-                existingItem->type = cJSON_True;
-            } else {
-                existingItem->type = cJSON_False;
-            }
-        } else {
-            // Create new boolean item
-            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
-            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateBool(item.value));
-        }
+        valueStr = item.value ? "true" : "false";
     } else if constexpr (std::is_same_v<T, int>) {
-        if (existingItem && cJSON_IsNumber(existingItem)) {
-            // Update existing number value in place
-            cJSON_SetNumberValue(existingItem, static_cast<double>(item.value));
-        } else {
-            // Create new number item
-            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
-            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateNumber(static_cast<double>(item.value)));
-        }
+        valueStr = std::to_string(item.value);
     } else if constexpr (std::is_same_v<T, unsigned int>) {
         // Check if this is a color field that should be formatted as hex string
         std::string path = item.path;
@@ -721,25 +626,10 @@ void handleConfigItem2(cJSON *jsonConfig, ConfigItem<T> &item)
             unsigned int g = (value >> 8) & 0xFF;
             unsigned int b = value & 0xFF;
             snprintf(hexStr, sizeof(hexStr), "#%02X%02X%02X%02X", r, g, b, a);
-
-            if (existingItem && cJSON_IsString(existingItem)) {
-                // Update existing string value in place
-                cJSON_SetValuestring(existingItem, hexStr);
-            } else {
-                // Create new string item
-                if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
-                cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateString(hexStr));
-            }
+            valueStr = hexStr;
         } else {
             // Regular unsigned int - format as number
-            if (existingItem && cJSON_IsNumber(existingItem)) {
-                // Update existing number value in place
-                cJSON_SetNumberValue(existingItem, static_cast<double>(item.value));
-            } else {
-                // Create new number item
-                if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
-                cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateNumber(static_cast<double>(item.value)));
-            }
+            valueStr = std::to_string(item.value);
         }
     } else if constexpr (std::is_same_v<T, float>) {
         // Clean up floating-point precision issues for common decimal values
@@ -755,63 +645,79 @@ void handleConfigItem2(cJSON *jsonConfig, ConfigItem<T> &item)
             clean_value = rounded_2dp;
         }
 
-        if (existingItem && cJSON_IsNumber(existingItem)) {
-            cJSON_SetNumberValue(existingItem, clean_value);
-        } else {
-            if (existingItem) cJSON_DeleteItemFromObject(currentJson, finalKey.c_str());
-            cJSON_AddItemToObject(currentJson, finalKey.c_str(), cJSON_CreateNumber(clean_value));
-        }
+        valueStr = std::to_string(clean_value);
+    }
+
+    // Set the value using JCT - it automatically creates nested structure and sorts keys
+    setNestedValue(jsonConfig, item.path, valueStr);
+}
+
+// JCT automatically sorts keys, so no sorting function needed
+
+// Helper function to get a nested JSON value using dot notation
+JsonValue* getNestedValue(JsonValue *root, const std::string& path) {
+    if (!root) return nullptr;
+    return get_nested_item(root, path.c_str());
+}
+
+// Helper function to set a nested JSON value using dot notation
+bool setNestedValue(JsonValue *root, const std::string& path, const std::string& value) {
+    if (!root) return false;
+    return set_nested_item(root, path.c_str(), value.c_str()) != 0;
+}
+
+// Helper function to convert JsonValue to string
+std::string jsonValueToString(JsonValue *value) {
+    if (!value) return "";
+
+    switch (value->type) {
+        case JSON_STRING:
+            return value->value.string ? std::string(value->value.string) : "";
+        case JSON_NUMBER:
+            return std::to_string(value->value.number);
+        case JSON_BOOL:
+            return value->value.boolean ? "true" : "false";
+        case JSON_NULL:
+            return "null";
+        default:
+            return "";
     }
 }
 
-// Recursively sort all JSON objects to maintain alphabetical key order
-void CFG::sortJsonObjectsRecursively(cJSON *json)
-{
-    if (!json) return;
+// Helper function to convert JsonValue to numeric types
+template<typename T>
+T jsonValueToNumber(JsonValue *value, T defaultValue) {
+    if (!value) return defaultValue;
 
-    if (cJSON_IsObject(json)) {
-        // Collect all key-value pairs
-        std::vector<std::pair<std::string, cJSON*>> items;
-
-        cJSON *child = json->child;
-        while (child) {
-            cJSON *next = child->next; // Store next before we modify the list
-            items.emplace_back(child->string ? child->string : "", child);
-            child = next;
-        }
-
-        // Sort by key name
-        std::sort(items.begin(), items.end(),
-                  [](const auto& a, const auto& b) { return a.first < b.first; });
-
-        // Clear the original child list
-        json->child = nullptr;
-
-        // Re-add items in sorted order
-        cJSON *prev = nullptr;
-        for (const auto& item : items) {
-            cJSON *node = item.second;
-            node->next = nullptr;
-            node->prev = prev;
-
-            if (prev) {
-                prev->next = node;
+    if (value->type == JSON_NUMBER) {
+        return static_cast<T>(value->value.number);
+    } else if (value->type == JSON_STRING && value->value.string) {
+        try {
+            if constexpr (std::is_integral_v<T>) {
+                return static_cast<T>(std::stoll(value->value.string));
             } else {
-                json->child = node;
+                return static_cast<T>(std::stod(value->value.string));
             }
-            prev = node;
-
-            // Recursively sort child objects
-            sortJsonObjectsRecursively(node);
-        }
-    } else if (cJSON_IsArray(json)) {
-        // For arrays, just recursively sort child objects
-        cJSON *child = json->child;
-        while (child) {
-            sortJsonObjectsRecursively(child);
-            child = child->next;
+        } catch (...) {
+            return defaultValue;
         }
     }
+    return defaultValue;
+}
+
+// Helper function to convert JsonValue to bool
+bool jsonValueToBool(JsonValue *value, bool defaultValue) {
+    if (!value) return defaultValue;
+
+    if (value->type == JSON_BOOL) {
+        return value->value.boolean != 0;
+    } else if (value->type == JSON_STRING && value->value.string) {
+        std::string str = value->value.string;
+        return str == "true" || str == "1";
+    } else if (value->type == JSON_NUMBER) {
+        return value->value.number != 0.0;
+    }
+    return defaultValue;
 }
 
 bool CFG::updateConfig()
@@ -821,6 +727,9 @@ bool CFG::updateConfig()
     config_loaded = readConfig();
 
     if (!jsonConfig) return false;
+
+    // Temporarily disable migration to focus on basic JSON serialization
+    // migrateOldColorSettings();
 
     // First, update all values in the existing JSON structure
     for (auto &item : boolItems)
@@ -834,46 +743,38 @@ bool CFG::updateConfig()
     for (auto &item : floatItems)
         handleConfigItem2(jsonConfig, item);
 
-    // Now sort all JSON objects to ensure alphabetical key order
-    sortJsonObjectsRecursively(jsonConfig);
+    // JCT automatically sorts keys, no manual sorting needed
 
-    // Handle ROIs
-    cJSON *roisObj = cJSON_GetObjectItem(jsonConfig, "rois");
-    if (roisObj) {
-        cJSON_DeleteItemFromObject(jsonConfig, "rois");
-    }
-
-    roisObj = cJSON_CreateObject();
-    cJSON_AddItemToObject(jsonConfig, "rois", roisObj);
-
+    // Handle ROIs - clear existing ROIs and add current ones
     for (int i = 0; i < motion.roi_count; i++)
     {
-        std::string roiKey = "roi_" + std::to_string(i);
-        cJSON *roiArray = cJSON_CreateArray();
+        std::string roiPath = "rois.roi_" + std::to_string(i);
 
-        cJSON_AddItemToArray(roiArray, cJSON_CreateNumber(motion.rois[i].p0_x));
-        cJSON_AddItemToArray(roiArray, cJSON_CreateNumber(motion.rois[i].p0_y));
-        cJSON_AddItemToArray(roiArray, cJSON_CreateNumber(motion.rois[i].p1_x));
-        cJSON_AddItemToArray(roiArray, cJSON_CreateNumber(motion.rois[i].p1_y));
+        // Create array string: [p0_x, p0_y, p1_x, p1_y]
+        std::string roiValue = "[" +
+            std::to_string(motion.rois[i].p0_x) + "," +
+            std::to_string(motion.rois[i].p0_y) + "," +
+            std::to_string(motion.rois[i].p1_x) + "," +
+            std::to_string(motion.rois[i].p1_y) + "]";
 
-        cJSON_AddItemToObject(roisObj, roiKey.c_str(), roiArray);
+        setNestedValue(jsonConfig, roiPath, roiValue);
     }
 
-    // Write JSON to file
-    char *jsonString = cJSON_Print(jsonConfig);
-    if (jsonString) {
-        std::ofstream configFile(filePath);
-        if (configFile.is_open()) {
-            configFile << jsonString;
-            configFile.close();
-            free(jsonString); // cJSON_Print allocates memory that must be freed
-            LOG_DEBUG("Config is written to " << filePath);
-            return true;
-        } else {
-            free(jsonString);
-            LOG_ERROR("Failed to write config to " << filePath);
-            return false;
-        }
+    // Save config using JCT - it automatically sorts keys and formats nicely
+    LOG_DEBUG("CFG::updateConfig() - About to save config to " << filePath);
+    LOG_DEBUG("CFG::updateConfig() - jsonConfig pointer: " << (uintptr_t)jsonConfig);
+
+    if (!jsonConfig) {
+        LOG_ERROR("CFG::updateConfig() - jsonConfig is null!");
+        return false;
+    }
+
+    int save_result = save_config(filePath.c_str(), jsonConfig);
+    LOG_DEBUG("CFG::updateConfig() - save_config returned: " << save_result);
+
+    if (save_result != 0) {
+        LOG_DEBUG("Config is written to " << filePath);
+        return true;
     } else {
         LOG_ERROR("Failed to serialize JSON config");
         return false;
@@ -890,288 +791,10 @@ std::vector<ConfigItem<float>> CFG::getFloatItems()
 
 void CFG::migrateOldColorSettings()
 {
-    // Helper function to combine RGB color with alpha transparency
-    // Creates ARGB format for internal use (matches OSD::drawText() bit extraction)
-    auto combineColorWithAlpha = [](unsigned int rgb_color, int transparency) -> unsigned int {
-        // Extract RGB components from the input color
-        unsigned int r = (rgb_color >> 16) & 0xFF;
-        unsigned int g = (rgb_color >> 8) & 0xFF;
-        unsigned int b = rgb_color & 0xFF;
-
-        // Combine with alpha (transparency is 0-255, where 255 = opaque)
-        unsigned int alpha = (unsigned int)transparency & 0xFF;
-
-        // Pack into ARGB format for internal use (A in bits 24-31)
-        return (alpha << 24) | (r << 16) | (g << 8) | b;
-    };
-
-    // Check for old configuration format and migrate
-    cJSON *stream0Obj = cJSON_GetObjectItem(jsonConfig, "stream0");
-    cJSON *stream1Obj = cJSON_GetObjectItem(jsonConfig, "stream1");
-
-    if (stream0Obj) {
-        cJSON *osdObj = cJSON_GetObjectItem(stream0Obj, "osd");
-        if (osdObj) {
-            // Check if old format exists (font_color + transparency fields)
-            cJSON *fontColorObj = cJSON_GetObjectItem(osdObj, "font_color");
-            cJSON *fontStrokeColorObj = cJSON_GetObjectItem(osdObj, "font_stroke_color");
-            cJSON *timeTransparencyObj = cJSON_GetObjectItem(osdObj, "time_transparency");
-            cJSON *uptimeTransparencyObj = cJSON_GetObjectItem(osdObj, "uptime_transparency");
-            cJSON *userTextTransparencyObj = cJSON_GetObjectItem(osdObj, "usertext_transparency");
-
-            bool hasOldFormat = fontColorObj && fontStrokeColorObj &&
-                               (timeTransparencyObj || uptimeTransparencyObj || userTextTransparencyObj);
-
-            if (hasOldFormat) {
-                unsigned int fontColor = 0xFFFFFFFF;  // Default white
-                unsigned int fontStrokeColor = 0xFF000000;  // Default black
-                int timeTransparency = 255;
-                int uptimeTransparency = 255;
-                int userTextTransparency = 255;
-
-                // Read old values
-                if (cJSON_IsNumber(fontColorObj)) {
-                    fontColor = static_cast<unsigned int>(cJSON_GetNumberValue(fontColorObj));
-                } else if (cJSON_IsString(fontColorObj)) {
-                    const char *str = cJSON_GetStringValue(fontColorObj);
-                    if (isValidHexColor(str)) {
-                        fontColor = hexColorToUint(str);
-                    }
-                }
-
-                if (cJSON_IsNumber(fontStrokeColorObj)) {
-                    fontStrokeColor = static_cast<unsigned int>(cJSON_GetNumberValue(fontStrokeColorObj));
-                } else if (cJSON_IsString(fontStrokeColorObj)) {
-                    const char *str = cJSON_GetStringValue(fontStrokeColorObj);
-                    if (isValidHexColor(str)) {
-                        fontStrokeColor = hexColorToUint(str);
-                    }
-                }
-
-                if (timeTransparencyObj && cJSON_IsNumber(timeTransparencyObj)) {
-                    timeTransparency = static_cast<int>(cJSON_GetNumberValue(timeTransparencyObj));
-                }
-                if (uptimeTransparencyObj && cJSON_IsNumber(uptimeTransparencyObj)) {
-                    uptimeTransparency = static_cast<int>(cJSON_GetNumberValue(uptimeTransparencyObj));
-                }
-                if (userTextTransparencyObj && cJSON_IsNumber(userTextTransparencyObj)) {
-                    userTextTransparency = static_cast<int>(cJSON_GetNumberValue(userTextTransparencyObj));
-                }
-
-                // Create new individual color settings
-                cJSON_AddItemToObject(osdObj, "time_font_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontColor, timeTransparency)));
-                cJSON_AddItemToObject(osdObj, "time_font_stroke_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontStrokeColor, timeTransparency)));
-                cJSON_AddItemToObject(osdObj, "uptime_font_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontColor, uptimeTransparency)));
-                cJSON_AddItemToObject(osdObj, "uptime_font_stroke_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontStrokeColor, uptimeTransparency)));
-                cJSON_AddItemToObject(osdObj, "usertext_font_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontColor, userTextTransparency)));
-                cJSON_AddItemToObject(osdObj, "usertext_font_stroke_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontStrokeColor, userTextTransparency)));
-
-                // Remove old settings
-                cJSON_DeleteItemFromObject(osdObj, "font_color");
-                cJSON_DeleteItemFromObject(osdObj, "font_stroke_color");
-                cJSON_DeleteItemFromObject(osdObj, "time_transparency");
-                cJSON_DeleteItemFromObject(osdObj, "uptime_transparency");
-                cJSON_DeleteItemFromObject(osdObj, "usertext_transparency");
-                cJSON_DeleteItemFromObject(osdObj, "font_yoffset");
-            }
-            // Migrate stroke settings: font_stroke/font_stroke_enabled -> font_stroke_size
-            {
-                cJSON *strokeSizeObj = cJSON_GetObjectItem(osdObj, "font_stroke_size");
-                if (!strokeSizeObj) {
-                    cJSON *strokeObj = cJSON_GetObjectItem(osdObj, "font_stroke");
-                    cJSON *strokeEnabledObj = cJSON_GetObjectItem(osdObj, "font_stroke_enabled");
-                    int strokeVal = -1;
-                    if (strokeObj && cJSON_IsNumber(strokeObj)) {
-                        strokeVal = (int)cJSON_GetNumberValue(strokeObj);
-                    }
-                    // If explicitly disabled, set size to 0
-                    if (strokeEnabledObj && cJSON_IsBool(strokeEnabledObj) && !cJSON_IsTrue(strokeEnabledObj)) {
-                        strokeVal = 0;
-                    }
-                    if (strokeVal >= 0) {
-                        cJSON_AddItemToObject(osdObj, "font_stroke_size", cJSON_CreateNumber(strokeVal));
-                    }
-                    if (strokeObj) cJSON_DeleteItemFromObject(osdObj, "font_stroke");
-                    if (strokeEnabledObj) cJSON_DeleteItemFromObject(osdObj, "font_stroke_enabled");
-                } else {
-                    // Clean up redundant keys if present
-                    cJSON_DeleteItemFromObject(osdObj, "font_stroke");
-                    cJSON_DeleteItemFromObject(osdObj, "font_stroke_enabled");
-                }
-            }
-            // Migrate position settings: pos_*_x/pos_*_y -> *_position ("x,y")
-            {
-                auto migrate_pos = [&](const char *new_key, const char *old_x, const char *old_y, const char *alt_old_x = nullptr, const char *alt_old_y = nullptr) {
-                    if (!cJSON_GetObjectItem(osdObj, new_key)) {
-                        cJSON *xObj = cJSON_GetObjectItem(osdObj, old_x);
-                        cJSON *yObj = cJSON_GetObjectItem(osdObj, old_y);
-                        if ((!xObj || !yObj) && (alt_old_x && alt_old_y)) {
-                            xObj = cJSON_GetObjectItem(osdObj, alt_old_x);
-                            yObj = cJSON_GetObjectItem(osdObj, alt_old_y);
-                        }
-                        if (xObj && yObj && cJSON_IsNumber(xObj) && cJSON_IsNumber(yObj)) {
-                            int xi = (int)cJSON_GetNumberValue(xObj);
-                            int yi = (int)cJSON_GetNumberValue(yObj);
-                            char buf[64];
-                            snprintf(buf, sizeof(buf), "%d,%d", xi, yi);
-                            cJSON_AddItemToObject(osdObj, new_key, cJSON_CreateString(buf));
-                        }
-                    }
-                    // Cleanup old keys regardless
-                    cJSON_DeleteItemFromObject(osdObj, old_x);
-                    cJSON_DeleteItemFromObject(osdObj, old_y);
-                    if (alt_old_x) cJSON_DeleteItemFromObject(osdObj, alt_old_x);
-                    if (alt_old_y) cJSON_DeleteItemFromObject(osdObj, alt_old_y);
-                };
-
-                migrate_pos("time_position", "pos_time_x", "pos_time_y");
-                migrate_pos("uptime_position", "pos_uptime_x", "pos_uptime_y");
-                migrate_pos("usertext_position", "pos_usertext_x", "pos_usertext_y", "pos_user_text_x", "pos_user_text_y");
-                migrate_pos("logo_position", "pos_logo_x", "pos_logo_y");
-            }
+    // No migration needed - using new config format with JCT
+    return;
 
 
-        }
-    }
-
-    // Repeat for stream1
-    if (stream1Obj) {
-        cJSON *osdObj = cJSON_GetObjectItem(stream1Obj, "osd");
-        if (osdObj) {
-            // Similar migration logic for stream1
-            cJSON *fontColorObj = cJSON_GetObjectItem(osdObj, "font_color");
-            cJSON *fontStrokeColorObj = cJSON_GetObjectItem(osdObj, "font_stroke_color");
-            cJSON *timeTransparencyObj = cJSON_GetObjectItem(osdObj, "time_transparency");
-            cJSON *uptimeTransparencyObj = cJSON_GetObjectItem(osdObj, "uptime_transparency");
-            cJSON *userTextTransparencyObj = cJSON_GetObjectItem(osdObj, "usertext_transparency");
-
-            bool hasOldFormat = fontColorObj && fontStrokeColorObj &&
-                               (timeTransparencyObj || uptimeTransparencyObj || userTextTransparencyObj);
-
-            if (hasOldFormat) {
-                unsigned int fontColor = 0xFFFFFFFF;
-                unsigned int fontStrokeColor = 0xFF000000;
-                int timeTransparency = 255;
-                int uptimeTransparency = 255;
-                int userTextTransparency = 255;
-
-                // Read old values (similar to stream0)
-                if (cJSON_IsNumber(fontColorObj)) {
-                    fontColor = static_cast<unsigned int>(cJSON_GetNumberValue(fontColorObj));
-                } else if (cJSON_IsString(fontColorObj)) {
-                    const char *str = cJSON_GetStringValue(fontColorObj);
-                    if (isValidHexColor(str)) {
-                        fontColor = hexColorToUint(str);
-                    }
-                }
-
-                if (cJSON_IsNumber(fontStrokeColorObj)) {
-                    fontStrokeColor = static_cast<unsigned int>(cJSON_GetNumberValue(fontStrokeColorObj));
-                } else if (cJSON_IsString(fontStrokeColorObj)) {
-                    const char *str = cJSON_GetStringValue(fontStrokeColorObj);
-                    if (isValidHexColor(str)) {
-                        fontStrokeColor = hexColorToUint(str);
-                    }
-                }
-
-                if (timeTransparencyObj && cJSON_IsNumber(timeTransparencyObj)) {
-                    timeTransparency = static_cast<int>(cJSON_GetNumberValue(timeTransparencyObj));
-                }
-                if (uptimeTransparencyObj && cJSON_IsNumber(uptimeTransparencyObj)) {
-                    uptimeTransparency = static_cast<int>(cJSON_GetNumberValue(uptimeTransparencyObj));
-                }
-                if (userTextTransparencyObj && cJSON_IsNumber(userTextTransparencyObj)) {
-                    userTextTransparency = static_cast<int>(cJSON_GetNumberValue(userTextTransparencyObj));
-                }
-
-                // Create new individual color settings
-                cJSON_AddItemToObject(osdObj, "time_font_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontColor, timeTransparency)));
-                cJSON_AddItemToObject(osdObj, "time_font_stroke_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontStrokeColor, timeTransparency)));
-                cJSON_AddItemToObject(osdObj, "uptime_font_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontColor, uptimeTransparency)));
-                cJSON_AddItemToObject(osdObj, "uptime_font_stroke_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontStrokeColor, uptimeTransparency)));
-                cJSON_AddItemToObject(osdObj, "usertext_font_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontColor, userTextTransparency)));
-                cJSON_AddItemToObject(osdObj, "usertext_font_stroke_color",
-                    cJSON_CreateNumber(combineColorWithAlpha(fontStrokeColor, userTextTransparency)));
-
-                // Remove old settings
-                cJSON_DeleteItemFromObject(osdObj, "font_color");
-                cJSON_DeleteItemFromObject(osdObj, "font_stroke_color");
-            // Migrate position settings: pos_*_x/pos_*_y -> *_position ("x,y")
-            {
-                auto migrate_pos = [&](const char *new_key, const char *old_x, const char *old_y, const char *alt_old_x = nullptr, const char *alt_old_y = nullptr) {
-                    if (!cJSON_GetObjectItem(osdObj, new_key)) {
-                        cJSON *xObj = cJSON_GetObjectItem(osdObj, old_x);
-                        cJSON *yObj = cJSON_GetObjectItem(osdObj, old_y);
-                        if ((!xObj || !yObj) && (alt_old_x && alt_old_y)) {
-                            xObj = cJSON_GetObjectItem(osdObj, alt_old_x);
-                            yObj = cJSON_GetObjectItem(osdObj, alt_old_y);
-                        }
-                        if (xObj && yObj && cJSON_IsNumber(xObj) && cJSON_IsNumber(yObj)) {
-                            int xi = (int)cJSON_GetNumberValue(xObj);
-                            int yi = (int)cJSON_GetNumberValue(yObj);
-                            char buf[64];
-                            snprintf(buf, sizeof(buf), "%d,%d", xi, yi);
-                            cJSON_AddItemToObject(osdObj, new_key, cJSON_CreateString(buf));
-                        }
-                    }
-                    // Cleanup old keys regardless
-                    cJSON_DeleteItemFromObject(osdObj, old_x);
-                    cJSON_DeleteItemFromObject(osdObj, old_y);
-                    if (alt_old_x) cJSON_DeleteItemFromObject(osdObj, alt_old_x);
-                    if (alt_old_y) cJSON_DeleteItemFromObject(osdObj, alt_old_y);
-                };
-
-                migrate_pos("time_position", "pos_time_x", "pos_time_y");
-                migrate_pos("uptime_position", "pos_uptime_x", "pos_uptime_y");
-                migrate_pos("usertext_position", "pos_usertext_x", "pos_usertext_y", "pos_user_text_x", "pos_user_text_y");
-                migrate_pos("logo_position", "pos_logo_x", "pos_logo_y");
-            }
-
-                cJSON_DeleteItemFromObject(osdObj, "time_transparency");
-                cJSON_DeleteItemFromObject(osdObj, "font_yoffset");
-
-                cJSON_DeleteItemFromObject(osdObj, "uptime_transparency");
-                cJSON_DeleteItemFromObject(osdObj, "usertext_transparency");
-            }
-            // Migrate stroke settings: font_stroke/font_stroke_enabled -> font_stroke_size
-            {
-                cJSON *strokeSizeObj = cJSON_GetObjectItem(osdObj, "font_stroke_size");
-                if (!strokeSizeObj) {
-                    cJSON *strokeObj = cJSON_GetObjectItem(osdObj, "font_stroke");
-                    cJSON *strokeEnabledObj = cJSON_GetObjectItem(osdObj, "font_stroke_enabled");
-                    int strokeVal = -1;
-                    if (strokeObj && cJSON_IsNumber(strokeObj)) {
-                        strokeVal = (int)cJSON_GetNumberValue(strokeObj);
-                    }
-                    // If explicitly disabled, set size to 0
-                    if (strokeEnabledObj && cJSON_IsBool(strokeEnabledObj) && !cJSON_IsTrue(strokeEnabledObj)) {
-                        strokeVal = 0;
-                    }
-                    if (strokeVal >= 0) {
-                        cJSON_AddItemToObject(osdObj, "font_stroke_size", cJSON_CreateNumber(strokeVal));
-                    }
-                    if (strokeObj) cJSON_DeleteItemFromObject(osdObj, "font_stroke");
-                    if (strokeEnabledObj) cJSON_DeleteItemFromObject(osdObj, "font_stroke_enabled");
-                } else {
-                    // Clean up redundant keys if present
-                    cJSON_DeleteItemFromObject(osdObj, "font_stroke");
-                    cJSON_DeleteItemFromObject(osdObj, "font_stroke_enabled");
-                }
-            }
-
-        }
-    }
 }
 
 CFG::CFG()
@@ -1181,28 +804,42 @@ CFG::CFG()
 
 void CFG::load()
 {
+    LOG_DEBUG("CFG::load() - Starting configuration load");
     boolItems = getBoolItems();
+    LOG_DEBUG("CFG::load() - Got bool items");
     charItems = getCharItems();
+    LOG_DEBUG("CFG::load() - Got char items");
     intItems = getIntItems();
+    LOG_DEBUG("CFG::load() - Got int items");
     uintItems = getUintItems();
+    LOG_DEBUG("CFG::load() - Got uint items");
     floatItems = getFloatItems();
+    LOG_DEBUG("CFG::load() - Got float items");
 
     config_loaded = readConfig();
+    LOG_DEBUG("CFG::load() - Read config, loaded=" << config_loaded);
 
     if (jsonConfig) {
-        // Handle backward compatibility migration first
-        migrateOldColorSettings();
+        LOG_DEBUG("CFG::load() - Processing config items");
+        // Handle backward compatibility migration first - temporarily disabled
+        // migrateOldColorSettings();
 
+        LOG_DEBUG("CFG::load() - Processing bool items (" << boolItems.size() << ")");
         for (auto &item : boolItems)
             handleConfigItem(jsonConfig, item);
+        LOG_DEBUG("CFG::load() - Processing char items (" << charItems.size() << ")");
         for (auto &item : charItems)
             handleConfigItem(jsonConfig, item);
+        LOG_DEBUG("CFG::load() - Processing int items (" << intItems.size() << ")");
         for (auto &item : intItems)
             handleConfigItem(jsonConfig, item);
+        LOG_DEBUG("CFG::load() - Processing uint items (" << uintItems.size() << ")");
         for (auto &item : uintItems)
             handleConfigItem(jsonConfig, item);
+        LOG_DEBUG("CFG::load() - Processing float items (" << floatItems.size() << ")");
         for (auto &item : floatItems)
             handleConfigItem(jsonConfig, item);
+        LOG_DEBUG("CFG::load() - Finished processing config items");
     }
 
     if (stream2.jpeg_channel == 0)
@@ -1216,32 +853,11 @@ void CFG::load()
         stream2.height = stream1.height;
     }
 
-    // Handle ROIs from JSON
+    // TODO: Implement ROI handling with JCT
+    // Handle ROIs from JSON - temporarily disabled during JCT migration
+    /*
     if (jsonConfig) {
-        cJSON *roisObj = cJSON_GetObjectItem(jsonConfig, "rois");
-        if (roisObj && cJSON_IsObject(roisObj))
-        {
-            for (int i = 0; i < motion.roi_count; i++)
-            {
-                std::string roiKey = "roi_" + std::to_string(i);
-                cJSON *roiArray = cJSON_GetObjectItem(roisObj, roiKey.c_str());
-                if (roiArray && cJSON_IsArray(roiArray))
-                {
-                    int arrayLen = cJSON_GetArraySize(roiArray);
-                    if (arrayLen == 4)
-                    {
-                        cJSON *item0 = cJSON_GetArrayItem(roiArray, 0);
-                        cJSON *item1 = cJSON_GetArrayItem(roiArray, 1);
-                        cJSON *item2 = cJSON_GetArrayItem(roiArray, 2);
-                        cJSON *item3 = cJSON_GetArrayItem(roiArray, 3);
-
-                        if (item0 && cJSON_IsNumber(item0)) motion.rois[i].p0_x = static_cast<int>(cJSON_GetNumberValue(item0));
-                        if (item1 && cJSON_IsNumber(item1)) motion.rois[i].p0_y = static_cast<int>(cJSON_GetNumberValue(item1));
-                        if (item2 && cJSON_IsNumber(item2)) motion.rois[i].p1_x = static_cast<int>(cJSON_GetNumberValue(item2));
-                        if (item3 && cJSON_IsNumber(item3)) motion.rois[i].p1_y = static_cast<int>(cJSON_GetNumberValue(item3));
-                    }
-                }
-            }
-        }
+        // ROI handling code will be reimplemented with JCT
     }
+    */
 }

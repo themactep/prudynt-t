@@ -26,11 +26,18 @@ prudynt() {
 
 	# Parse build type flags - default to dynamic linking (ideal for buildroot/firmware)
 	BIN_TYPE=""
+	DEBUG_BUILD=0
 	for arg in "$@"; do
 		if [ "$arg" = "-static" ]; then
 			BIN_TYPE="-DBINARY_STATIC"
 		elif [ "$arg" = "-hybrid" ]; then
 			BIN_TYPE="-DBINARY_HYBRID"
+		elif [ "$arg" = "-debug" ]; then
+			DEBUG_BUILD=1
+			# Force static build for debug to ensure all symbols are included
+			if [ -z "$BIN_TYPE" ]; then
+				BIN_TYPE="-DBINARY_STATIC"
+			fi
 		fi
 	done
 	# If no explicit flag provided, default to dynamic (no flag needed in Makefile)
@@ -43,18 +50,31 @@ prudynt() {
 		fi
 	done
 
+	# Set debug or release build flags
+	if [ $DEBUG_BUILD -eq 1 ]; then
+		echo "Building with debug information (no optimization, debug symbols, debug logging)"
+		OPTIMIZATION="-g -O0"
+		DEBUG_FLAGS="-DENABLE_LOG_DEBUG"
+		STRIP_FLAG="DEBUG_STRIP=0"
+	else
+		OPTIMIZATION="-O2"
+		DEBUG_FLAGS=""
+		STRIP_FLAG=""
+	fi
+
 	# Ensure cross-built FFmpeg pkg-configs are found
 	export PKG_CONFIG_PATH="$TOP/3rdparty/install/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 	/usr/bin/make -j$(nproc) \
 	ARCH= CROSS_COMPILE="${PRUDYNT_CROSS}" \
-	CFLAGS="-DPLATFORM_$1 $BIN_TYPE -O2 -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
+	CFLAGS="-DPLATFORM_$1 $BIN_TYPE $OPTIMIZATION $DEBUG_FLAGS -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include \
 	-isystem ./3rdparty/install/include/liveMedia \
 	-isystem ./3rdparty/install/include/groupsock \
 	-isystem ./3rdparty/install/include/UsageEnvironment \
 	-isystem ./3rdparty/install/include/BasicUsageEnvironment" \
 	LDFLAGS=" -L./3rdparty/install/lib" \
+	$STRIP_FLAG \
 	-C $PWD all
 
 	if [ -d "$NFS_SHARE" ]; then
@@ -139,38 +159,38 @@ deps() {
 	cp schrift.h $TOP/3rdparty/install/include/
 	cd ../../
 
-	echo "Build cJSON"
+	echo "Build JCT (JSON Configuration Tool)"
 	cd 3rdparty
-	rm -rf cJSON
-	git clone --depth=1 https://github.com/DaveGamble/cJSON.git cJSON
-	cd cJSON
 
-	# Apply patch to use spaces instead of tabs for formatting
-	echo "Applying cJSON spaces patch..."
-	patch -p1 < ../../res/cjson-spaces.patch
-
-	mkdir -p build
-	cd build
-	if [[ $STATIC_BUILD -eq 1 ]]; then
-		SHARED=OFF
+	# Smart JCT handling - use existing directory
+	if [[ ! -d jct ]]; then
+		echo "Cloning JCT..."
+		git clone --depth=1 https://github.com/themactep/jct
+		cd jct
 	else
-		SHARED=ON
+		cd jct
 	fi
 
-	# Extract compiler path without ccache for cmake
-	COMPILER_PATH=$(echo "${PRUDYNT_CROSS}" | sed 's/ccache //')
+	echo "Building JCT library..."
+	make clean
 
-	cmake -DCMAKE_SYSTEM_NAME=Linux \
-		-DCMAKE_C_COMPILER_LAUNCHER=$(which ccache) \
-		-DCMAKE_C_COMPILER="${COMPILER_PATH}gcc" \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_INSTALL_PREFIX="$TOP/3rdparty/install" \
-		-DBUILD_SHARED_LIBS=${SHARED} \
-		-DENABLE_CJSON_TEST=OFF \
-		..
-	make -j$(nproc)
-	make install
-	cd ../../../
+	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+		echo "Building JCT static library..."
+		make CROSS_COMPILE="${PRUDYNT_CROSS}"
+		# Create static library (excluding CLI object)
+		${PRUDYNT_CROSS}ar rcs libjct.a src/json_value.o src/json_parse.o src/json_serialize.o src/json_config.o
+		cp libjct.a $TOP/3rdparty/install/lib/
+	else
+		echo "Building JCT shared library..."
+		make CROSS_COMPILE="${PRUDYNT_CROSS}"
+		# Create shared library (excluding CLI object)
+		${PRUDYNT_CROSS}gcc -shared -o libjct.so src/json_value.o src/json_parse.o src/json_serialize.o src/json_config.o
+		cp libjct.so $TOP/3rdparty/install/lib/
+	fi
+
+	# Install header
+	cp src/json_config.h $TOP/3rdparty/install/include/
+	cd ../../
 
 	echo "Build live555"
 	cd 3rdparty
@@ -325,7 +345,11 @@ if [ $# -eq 0 ]; then
 	echo "       ./build.sh full <platform> [options]"
 	echo ""
 	echo "Platforms: T20, T21, T23, T30, T31, C100, T40, T41"
-	echo "Options:   -static | -hybrid | -ffmpeg (enable USE_FFMPEG)"
+	echo "Options:   -static | -hybrid | -debug | -ffmpeg"
+	echo "  -static:  Static linking (default for -debug)"
+	echo "  -hybrid:  Hybrid linking (some static, some dynamic)"
+	echo "  -debug:   Debug build (no optimization, debug symbols, debug logging)"
+	echo "  -ffmpeg:  Enable USE_FFMPEG support"
 	exit 1
 elif [[ "$1" == "deps" ]]; then
 	deps "${@:2}"

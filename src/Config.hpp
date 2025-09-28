@@ -5,7 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <functional>
-#include <cjson/cJSON.h>
+#include <json_config.h>
 #include <sys/time.h>
 #include <any>
 #include <mutex>
@@ -287,13 +287,13 @@ class CFG {
         // Destructor to clean up JSON object
         ~CFG() {
             if (jsonConfig) {
-                cJSON_Delete(jsonConfig);
+                free_json_value(jsonConfig);
                 jsonConfig = nullptr;
             }
         }
 
         bool config_loaded = false;
-        cJSON *jsonConfig = nullptr;
+        JsonValue *jsonConfig = nullptr;
         std::string filePath{};
         mutable std::mutex configMutex;
 
@@ -374,8 +374,6 @@ class CFG {
     }
 
     private:
-        // Helper function to recursively sort JSON objects alphabetically
-        void sortJsonObjectsRecursively(cJSON *json);
 
         std::vector<ConfigItem<bool>> boolItems{};
         std::vector<ConfigItem<const char *>> charItems{};

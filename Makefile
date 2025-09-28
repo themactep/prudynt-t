@@ -51,7 +51,7 @@ LIBS                    = -l:libimp.a \
                           -l:libopus.a \
                           -l:libfaac.a \
                           -l:libhelix-aac.a \
-                          -l:libcjson.a
+                          -l:libjct.a
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
@@ -82,8 +82,8 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libopus.a \
                           -l:libfaac.a \
                           -l:libhelix-aac.a \
-                          -Wl,-Bdynamic \
-                          -l:libcjson.so
+                          -l:libjct.a \
+                          -Wl,-Bdynamic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
@@ -112,7 +112,7 @@ LIBS                    = -limp \
                           -lopus \
                           -lfaac \
                           -lhelix-aac \
-                          -lcjson
+                          -ljct
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
