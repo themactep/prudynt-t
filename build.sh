@@ -198,7 +198,7 @@ deps() {
 	# Smart live555 handling - only clone if directory doesn't exist
 	if [[ ! -d live ]]; then
 		echo "Cloning live555..."
-		git clone https://github.com/themactep/thingino-live555.git live
+		git clone --depth=1 https://github.com/themactep/thingino-live555.git live
 		cd live
 	else
 		echo "live555 directory exists, checking for updates..."
