@@ -51,7 +51,7 @@ LIBS                    = -l:libimp.a \
                           -l:libopus.a \
                           -l:libfaac.a \
                           -l:libhelix-aac.a \
-                          -l:libjct.a
+                          -ljct
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
@@ -82,8 +82,8 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libopus.a \
                           -l:libfaac.a \
                           -l:libhelix-aac.a \
-                          -l:libjct.a \
-                          -Wl,-Bdynamic
+                          -Wl,-Bdynamic \
+                          -ljct
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed

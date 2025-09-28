@@ -176,16 +176,14 @@ deps() {
 
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
 		echo "Building JCT static library..."
-		make CROSS_COMPILE="${PRUDYNT_CROSS}"
-		# Create static library (excluding CLI object)
-		${PRUDYNT_CROSS}ar rcs libjct.a src/json_value.o src/json_parse.o src/json_serialize.o src/json_config.o
+		make static CROSS_COMPILE="${PRUDYNT_CROSS}"
 		cp libjct.a $TOP/3rdparty/install/lib/
 	else
 		echo "Building JCT shared library..."
-		make CROSS_COMPILE="${PRUDYNT_CROSS}"
-		# Create shared library (excluding CLI object)
-		${PRUDYNT_CROSS}gcc -shared -o libjct.so src/json_value.o src/json_parse.o src/json_serialize.o src/json_config.o
+		make shared CROSS_COMPILE="${PRUDYNT_CROSS}"
 		cp libjct.so $TOP/3rdparty/install/lib/
+		# Also copy the symlink for proper versioning
+		cp -P libjct.so.1 $TOP/3rdparty/install/lib/ 2>/dev/null || true
 	fi
 
 	# Install header
