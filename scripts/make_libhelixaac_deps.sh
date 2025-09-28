@@ -55,7 +55,9 @@ else
 fi
 
 # Apply the patch
-git apply ../../res/libhelix-aac.patch
+git apply ../../res/libhelix-aac/0001-CMakeLists.patch
+git apply ../../res/libhelix-aac/0002-aaccommon.h.patch
+git apply ../../res/libhelix-aac/0003-statname.h.patch
 
 # Create and navigate to build directory
 mkdir -p build
