@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 LWS_REPO="https://github.com/warmcat/libwebsockets"
 LWS_DIR="${BUILD_DIR}/libwebsockets"
-LWS_VER="4415e84c095857629863804e941b9e1c2e9347ef"
+LWS_VER="b9c3ed4cd1032e9b14cda733a753aad868b5382b"
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
