@@ -158,7 +158,7 @@ void BackchannelServerMediaSubsession::getStreamParameters(
     if (mediaSink == nullptr)
     {
         LOG_ERROR("getStreamParameters: createNewStreamDestination FAILED for session "
-                  << clientSessionId);
+                  << static_cast<unsigned>(clientSessionId));
         return;
     }
 
@@ -174,14 +174,14 @@ void BackchannelServerMediaSubsession::getStreamParameters(
         {
             // This might be okay if the client doesn't intend to send RTCP Sender Reports
             LOG_WARN("Client requested UDP streaming but provided no RTCP port for session "
-                     << clientSessionId);
+                     << static_cast<unsigned>(clientSessionId));
         }
 
         // Allocate UDP ports and create groupsocks
         if (!allocateUdpPorts(serverRTPPort, serverRTCPPort, rtpGroupsock, rtcpGroupsock))
         {
             LOG_ERROR("getStreamParameters: Failed to allocate UDP ports for session "
-                      << clientSessionId);
+                      << static_cast<unsigned>(clientSessionId));
             Medium::close(mediaSink);
             // allocateUdpPorts cleans up its own groupsocks on failure
             return;
@@ -223,7 +223,7 @@ void BackchannelServerMediaSubsession::getStreamParameters(
     RTPSource *rtpSource = createNewRTPSource(rtpGroupsock, 0, mediaSink);
     if (rtpSource == nullptr)
     {
-        LOG_ERROR("getStreamParameters: createNewRTPSource FAILED for session " << clientSessionId);
+        LOG_ERROR("getStreamParameters: createNewRTPSource FAILED for session " << static_cast<unsigned>(clientSessionId));
         Medium::close(mediaSink);
         delete rtpGroupsock;
         if (rtcpGroupsock != rtpGroupsock) // Avoid double delete if multiplexing
@@ -250,7 +250,7 @@ void BackchannelServerMediaSubsession::getStreamParameters(
     if (state == nullptr)
     {
         LOG_ERROR("getStreamParameters: Failed to create BackchannelStreamState for session "
-                  << clientSessionId);
+                  << static_cast<unsigned>(clientSessionId));
         Medium::close(rtpSource);
         Medium::close(mediaSink);
         delete rtpGroupsock;
@@ -335,7 +335,7 @@ void BackchannelServerMediaSubsession::startStream(
 
     if (state == nullptr)
     {
-        LOG_DEBUG("Client setup/probe initiated (NULL streamToken) for session " << clientSessionId);
+        LOG_DEBUG("Client setup/probe initiated (NULL streamToken) for session " << static_cast<unsigned>(clientSessionId));
         return;
     }
 

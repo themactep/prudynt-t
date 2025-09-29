@@ -31,7 +31,7 @@ BackchannelSink::BackchannelSink(UsageEnvironment &env,
     fReceiveBuffer = new u_int8_t[fReceiveBufferSize];
     if (fReceiveBuffer == nullptr)
     {
-        LOG_ERROR("Failed to allocate receive buffer (Session: " << fClientSessionId << ")");
+        LOG_ERROR("Failed to allocate receive buffer (Session: " << static_cast<unsigned>(fClientSessionId) << ")");
     }
 }
 
@@ -190,7 +190,7 @@ void BackchannelSink::sendBackchannelFrame(const uint8_t *payload, unsigned payl
     if (!global_backchannel)
     {
         LOG_ERROR("global_backchannel is null, cannot queue BackchannelFrame! (Session: "
-                  << fClientSessionId << ")");
+                  << static_cast<unsigned>(fClientSessionId) << ")");
         return;
     }
 
@@ -207,7 +207,7 @@ void BackchannelSink::sendBackchannelFrame(const uint8_t *payload, unsigned payl
 
     if (!global_backchannel->inputQueue->write(std::move(bcFrame)))
     {
-        LOG_WARN("Input queue full for session " << fClientSessionId << ". Frame dropped.");
+        LOG_WARN("Input queue full for session " << static_cast<unsigned>(fClientSessionId) << ". Frame dropped.");
     }
     else
     {
@@ -231,14 +231,14 @@ void BackchannelSink::sendBackchannelStopFrame()
         if (!global_backchannel->inputQueue->write(std::move(stopFrame)))
         {
             LOG_WARN("Input queue full when trying to send stop frame for session "
-                     << fClientSessionId);
+                     << static_cast<unsigned>(fClientSessionId));
         }
         else
         {
             global_backchannel->should_grab_frames.notify_one();
             fIsSending = false;
             global_backchannel->is_sending.fetch_sub(1, std::memory_order_relaxed);
-            LOG_INFO("Sent stop frame (zero-payload frame) for session " << fClientSessionId);
+            LOG_INFO("Sent stop frame (zero-payload frame) for session " << static_cast<unsigned>(fClientSessionId));
         }
     }
     else

@@ -45,7 +45,7 @@ BackchannelStreamState::BackchannelStreamState(UsageEnvironment &env,
 }
 BackchannelStreamState::~BackchannelStreamState()
 {
-    LOG_DEBUG("Destroyed for session " << clientSessionId);
+    LOG_DEBUG("Destroyed for session " << static_cast<unsigned>(clientSessionId));
     Medium::close(rtcpInstance);
     Medium::close(rtpSource);
     Medium::close(mediaSink);
@@ -82,7 +82,7 @@ void BackchannelStreamState::startPlaying(
             if (fIsTCP)
             {
                 LOG_INFO("Configuring stream for TCP (session "
-                         << clientSessionId << ", socket " << fTransport.t.tcpSocketNum
+                         << static_cast<unsigned>(clientSessionId) << ", socket " << fTransport.t.tcpSocketNum
                          << ", RTP ch " << (int) fTransport.t.rtpChannelId << ", RTCP ch "
                          << (int) fTransport.t.rtcpChannelId << ")");
                 rtpSource->setStreamSocket(fTransport.t.tcpSocketNum,
@@ -112,7 +112,7 @@ void BackchannelStreamState::startPlaying(
             }
             else
             { // UDP
-                LOG_INFO("Configuring stream for UDP (session " << clientSessionId << ")");
+                LOG_INFO("Configuring stream for UDP (session " << static_cast<unsigned>(clientSessionId) << ")");
                 if (rtpGS)
                     rtpGS->addDestination(fTransport.u.destAddr,
                                           fTransport.u.rtpDestPort,
@@ -131,13 +131,13 @@ void BackchannelStreamState::startPlaying(
         }
         else
         {
-            LOG_WARN("Failed to create RTCPInstance for session " << clientSessionId);
+            LOG_WARN("Failed to create RTCPInstance for session " << static_cast<unsigned>(clientSessionId));
         }
 
         // Connect the sink to the source
         if (!mediaSink->startPlaying(*rtpSource, nullptr, this))
         {
-            LOG_ERROR("mediaSink->startPlaying failed for client session " << clientSessionId);
+            LOG_ERROR("mediaSink->startPlaying failed for client session " << static_cast<unsigned>(clientSessionId));
             Medium::close(rtcpInstance);
             rtcpInstance = nullptr;
         }
@@ -146,12 +146,12 @@ void BackchannelStreamState::startPlaying(
     {
         if (!mediaSink)
             LOG_ERROR("Cannot start playing - mediaSink is NULL for client session "
-                      << clientSessionId);
+                      << static_cast<unsigned>(clientSessionId));
         else if (!rtpSource)
             LOG_ERROR("Cannot start playing - rtpSource is NULL for client session "
-                      << clientSessionId);
+                      << static_cast<unsigned>(clientSessionId));
         else
             LOG_ERROR("Cannot start playing - unknown reason for client session "
-                      << clientSessionId);
+                      << static_cast<unsigned>(clientSessionId));
     }
 }

@@ -319,10 +319,10 @@ void BackchannelWorker::run()
         // Handle Zero-Payload Frame (Stop Signal)
         if (frame.payload.empty())
         {
-            LOG_DEBUG("Received stop signal (zero-payload) from session " << frame.clientSessionId);
+            LOG_DEBUG("Received stop signal (zero-payload) from session " << static_cast<unsigned>(frame.clientSessionId));
             if (frame.clientSessionId == currentSessionId && currentSessionId != 0)
             {
-                LOG_INFO("Current session " << currentSessionId << " stopped. Closing pipe.");
+                LOG_INFO("Current session " << static_cast<unsigned>(currentSessionId) << " stopped. Closing pipe.");
                 closePipe();
                 currentSessionId = 0;
             }
@@ -333,7 +333,7 @@ void BackchannelWorker::run()
             else
             {
                 LOG_WARN("Stop signal from non-current session "
-                         << frame.clientSessionId << " (Current: " << currentSessionId
+                         << static_cast<unsigned>(frame.clientSessionId) << " (Current: " << static_cast<unsigned>(currentSessionId)
                          << "). Ignoring.");
             }
             continue;
@@ -344,12 +344,12 @@ void BackchannelWorker::run()
         {
             // No current session, this frame's sender becomes the current one
             currentSessionId = frame.clientSessionId;
-            LOG_INFO("New current session " << currentSessionId << " playing "
+            LOG_INFO("New current session " << static_cast<unsigned>(currentSessionId) << " playing "
                                             << IMPBackchannel::getFormatName(frame.format)
                                             << ". Opening pipe.");
             if (!initPipe())
             {
-                LOG_ERROR("Failed to open pipe for new session " << currentSessionId
+                LOG_ERROR("Failed to open pipe for new session " << static_cast<unsigned>(currentSessionId)
                                                                  << ". Resetting.");
                 currentSessionId = 0;
                 continue;
@@ -358,7 +358,7 @@ void BackchannelWorker::run()
             if (!processFrame(frame))
             {
                 // processFrame returns false if pipe write fails and closes pipe
-                LOG_WARN("processFrame failed for initial frame of session " << currentSessionId
+                LOG_WARN("processFrame failed for initial frame of session " << static_cast<unsigned>(currentSessionId)
                                                                              << ". Pipe closed.");
                 currentSessionId = 0;
             }
@@ -368,11 +368,11 @@ void BackchannelWorker::run()
             // Frame is from the current session
             if (!fPipe)
             { // Ensure pipe is open (it might have closed unexpectedly)
-                LOG_WARN("Pipe was closed unexpectedly for current session " << currentSessionId
+                LOG_WARN("Pipe was closed unexpectedly for current session " << static_cast<unsigned>(currentSessionId)
                                                                              << ". Reopening.");
                 if (!initPipe())
                 {
-                    LOG_ERROR("Failed to reopen pipe for session " << currentSessionId
+                    LOG_ERROR("Failed to reopen pipe for session " << static_cast<unsigned>(currentSessionId)
                                                                    << ". Resetting.");
                     currentSessionId = 0;
                     continue;
@@ -382,7 +382,7 @@ void BackchannelWorker::run()
             if (!processFrame(frame))
             {
                 // processFrame returns false if pipe write fails and closes pipe
-                LOG_WARN("processFrame failed for session " << currentSessionId << ". Pipe closed.");
+                LOG_WARN("processFrame failed for session " << static_cast<unsigned>(currentSessionId) << ". Pipe closed.");
                 currentSessionId = 0;
             }
         }
@@ -390,7 +390,7 @@ void BackchannelWorker::run()
         {
             // Frame is from a different session, ignore it
             LOG_DEBUG("Discarding frame from non-current session "
-                      << frame.clientSessionId << " (Current: " << currentSessionId << ")");
+                      << static_cast<unsigned>(frame.clientSessionId) << " (Current: " << static_cast<unsigned>(currentSessionId) << ")");
         }
     }
 
