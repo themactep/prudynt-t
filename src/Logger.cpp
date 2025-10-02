@@ -68,43 +68,44 @@ void Logger::log(Level lvl, std::string module, LogMsg msg)
 {
     std::unique_lock<std::mutex> lck(log_mtx);
 
-    // Always log to syslog regardless of level
-    int syslogPriority;
-    switch (lvl)
-    {
-    case EMERGENCY:
-        syslogPriority = 0;
-        break;
-    case ALERT:
-        syslogPriority = 1;
-        break;
-    case CRIT:
-        syslogPriority = 2;
-        break;
-    case ERROR:
-        syslogPriority = 3;
-        break;
-    case WARN:
-        syslogPriority = 4;
-        break;
-    case NOTICE:
-        syslogPriority = 5;
-        break;
-    case INFO:
-        syslogPriority = 6;
-        break;
-    case DEBUG:
-        syslogPriority = 7;
-        break;
-    default:
-        syslogPriority = 7;
-        break; // Default case for undefined levels
-    }
-    syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(), msg.log_str.c_str());
-
-    // Filter what gets printed on the console based on the Logger::level
+    // Filter based on configured log level for both syslog and console
     if (Logger::level >= lvl)
     {
+        // Log to syslog
+        int syslogPriority;
+        switch (lvl)
+        {
+        case EMERGENCY:
+            syslogPriority = 0;
+            break;
+        case ALERT:
+            syslogPriority = 1;
+            break;
+        case CRIT:
+            syslogPriority = 2;
+            break;
+        case ERROR:
+            syslogPriority = 3;
+            break;
+        case WARN:
+            syslogPriority = 4;
+            break;
+        case NOTICE:
+            syslogPriority = 5;
+            break;
+        case INFO:
+            syslogPriority = 6;
+            break;
+        case DEBUG:
+            syslogPriority = 7;
+            break;
+        default:
+            syslogPriority = 7;
+            break; // Default case for undefined levels
+        }
+        syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(), msg.log_str.c_str());
+
+        // Log to console
         std::stringstream fmt;
         fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str << std::endl;
         std::cout << fmt.str();
