@@ -5,6 +5,8 @@
 #include <imp/imp_audio.h>
 #include "Logger.hpp"
 
+#include <stdexcept>
+
 enum IMPAudioFormat
 {
     PCM,
@@ -31,7 +33,9 @@ public:
 
     IMPAudio(int devId, int inChn, int aeChn) : devId(devId), inChn(inChn), aeChn(aeChn)
     {
-        init();
+        if (init() != 0) {
+            throw std::runtime_error("Failed to initialize IMPAudio - hardware may not be properly initialized");
+        }
     };
 
     ~IMPAudio()
