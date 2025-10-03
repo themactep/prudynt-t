@@ -64,6 +64,72 @@ struct LogMsg
         log_str.append(ss.str());
         return *this;
     }
+
+    LogMsg &operator<<(unsigned int a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(long a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(unsigned long a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(long long a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(unsigned long long a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(float a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(double a)
+    {
+        std::stringstream ss;
+        ss << a;
+        log_str.append(ss.str());
+        return *this;
+    }
+
+    LogMsg &operator<<(const char* a)
+    {
+        if (a != nullptr) {
+            log_str.append(a);
+        } else {
+            log_str.append("(null)");
+        }
+        return *this;
+    }
 };
 
 class Logger
