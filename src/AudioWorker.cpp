@@ -211,7 +211,7 @@ void AudioWorker::run()
             global_audio[encChn]->active = false;
             LOG_DDEBUG("AUDIO LOCK");
 
-            /* Since the audio stream is permanently in use by the stream replicator, 
+            /* Since the audio stream is permanently in use by the stream replicator,
              * we send the audio grabber and encoder to standby when no video is requested.
             */
             while ((global_audio[encChn]->onDataCallback == nullptr

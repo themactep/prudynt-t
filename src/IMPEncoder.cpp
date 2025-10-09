@@ -313,7 +313,7 @@ int IMPEncoder::init()
     initProfile();
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    if(cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
+    if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
         ret = IMP_Encoder_SetbufshareChn(2, encChn);
         LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn << ")");
     }
@@ -355,7 +355,7 @@ int IMPEncoder::init()
     {
         IMPEncoderJpegeQl pstJpegeQl;
         // fix for bad jpeg image quality on T10 based cameras
-        if(strncmp(cfg->sysinfo.cpu, "T10", 3)==0)
+        if (strncmp(cfg->sysinfo.cpu, "T10", 3)==0)
         {
             pstJpegeQl.user_ql_en = 0;
             LOG_DEBUG("JPEG use default quantization table");

@@ -22,10 +22,7 @@ public:
             throw std::invalid_argument("error initializing the imp system.");
         };
 
-        /*
-        / https://github.com/rara64/prudynt-t/commit/7eda99252b0d1309cbe134dc4143182eda9c21bd
-        */
-
+        /* https://github.com/rara64/prudynt-t/commit/7eda99252b0d1309cbe134dc4143182eda9c21bd */
         struct timespec timeSinceBoot;
         clock_gettime(CLOCK_MONOTONIC, &timeSinceBoot);
 

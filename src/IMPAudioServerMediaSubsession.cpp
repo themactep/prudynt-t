@@ -77,10 +77,11 @@ RTPSink* IMPAudioServerMediaSubsession::createNewRTPSink(
         rtpPayloadFormatName = "G726-16";
         break;
     case IMPAudioFormat::OPUS:
+        // Opus in RTP MUST advertise 48 kHz clock and 2 channels in SDP (rtpmap)
         rtpTimestampFrequency = 48000;
         rtpPayloadFormatName = "OPUS";
         allowMultipleFramesPerPacket = false;
-        outChnCnt = 2;
+        outChnCnt = 2; // always advertise stereo in SDP
         break;
     case IMPAudioFormat::AAC:
         return AACSink::createNew(

@@ -22,16 +22,16 @@ extern std::mutex mutex_main; // protects global_restart_rtsp and global_restart
 
 struct AudioFrame
 {
-	std::vector<uint8_t> data;
-	struct timeval time;
+    std::vector<uint8_t> data;
+    struct timeval time;
 };
 
 struct H264NALUnit
 {
     std::vector<uint8_t> data;
     /* timestamp fix, can be removed if solved
-	struct timeval time;
-	int64_t imp_ts;
+    struct timeval time;
+    int64_t imp_ts;
     */
 };
 

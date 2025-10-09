@@ -2085,7 +2085,10 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
         LOG_DEBUG("Expected token: " << std::string(token, WEBSOCKET_TOKEN_LENGTH));
         LOG_DEBUG("Received token: " << url_token);
-        if (strcmp(token, url_token) == 0 || (strcmp(cfg->websocket.token, "auto") != 0 && strcmp(cfg->websocket.token, "") != 0 && strcmp(cfg->websocket.token, url_token) == 0))
+        if (strcmp(token, url_token) == 0 ||
+	    (strcmp(cfg->websocket.token, "auto") != 0 &&
+	     strcmp(cfg->websocket.token, "") != 0 &&
+	     strcmp(cfg->websocket.token, url_token) == 0))
         {
             /* initialize new u_ctx session structure.
              * assign current wsi and a new sessionid
@@ -2284,11 +2287,16 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
     // ############################ HTTP ###############################
     case LWS_CALLBACK_HTTP:
     {
-        LOG_DDEBUGWS("LWS_CALLBACK_HTTP ip:" << client_ip << " url:" << (char *)url_ptr << " method:" << request_method);
+        LOG_DDEBUGWS("LWS_CALLBACK_HTTP ip:" << client_ip
+                                             << " url:" << (char *)url_ptr
+                                             << " method:" << request_method);
 
         // check if security is required and validate token
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
-        if (strcmp(token, url_token) == 0 || (strcmp(cfg->websocket.token, "auto") != 0 && strcmp(cfg->websocket.token, "") != 0 && strcmp(cfg->websocket.token, url_token) == 0))
+        if (strcmp(token, url_token) == 0 ||
+            (strcmp(cfg->websocket.token, "auto") != 0 &&
+             strcmp(cfg->websocket.token, "") != 0 &&
+             strcmp(cfg->websocket.token, url_token) == 0))
         {
             /* initialize new u_ctx session structure.
             * assign current wsi and a new sessionid
@@ -2493,7 +2501,8 @@ void WS::start()
         strcmp(cfg->websocket.token, "") != 0 &&
         strlen(cfg->websocket.token) == WEBSOCKET_TOKEN_LENGTH) {
         memcpy(token, cfg->websocket.token, WEBSOCKET_TOKEN_LENGTH);
-        LOG_DEBUG("Using configured token: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+        LOG_DEBUG("Using configured token: '"
+                  << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
     }
     else {
         // Token is "auto" or empty, use boot-session persistent token
@@ -2507,19 +2516,22 @@ void WS::start()
             // Try to read existing boot-session token
             inFile.read(token, WEBSOCKET_TOKEN_LENGTH);
             if (inFile.gcount() == WEBSOCKET_TOKEN_LENGTH) {
-                LOG_DEBUG("Reusing boot-session token: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+                LOG_DEBUG("Reusing boot-session token: '"
+                          << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
             } else {
                 // File exists but is invalid, generate new token for this boot session
                 const char* generatedToken = generateToken();
                 memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
-                LOG_DEBUG("Invalid boot-session token, generated new: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+                LOG_DEBUG("Invalid boot-session token, generated new: '"
+                          << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
             }
             inFile.close();
         } else {
             // No existing token file, generate new token for this boot session
             const char* generatedToken = generateToken();
             memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
-            LOG_DEBUG("No boot-session token, generated new: '" << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+            LOG_DEBUG("No boot-session token, generated new: '"
+                      << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
         }
 
         // Save the token for this boot session (survives app restart, not reboot)
@@ -2563,7 +2575,7 @@ void WS::start()
 
     memset(&info, 0, sizeof(info));
     info.port = cfg->websocket.port;
-    info.iface = ip;
+    info.iface = ip; // null = all interfaces
     info.protocols = &protocols;
     info.gid = -1;
     info.uid = -1;

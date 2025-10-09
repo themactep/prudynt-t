@@ -59,8 +59,9 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame0(void *clientData)
 template <typename FrameType, typename Stream>
 void IMPDeviceSource<FrameType, Stream>::deliverFrame()
 {
-    if (!isCurrentlyAwaitingData())
+    if (!isCurrentlyAwaitingData()) {
         return;
+    }
 
     FrameType nal;
     if (stream->msgChannel->read(&nal))

@@ -29,17 +29,15 @@
 
 #if defined(ENABLE_LOG_DEBUG)
 #define LOG_DEBUG(str) Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
-#define LOG_DEBUG_OR_ERROR(condition, str) \
-    ((condition) == 0 ? Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str) : Logger::log(Logger::ERROR, FILENAME, LogMsg() << str))
-#define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str)                                            \
-    if ((condition) == 0)                                                                      \
-    {                                                                                          \
+#define LOG_DEBUG_OR_ERROR(condition, str)                                           \
+    ((condition) == 0 ? Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str) :      \
+                        Logger::log(Logger::ERROR, FILENAME, LogMsg() << str))
+#define LOG_DEBUG_OR_ERROR_AND_EXIT(condition, str)                                  \
+    if ((condition) == 0) {                                                          \
         Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str << " = " << condition); \
-    }                                                                                          \
-    else                                                                                       \
-    {                                                                                          \
+    } else {                                                                         \
         Logger::log(Logger::ERROR, FILENAME, LogMsg() << str << " = " << condition); \
-        return condition;                                                                      \
+        return condition;                                                            \
     }
 #else
 #define LOG_DEBUG(str) ((void)0)

@@ -85,7 +85,7 @@ void VideoWorker::run()
                         */
 
                         // We use start+4 because the encoder inserts 4-byte MPEG
-                        //'startcodes' at the beginning of each NAL. Live555 complains
+                        // 'startcodes' at the beginning of each NAL. Live555 complains.
                         nalu.data.insert(nalu.data.end(), start + 4, end);
                         if (global_video[encChn]->idr == false)
                         {
