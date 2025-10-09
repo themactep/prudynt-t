@@ -82,6 +82,21 @@ The configuration is organized into the following main sections:
 
 **imp_polling_timeout** (integer): IMP polling timeout in milliseconds (1-5000). Controls hardware polling frequency.
 
+### Privacy Settings
+
+```json
+{
+  "privacy": {
+    "enabled":false,
+    "text_format":"%hostname in privacy mode"
+  }
+}
+```
+
+**enabled** (boolean): Enable or disable the privacy mode.
+
+**text_format** (string): Custom text to display. Supports variables like %hostname.
+
 ### RTSP Settings
 
 ```json

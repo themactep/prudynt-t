@@ -19,6 +19,7 @@
 
 struct OSDItem
 {
+    bool is_show;
     IMPRgnHandle imp_rgn;
     uint8_t *data;
     uint16_t width;
@@ -75,6 +76,8 @@ private:
     int last_updated_second;
 
 
+    OSDItem osdPrivBack{};
+    OSDItem osdPrivText{};
     OSDItem osdTime{};
     OSDItem osdUser{};
     OSDItem osdUptm{};
@@ -82,6 +85,7 @@ private:
 
     void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, int posX, int posY, int angle, unsigned int font_color, unsigned int font_stroke_color);
     std::string getConfigPath(const char *itemName);
+    void cleanup_item(OSDItem *osdItem);
 
     IMPEncoderCHNAttr channelAttributes;
 

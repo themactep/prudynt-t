@@ -72,6 +72,10 @@
     "sensitivity": 1,
     "skip_frame_count": 5
   },
+  "privacy": {
+    "enabled":false,
+    "text_format":"%hostname in privacy mode"
+  },
   "rtsp": {
     "adaptation_interval_seconds": 5,
     "adaptive_bitrate_enabled": true,
