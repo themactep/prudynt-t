@@ -139,10 +139,15 @@ deps() {
 		echo "Cloning libschrift..."
 		git clone --depth=1 https://github.com/tomolt/libschrift/
 		cd libschrift
-		git apply ../../res/libschrift.patch
 	else
 		echo "libschrift directory exists, using existing version..."
 		cd libschrift
+	fi
+	# Apply local libschrift patches if present
+	if ls ../../res/libschrift/*.patch >/dev/null 2>&1; then
+		for p in ../../res/libschrift/*.patch; do
+			patch -p1 -N < "$p" || true
+		done
 	fi
 	mkdir -p $TOP/3rdparty/install/lib
 	mkdir -p $TOP/3rdparty/install/include
@@ -207,18 +212,37 @@ deps() {
 		git pull origin master
 	fi
 
+	# Workaround: Ensure a trailing space after 'ar cr' in Makefiles (avoids 'crlib...' issue)
+	# We do this post-genMakefiles for both static and shared builds
+	fix_ar_space() {
+		for mk in liveMedia/Makefile groupsock/Makefile UsageEnvironment/Makefile BasicUsageEnvironment/Makefile testProgs/Makefile mediaServer/Makefile proxyServer/Makefile hlsProxy/Makefile; do
+			if [[ -f "$mk" ]]; then
+				sed -i 's/ar cr$/ar cr /' "$mk" || true
+			fi
+		done
+	}
+
 	if [[ -f Makefile ]]; then
 		make distclean
+	fi
+
+	# Apply local live555 patches if present
+	if ls ../../res/live555/*.patch >/dev/null 2>&1; then
+		for p in ../../res/live555/*.patch; do
+			patch -p1 -N < "$p" || true
+		done
 	fi
 
 	if [[ "$2" == "-static" || "$2" == "-hybrid" ]]; then
 		echo "STATIC LIVE555"
 		cp ../../res/live555-config.prudynt-static ./config.prudynt-static
 		./genMakefiles prudynt-static
+		fix_ar_space
 	else
 		echo "SHARED LIVE555"
 		patch config.linux-with-shared-libraries ../../res/live555-prudynt.patch --output=./config.prudynt
 		./genMakefiles prudynt
+		fix_ar_space
 	fi
 
 	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make -j$(nproc)
@@ -319,6 +343,17 @@ deps() {
 		echo "faac directory exists, using existing version..."
 		cd faac
 	fi
+		# Ensure clean state and update, then apply local patches
+		git reset --hard HEAD 2>/dev/null || true
+		git clean -fd 2>/dev/null || true
+		git pull origin master 2>/dev/null || true
+		# Apply local FAAC patches (warnings/portability fixes)
+		if ls ../../res/faac/*.patch >/dev/null 2>&1; then
+			for p in ../../res/faac/*.patch; do
+				patch -p1 < "$p"
+			done
+		fi
+
 	./bootstrap
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
 		CC="${PRUDYNT_CROSS}gcc" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install" --enable-static --disable-shared
