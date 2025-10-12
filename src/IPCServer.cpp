@@ -9,6 +9,9 @@
 #include <fcntl.h>
 #include <cstring>
 #include <vector>
+#include <sys/stat.h>
+#include <cctype>
+
 
 // Forward decls from WS.cpp we can reuse
 extern bool get_snapshot_ch(int ch, std::vector<unsigned char> &image);
@@ -119,8 +122,10 @@ int IPCServer::handle_client(int fd) {
             if (pos == std::string::npos) return -999999;
             pos += std::strlen(key);
             while (pos < req.size() && (req[pos] == ' ' || req[pos] == '=')) pos++;
-            size_t start = pos; while (pos < req.size() && isdigit(req[pos])) pos++;
-            if (start == pos) return -999999; return std::stoi(req.substr(start, pos-start));
+            size_t start = pos;
+            while (pos < req.size() && isdigit(static_cast<unsigned char>(req[pos]))) pos++;
+            if (start == pos) return -999999;
+            return std::stoi(req.substr(start, pos - start));
         };
         int v;
         v = find_kv("ch"); if (v != -999999) ch = v;
