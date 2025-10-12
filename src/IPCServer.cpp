@@ -51,6 +51,10 @@ void IPCServer::stop() {
 
 void IPCServer::server_loop() {
     // Ensure directory exists
+    {
+        const char* dir = "/run/prudynt";
+        ::mkdir(dir, 0775);
+    }
     ::unlink(SOCK_PATH);
 
     int s = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -78,8 +82,11 @@ void IPCServer::server_loop() {
             continue;
         }
         set_cloexec(c);
-        handle_client(c);
-        close(c);
+        // Handle each client in a detached thread so EVENTS can stream without blocking accept
+        std::thread([this](int client_fd){
+            this->handle_client(client_fd);
+            ::close(client_fd);
+        }, c).detach();
     }
 
     close(s);
@@ -147,6 +154,27 @@ int IPCServer::handle_client(int fd) {
         } else {
             const char *err = "ERR no_image\n";
             write(fd, err, strlen(err));
+        }
+        return 0;
+    }
+
+    if (starts_with(req, "EVENTS")) {
+        // Stream newline-delimited JSON events until client closes
+        while (running_) {
+            // Build a compact stats object
+            char line[256];
+            int fps0 = cfg->stream0.stats.fps;
+            int bps0 = cfg->stream0.stats.bps;
+            int fps1 = cfg->stream1.stats.fps;
+            int bps1 = cfg->stream1.stats.bps;
+            int fps2 = cfg->stream2.stats.fps;
+            int bps2 = cfg->stream2.stats.bps;
+            int n = snprintf(line, sizeof(line),
+                "{\"ts\":%ld,\"stats\":{\"stream0\":{\"fps\":%d,\"Bps\":%d},\"stream1\":{\"fps\":%d,\"Bps\":%d},\"stream2\":{\"fps\":%d,\"Bps\":%d}}}\n",
+                (long)time(NULL), fps0, bps0, fps1, bps1, fps2, bps2);
+            ssize_t w = write(fd, line, n);
+            if (w <= 0) break; // client closed
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         return 0;
     }

@@ -1,15 +1,13 @@
 #!/bin/sh
 # BusyBox httpd CGI for server-sent events (SSE)
-# Note: events streaming not implemented yet in prudynt IPC
 
+echo "Cache-Control: no-cache"
 echo "Content-Type: text/event-stream"
 echo
-# Minimal keepalive comment so browsers keep the connection open
-# Replace with: prudyntctl events | while read line; do echo "data: $line"; echo; done
-# once events are implemented.
-while :; do
-  echo ": prudynt events not implemented"
+
+# Stream prudynt events, converting lines to SSE frames
+prudyntctl events | sed -u 's/^/data: /' | while IFS= read -r line; do
+  echo "$line"
   echo
-  sleep 10
 done
 

@@ -120,7 +120,8 @@ int main(int argc, const char *argv[])
     ipc_server.start();
 
     pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
-    pthread_create(&ws_thread, nullptr, WS::run, &ws);
+    // WebSocket server disabled (migrating to UNIX socket + CGI); reduces memory usage
+    // pthread_create(&ws_thread, nullptr, WS::run, &ws);
 
     while (true)
     {

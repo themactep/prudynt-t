@@ -108,12 +108,26 @@ static int cmd_snapshot(int argc, char **argv) {
     return remaining == 0 ? 0 : 1;
 }
 
+static int cmd_events() {
+    int fd = connect_sock();
+    if (fd < 0) { fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno)); return 2; }
+    const char *hello = "EVENTS\n";
+    (void)write(fd, hello, strlen(hello));
+    // Read and forward until server closes or error
+    char buf[4096]; ssize_t n;
+    while ((n = read(fd, buf, sizeof(buf))) > 0) {
+        write(STDOUT_FILENO, buf, n);
+    }
+    close(fd);
+    return 0;
+}
+
 static void usage(const char *prog) {
     fprintf(stderr,
         "Usage:\n"
         "  %s json <json-string>|-    # read stdin with '-'\n"
         "  %s snapshot [-c CH] [-q Q] # writes JPEG to stdout\n"
-        "  %s events                 # (not implemented yet)\n",
+        "  %s events                  # newline-delimited JSON events\n",
         prog, prog, prog);
 }
 
@@ -125,8 +139,7 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "snapshot") == 0) {
         return cmd_snapshot(argc-2, argv+2);
     } else if (strcmp(cmd, "events") == 0) {
-        fprintf(stderr, "prudyntctl: events not implemented yet\n");
-        return 2;
+        return cmd_events();
     } else {
         usage(argv[0]); return 1;
     }
