@@ -2650,15 +2650,16 @@ void WS::start()
     lws_set_log_level(lmask, lws_emit);
     LOG_INFO("libwebsockets version: " << lws_get_library_version());
 
-    protocols.name = cfg->websocket.name;
-    protocols.callback = ws_callback;
-    protocols.per_session_data_size = sizeof(user_ctx);
-    protocols.rx_buffer_size = 65536;
+    protocols[0].name = cfg->websocket.name;
+    protocols[0].callback = ws_callback;
+    protocols[0].per_session_data_size = sizeof(user_ctx);
+    protocols[0].rx_buffer_size = 65536;
+    // protocols[1] remains zero to terminate the array
 
     memset(&info, 0, sizeof(info));
     info.port = cfg->websocket.port;
     info.iface = ip; // null = all interfaces
-    info.protocols = &protocols;
+    info.protocols = protocols;
     info.gid = -1;
     info.uid = -1;
 

@@ -22,7 +22,7 @@ public:
         static void *run(void* arg);
 
 private:
-        lws_protocols protocols{};
+        lws_protocols protocols[2]{}; // [0] actual protocol, [1] zero-terminated sentinel
         struct lws_context_creation_info info;
         struct lws_context *context{};
 
