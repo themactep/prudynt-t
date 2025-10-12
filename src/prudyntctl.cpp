@@ -56,6 +56,8 @@ static int cmd_json(int argc, char **argv) {
         line += "\n";
         (void)write(fd, line.c_str(), line.size());
     }
+    // Important: signal EOF on the write side so server stops reading and processes
+    shutdown(fd, SHUT_WR);
 
     std::string resp = read_all(fd);
     close(fd);
@@ -80,6 +82,8 @@ static int cmd_snapshot(int argc, char **argv) {
     else
         snprintf(line, sizeof(line), "SNAPSHOT ch=%d\n", ch);
     (void)write(fd, line, strlen(line));
+    // Signal EOF on write side so server proceeds
+    shutdown(fd, SHUT_WR);
 
     // Read header: OK <len>\n
     std::string hdr; char c;
@@ -113,6 +117,8 @@ static int cmd_events() {
     if (fd < 0) { fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno)); return 2; }
     const char *hello = "EVENTS\n";
     (void)write(fd, hello, strlen(hello));
+    // Signal EOF on write side so server starts streaming
+    shutdown(fd, SHUT_WR);
     // Read and forward until server closes or error
     char buf[4096]; ssize_t n;
     while ((n = read(fd, buf, sizeof(buf))) > 0) {
