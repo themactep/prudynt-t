@@ -26,6 +26,14 @@
 
 #include "schrift.h"
 
+// Integrated IMP control OSD adjustment wrapper
+#include "OSDAdjust.hpp"
+static inline int PRUDYNT_IMP_OSD_SetRgnAttr(IMPRgnHandle h, IMPOSDRgnAttr *a) {
+    impc::adjust_osd(h, a);
+    return IMP_OSD_SetRgnAttr(h, a);
+}
+#define IMP_OSD_SetRgnAttr(h,a) PRUDYNT_IMP_OSD_SetRgnAttr(h,a)
+
 int OSD::renderGlyph(const char *characters)
 {
 

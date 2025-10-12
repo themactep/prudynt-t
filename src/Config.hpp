@@ -233,15 +233,20 @@ struct _stream {
     bool power_saving;
     bool allow_shared;
     const char *mode;
+    // Advanced RC parameters (optional; -1/0 = use encoder defaults)
+    int qp_init;
+    int qp_min;
+    int qp_max;
+    int ip_delta;
+    int pb_delta;
+    int max_bitrate;
     const char *rtsp_endpoint;
     const char *rtsp_info;
     const char *format{"JPEG"};
     /* JPEG stream*/
     int jpeg_quality;
-    int jpeg_refresh;
     int jpeg_channel;
     int jpeg_idle_fps;
-    const char *jpeg_path;
     _osd osd;
     _stream_stats stats;
 #if defined(AUDIO_SUPPORT)

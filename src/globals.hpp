@@ -54,6 +54,11 @@ struct jpeg_stream
     std::condition_variable should_grab_frames;
     std::binary_semaphore is_activated{0};
 
+    // In-memory snapshot buffer (LWS_PRE + JPEG bytes), guarded by mutex_main when updated
+    std::vector<unsigned char> snapshot_buf;
+    // Per-request JPEG quality override (1..100, -1 = none)
+    std::atomic<int> quality_override{-1};
+
     steady_clock::time_point last_image;
     steady_clock::time_point last_subscriber;
 

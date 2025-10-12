@@ -16,6 +16,8 @@
 
 #include <iomanip>
 
+#include <algorithm>
+
 #define MODULE "WEBSOCKET"
 
 #pragma region keys_and_enums
@@ -267,7 +269,16 @@ enum
     PNT_STREAM_SCALE_HEIGHT,
     PNT_STREAM_PROFILE,
     PNT_STREAM_STATS,
-    PNT_STREAM_OSD
+    PNT_STREAM_OSD,
+    // Appended RC parameters (keep at end to preserve numeric IDs)
+    PNT_STREAM_QP_INIT,
+    PNT_STREAM_QP_MIN,
+    PNT_STREAM_QP_MAX,
+    PNT_STREAM_IP_DELTA,
+    PNT_STREAM_PB_DELTA,
+    PNT_STREAM_MAX_BITRATE,
+    // Action triggers
+    PNT_STREAM_REQUEST_IDR
 };
 
 static const char *const stream_keys[] = {
@@ -290,15 +301,22 @@ static const char *const stream_keys[] = {
     "scale_height",
     "profile",
     "stats",
-    "osd"};
+    "osd",
+    // Appended RC parameters
+    "qp_init",
+    "qp_min",
+    "qp_max",
+    "ip_delta",
+    "pb_delta",
+    "max_bitrate",
+    // Action triggers
+    "request_idr"};
 
 /* STREAM2 (JPEG) */
 enum
 {
     PNT_STREAM2_JPEG_ENABLED = 1,
-    PNT_STREAM2_JPEG_PATH,
     PNT_STREAM2_JPEG_QUALITY,
-    //PNT_STREAM2_JPEG_REFRESH,
     PNT_STREAM2_JPEG_CHANNEL,
     PNT_STREAM2_STATS,
     PNT_STREAM2_FPS
@@ -306,9 +324,7 @@ enum
 
 static const char *const stream2_keys[] = {
     "jpeg_enabled",
-    "jpeg_path",
     "jpeg_quality",
-    //"jpeg_refresh",
     "jpeg_channel",
     "stats",
     "fps"};
@@ -573,27 +589,22 @@ int restart_threads_by_signal(int &flag)
     return 0;
 }
 
-bool get_snapshot(std::vector<unsigned char> &image)
+bool get_snapshot_ch(int ch, std::vector<unsigned char> &image)
 {
-    std::ifstream file(global_jpeg[0]->stream->jpeg_path, std::ios::binary);
-    if (!file.is_open())
-    {
-        LOG_DDEBUGWS(strerror(errno));
-        return false;
-    }
-
-    file.seekg(0, std::ios::end);
-    size_t file_size = file.tellg();
-    if (file_size)
-    {
-        image.resize(LWS_PRE + file_size);
-        file.seekg(0, std::ios::beg);
-        file.read(reinterpret_cast<char *>(image.data() + LWS_PRE), file_size);
-        file.close();
+    std::unique_lock lck(mutex_main);
+    if (ch < 0 || ch >= NUM_VIDEO_CHANNELS || !global_jpeg[ch]) return false;
+    auto &buf = global_jpeg[ch]->snapshot_buf;
+    if (buf.size() > LWS_PRE) {
+        image = buf; // copy; simple and safe
         return true;
     }
-
     return false;
+}
+
+bool get_snapshot(std::vector<unsigned char> &image)
+{
+    // Backward-compat convenience: return ch0 snapshot
+    return get_snapshot_ch(0, image);
 }
 
 template <typename... Args>
@@ -1358,8 +1369,14 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason)
                 add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
                 break;
             case PNT_STREAM_MODE:
-                if (reason == LEJPCB_VAL_STR_END)
-                    cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
+                if (reason == LEJPCB_VAL_STR_END) {
+                    std::string m(ctx->buf);
+                    // accept lowercase aliases; store uppercase as config expects
+                    std::transform(m.begin(), m.end(), m.begin(), ::toupper);
+                    if (cfg->set<const char *>(u_ctx->path, strdup(m.c_str()))) {
+                        global_restart_video = true;
+                    }
+                }
                 add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
                 break;
             case PNT_STREAM_STATS:
@@ -1379,6 +1396,67 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason)
                     }
                     append_session_msg(
                         u_ctx->message, "{\"fps\":%d,\"Bps\":%d}", fps, bps);
+                }
+                break;
+            case PNT_STREAM_QP_INIT:
+                if (reason == LEJPCB_VAL_NUM_INT) {
+                    if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+                        global_restart_video = true;
+                    }
+                }
+                add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+                break;
+            case PNT_STREAM_QP_MIN:
+                if (reason == LEJPCB_VAL_NUM_INT) {
+                    if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+                        global_restart_video = true;
+                    }
+                }
+                add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+                break;
+            case PNT_STREAM_QP_MAX:
+                if (reason == LEJPCB_VAL_NUM_INT) {
+                    if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+                        global_restart_video = true;
+                    }
+                }
+                add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+                break;
+            case PNT_STREAM_IP_DELTA:
+                if (reason == LEJPCB_VAL_NUM_INT) {
+                    if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+                        global_restart_video = true;
+                    }
+                }
+                add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+                break;
+            case PNT_STREAM_PB_DELTA:
+                if (reason == LEJPCB_VAL_NUM_INT) {
+                    if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+                        global_restart_video = true;
+                    }
+                }
+                add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+                break;
+            case PNT_STREAM_MAX_BITRATE:
+                if (reason == LEJPCB_VAL_NUM_INT) {
+                    if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+                        global_restart_video = true;
+                    }
+                }
+                add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+                break;
+            case PNT_STREAM_REQUEST_IDR:
+                if (reason == LEJPCB_VAL_NULL) {
+                    // trigger one IDR on this channel
+                    if (u_ctx->value >= 0 && u_ctx->value < NUM_VIDEO_CHANNELS && global_video[u_ctx->value]) {
+                        global_video[u_ctx->value]->idr_fix = 1;
+                        add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]);
+                    } else {
+                        add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_ERROR]);
+                    }
+                } else {
+                    add_json_null(u_ctx->message);
                 }
                 break;
             default:
@@ -1431,15 +1509,7 @@ signed char WS::stream2_callback(struct lejp_ctx *ctx, char reason)
             }
             add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
             break;
-        case PNT_STREAM2_JPEG_PATH:
-            if (reason == LEJPCB_VAL_STR_END)
-            {
-                if (cfg->set<const char *>(u_ctx->path, strdup(ctx->buf)))
-                {
-                }
-            }
-            add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-            break;
+
         case PNT_STREAM2_JPEG_QUALITY:
             if (reason == LEJPCB_VAL_NUM_INT)
             {
@@ -2062,7 +2132,6 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
     char *url_ptr = nullptr;
     int url_length = 0;
     int request_method = 0;
-
     // security token ?token=
     char url_token[128]{0};
     char content_type[128]{0};
@@ -2320,20 +2389,33 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         // http GET
         if (request_method == 0)
         {
-            // Send preview image
-            if (strcmp(url_ptr, "/preview.jpg") == 0)
+            // Send snapshot image for specific channel
+            if (strcmp(url_ptr, "/ch0.jpg") == 0 || strcmp(url_ptr, "/ch1.jpg") == 0)
             {
                 u_ctx->flag |= PNT_FLAG_HTTP_SEND_PREVIEW;
 
-                global_jpeg[0]->request();
+                // Determine channel index from URL
+                u_ctx->value = (url_ptr[3] == '1') ? 1 : 0;
 
-                if (!global_jpeg[0]->active)
+                // Optional per-request quality override: ?q=1..100
+                char q_str[8] = {0};
+                int q_len = lws_get_urlarg_by_name_safe(wsi, "q", q_str, sizeof(q_str));
+                if (q_len > 0) {
+                    int q = atoi(q_str);
+                    if (q >= 1 && q <= 100) {
+                        global_jpeg[u_ctx->value]->quality_override = q;
+                    }
+                }
+
+                global_jpeg[u_ctx->value]->request();
+
+                if (!global_jpeg[u_ctx->value]->active)
                 {
-                    global_jpeg[0]->should_grab_frames.notify_all();
-                    global_jpeg[0]->is_activated.acquire();
+                    global_jpeg[u_ctx->value]->should_grab_frames.notify_all();
+                    global_jpeg[u_ctx->value]->is_activated.acquire();
                     /* we need this delay to grab a valid image when stream resume from sleep
                      * usleep is a bad choice, but lws_sul_schedule won't work as expected here
-                     * hopfully we find a better solution later
+                     * hopefully we find a better solution later
                      */
                     usleep(cfg->websocket.first_image_delay * 1000);
                 }
@@ -2418,7 +2500,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
                 // Write image
                 std::vector<unsigned char> jpeg_buf;
-                if (get_snapshot(jpeg_buf))
+                if (get_snapshot_ch(u_ctx->value, jpeg_buf))
                 {
                     if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, "image/jpeg", jpeg_buf.size() - LWS_PRE, &p, end) ||
                         lws_finalize_write_http_header(wsi, start, &p, end) ||

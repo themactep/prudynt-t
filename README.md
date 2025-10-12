@@ -6,8 +6,22 @@
 
 - **Video Compression**: Supports both H264 and H265 codecs for efficient video compression and streaming.
 - **Two-Way Audio**: Enables bidirectional audio communication using AAC and PCMU codecs for supported devices.
-- **Expanded Configuration**: Integrated support for **[libimp_control](https://github.com/gtxaspec/libimp_control)**.
+- **IMP Control (integrated)**: Built-in into prudynt. Use the existing WebSocket JSON API (e.g., {"image":{"brightness":152}}). No LD_PRELOAD and no extra TCP ports needed.
 - **Thingino Integration**: Seamlessly integrates with **[thingino](https://github.com/themactep/thingino-firmware)**, enhancing connectivity and control options.
+
+## WebSocket control
+
+- Stream RC parameters and actions are documented here: docs/WEBSOCKET_STREAMS.md
+## HTTP snapshots
+
+- On-demand JPEG endpoints: /ch0.jpg (main), /ch1.jpg (sub)
+- Served from in-memory buffer; no continuous file writes
+- You may alias /preview.jpg or /snapshot.jpg to these in your HTTP server config
+- Per-request quality override: append ?q=1..100, e.g., /ch0.jpg?q=85
+
+
+
+
 
 ## Building
 
