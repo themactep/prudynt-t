@@ -3,7 +3,7 @@
 #include "globals.hpp"
 
 extern "C" {
-#include <3rdparty/jct/src/json_config.h>
+#include <json_config.h>
 // Forward declare string parser present in json_parse.c but not in the header
 JsonValue *parse_json_string(const char *json_str);
 }
