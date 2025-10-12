@@ -660,6 +660,12 @@ void combine_path(std::string& result, const char* root, const char* path) {
 bool is_stream(const char* root, const char* stream_name) {
     return strcmp(root, stream_name) == 0;
 }
+// Treat loopback as trusted (no token required)
+static inline bool is_localhost_ip(const char* ip) {
+    if (!ip) return false;
+    return strcmp(ip, "127.0.0.1") == 0 || strcmp(ip, "::1") == 0 || strncmp(ip, "::ffff:127.0.0.1", 16) == 0;
+}
+
 
 signed char WS::general_callback(struct lejp_ctx *ctx, char reason)
 {
@@ -2150,14 +2156,18 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         LOG_DEBUG("LWS_CALLBACK_ESTABLISHED ip:" << client_ip);
         LOG_DDEBUGWS("LWS_CALLBACK_ESTABLISHED id:" << u_ctx->id << ", ip:" << client_ip);
 
-        // check if security is required and validate token
+        // check if security is required and validate token (bypass for localhost)
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
         LOG_DEBUG("Expected token: " << std::string(token, WEBSOCKET_TOKEN_LENGTH));
         LOG_DEBUG("Received token: " << url_token);
-        if (strcmp(token, url_token) == 0 ||
-	    (strcmp(cfg->websocket.token, "auto") != 0 &&
-	     strcmp(cfg->websocket.token, "") != 0 &&
-	     strcmp(cfg->websocket.token, url_token) == 0))
+
+        if (is_localhost_ip(client_ip)) {
+            LOG_DEBUG("Bypassing token check for localhost");
+            new (user) user_ctx(generateSessionID(), wsi);
+        } else if (strcmp(token, url_token) == 0 ||
+                   (strcmp(cfg->websocket.token, "auto") != 0 &&
+                    strcmp(cfg->websocket.token, "") != 0 &&
+                    strcmp(cfg->websocket.token, url_token) == 0))
         {
             /* initialize new u_ctx session structure.
              * assign current wsi and a new sessionid
@@ -2360,12 +2370,16 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                                              << " url:" << (char *)url_ptr
                                              << " method:" << request_method);
 
-        // check if security is required and validate token
+        // check if security is required and validate token (bypass for localhost)
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
-        if (strcmp(token, url_token) == 0 ||
-            (strcmp(cfg->websocket.token, "auto") != 0 &&
-             strcmp(cfg->websocket.token, "") != 0 &&
-             strcmp(cfg->websocket.token, url_token) == 0))
+        if (is_localhost_ip(client_ip))
+        {
+            new (user) user_ctx(generateSessionID(), wsi);
+        }
+        else if (strcmp(token, url_token) == 0 ||
+                 (strcmp(cfg->websocket.token, "auto") != 0 &&
+                  strcmp(cfg->websocket.token, "") != 0 &&
+                  strcmp(cfg->websocket.token, url_token) == 0))
         {
             /* initialize new u_ctx session structure.
             * assign current wsi and a new sessionid
