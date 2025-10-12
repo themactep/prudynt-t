@@ -2653,7 +2653,7 @@ void WS::start()
     protocols[0].name = cfg->websocket.name;
     protocols[0].callback = ws_callback;
     protocols[0].per_session_data_size = sizeof(user_ctx);
-    protocols[0].rx_buffer_size = 65536;
+    protocols[0].rx_buffer_size = 8192; // reduce memory footprint
     // protocols[1] remains zero to terminate the array
 
     memset(&info, 0, sizeof(info));
@@ -2662,6 +2662,13 @@ void WS::start()
     info.protocols = protocols;
     info.gid = -1;
     info.uid = -1;
+    // Tighten memory usage for embedded targets
+    info.fd_limit_per_thread = 32;           // limit preallocated pollfds
+    info.max_http_header_data = 1024;        // smaller HTTP header size
+    info.max_http_header_pool = 1;           // fewer header pools
+    info.pt_serv_buf_size = 4096;            // per-thread service buffer
+    info.options = LWS_SERVER_OPTION_DISABLE_IPV6; // reduce listeners/resources
+
 
     // Dump context info before creation
     LOG_INFO("WS context: port=" << info.port
