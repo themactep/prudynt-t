@@ -1,8 +1,5 @@
 #include "OSDAdjust.hpp"
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#endif
-
+#include "imp_hal.hpp"
 #include "Logger.hpp"
 
 namespace impc {
@@ -27,18 +24,18 @@ void adjust_osd(IMPRgnHandle handle, IMPOSDRgnAttr *prAttr) {
 
     // X axis
     if (g_posHook[handle].x == 0) {
-        prAttr->rect.p0.x = chnAttr.encAttr.uWidth / 2 - origWidth / 2;
+        prAttr->rect.p0.x = HAL_ENC_ATTR_WIDTH(chnAttr) / 2 - origWidth / 2;
     } else if (g_posHook[handle].x < 0) {
-        prAttr->rect.p0.x = chnAttr.encAttr.uWidth - origWidth + g_posHook[handle].x;
+        prAttr->rect.p0.x = HAL_ENC_ATTR_WIDTH(chnAttr) - origWidth + g_posHook[handle].x;
     } else {
         prAttr->rect.p0.x = g_posHook[handle].x;
     }
 
     // Y axis
     if (g_posHook[handle].y == 0) {
-        prAttr->rect.p0.y = chnAttr.encAttr.uHeight / 2 - origHeight / 2;
+        prAttr->rect.p0.y = HAL_ENC_ATTR_HEIGHT(chnAttr) / 2 - origHeight / 2;
     } else if (g_posHook[handle].y < 0) {
-        prAttr->rect.p0.y = chnAttr.encAttr.uHeight - origHeight + g_posHook[handle].y;
+        prAttr->rect.p0.y = HAL_ENC_ATTR_HEIGHT(chnAttr) - origHeight + g_posHook[handle].y;
     } else {
         prAttr->rect.p0.y = g_posHook[handle].y;
     }

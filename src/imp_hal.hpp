@@ -1,12 +1,18 @@
 #pragma once
 
 #include <cstdint>
+#include <imp/imp_common.h>
 #include <imp/imp_encoder.h>
 
 // Normalize IMP type names across SDKs
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   #define IMPEncoderCHNAttr IMPEncoderChnAttr
   #define IMPEncoderCHNStat IMPEncoderChnStat
+  #define HAL_ENC_ATTR_WIDTH(a)   ((a).encAttr.uWidth)
+  #define HAL_ENC_ATTR_HEIGHT(a)  ((a).encAttr.uHeight)
+#else
+  #define HAL_ENC_ATTR_WIDTH(a)   ((a).encAttr.picWidth)
+  #define HAL_ENC_ATTR_HEIGHT(a)  ((a).encAttr.picHeight)
 #endif
 
 struct _stream; // fwd decl
