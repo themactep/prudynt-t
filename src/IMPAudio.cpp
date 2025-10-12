@@ -143,10 +143,12 @@ int IMPAudio::init()
     ret = IMP_AI_Enable(devId);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");
 
-    IMPAudioIChnParam chnParam = {
-        .usrFrmDepth = 30, // frame buffer depth
-        .Rev = 0
-    };
+    IMPAudioIChnParam chnParam{};
+    chnParam.usrFrmDepth = 30; // frame buffer depth
+    #if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    chnParam.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
+    #endif
+    chnParam.Rev = 0;
 
     ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
