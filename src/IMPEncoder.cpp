@@ -1,4 +1,6 @@
 #include "IMPEncoder.hpp"
+#include "imp_hal.hpp"
+
 #include "Config.hpp"
 
 #define MODULE "IMPENCODER"
@@ -161,57 +163,8 @@ void IMPEncoder::initProfile()
         break;
     }
 
-    // Apply optional overrides from config
-    {
-        const char* key = (stream == &cfg->stream0) ? "stream0" : "stream1";
-        std::string p(key);
-        int qp_init = cfg->get<int>(p + ".qp_init");
-        int qp_min = cfg->get<int>(p + ".qp_min");
-        int qp_max = cfg->get<int>(p + ".qp_max");
-        int ip_delta = cfg->get<int>(p + ".ip_delta");
-        int pb_delta = cfg->get<int>(p + ".pb_delta");
-        int max_br = cfg->get<int>(p + ".max_bitrate");
-
-        switch (rcMode)
-        {
-        case IMP_ENC_RC_MODE_FIXQP:
-            if (qp_init >= 0) rcAttr->attrRcMode.attrFixQp.iInitialQP = qp_init;
-            break;
-        case IMP_ENC_RC_MODE_CBR:
-            if (qp_init >= 0) rcAttr->attrRcMode.attrCbr.iInitialQP = qp_init;
-            if (qp_min >= 0) rcAttr->attrRcMode.attrCbr.iMinQP = qp_min;
-            if (qp_max >= 0) rcAttr->attrRcMode.attrCbr.iMaxQP = qp_max;
-            if (ip_delta != -1) rcAttr->attrRcMode.attrCbr.iIPDelta = ip_delta;
-            if (pb_delta != -1) rcAttr->attrRcMode.attrCbr.iPBDelta = pb_delta;
-            break;
-        case IMP_ENC_RC_MODE_VBR:
-            if (qp_init >= 0) rcAttr->attrRcMode.attrVbr.iInitialQP = qp_init;
-            if (qp_min >= 0) rcAttr->attrRcMode.attrVbr.iMinQP = qp_min;
-            if (qp_max >= 0) rcAttr->attrRcMode.attrVbr.iMaxQP = qp_max;
-            if (ip_delta != -1) rcAttr->attrRcMode.attrVbr.iIPDelta = ip_delta;
-            if (pb_delta != -1) rcAttr->attrRcMode.attrVbr.iPBDelta = pb_delta;
-            if (max_br > 0) rcAttr->attrRcMode.attrVbr.uMaxBitRate = max_br;
-            break;
-        case IMP_ENC_RC_MODE_CAPPED_VBR:
-            if (qp_init >= 0) rcAttr->attrRcMode.attrCappedVbr.iInitialQP = qp_init;
-            if (qp_min >= 0) rcAttr->attrRcMode.attrCappedVbr.iMinQP = qp_min;
-            if (qp_max >= 0) rcAttr->attrRcMode.attrCappedVbr.iMaxQP = qp_max;
-            if (ip_delta != -1) rcAttr->attrRcMode.attrCappedVbr.iIPDelta = ip_delta;
-            if (pb_delta != -1) rcAttr->attrRcMode.attrCappedVbr.iPBDelta = pb_delta;
-            if (max_br > 0) rcAttr->attrRcMode.attrCappedVbr.uMaxBitRate = max_br;
-            break;
-        case IMP_ENC_RC_MODE_CAPPED_QUALITY:
-            if (qp_init >= 0) rcAttr->attrRcMode.attrCappedQuality.iInitialQP = qp_init;
-            if (qp_min >= 0) rcAttr->attrRcMode.attrCappedQuality.iMinQP = qp_min;
-            if (qp_max >= 0) rcAttr->attrRcMode.attrCappedQuality.iMaxQP = qp_max;
-            if (ip_delta != -1) rcAttr->attrRcMode.attrCappedQuality.iIPDelta = ip_delta;
-            if (pb_delta != -1) rcAttr->attrRcMode.attrCappedQuality.iPBDelta = pb_delta;
-            if (max_br > 0) rcAttr->attrRcMode.attrCappedQuality.uMaxBitRate = max_br;
-            break;
-        case IMP_ENC_RC_MODE_INVALID:
-            break;
-        }
-    }
+    // Apply optional overrides from stream{0,1} via HAL
+    hal::apply_rc_overrides(chnAttr, rcMode, *stream);
 
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
     if (strcmp(stream->format, "JPEG") == 0)
@@ -338,46 +291,8 @@ void IMPEncoder::initProfile()
         rcAttr->attrRcMode.attrH265Smart.flucLvl = 2;
     #endif //defined(PLATFORM_T30)
     }
-    // Optional overrides from config (legacy platforms)
-    {
-        const char* key = (stream == &cfg->stream0) ? "stream0" : "stream1";
-        std::string p(key);
-        int qp_init = cfg->get<int>(p + ".qp_init");
-        int qp_min  = cfg->get<int>(p + ".qp_min");
-        int qp_max  = cfg->get<int>(p + ".qp_max");
-        int max_br  = cfg->get<int>(p + ".max_bitrate");
-        if (chnAttr.encAttr.enType == PT_H264) {
-            switch (rcMode) {
-                case ENC_RC_MODE_FIXQP:
-                    if (qp_init >= 0) rcAttr->attrRcMode.attrH264FixQp.qp = qp_init;
-                    break;
-                case ENC_RC_MODE_CBR:
-                    if (qp_min >= 0) rcAttr->attrRcMode.attrH264Cbr.minQp = qp_min;
-                    if (qp_max >= 0) rcAttr->attrRcMode.attrH264Cbr.maxQp = qp_max;
-                    break;
-                case ENC_RC_MODE_VBR:
-                    if (qp_min >= 0) rcAttr->attrRcMode.attrH264Vbr.minQp = qp_min;
-                    if (qp_max >= 0) rcAttr->attrRcMode.attrH264Vbr.maxQp = qp_max;
-                    if (max_br > 0) rcAttr->attrRcMode.attrH264Vbr.maxBitRate = max_br;
-                    break;
-                case ENC_RC_MODE_SMART:
-                    if (qp_min >= 0) rcAttr->attrRcMode.attrH264Smart.minQp = qp_min;
-                    if (qp_max >= 0) rcAttr->attrRcMode.attrH264Smart.maxQp = qp_max;
-                    if (max_br > 0) rcAttr->attrRcMode.attrH264Smart.maxBitRate = max_br;
-                    break;
-                default:
-                    break;
-            }
-        }
-    #if defined(PLATFORM_T30)
-        else if (chnAttr.encAttr.enType == PT_H265) {
-            // Only SMART mode used in current code for H265 on T30
-            if (qp_min >= 0) rcAttr->attrRcMode.attrH265Smart.minQp = qp_min;
-            if (qp_max >= 0) rcAttr->attrRcMode.attrH265Smart.maxQp = qp_max;
-            if (max_br > 0) rcAttr->attrRcMode.attrH265Smart.maxBitRate = max_br;
-        }
-    #endif
-    }
+    // Optional overrides via HAL (legacy platforms)
+    hal::apply_rc_overrides(chnAttr, rcMode, *stream);
 
 
     rcAttr->attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
@@ -409,8 +324,8 @@ int IMPEncoder::init()
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
     if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
-        ret = IMP_Encoder_SetbufshareChn(2, encChn);
-        LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn << ")");
+        ret = hal::maybe_enable_bufshare(2, encChn, true);
+        LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "maybe_enable_bufshare(2, " << encChn << ")");
     }
 #endif
 
