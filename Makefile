@@ -46,7 +46,6 @@ LIBS                    = -l:libimp.a \
                           -l:libgroupsock.a \
                           -l:libBasicUsageEnvironment.a \
                           -l:libUsageEnvironment.a \
-                          -l:libwebsockets.a \
                           -l:libschrift.a \
                           -l:libopus.a \
                           -l:libfaac.a \
@@ -72,7 +71,6 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libsysutils.so \
                           -l:libaudioProcess.so \
                           -l:libaudioshim.so \
-                          -l:libwebsockets.so \
                           -Wl,-Bstatic \
                           -l:libliveMedia.a \
                           -l:libgroupsock.a \
@@ -107,7 +105,6 @@ LIBS                    = -limp \
                           -lgroupsock \
                           -lUsageEnvironment \
                           -lBasicUsageEnvironment \
-                          -lwebsockets \
                           -lschrift \
                           -lopus \
                           -lfaac \
@@ -162,7 +159,7 @@ BIN_DIR                 = ./bin
 # Source and Object Files
 # =======================
 # Build server without the CLI tool source
-SERVER_SOURCES          = $(filter-out $(SRC_DIR)/prudyntctl.cpp,$(wildcard $(SRC_DIR)/*.cpp))
+SERVER_SOURCES          = $(filter-out $(SRC_DIR)/prudyntctl.cpp $(SRC_DIR)/WS.cpp,$(wildcard $(SRC_DIR)/*.cpp))
 SERVER_OBJECTS          = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SERVER_SOURCES)) \
                           $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(wildcard $(SRC_DIR)/*.c))
 

@@ -1,6 +1,6 @@
 #include "IPCServer.hpp"
 #include "Logger.hpp"
-#include "WS.hpp"  // for JSON processing callbacks
+#include "JsonAPI.hpp"  // JSON processing via jct
 #include "globals.hpp"
 
 #include <sys/socket.h>
@@ -13,12 +13,17 @@
 #include <cctype>
 
 
-// Forward decls from WS.cpp we can reuse
-extern bool get_snapshot_ch(int ch, std::vector<unsigned char> &image);
+// Local snapshot helper (no libwebsockets dependency)
+bool get_snapshot_ch_local(int ch, std::vector<unsigned char> &image) {
+    std::unique_lock lck(mutex_main);
+    if (ch < 0 || ch >= NUM_VIDEO_CHANNELS || !global_jpeg[ch]) return false;
+    auto &buf = global_jpeg[ch]->snapshot_buf;
+    if (!buf.empty()) { image = buf; return true; }
+    return false;
+}
 
-// Provide a thin wrapper to reuse JSON handlers implemented in WS.cpp
-static bool process_json_with_ws(const std::string &req, std::string &resp) {
-    return WS::process_json(req, resp);
+static bool process_json_with_jct(const std::string &req, std::string &resp) {
+    return JsonAPI::process_json(req, resp);
 }
 
 static int set_cloexec(int fd) { return fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC); }
@@ -110,7 +115,7 @@ int IPCServer::handle_client(int fd) {
     if (starts_with(req, "JSON ") || req[0] == '{') {
         const char *json = req[0] == '{' ? req.c_str() : (req.c_str() + 5);
         std::string resp;
-        if (process_json_with_ws(json, resp)) {
+        if (process_json_with_jct(json, resp)) {
             write(fd, resp.c_str(), resp.size());
             write(fd, "\n", 1);
         } else {
@@ -144,7 +149,7 @@ int IPCServer::handle_client(int fd) {
         }
 
         std::vector<unsigned char> img;
-        if (get_snapshot_ch(ch, img) && img.size() > 0) {
+        if (get_snapshot_ch_local(ch, img) && img.size() > 0) {
             // Protocol: "OK <len>\n<bytes>"
             char hdr[64];
             int len = (int)img.size();

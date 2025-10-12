@@ -5,7 +5,6 @@
 #include "RTSP.hpp"
 #include "Logger.hpp"
 #include "Config.hpp"
-#include "WS.hpp"
 #include "version.hpp"
 #include "ConfigWatcher.hpp"
 #include "AudioWorker.hpp"
@@ -46,7 +45,6 @@ std::shared_ptr<backchannel_stream> global_backchannel = nullptr;
 
 std::shared_ptr<CFG> cfg = std::make_shared<CFG>();
 
-WS ws;
 RTSP rtsp;
 Motion motion;
 IMPSystem *imp_system = nullptr;
@@ -82,7 +80,6 @@ int main(int argc, const char *argv[])
     LOG_INFO("PRUDYNT-T Next-Gen Video Daemon: " << FULL_VERSION_STRING);
 
     pthread_t cw_thread;
-    pthread_t ws_thread;
     pthread_t osd_thread;
     pthread_t rtsp_thread;
     pthread_t motion_thread;
