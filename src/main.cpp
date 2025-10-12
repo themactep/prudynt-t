@@ -18,6 +18,8 @@
 #include "WorkerUtils.hpp"
 #include "IMPBackchannel.hpp"
 
+#include "IPCServer.hpp"
+
 using namespace std::chrono;
 
 std::mutex mutex_main;
@@ -112,6 +114,10 @@ int main(int argc, const char *argv[])
     global_audio[0] = std::make_shared<audio_stream>(1, 0, 0);
     global_backchannel = std::make_shared<backchannel_stream>();
 #endif
+
+    // Start UNIX domain socket IPC server for local control
+    static IPCServer ipc_server;
+    ipc_server.start();
 
     pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
     pthread_create(&ws_thread, nullptr, WS::run, &ws);

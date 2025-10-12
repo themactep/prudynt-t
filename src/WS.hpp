@@ -20,6 +20,9 @@ class WS
 public:
         void start();
         static void *run(void* arg);
+        // Reuse JSON handler without WS context (for UNIX-socket IPC)
+        static bool process_json(const std::string &in, std::string &out);
+
 
 private:
         lws_protocols protocols[2]{}; // [0] actual protocol, [1] zero-terminated sentinel

@@ -2714,3 +2714,24 @@ void *WS::run(void *arg)
     ((WS *)arg)->start();
     return nullptr;
 }
+
+
+bool WS::process_json(const std::string &in, std::string &out)
+{
+    // Reuse the same LEJP callbacks used by the websocket path, but without WS context
+    struct lejp_ctx ctx;
+    user_ctx u_ctx("IPCLOCAL", nullptr);
+
+    // Prepare and parse
+    u_ctx.message = "{"; // open response json
+    lejp_construct(&ctx, root_callback, &u_ctx, root_keys, LWS_ARRAY_SIZE(root_keys));
+    lejp_parse(&ctx, (uint8_t *)in.c_str(), in.length());
+    lejp_destruct(&ctx);
+    u_ctx.message.append("}"); // close response json
+
+    // Reset separator flag like WS path does
+    u_ctx.flag &= ~PNT_FLAG_SEPARATOR;
+
+    out.swap(u_ctx.message);
+    return true;
+}
