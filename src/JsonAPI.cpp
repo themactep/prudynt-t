@@ -14,6 +14,10 @@ JsonValue *parse_json_string(const char *json_str);
 #include <algorithm>
 
 namespace {
+#if defined(AUDIO_SUPPORT)
+#include <imp/imp_audio.h>
+#endif
+
     // Tiny JSON builder helpers (string-based)
     inline void add_key(std::string &out, bool &sep, const char *k, const char *open=""){
         if (sep) out.push_back(','); else sep=true;
@@ -25,6 +29,27 @@ namespace {
 
     // Look up a child by key (convenience)
     JsonValue* obj_get(JsonValue *obj, const char *k){ return get_object_item(obj, k); }
+
+    // Parse hex color string like #RRGGBBAA into ARGB uint
+    inline unsigned int hexColorToUint(const char *s){
+        if (!s || s[0] != '#') return 0;
+        unsigned int r=0,g=0,b=0,a=255; // default opaque
+        size_t n = std::strlen(s);
+        if (n == 9) { // #RRGGBBAA
+            unsigned int rr,gg,bb,aa;
+            if (sscanf(s, "#%02x%02x%02x%02x", &rr,&gg,&bb,&aa) == 4){ r=rr; g=gg; b=bb; a=aa; }
+        } else if (n == 7) { // #RRGGBB
+            unsigned int rr,gg,bb;
+            if (sscanf(s, "#%02x%02x%02x", &rr,&gg,&bb) == 3){ r=rr; g=gg; b=bb; }
+        }
+        return (a<<24) | (r<<16) | (g<<8) | b;
+    }
+
+    inline void add_hexstr(std::string &out, unsigned int argb){
+        char hexbuf[12]; unsigned a=(argb>>24)&0xFF, r=(argb>>16)&0xFF, g=(argb>>8)&0xFF, b=(argb)&0xFF;
+        std::snprintf(hexbuf, sizeof(hexbuf), "#%02X%02X%02X%02X", r,g,b,a);
+        add_str(out, hexbuf);
+    }
 
     void handle_stream_stats(int idx, std::string &out){
         int fps=0; int bps=0;
@@ -102,6 +127,14 @@ namespace {
             if (idx<2 && global_video[idx]){ global_video[idx]->idr_fix = 1; }
             add_key(sect,s2,"request_idr"); add_str(sect, "initiated"); wrote=true;
         }
+        // Nested OSD
+        if (idx < 2) {
+            if (JsonValue* osd = obj_get(obj, "osd"); osd && osd->type == JSON_OBJECT) {
+                add_key(sect, s2, "osd", "{"); bool s3=false; bool wrote_osd=false;
+                handle_osd(osd, idx, sect, s3, wrote_osd);
+                sect += "}"; wrote = wrote || wrote_osd;
+            }
+        }
 
         if (wrote){ add_key(out, sep, root, ""); out += sect; out += "}"; }
     }
@@ -174,9 +207,158 @@ namespace {
             add_key(out,s2,"wb_bgain"); add_num(out, cfg->get<int>("image.wb_bgain")); wrote=true;
         }
 
-        if (!wrote){ out.erase(out.size()-1); sep = (out.back()==','); return; }
-        out += "}";
+    void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrote){
+        const char* root = idx==0?"stream0.osd":"stream1.osd";
+        auto add_int=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_NUMBER) cfg->set<int>(path,(int)v->value.number); add_key(sect,s2,key); add_num(sect,cfg->get<int>(path)); wrote=true; }};
+        auto add_bool=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_BOOL) cfg->set<bool>(path, v->value.boolean!=0); add_key(sect,s2,key); add_bool(sect,cfg->get<bool>(path)); wrote=true; }};
+        auto add_strs=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_STRING && v->value.string) cfg->set<const char*>(path, strdup(v->value.string)); add_key(sect,s2,key); add_str(sect,cfg->get<const char*>(path)); wrote=true; }};
+        auto add_hex=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_STRING && v->value.string) cfg->set<unsigned int>(path, hexColorToUint(v->value.string)); add_key(sect,s2,key); add_hexstr(sect, cfg->get<unsigned int>(path)); wrote=true; }};
+
+        // Numbers
+        add_int("font_size",std::string(root)+".font_size");
+        add_int("font_stroke_size",std::string(root)+".font_stroke_size");
+        add_int("logo_height",std::string(root)+".logo_height");
+        add_int("logo_width",std::string(root)+".logo_width");
+        add_int("time_rotation",std::string(root)+".time_rotation");
+        add_int("usertext_rotation",std::string(root)+".usertext_rotation");
+        add_int("uptime_rotation",std::string(root)+".uptime_rotation");
+        add_int("logo_rotation",std::string(root)+".logo_rotation");
+        add_int("logo_transparency",std::string(root)+".logo_transparency");
+        add_int("start_delay",std::string(root)+".start_delay");
+
+        // Bools
+        add_bool("enabled",std::string(root)+".enabled");
+        add_bool("time_enabled",std::string(root)+".time_enabled");
+        add_bool("usertext_enabled",std::string(root)+".usertext_enabled");
+        add_bool("uptime_enabled",std::string(root)+".uptime_enabled");
+        add_bool("logo_enabled",std::string(root)+".logo_enabled");
+
+        // Strings
+        add_strs("font_path",std::string(root)+".font_path");
+        add_strs("time_format",std::string(root)+".time_format");
+        add_strs("uptime_format",std::string(root)+".uptime_format");
+        add_strs("usertext_format",std::string(root)+".usertext_format");
+        add_strs("logo_path",std::string(root)+".logo_path");
+        add_strs("time_position",std::string(root)+".time_position");
+        add_strs("uptime_position",std::string(root)+".uptime_position");
+        add_strs("usertext_position",std::string(root)+".usertext_position");
+        add_strs("logo_position",std::string(root)+".logo_position");
+
+        // Colors (accept hex string)
+        add_hex("time_font_color",std::string(root)+".time_font_color");
+        add_hex("time_font_stroke_color",std::string(root)+".time_font_stroke_color");
+        add_hex("uptime_font_color",std::string(root)+".uptime_font_color");
+        add_hex("uptime_font_stroke_color",std::string(root)+".uptime_font_stroke_color");
+        add_hex("usertext_font_color",std::string(root)+".usertext_font_color");
+        add_hex("usertext_font_stroke_color",std::string(root)+".usertext_font_stroke_color");
     }
+
+#if defined(AUDIO_SUPPORT)
+    void handle_audio(JsonValue *obj, std::string &out, bool &sep){
+        add_key(out, sep, "audio", "{"); bool s2=false; bool wrote=false;
+        auto add_int=[&](const char* key,const char* path, bool restart_audio=false){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_NUMBER){ cfg->set<int>(path,(int)v->value.number); if(restart_audio) global_restart_audio = true; } add_key(out,s2,key); add_num(out,cfg->get<int>(path)); wrote=true; }};
+        auto add_bool=[&](const char* key,const char* path, bool rest_rtsp=false, bool rest_audio=true){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_BOOL){ cfg->set<bool>(path, v->value.boolean!=0); if (rest_audio) global_restart_audio = true; if (rest_rtsp) global_restart_rtsp = true; } add_key(out,s2,key); add_bool(out,cfg->get<bool>(path)); wrote=true; }};
+        auto add_str=[&](const char* key,const char* path, bool restart_audio=false){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_STRING && v->value.string){ cfg->set<const char*>(path, strdup(v->value.string)); if(restart_audio) global_restart_audio = true; } add_key(out,s2,key); add_str(out,cfg->get<const char*>(path)); wrote=true; }};
+
+        // Input
+        add_bool("input_enabled","audio.input_enabled", /*rest_rtsp*/false, /*rest_audio*/true);
+        add_str("input_format","audio.input_format", true);
+        add_int("input_vol","audio.input_vol", false);
+        add_int("input_gain","audio.input_gain", true);
+        add_int("input_bitrate","audio.input_bitrate", true);
+        add_int("input_sample_rate","audio.input_sample_rate", true);
+    #if defined(LIB_AUDIO_PROCESSING)
+        add_int("input_alc_gain","audio.input_alc_gain", false);
+        add_int("input_noise_suppression","audio.input_noise_suppression", true);
+        add_bool("input_high_pass_filter","audio.input_high_pass_filter", false, true);
+        add_bool("input_agc_enabled","audio.input_agc_enabled", false, true);
+        add_int("input_agc_target_level_dbfs","audio.input_agc_target_level_dbfs", true);
+        add_int("input_agc_compression_gain_db","audio.input_agc_compression_gain_db", true);
+        add_bool("force_stereo","audio.force_stereo", false, true);
+        // Output
+        add_bool("output_enabled","audio.output_enabled", /*rest_rtsp*/true, /*rest_audio*/true);
+        add_int("output_sample_rate","audio.output_sample_rate", true);
+    #endif
+        add_int("buffer_warn_frames","audio.buffer_warn_frames", false);
+        add_int("buffer_cap_frames","audio.buffer_cap_frames", false);
+
+        if(!wrote){ out.erase(out.size()-1); return; } out += "}";
+    }
+#endif
+
+    void handle_motion(JsonValue *obj, std::string &out, bool &sep){
+        add_key(out, sep, "motion", "{"); bool s2=false; bool wrote=false;
+        auto add_int=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_NUMBER) cfg->set<int>(path,(int)v->value.number); add_key(out,s2,key); add_num(out,cfg->get<int>(path)); wrote=true; }};
+        auto add_bool=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_BOOL) cfg->set<bool>(path, v->value.boolean!=0); add_key(out,s2,key); add_bool(out,cfg->get<bool>(path)); wrote=true; }};
+        auto add_strs=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ if(v->type==JSON_STRING && v->value.string) cfg->set<const char*>(path, strdup(v->value.string)); add_key(out,s2,key); add_str(out,cfg->get<const char*>(path)); wrote=true; }};
+
+        add_int("monitor_stream","motion.monitor_stream");
+        add_int("debounce_time","motion.debounce_time");
+        add_int("post_time","motion.post_time");
+        add_int("cooldown_time","motion.cooldown_time");
+        add_int("init_time","motion.init_time");
+        add_int("min_time","motion.min_time");
+        add_int("ivs_polling_timeout","motion.ivs_polling_timeout");
+        add_int("sensitivity","motion.sensitivity");
+        add_int("skip_frame_count","motion.skip_frame_count");
+        add_int("frame_width","motion.frame_width");
+        add_int("frame_height","motion.frame_height");
+        add_int("roi_0_x","motion.roi_0_x"); add_int("roi_0_y","motion.roi_0_y");
+        add_int("roi_1_x","motion.roi_1_x"); add_int("roi_1_y","motion.roi_1_y");
+        add_int("roi_count","motion.roi_count");
+        add_bool("enabled","motion.enabled");
+        add_strs("script_path","motion.script_path");
+
+        if (JsonValue* rois = obj_get(obj, "rois")){
+            if (rois->type == JSON_NULL){
+                add_key(out,s2,"rois", "["); bool sA=false;
+                int cnt = std::min(cfg->motion.roi_count, (int)cfg->motion.rois.size());
+                for (int i=0;i<cnt;i++){ if (sA) out += ","; else sA=true; const auto &r = cfg->motion.rois[i]; out += "["; add_num(out, r.p0_x); out += ","; add_num(out, r.p0_y); out += ","; add_num(out, r.p1_x); out += ","; add_num(out, r.p1_y); out += "]"; }
+                out += "]"; wrote=true;
+            } else if (rois->type == JSON_ARRAY){
+                // Expect array of [x0,y0,x1,y1]
+                int i=0; for (JsonValue *it = rois->value.array_head; it && i < (int)cfg->motion.rois.size(); it = it->next, ++i){
+                    if (it->type == JSON_ARRAY){
+                        int vals[4]={0}; int j=0; for (JsonValue *jt = it->value.array_head; jt && j<4; jt = jt->next, ++j){ if (jt->type==JSON_NUMBER) vals[j]=(int)jt->value.number; }
+                        cfg->motion.rois[i].p0_x = vals[0]; cfg->motion.rois[i].p0_y = vals[1]; cfg->motion.rois[i].p1_x = vals[2]; cfg->motion.rois[i].p1_y = vals[3];
+                    }
+                }
+                cfg->motion.roi_count = i;
+                add_key(out,s2,"rois"); out += "\"ok\""; wrote=true;
+            }
+        }
+
+        if(!wrote){ out.erase(out.size()-1); return; } out += "}";
+    }
+
+    void handle_info(JsonValue *obj, std::string &out, bool &sep){
+        add_key(out, sep, "info", "{"); bool s2=false; bool wrote=false;
+        // Currently only imp_system_version (read)
+        if (JsonValue* v = obj_get(obj, "imp_system_version"); v && v->type == JSON_NULL){
+            add_key(out,s2,"imp_system_version"); add_str(out, "unknown"); wrote=true;
+        }
+        if(!wrote){ out.erase(out.size()-1); return; } out += "}";
+    }
+
+    void handle_action(JsonValue *obj, std::string &out, bool &sep){
+        add_key(out, sep, "action", "{"); bool s2=false; bool wrote=false;
+        if (JsonValue* rst = obj_get(obj, "restart_thread"); rst && rst->type==JSON_NUMBER){
+            int mask = (int)rst->value.number;
+            if (mask & 1) global_restart_rtsp = true;
+            if (mask & 2) global_restart_video = true;
+            if (mask & 4) global_restart_audio = true;
+            add_key(out,s2,"restart_thread"); add_str(out, "ok"); wrote=true;
+        }
+        if (JsonValue* sv = obj_get(obj, "save_config"); sv && sv->type==JSON_NULL){
+            cfg->updateConfig(); add_key(out,s2,"save_config"); add_str(out, "ok"); wrote=true;
+        }
+        if (JsonValue* cap = obj_get(obj, "capture"); cap){
+            // Stub hook for capture; WebUI should use /cgi-bin/chX.jpg
+            add_key(out,s2,"capture"); add_str(out, "use_snapshot_api"); wrote=true;
+        }
+        if(!wrote){ out.erase(out.size()-1); return; } out += "}";
+    }
+
 
     void handle_rtsp(JsonValue *obj, std::string &out, bool &sep){
         add_key(out, sep, "rtsp", "{"); bool s2=false; auto wrote=false;
@@ -245,7 +427,12 @@ bool process_json(const std::string &in, std::string &out)
         else if (!strcmp(k, "rtsp")    && v && v->type == JSON_OBJECT){ handle_rtsp(v, out, sep); }
         else if (!strcmp(k, "sensor")  && v && v->type == JSON_OBJECT){ handle_sensor(v, out, sep); }
         else if (!strcmp(k, "stream2") && v && v->type == JSON_OBJECT){ handle_stream2(v, out, sep); }
-        // TODO: audio, motion, osd, info, action
+    #if defined(AUDIO_SUPPORT)
+        else if (!strcmp(k, "audio")   && v && v->type == JSON_OBJECT){ handle_audio(v, out, sep); }
+    #endif
+        else if (!strcmp(k, "motion")  && v && v->type == JSON_OBJECT){ handle_motion(v, out, sep); }
+        else if (!strcmp(k, "info")    && v && v->type == JSON_OBJECT){ handle_info(v, out, sep); }
+        else if (!strcmp(k, "action")  && v && v->type == JSON_OBJECT){ handle_action(v, out, sep); }
     }
 
     out += "}";
