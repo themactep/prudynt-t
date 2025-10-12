@@ -173,7 +173,7 @@ void JPEGWorker::run()
                         // Build in-memory JPEG snapshot buffer (LWS_PRE + JPEG data)
                         size_t total_size = 0;
                         // First pass: compute total size across packs (including wrap)
-                        for (int i = 0; i < stream.packCount; i++) {
+                        for (uint32_t i = 0; i < stream.packCount; i++) {
                             #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
                             IMPEncoderPack *pack = &stream.pack[i];
                             if (!pack->length) continue;
@@ -191,7 +191,7 @@ void JPEGWorker::run()
                             buf.resize(LWS_PRE + total_size);
                             unsigned char *dst = buf.data() + LWS_PRE;
                             // Second pass: copy data into buffer
-                            for (int i = 0; i < stream.packCount; i++) {
+                            for (uint32_t i = 0; i < stream.packCount; i++) {
                                 #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
                                 IMPEncoderPack *pack = &stream.pack[i];
                                 if (!pack->length) continue;
