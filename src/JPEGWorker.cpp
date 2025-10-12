@@ -5,12 +5,14 @@
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
+#include <libwebsockets.h>
+
 #include <fcntl.h>   // For O_RDWR, O_CREAT, O_TRUNC flags
 #include <unistd.h>  // For open(), close(), etc.
 #include <cstring>
 
 #define MODULE "JPEGWorker"
-extern void MakeTables(int q, uint8_t *lqt, uint8_t *cqt);
+#include "imp_hal.hpp"
 
 JPEGWorker::JPEGWorker(int jpgChnIndex, int impEncoderChn)
     : jpgChn(jpgChnIndex)
@@ -152,15 +154,7 @@ void JPEGWorker::run()
                 int q_override = global_jpeg[jpgChn]->quality_override.exchange(-1);
                 if (q_override > 0 && q_override <= 100)
                 {
-                    IMPEncoderJpegeQl pstJpegeQl;
-                    uint8_t lqt[64];
-                    uint8_t cqt[64];
-                    MakeTables(q_override, lqt, cqt);
-                    // Copy tables
-                    for (int i = 0; i < 64; ++i) { pstJpegeQl.qmem_table[i] = lqt[i]; }
-                    for (int i = 0; i < 64; ++i) { pstJpegeQl.qmem_table[64 + i] = cqt[i]; }
-                    pstJpegeQl.user_ql_en = 1;
-                    IMP_Encoder_SetJpegeQl(impEncChn, &pstJpegeQl);
+                    hal::set_jpeg_quality_qtable(impEncChn, q_override, cfg->sysinfo.cpu);
                 }
 
                 if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn,

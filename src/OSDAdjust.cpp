@@ -1,4 +1,8 @@
 #include "OSDAdjust.hpp"
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#define IMPEncoderCHNAttr IMPEncoderChnAttr
+#endif
+
 #include "Logger.hpp"
 
 namespace impc {
@@ -14,7 +18,7 @@ void adjust_osd(IMPRgnHandle handle, IMPOSDRgnAttr *prAttr) {
     int origHeight = prAttr->rect.p1.y - prAttr->rect.p0.y;
 
     // Query current encoder channel 0 for frame size (compatible with legacy)
-    IMPEncoderChnAttr chnAttr{};
+    IMPEncoderCHNAttr chnAttr{};
     int ret = IMP_Encoder_GetChnAttr(0, &chnAttr);
     if (ret != 0) {
         LOG_WARN("OSDAdjust: IMP_Encoder_GetChnAttr(0) failed, ret=" << ret);
