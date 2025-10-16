@@ -196,6 +196,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"stream1.osd.usertext_enabled", stream1.osd.usertext_enabled, true, validateBool},
         {"stream2.enabled", stream2.enabled, true, validateBool},
         {"websocket.enabled", websocket.enabled, true, validateBool},
+        {"stream3.enabled", stream3.enabled, false, validateBool},
         {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
         {"websocket.http_secured", websocket.http_secured, true, validateBool},
     };
@@ -253,7 +254,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
         }},
         {"stream1.rtsp_endpoint", stream1.rtsp_endpoint, "ch1", validateCharNotEmpty},
         {"stream1.rtsp_info", stream1.rtsp_info, "stream1", validateCharNotEmpty},
-       {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
         {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
         {"websocket.token", websocket.token, "auto", [](const char *v) {
             std::string token(v);
@@ -331,6 +331,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"sensor.video_interface", sensor.video_interface, 0, validateIntGe0, false, "/proc/jz/sensor/video_interface"},
         {"sensor.gpio_reset", sensor.gpio_reset, -1, [](const int &v) { return v >= -1; }, false, "/proc/jz/sensor/reset_gpio"},
         {"stream0.bitrate", stream0.bitrate, 3000, validateIntGe0},
+        // Rate control advanced (defaults -1/0 mean use encoder defaults)
+        {"stream0.qp_init", stream0.qp_init, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
+        {"stream0.qp_min", stream0.qp_min, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
+        {"stream0.qp_max", stream0.qp_max, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
+        {"stream0.ip_delta", stream0.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
+        {"stream0.pb_delta", stream0.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
+        {"stream0.max_bitrate", stream0.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
         {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0, [](const int &v) { return v >= 1 && v <= 8; }},
         {"stream0.fps", stream0.fps, 25, validateInt120},
         {"stream0.gop", stream0.gop, 20, validateIntGe0},
@@ -350,6 +357,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream0.width", stream0.width, 1920, validateIntGe0},
         {"stream0.profile", stream0.profile, 2, validateInt2},
         {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
+        // Rate control advanced (defaults -1/0 mean use encoder defaults)
+        {"stream1.qp_init", stream1.qp_init, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
+        {"stream1.qp_min", stream1.qp_min, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
+        {"stream1.qp_max", stream1.qp_max, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
+        {"stream1.ip_delta", stream1.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
+        {"stream1.pb_delta", stream1.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
+        {"stream1.max_bitrate", stream1.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
         {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1, [](const int &v) { return v >= 1 && v <= 8; }},
         {"stream1.fps", stream1.fps, 25, validateInt120},
         {"stream1.gop", stream1.gop, 20, validateIntGe0},
@@ -373,6 +387,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
         {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
         {"websocket.port", websocket.port, 8089, validateInt65535},
+        {"stream3.jpeg_channel", stream3.jpeg_channel, 1, validateIntGe0},
+        {"stream3.jpeg_quality", stream3.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
+        {"stream3.jpeg_idle_fps", stream3.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
+        {"stream3.fps", stream3.fps, 15, [](const int &v) { return v > 1 && v <= 30; }},
         {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
     };
 };
@@ -852,6 +870,18 @@ void CFG::load()
         stream2.width = stream1.width;
         stream2.height = stream1.height;
     }
+
+    if (stream3.jpeg_channel == 0)
+    {
+        stream3.width = stream0.width;
+        stream3.height = stream0.height;
+    }
+    else
+    {
+        stream3.width = stream1.width;
+        stream3.height = stream1.height;
+    }
+
 
     // TODO: Implement ROI handling with JCT
     // Handle ROIs from JSON - temporarily disabled during JCT migration

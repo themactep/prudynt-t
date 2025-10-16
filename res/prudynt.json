@@ -212,15 +212,17 @@
   "stream2": {
     "enabled": true,
     "jpeg_channel": 0,
-    "jpeg_idle_fps": 1,
+    "jpeg_idle_fps": 5,
     "jpeg_path": "/tmp/snapshot.jpg",
     "jpeg_quality": 75,
+    "fps": 15,
     "jpeg_refresh": 1000
   },
-  "websocket": {
+  "stream3": {
     "enabled": true,
-    "port": 8089,
-    "secured": false,
-    "token": "auto"
+    "jpeg_channel": 1,
+    "jpeg_idle_fps": 5,
+    "jpeg_quality": 75,
+    "fps": 15
   }
 }

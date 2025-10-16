@@ -1,4 +1,5 @@
-
+diff --git a/src/libhelix-aac/statname.h b/src/libhelix-aac/statname.h
+index 2899ca9..37278c0 100644
 --- a/src/libhelix-aac/statname.h
 +++ b/src/libhelix-aac/statname.h
 @@ -50,7 +50,6 @@

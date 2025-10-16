@@ -13,9 +13,8 @@
 //~65k
 #define ENABLE_LOG_DEBUG
 
-//Some more debug output not usefull for users (Developer Debug)
+//Some more debug output not useful for users (Developer Debug)
 //#define DDEBUG
-//#define DDEBUGWS
 
 // under development
 //#define USE_STEREO_SIMULATOR
@@ -233,15 +232,20 @@ struct _stream {
     bool power_saving;
     bool allow_shared;
     const char *mode;
+    // Advanced RC parameters (optional; -1/0 = use encoder defaults)
+    int qp_init;
+    int qp_min;
+    int qp_max;
+    int ip_delta;
+    int pb_delta;
+    int max_bitrate;
     const char *rtsp_endpoint;
     const char *rtsp_info;
     const char *format{"JPEG"};
     /* JPEG stream*/
     int jpeg_quality;
-    int jpeg_refresh;
     int jpeg_channel;
     int jpeg_idle_fps;
-    const char *jpeg_path;
     _osd osd;
     _stream_stats stats;
 #if defined(AUDIO_SUPPORT)
@@ -314,6 +318,8 @@ class CFG {
         _stream stream1{};
 		_stream stream2{};
 		_motion motion{};
+			_stream stream3{}; // dedicated MJPEG stream
+
         _websocket websocket{};
         _sysinfo sysinfo{};
 

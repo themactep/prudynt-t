@@ -1,5 +1,6 @@
 #include "Logger.hpp"
 #include "IMPFramesource.hpp"
+#include <dlfcn.h>
 
 #define MODULE "IMP_FRAMESOURCE"
 
@@ -83,7 +84,17 @@ int IMPFramesource::init()
     // IMP_Encoder_SetFisheyeEnableStatus(1, 1);
 
     if (stream->rotation != 0) {
-       ret = IMP_FrameSource_SetChnRotate(chnNr, rot_rotation, rot_height, rot_width);
+       {
+           typedef int (*pfn_fs_rotate)(int,int,int,int);
+           void* h = dlopen(nullptr, RTLD_LAZY);
+           pfn_fs_rotate fn = h ? reinterpret_cast<pfn_fs_rotate>(dlsym(h, "IMP_FrameSource_SetChnRotate")) : nullptr;
+           if (fn) {
+               ret = fn(chnNr, rot_rotation, rot_height, rot_width);
+           } else {
+               LOG_DEBUG("IMP_FrameSource_SetChnRotate not available; skipping rotation");
+               ret = 0;
+           }
+       }
        LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate(0, rotation, rot_height, rot_width)");
     }
 

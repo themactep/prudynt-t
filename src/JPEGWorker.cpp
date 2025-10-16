@@ -7,8 +7,10 @@
 
 #include <fcntl.h>   // For O_RDWR, O_CREAT, O_TRUNC flags
 #include <unistd.h>  // For open(), close(), etc.
+#include <cstring>
 
 #define MODULE "JPEGWorker"
+#include "imp_hal.hpp"
 
 JPEGWorker::JPEGWorker(int jpgChnIndex, int impEncoderChn)
     : jpgChn(jpgChnIndex)
@@ -102,7 +104,7 @@ void JPEGWorker::run()
         /*
         * if jpeg_idle_fps = 0, the thread is put into sleep until a client is connected.
         * if jpeg_idle_fps > 0, we try to reach a frame rate of stream.jpeg_idle_fps. enen if no client is connected.
-        * if a client is connected via WS / HTTP we try to reach a framerate of stream.fps
+        * if a client is connected via HTTP we try to reach a framerate of stream.fps
         * the thread will fallback into idle / sleep mode if no client request was made for more than a second
         */
         auto now = steady_clock::now();
@@ -146,6 +148,45 @@ void JPEGWorker::run()
                         targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
                 }
 
+                // Apply per-request JPEG quality override if present
+                int q_override = global_jpeg[jpgChn]->quality_override.exchange(-1);
+                if (q_override > 0 && q_override <= 100)
+                {
+                    hal::set_jpeg_quality_qtable(impEncChn, q_override, cfg->sysinfo.cpu);
+                }
+
+                // Apply dynamic reconfiguration if requested
+                if (global_jpeg[jpgChn]->reconfig.load())
+                {
+                    int new_w = global_jpeg[jpgChn]->req_width.load();
+                    int new_h = global_jpeg[jpgChn]->req_height.load();
+                    int new_fps = global_jpeg[jpgChn]->req_fps.load();
+                    // Stop encoder and re-init if any param is requested
+                    if ((new_w > 0 && new_h > 0) || (new_fps > 0))
+                    {
+                        // Stop receiving, destroy and re-create channel with new params
+                        if (global_jpeg[jpgChn]->imp_encoder)
+                        {
+                            global_jpeg[jpgChn]->imp_encoder->deinit();
+                        }
+                        if (new_w > 0 && new_h > 0)
+                        {
+                            global_jpeg[jpgChn]->stream->width = new_w;
+                            global_jpeg[jpgChn]->stream->height = new_h;
+                        }
+                        if (new_fps > 0)
+                        {
+                            global_jpeg[jpgChn]->stream->fps = new_fps;
+                        }
+                        if (global_jpeg[jpgChn]->imp_encoder)
+                        {
+                            global_jpeg[jpgChn]->imp_encoder->init();
+                        }
+                        IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
+                    }
+                    global_jpeg[jpgChn]->reconfig.store(false);
+                }
+
                 if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn,
                                               cfg->general.imp_polling_timeout)
                     == 0)
@@ -159,38 +200,46 @@ void JPEGWorker::run()
                         fps++;
                         bps += stream.pack->length;
 
-                        //  Check for success
-                        const char *tempPath = "/tmp/snapshot.tmp"; // Temporary path
-                        const char *finalPath = global_jpeg[jpgChn]
-                                                    ->stream
-                                                    ->jpeg_path; // Final path for the JPEG snapshot
-
-                        // Open and create temporary file with read and write permissions
-                        int snap_fd = open(tempPath, O_RDWR | O_CREAT | O_TRUNC, 0666);
-                        if (snap_fd >= 0)
-                        {
-                            // Save the JPEG stream to the file
-                            save_jpeg_stream(snap_fd, &stream);
-
-                            // Close the temporary file after writing is done
-                            close(snap_fd);
-
-                            // Atomically move the temporary file to the final destination
-                            if (rename(tempPath, finalPath) != 0)
-                            {
-                                LOG_ERROR("Failed to move JPEG snapshot from " << tempPath << " to "
-                                                                               << finalPath);
-                                std::remove(
-                                    tempPath); // Attempt to remove the temporary file if rename fails
-                            }
-                            else
-                            {
-                                // LOG_DEBUG("JPEG snapshot successfully updated");
-                            }
+                        // Build in-memory JPEG snapshot buffer (JPEG data only; no prepadding)
+                        size_t total_size = 0;
+                        // First pass: compute total size across packs (including wrap)
+                        for (uint32_t i = 0; i < stream.packCount; i++) {
+                            #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+                            IMPEncoderPack *pack = &stream.pack[i];
+                            if (!pack->length) continue;
+                            uint32_t remSize = stream.streamSize - pack->offset;
+                            size_t part = (remSize < pack->length) ? remSize : pack->length;
+                            size_t wrap = (remSize && pack->length > remSize) ? (pack->length - remSize) : 0;
+                            total_size += part + wrap;
+                            #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+                            total_size += stream.pack[i].length;
+                            #endif
                         }
-                        else
                         {
-                            LOG_ERROR("Failed to open JPEG snapshot for writing: " << tempPath);
+                            std::unique_lock lck(mutex_main);
+                            auto &buf = global_jpeg[jpgChn]->snapshot_buf;
+                            buf.resize(total_size);
+                            unsigned char *dst = buf.data();
+                            // Second pass: copy data into buffer
+                            for (uint32_t i = 0; i < stream.packCount; i++) {
+                                #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+                                IMPEncoderPack *pack = &stream.pack[i];
+                                if (!pack->length) continue;
+                                uint32_t remSize = stream.streamSize - pack->offset;
+                                void *data_ptr = (void *)((char *)stream.virAddr + ((remSize < pack->length) ? 0 : pack->offset));
+                                size_t part = (remSize < pack->length) ? remSize : pack->length;
+                                if (part) { std::memcpy(dst, data_ptr, part); dst += part; }
+                                if (remSize && pack->length > remSize) {
+                                    size_t wrap = pack->length - remSize;
+                                    std::memcpy(dst, (void *)((char *)stream.virAddr), wrap);
+                                    dst += wrap;
+                                }
+                                #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+                                void *data_ptr = reinterpret_cast<void *>(stream.pack[i].virAddr);
+                                size_t data_len = stream.pack[i].length;
+                                if (data_len) { std::memcpy(dst, data_ptr, data_len); dst += data_len; }
+                                #endif
+                            }
                         }
 
                         IMP_Encoder_ReleaseStream(global_jpeg[jpgChn]->encChn,
@@ -263,13 +312,13 @@ void *JPEGWorker::thread_entry(void *arg)
 
     if (global_jpeg[jpgChn]->streamChn == 0)
     {
-        cfg->stream2.width = cfg->stream0.width;
-        cfg->stream2.height = cfg->stream0.height;
+        global_jpeg[jpgChn]->stream->width = cfg->stream0.width;
+        global_jpeg[jpgChn]->stream->height = cfg->stream0.height;
     }
     else
     {
-        cfg->stream2.width = cfg->stream1.width;
-        cfg->stream2.height = cfg->stream1.height;
+        global_jpeg[jpgChn]->stream->width = cfg->stream1.width;
+        global_jpeg[jpgChn]->stream->height = cfg->stream1.height;
     }
 
     global_jpeg[jpgChn]->imp_encoder = IMPEncoder::createNew(global_jpeg[jpgChn]->stream,

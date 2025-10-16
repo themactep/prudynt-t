@@ -3,6 +3,7 @@
 #include "IMPAudio.hpp"
 #include "Opus.hpp"
 #include <thread>
+#include <dlfcn.h>
 
 #define MODULE "IMPAUDIO"
 
@@ -143,10 +144,12 @@ int IMPAudio::init()
     ret = IMP_AI_Enable(devId);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");
 
-    IMPAudioIChnParam chnParam = {
-        .usrFrmDepth = 30, // frame buffer depth
-        .Rev = 0
-    };
+    IMPAudioIChnParam chnParam{};
+    chnParam.usrFrmDepth = 30; // frame buffer depth
+    #if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    chnParam.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
+    #endif
+    chnParam.Rev = 0;
 
     ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
@@ -221,7 +224,15 @@ int IMPAudio::init()
 #if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     if(cfg->audio.input_alc_gain > 0)
     {
-        ret = IMP_AI_SetAlcGain(devId, inChn, cfg->audio.input_alc_gain);
+        typedef int (*pfn_ai_setalc)(int,int,int);
+        void* h = dlopen(nullptr, RTLD_LAZY);
+        pfn_ai_setalc fn = h ? reinterpret_cast<pfn_ai_setalc>(dlsym(h, "IMP_AI_SetAlcGain")) : nullptr;
+        if (fn) {
+            ret = fn(devId, inChn, cfg->audio.input_alc_gain);
+        } else {
+            LOG_DEBUG("IMP_AI_SetAlcGain not available; skipping ALC");
+            ret = 0;
+        }
         LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain(" << devId << ", " << inChn << ", " << cfg->audio.input_alc_gain << ")");
     }
 #endif

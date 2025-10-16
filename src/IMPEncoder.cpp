@@ -1,5 +1,8 @@
 #include "IMPEncoder.hpp"
+#include "imp_hal.hpp"
+
 #include "Config.hpp"
+#include <dlfcn.h>
 
 #define MODULE "IMPENCODER"
 
@@ -68,8 +71,17 @@ void IMPEncoder::initProfile()
     else if (strcmp(stream->format, "JPEG") == 0)
     {
         encoderProfile = IMP_ENC_PROFILE_JPEG;
-        IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP,
-                                    stream->width, stream->height, 24, 1, 0, 0, stream->jpeg_quality, 0);
+        {
+            typedef int (*pfn_setdef)(void*, int, int, int, int, int, int, int, int, int, int);
+            void* h = dlopen(nullptr, RTLD_LAZY);
+            pfn_setdef fn = h ? reinterpret_cast<pfn_setdef>(dlsym(h, "IMP_Encoder_SetDefaultParam")) : nullptr;
+            if (fn) {
+                (void)fn(&chnAttr, (int)encoderProfile, (int)IMP_ENC_RC_MODE_FIXQP,
+                         stream->width, stream->height, 24, 1, 0, 0, stream->jpeg_quality, 0);
+            } else {
+                LOG_DEBUG("IMP_Encoder_SetDefaultParam not available; proceeding with defaults");
+            }
+        }
         // 1000 / stream->jpeg_refresh
         LOG_DEBUG("STREAM PROFILE " << encChn << ", " <<
                     encGrp << ", " << stream->format << ", " <<
@@ -103,9 +115,17 @@ void IMPEncoder::initProfile()
         LOG_ERROR("unsupported stream->mode (" << stream->mode << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and CAPPED_QUALITY on T31");
     }
 
-    IMP_Encoder_SetDefaultParam(
-        &chnAttr, encoderProfile, rcMode, stream->width, stream->height,
-        stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
+    {
+        typedef int (*pfn_setdef)(void*, int, int, int, int, int, int, int, int, int, int);
+        void* h = dlopen(nullptr, RTLD_LAZY);
+        pfn_setdef fn = h ? reinterpret_cast<pfn_setdef>(dlsym(h, "IMP_Encoder_SetDefaultParam")) : nullptr;
+        if (fn) {
+            (void)fn(&chnAttr, (int)encoderProfile, (int)rcMode, stream->width, stream->height,
+                     stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
+        } else {
+            LOG_DEBUG("IMP_Encoder_SetDefaultParam not available; proceeding with defaults");
+        }
+    }
 
     switch (rcMode)
     {
@@ -160,6 +180,10 @@ void IMPEncoder::initProfile()
     case IMP_ENC_RC_MODE_INVALID:
         break;
     }
+
+    // Apply optional overrides from stream{0,1} via HAL
+    hal::apply_rc_overrides(chnAttr, rcMode, *stream);
+
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
     if (strcmp(stream->format, "JPEG") == 0)
     {
@@ -268,7 +292,7 @@ void IMPEncoder::initProfile()
         case ENC_RC_MODE_INV:
             break;
         }
-#if defined(PLATFORM_T30)
+    #if defined(PLATFORM_T30)
     }
     else if (chnAttr.encAttr.enType == PT_H265)
     {
@@ -283,8 +307,12 @@ void IMPEncoder::initProfile()
         rcAttr->attrRcMode.attrH265Smart.frmQPStep = 3;
         rcAttr->attrRcMode.attrH265Smart.gopQPStep = 15;
         rcAttr->attrRcMode.attrH265Smart.flucLvl = 2;
-#endif //defined(PLATFORM_T30)
+    #endif //defined(PLATFORM_T30)
     }
+    // Optional overrides via HAL (legacy platforms)
+    hal::apply_rc_overrides(chnAttr, rcMode, *stream);
+
+
     rcAttr->attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
     rcAttr->attrHSkip.hSkipAttr.m = rcAttr->maxGop - 1;
     rcAttr->attrHSkip.hSkipAttr.n = 1;
@@ -314,8 +342,8 @@ int IMPEncoder::init()
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
     if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
-        ret = IMP_Encoder_SetbufshareChn(2, encChn);
-        LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn << ")");
+        ret = hal::maybe_enable_bufshare(2, encChn, true);
+        LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "maybe_enable_bufshare(2, " << encChn << ")");
     }
 #endif
 
