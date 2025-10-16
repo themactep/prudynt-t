@@ -13,9 +13,8 @@
 //~65k
 #define ENABLE_LOG_DEBUG
 
-//Some more debug output not usefull for users (Developer Debug)
+//Some more debug output not useful for users (Developer Debug)
 //#define DDEBUG
-//#define DDEBUGWS
 
 // under development
 //#define USE_STEREO_SIMULATOR
@@ -319,6 +318,8 @@ class CFG {
         _stream stream1{};
 		_stream stream2{};
 		_motion motion{};
+			_stream stream3{}; // dedicated MJPEG stream
+
         _websocket websocket{};
         _sysinfo sysinfo{};
 

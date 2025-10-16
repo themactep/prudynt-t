@@ -106,6 +106,7 @@ int main(int argc, const char *argv[])
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
     global_video[1] = std::make_shared<video_stream>(1, &cfg->stream1, "stream1");
     global_jpeg[0] = std::make_shared<jpeg_stream>(2, &cfg->stream2);
+    global_jpeg[1] = std::make_shared<jpeg_stream>(3, &cfg->stream3);
 
 #if defined(AUDIO_SUPPORT)
     global_audio[0] = std::make_shared<audio_stream>(1, 0, 0);
@@ -117,8 +118,6 @@ int main(int argc, const char *argv[])
     ipc_server.start();
 
     pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
-    // WebSocket server disabled (migrating to UNIX socket + CGI); reduces memory usage
-    // pthread_create(&ws_thread, nullptr, WS::run, &ws);
 
     while (true)
     {
@@ -158,6 +157,14 @@ int main(int argc, const char *argv[])
                 LOG_DEBUG_OR_ERROR(ret, "create jpeg thread");
                 // wait for initialization done
                 sh.has_started.acquire();
+            }
+
+            if (cfg->stream3.enabled)
+            {
+                StartHelper sh2{3};
+                int ret2 = pthread_create(&global_jpeg[1]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh2));
+                LOG_DEBUG_OR_ERROR(ret2, "create mjpeg/jpeg thread 2");
+                sh2.has_started.acquire();
             }
 
             if (cfg->stream0.osd.enabled || cfg->stream1.osd.enabled)

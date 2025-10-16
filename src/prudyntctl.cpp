@@ -66,6 +66,43 @@ static int cmd_json(int argc, char **argv) {
     return 0;
 }
 
+static int cmd_mjpeg(int argc, char **argv) {
+    int ch = 0, q = -1, fps = 5, w = -1, h = -1;
+    const char *boundary = "prudyntmjpegboundary";
+    for (int i = 0; i < argc; ++i) {
+        if (strcmp(argv[i], "-c") == 0 && i+1 < argc) { ch = atoi(argv[++i]); }
+        else if (strcmp(argv[i], "-q") == 0 && i+1 < argc) { q = atoi(argv[++i]); }
+        else if (strcmp(argv[i], "-f") == 0 && i+1 < argc) { fps = atoi(argv[++i]); if (fps < 1) fps = 1; if (fps > 30) fps = 30; }
+        else if (strcmp(argv[i], "-w") == 0 && i+1 < argc) { w = atoi(argv[++i]); }
+        else if (strcmp(argv[i], "-h") == 0 && i+1 < argc) { h = atoi(argv[++i]); }
+        else if (strcmp(argv[i], "-b") == 0 && i+1 < argc) { boundary = argv[++i]; }
+    }
+
+    int fd = connect_sock();
+    if (fd < 0) { fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno)); return 2; }
+
+    char line[256];
+    // Send server-side streaming request
+    int n = snprintf(line, sizeof(line), "MJPEG ch=%d f=%d boundary=%s", ch, fps, boundary);
+    // Optionals
+    if (q >= 1 && q <= 100) n += snprintf(line+n, sizeof(line)-n, " q=%d", q);
+    if (w > 0 && h > 0) n += snprintf(line+n, sizeof(line)-n, " w=%d h=%d", w, h);
+    line[n++]='\n'; line[n]='\0';
+    (void)write(fd, line, strlen(line));
+    shutdown(fd, SHUT_WR);
+
+    // Pass-through: read everything from server and write to stdout until EOF
+    std::vector<char> buf(8192);
+    while (1) {
+        ssize_t r = read(fd, buf.data(), buf.size());
+        if (r <= 0) break;
+        write(STDOUT_FILENO, buf.data(), r);
+    }
+    close(fd);
+    return 0;
+}
+
+
 static int cmd_snapshot(int argc, char **argv) {
     int ch = 0, q = -1;
     for (int i = 0; i < argc; ++i) {
@@ -99,7 +136,7 @@ static int cmd_snapshot(int argc, char **argv) {
         return 1;
     }
 
-    // Stream exactly len bytes to stdout
+    // Stream exactly len bytes to stdout (server now sends clean JPEG starting at SOI)
     std::vector<char> buf(8192);
     int remaining = len;
     while (remaining > 0) {
@@ -131,10 +168,11 @@ static int cmd_events() {
 static void usage(const char *prog) {
     fprintf(stderr,
         "Usage:\n"
-        "  %s json <json-string>|-    # read stdin with '-'\n"
-        "  %s snapshot [-c CH] [-q Q] # writes JPEG to stdout\n"
-        "  %s events                  # newline-delimited JSON events\n",
-        prog, prog, prog);
+        "  %s json <json-string>|-                    # read stdin with '-'\n"
+        "  %s snapshot [-c CH] [-q Q]                 # writes a single JPEG to stdout\n"
+        "  %s mjpeg    [-c CH] [-q Q] [-f F] [-w W] [-h H]  # multipart MJPEG (server-side)\n"
+        "  %s events                                  # newline-delimited JSON events\n",
+        prog, prog, prog, prog);
 }
 
 int main(int argc, char **argv) {
@@ -144,6 +182,8 @@ int main(int argc, char **argv) {
         return cmd_json(argc-2, argv+2);
     } else if (strcmp(cmd, "snapshot") == 0) {
         return cmd_snapshot(argc-2, argv+2);
+    } else if (strcmp(cmd, "mjpeg") == 0) {
+        return cmd_mjpeg(argc-2, argv+2);
     } else if (strcmp(cmd, "events") == 0) {
         return cmd_events();
     } else {

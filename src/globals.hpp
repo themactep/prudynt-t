@@ -54,19 +54,29 @@ struct jpeg_stream
     std::condition_variable should_grab_frames;
     std::binary_semaphore is_activated{0};
 
-    // In-memory snapshot buffer (LWS_PRE + JPEG bytes), guarded by mutex_main when updated
+    // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when updated
     std::vector<unsigned char> snapshot_buf;
     // Per-request JPEG quality override (1..100, -1 = none)
     std::atomic<int> quality_override{-1};
 
     steady_clock::time_point last_image;
+    // Dynamic reconfiguration requests (applied by JPEGWorker)
+    std::atomic<int> req_width{-1};
+    std::atomic<int> req_height{-1};
+    std::atomic<int> req_fps{-1};
+    std::atomic<bool> reconfig{false};
+
     steady_clock::time_point last_subscriber;
 
     void request()
     {
         auto now = steady_clock::now();
-        std::unique_lock lck(mutex_main);
-        last_subscriber = now;
+        {
+            std::unique_lock lck(mutex_main);
+            last_subscriber = now;
+        }
+        // Wake JPEG worker if it's sleeping
+        should_grab_frames.notify_one();
     }
 
     bool request_or_overrun() {

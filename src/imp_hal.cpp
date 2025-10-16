@@ -3,6 +3,7 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include <cstring>
+#include <dlfcn.h>
 
 
 extern void MakeTables(int q, uint8_t *lqt, uint8_t *cqt);
@@ -68,9 +69,17 @@ int maybe_enable_bufshare(int jpegEncGrp, int srcEncChn, bool allow_shared)
 {
     if (!allow_shared) return 0;
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    int ret = IMP_Encoder_SetbufshareChn(jpegEncGrp, srcEncChn);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_SetbufshareChn(" << jpegEncGrp << ", " << srcEncChn << ")");
-    return ret;
+    typedef int (*pfn_setbufshare)(int,int);
+    void* handle = dlopen(nullptr, RTLD_LAZY);
+    pfn_setbufshare fn = handle ? reinterpret_cast<pfn_setbufshare>(dlsym(handle, "IMP_Encoder_SetbufshareChn")) : nullptr;
+    if (fn) {
+        int ret = fn(jpegEncGrp, srcEncChn);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_SetbufshareChn(" << jpegEncGrp << ", " << srcEncChn << ")");
+        return ret;
+    } else {
+        LOG_DEBUG("IMP_Encoder_SetbufshareChn not available; skipping bufshare");
+        return 0;
+    }
 #else
     (void)jpegEncGrp; (void)srcEncChn;
     return 0;

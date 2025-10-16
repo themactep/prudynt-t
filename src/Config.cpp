@@ -196,6 +196,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"stream1.osd.usertext_enabled", stream1.osd.usertext_enabled, true, validateBool},
         {"stream2.enabled", stream2.enabled, true, validateBool},
         {"websocket.enabled", websocket.enabled, true, validateBool},
+        {"stream3.enabled", stream3.enabled, false, validateBool},
         {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
         {"websocket.http_secured", websocket.http_secured, true, validateBool},
     };
@@ -386,6 +387,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
         {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
         {"websocket.port", websocket.port, 8089, validateInt65535},
+        {"stream3.jpeg_channel", stream3.jpeg_channel, 1, validateIntGe0},
+        {"stream3.jpeg_quality", stream3.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
+        {"stream3.jpeg_idle_fps", stream3.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
+        {"stream3.fps", stream3.fps, 15, [](const int &v) { return v > 1 && v <= 30; }},
         {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
     };
 };
@@ -865,6 +870,18 @@ void CFG::load()
         stream2.width = stream1.width;
         stream2.height = stream1.height;
     }
+
+    if (stream3.jpeg_channel == 0)
+    {
+        stream3.width = stream0.width;
+        stream3.height = stream0.height;
+    }
+    else
+    {
+        stream3.width = stream1.width;
+        stream3.height = stream1.height;
+    }
+
 
     // TODO: Implement ROI handling with JCT
     // Handle ROIs from JSON - temporarily disabled during JCT migration

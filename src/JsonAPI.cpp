@@ -379,9 +379,9 @@ namespace {
 
     void handle_sensor(JsonValue *obj, std::string &out, bool &sep){
         add_key(out, sep, "sensor", "{"); bool s2=false; bool wrote=false;
-        auto add_int=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ add_key(out,s2,key); add_num(out,cfg->get<int>(path)); wrote=true; }};
-        auto add_str_s=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ add_key(out,s2,key); add_str(out,cfg->get<const char*>(path)); wrote=true; }};
-        auto add_uint=[&](const char* key,const char* path){ if(JsonValue* v=obj_get(obj,key)){ add_key(out,s2,key); char b[16]; std::snprintf(b,sizeof(b),"%#x", cfg->get<unsigned int>(path)); out += '"'; out += b; out += '"'; wrote=true; }};
+        auto add_int=[&](const char* key,const char* path){ if(obj_get(obj,key)){ add_key(out,s2,key); add_num(out,cfg->get<int>(path)); wrote=true; }};
+        auto add_str_s=[&](const char* key,const char* path){ if(obj_get(obj,key)){ add_key(out,s2,key); add_str(out,cfg->get<const char*>(path)); wrote=true; }};
+        auto add_uint=[&](const char* key,const char* path){ if(obj_get(obj,key)){ add_key(out,s2,key); char b[16]; std::snprintf(b,sizeof(b),"%#x", cfg->get<unsigned int>(path)); out += '"'; out += b; out += '"'; wrote=true; }};
         add_str_s("model","sensor.model"); add_int("fps","sensor.fps"); add_int("width","sensor.width"); add_int("height","sensor.height"); add_uint("i2c_address","sensor.i2c_address");
         if(!wrote){ out.erase(out.size()-1); return; } out += "}";
     }

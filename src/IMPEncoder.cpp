@@ -2,6 +2,7 @@
 #include "imp_hal.hpp"
 
 #include "Config.hpp"
+#include <dlfcn.h>
 
 #define MODULE "IMPENCODER"
 
@@ -70,8 +71,17 @@ void IMPEncoder::initProfile()
     else if (strcmp(stream->format, "JPEG") == 0)
     {
         encoderProfile = IMP_ENC_PROFILE_JPEG;
-        IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP,
-                                    stream->width, stream->height, 24, 1, 0, 0, stream->jpeg_quality, 0);
+        {
+            typedef int (*pfn_setdef)(void*, int, int, int, int, int, int, int, int, int, int);
+            void* h = dlopen(nullptr, RTLD_LAZY);
+            pfn_setdef fn = h ? reinterpret_cast<pfn_setdef>(dlsym(h, "IMP_Encoder_SetDefaultParam")) : nullptr;
+            if (fn) {
+                (void)fn(&chnAttr, (int)encoderProfile, (int)IMP_ENC_RC_MODE_FIXQP,
+                         stream->width, stream->height, 24, 1, 0, 0, stream->jpeg_quality, 0);
+            } else {
+                LOG_DEBUG("IMP_Encoder_SetDefaultParam not available; proceeding with defaults");
+            }
+        }
         // 1000 / stream->jpeg_refresh
         LOG_DEBUG("STREAM PROFILE " << encChn << ", " <<
                     encGrp << ", " << stream->format << ", " <<
@@ -105,9 +115,17 @@ void IMPEncoder::initProfile()
         LOG_ERROR("unsupported stream->mode (" << stream->mode << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and CAPPED_QUALITY on T31");
     }
 
-    IMP_Encoder_SetDefaultParam(
-        &chnAttr, encoderProfile, rcMode, stream->width, stream->height,
-        stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
+    {
+        typedef int (*pfn_setdef)(void*, int, int, int, int, int, int, int, int, int, int);
+        void* h = dlopen(nullptr, RTLD_LAZY);
+        pfn_setdef fn = h ? reinterpret_cast<pfn_setdef>(dlsym(h, "IMP_Encoder_SetDefaultParam")) : nullptr;
+        if (fn) {
+            (void)fn(&chnAttr, (int)encoderProfile, (int)rcMode, stream->width, stream->height,
+                     stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
+        } else {
+            LOG_DEBUG("IMP_Encoder_SetDefaultParam not available; proceeding with defaults");
+        }
+    }
 
     switch (rcMode)
     {

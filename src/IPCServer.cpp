@@ -13,13 +13,25 @@
 #include <cctype>
 
 
-// Local snapshot helper (no libwebsockets dependency)
+// Local snapshot helper: return a clean JPEG starting from SOI
 bool get_snapshot_ch_local(int ch, std::vector<unsigned char> &image) {
     std::unique_lock lck(mutex_main);
     if (ch < 0 || ch >= NUM_VIDEO_CHANNELS || !global_jpeg[ch]) return false;
     auto &buf = global_jpeg[ch]->snapshot_buf;
-    if (!buf.empty()) { image = buf; return true; }
-    return false;
+    if (buf.empty()) return false;
+
+    // Find first JPEG SOI marker 0xFF 0xD8 and slice from there
+    size_t soi = std::string::npos;
+    for (size_t i = 0; i + 1 < buf.size(); ++i) {
+        if (buf[i] == 0xFF && buf[i + 1] == 0xD8) { soi = i; break; }
+    }
+    if (soi != std::string::npos) {
+        image.assign(buf.begin() + soi, buf.end());
+    } else {
+        // Fallback: return as-is if no SOI found
+        image = buf;
+    }
+    return true;
 }
 
 static bool process_json_with_jct(const std::string &req, std::string &resp) {
@@ -147,9 +159,24 @@ int IPCServer::handle_client(int fd) {
         if (ch >= 0 && ch < NUM_VIDEO_CHANNELS && global_jpeg[ch]) {
             if (q >= 1 && q <= 100) global_jpeg[ch]->quality_override = q;
         }
+        // Signal demand to speed up capture and wake JPEG worker if idle
+        if (ch >= 0 && ch < NUM_VIDEO_CHANNELS && global_jpeg[ch]) {
+            global_jpeg[ch]->request();
+        }
 
+        // Try to get a fresh snapshot, waiting briefly if not yet available
         std::vector<unsigned char> img;
-        if (get_snapshot_ch_local(ch, img) && img.size() > 0) {
+        const int max_wait_ms = 250;
+        int waited = 0;
+        while (!(get_snapshot_ch_local(ch, img) && !img.empty()) && waited < max_wait_ms) {
+            usleep(10 * 1000);
+            waited += 10;
+        }
+        // Fallback: if requested channel isn't available, try ch0 to avoid client hangs
+        if (img.empty() && ch != 0) {
+            get_snapshot_ch_local(0, img);
+        }
+        if (!img.empty()) {
             // Protocol: "OK <len>\n<bytes>"
             char hdr[64];
             int len = (int)img.size();
@@ -160,6 +187,104 @@ int IPCServer::handle_client(int fd) {
             const char *err = "ERR no_image\n";
             write(fd, err, strlen(err));
         }
+        return 0;
+
+    }
+
+    if (starts_with(req, "MJPEG")) {
+        // Parse: MJPEG ch=<0|1> w=<W> h=<H> f=<FPS> q=<Q> boundary=<str>
+        int ch = 0, w = -1, h = -1, fps = -1, q = -1;
+        std::string boundary = "prudyntmjpegboundary";
+        auto find_kv = [&](const char* key)->int{
+            size_t pos = req.find(key);
+            if (pos == std::string::npos) return -999999;
+            pos += std::strlen(key);
+            while (pos < req.size() && (req[pos] == ' ' || req[pos] == '=')) pos++;
+            size_t start = pos;
+            while (pos < req.size() && isdigit(static_cast<unsigned char>(req[pos]))) pos++;
+            if (start == pos) return -999999;
+            return std::stoi(req.substr(start, pos - start));
+        };
+        auto find_str = [&](const char* key)->std::string{
+            size_t pos = req.find(key);
+            if (pos == std::string::npos) return {};
+            pos += std::strlen(key);
+            while (pos < req.size() && (req[pos] == ' ' || req[pos] == '=')) pos++;
+            size_t start = pos;
+            while (pos < req.size() && !isspace(static_cast<unsigned char>(req[pos]))) pos++;
+            return req.substr(start, pos - start);
+        };
+        int v;
+        v = find_kv("ch"); if (v != -999999) ch = v;
+        v = find_kv("w");  if (v != -999999) w = v;
+        v = find_kv("h");  if (v != -999999) h = v;
+        v = find_kv("f");  if (v != -999999) fps = v;
+        v = find_kv("q");  if (v != -999999) q = v;
+        std::string b = find_str("boundary"); if (!b.empty()) boundary = b;
+
+        if (ch < 0 || ch >= NUM_VIDEO_CHANNELS || !global_jpeg[ch]) {
+            const char *err = "ERR bad_ch\n";
+            write(fd, err, strlen(err));
+            return 0;
+        }
+
+        // Quantize w/h to multiples of 16 and cap to source size
+        if (w > 0 && h > 0) {
+            auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width : cfg->stream1.width;
+            auto src_h = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.height : cfg->stream1.height;
+            if (w > src_w) w = src_w;
+            if (h > src_h) h = src_h;
+            w = (w / 16) * 16; if (w < 16) w = 16;
+            h = (h / 16) * 16; if (h < 16) h = 16;
+        }
+        if (fps > 0) {
+            int max_fps = (cfg->sensor.fps > 0) ? cfg->sensor.fps : 30;
+            if (fps > max_fps) fps = max_fps;
+            if (fps < 1) fps = 1;
+        }
+        if (q >= 1 && q <= 100) global_jpeg[ch]->quality_override = q;
+
+        // Remember originals to restore after disconnect
+        int orig_w = global_jpeg[ch]->stream->width;
+        int orig_h = global_jpeg[ch]->stream->height;
+        int orig_fps = global_jpeg[ch]->stream->fps;
+
+        // Request reconfiguration and wake worker
+        if (w > 0 && h > 0) { global_jpeg[ch]->req_width = w; global_jpeg[ch]->req_height = h; }
+        if (fps > 0) { global_jpeg[ch]->req_fps = fps; }
+        global_jpeg[ch]->reconfig = true;
+        global_jpeg[ch]->request();
+
+        // Wait briefly for reconfig to apply
+        int wait_ms = 500; while (global_jpeg[ch]->reconfig.load() && wait_ms > 0) { usleep(10*1000); wait_ms -= 10; }
+
+        // Start streaming loop: multipart MJPEG parts
+        std::vector<unsigned char> img;
+        std::string hdr;
+        while (1) {
+            img.clear();
+            if (!get_snapshot_ch_local(ch, img) || img.empty()) {
+                // if no data yet, yield a bit
+                usleep(10 * 1000);
+                continue;
+            }
+            char ph[128];
+            int len = (int)img.size();
+            int m = snprintf(ph, sizeof(ph), "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", boundary.c_str(), len);
+            if (write(fd, ph, m) < 0) break;
+            if (write(fd, (const char*)img.data(), len) < 0) break;
+            if (write(fd, "\r\n", 2) < 0) break;
+            // Pace output
+            int usec = 1000000 / (fps > 0 ? fps : orig_fps);
+            usleep(usec);
+        }
+
+        // Restore FPS (and original size) after client disconnect
+        global_jpeg[ch]->req_width = orig_w;
+        global_jpeg[ch]->req_height = orig_h;
+        global_jpeg[ch]->req_fps = orig_fps;
+        global_jpeg[ch]->reconfig = true;
+        global_jpeg[ch]->request();
         return 0;
     }
 
