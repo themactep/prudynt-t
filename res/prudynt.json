@@ -7,7 +7,7 @@
     "input_alc_gain": 0,
     "input_bitrate": 40,
     "input_enabled": true,
-    "input_format": "OPUS",
+    "input_format": "AAC",
     "input_gain": 25,
     "input_high_pass_filter": false,
     "input_noise_suppression": 0,
