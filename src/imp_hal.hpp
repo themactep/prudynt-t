@@ -20,12 +20,42 @@ struct _stream; // fwd decl
 namespace hal {
 
 struct PlatformCaps {
+    // Encoder capabilities
     bool has_h265;
     bool has_capped_quality;
     bool has_capped_vbr;
     bool has_ip_pb_delta;
     bool has_bufshare;
     bool has_jpeg_set_qtable;
+    bool has_smart_rc;
+    bool has_super_frm;
+    bool has_intra_refresh;
+    
+    // Audio capabilities
+    bool has_audio_aec_channel;
+    bool has_audio_agc;
+    bool has_audio_alc;
+    bool has_audio_hpf;
+    bool has_audio_ns;
+    
+    // ISP capabilities
+    bool has_isp_sinter;
+    bool has_isp_temper;
+    bool has_isp_hue;
+    bool has_isp_dpc;
+    bool has_isp_drc;
+    bool has_isp_defog;
+    bool has_isp_backlight_comp;
+    bool has_isp_highlight_depress;
+    bool has_isp_ae_comp;
+    bool has_isp_max_gain;
+    
+    // OSD capabilities
+    bool has_osd_region_invert;
+    
+    // System capabilities
+    bool uses_xburst2;
+    bool uses_kernel_4;
 };
 
 const PlatformCaps& caps();
@@ -90,43 +120,9 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 // Platform Capabilities
 // ============================================================================
 
-// Platform capability flags
-struct PlatformCapabilities {
-    // Audio capabilities
-    bool has_audio_aec_channel;
-    bool has_audio_agc;
-    bool has_audio_alc;
-    bool has_audio_hpf;
-    bool has_audio_ns;
-    
-    // ISP capabilities
-    bool has_isp_sinter;
-    bool has_isp_temper;
-    bool has_isp_hue;
-    bool has_isp_dpc;
-    bool has_isp_drc;
-    bool has_isp_defog;
-    bool has_isp_backlight_comp;
-    bool has_isp_highlight_depress;
-    bool has_isp_ae_comp;
-    bool has_isp_max_gain;
-    
-    // Encoder capabilities
-    bool has_h265;
-    bool has_smart_rc;
-    bool has_super_frm;
-    bool has_intra_refresh;
-    
-    // OSD capabilities
-    bool has_osd_region_invert;
-    
-    // System capabilities
-    bool uses_xburst2;
-    bool uses_kernel_4;
-};
 
-// Get platform capabilities (singleton)
-const PlatformCapabilities& get_platform_caps();
+
+
 
 // Convenience namespace for capability checks
 namespace caps {

@@ -12,27 +12,125 @@ extern void MakeTables(int q, uint8_t *lqt, uint8_t *cqt);
 namespace hal {
 
 static PlatformCaps g_caps = {
+    // Encoder capabilities
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    /*has_h265*/ true,
-    /*has_capped_quality*/ true,
-    /*has_capped_vbr*/ true,
-    /*has_ip_pb_delta*/ true,
-    /*has_bufshare*/ true,
-    /*has_jpeg_set_qtable*/ false,
+    .has_h265 = true,
+    .has_capped_quality = true,
+    .has_capped_vbr = true,
+    .has_ip_pb_delta = true,
+    .has_bufshare = true,
+    .has_jpeg_set_qtable = false,
+    .has_smart_rc = true,
+    .has_super_frm = true,
+    .has_intra_refresh = true,
 #elif defined(PLATFORM_T30)
-    /*has_h265*/ true,
-    /*has_capped_quality*/ false,
-    /*has_capped_vbr*/ false,
-    /*has_ip_pb_delta*/ false,
-    /*has_bufshare*/ false,
-    /*has_jpeg_set_qtable*/ true,
+    .has_h265 = true,
+    .has_capped_quality = false,
+    .has_capped_vbr = false,
+    .has_ip_pb_delta = false,
+    .has_bufshare = false,
+    .has_jpeg_set_qtable = true,
+    .has_smart_rc = false,
+    .has_super_frm = false,
+    .has_intra_refresh = false,
 #else
-    /*has_h265*/ false,
-    /*has_capped_quality*/ false,
-    /*has_capped_vbr*/ false,
-    /*has_ip_pb_delta*/ false,
-    /*has_bufshare*/ false,
-    /*has_jpeg_set_qtable*/ true,
+    .has_h265 = false,
+    .has_capped_quality = false,
+    .has_capped_vbr = false,
+    .has_ip_pb_delta = false,
+    .has_bufshare = false,
+    .has_jpeg_set_qtable = true,
+    .has_smart_rc = false,
+    .has_super_frm = false,
+    .has_intra_refresh = false,
+#endif
+
+    // Audio capabilities
+#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    .has_audio_aec_channel = true,
+#else
+    .has_audio_aec_channel = false,
+#endif
+
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    .has_audio_agc = true,
+    .has_audio_hpf = true,
+    .has_audio_ns = true,
+#else
+    .has_audio_agc = false,
+    .has_audio_hpf = false,
+    .has_audio_ns = false,
+#endif
+
+#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    .has_audio_alc = true,
+#else
+    .has_audio_alc = false,
+#endif
+
+    // ISP capabilities
+#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+    .has_isp_sinter = true,
+#else
+    .has_isp_sinter = false,
+#endif
+
+#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+    .has_isp_temper = true,
+#else
+    .has_isp_temper = false,
+#endif
+
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    .has_isp_hue = true,
+    .has_isp_defog = true,
+    .has_isp_backlight_comp = true,
+#else
+    .has_isp_hue = false,
+    .has_isp_defog = false,
+    .has_isp_backlight_comp = false,
+#endif
+
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    .has_isp_dpc = true,
+#else
+    .has_isp_dpc = false,
+#endif
+
+#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    .has_isp_drc = true,
+    .has_isp_highlight_depress = true,
+#else
+    .has_isp_drc = false,
+    .has_isp_highlight_depress = false,
+#endif
+
+#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+    .has_isp_ae_comp = true,
+#else
+    .has_isp_ae_comp = false,
+#endif
+
+#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+    .has_isp_max_gain = true,
+#else
+    .has_isp_max_gain = false,
+#endif
+
+    // OSD capabilities
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    .has_osd_region_invert = true,
+#else
+    .has_osd_region_invert = false,
+#endif
+
+    // System capabilities
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    .uses_xburst2 = true,
+    .uses_kernel_4 = true,
+#else
+    .uses_xburst2 = false,
+    .uses_kernel_4 = false,
 #endif
 };
 
@@ -230,7 +328,7 @@ int set_sharpness(unsigned char val)
 
 int set_sinter_strength(unsigned char val)
 {
-    if (!caps::has_isp_sinter()) {
+    if (!caps().has_isp_sinter()) {
         LOG_DEBUG("set_sinter_strength not supported on this platform");
         return 0;
     }
@@ -239,7 +337,7 @@ int set_sinter_strength(unsigned char val)
 
 int set_temper_strength(unsigned char val)
 {
-    if (!caps::has_isp_temper()) {
+    if (!caps().has_isp_temper()) {
         LOG_DEBUG("set_temper_strength not supported on this platform");
         return 0;
     }
@@ -248,7 +346,7 @@ int set_temper_strength(unsigned char val)
 
 int set_hue(unsigned char val)
 {
-    if (!caps::has_isp_hue()) {
+    if (!caps().has_isp_hue()) {
         LOG_DEBUG("set_hue not supported on this platform");
         return 0;
     }
@@ -315,7 +413,7 @@ int set_anti_flicker(int mode)
 
 int set_ae_compensation(int val)
 {
-    if (!caps::has_isp_ae_comp()) {
+    if (!caps().has_isp_ae_comp()) {
         LOG_DEBUG("set_ae_compensation not supported on this platform");
         return 0;
     }
@@ -324,7 +422,7 @@ int set_ae_compensation(int val)
 
 int set_dpc_strength(unsigned char val)
 {
-    if (!caps::has_isp_dpc()) {
+    if (!caps().has_isp_dpc()) {
         LOG_DEBUG("set_dpc_strength not supported on this platform");
         return 0;
     }
@@ -333,7 +431,7 @@ int set_dpc_strength(unsigned char val)
 
 int set_drc_strength(unsigned char val)
 {
-    if (!caps::has_isp_drc()) {
+    if (!caps().has_isp_drc()) {
         LOG_DEBUG("set_drc_strength not supported on this platform");
         return 0;
     }
@@ -342,7 +440,7 @@ int set_drc_strength(unsigned char val)
 
 int set_defog_strength(uint8_t val)
 {
-    if (!caps::has_isp_defog()) {
+    if (!caps().has_isp_defog()) {
         LOG_DEBUG("set_defog_strength not supported on this platform");
         return 0;
     }
@@ -351,7 +449,7 @@ int set_defog_strength(uint8_t val)
 
 int set_backlight_comp(unsigned char val)
 {
-    if (!caps::has_isp_backlight_comp()) {
+    if (!caps().has_isp_backlight_comp()) {
         LOG_DEBUG("set_backlight_comp not supported on this platform");
         return 0;
     }
@@ -360,7 +458,7 @@ int set_backlight_comp(unsigned char val)
 
 int set_highlight_depress(unsigned char val)
 {
-    if (!caps::has_isp_highlight_depress()) {
+    if (!caps().has_isp_highlight_depress()) {
         LOG_DEBUG("set_highlight_depress not supported on this platform");
         return 0;
     }
@@ -369,7 +467,7 @@ int set_highlight_depress(unsigned char val)
 
 int set_max_again(unsigned char val)
 {
-    if (!caps::has_isp_max_gain()) {
+    if (!caps().has_isp_max_gain()) {
         LOG_DEBUG("set_max_again not supported on this platform");
         return 0;
     }
@@ -378,7 +476,7 @@ int set_max_again(unsigned char val)
 
 int set_max_dgain(unsigned char val)
 {
-    if (!caps::has_isp_max_gain()) {
+    if (!caps().has_isp_max_gain()) {
         LOG_DEBUG("set_max_dgain not supported on this platform");
         return 0;
     }
@@ -409,123 +507,5 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain)
 // Platform Capabilities Implementation
 // ============================================================================
 
-const PlatformCapabilities& get_platform_caps() {
-    static PlatformCapabilities caps = {
-        // Audio capabilities
-#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        .has_audio_aec_channel = true,
-#else
-        .has_audio_aec_channel = false,
-#endif
-
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        .has_audio_agc = true,
-#else
-        .has_audio_agc = false,
-#endif
-
-#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-        .has_audio_alc = true,
-#else
-        .has_audio_alc = false,
-#endif
-
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        .has_audio_hpf = true,
-        .has_audio_ns = true,
-#else
-        .has_audio_hpf = false,
-        .has_audio_ns = false,
-#endif
-
-        // ISP capabilities
-#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-        .has_isp_sinter = true,
-#else
-        .has_isp_sinter = false,
-#endif
-
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-        .has_isp_temper = true,
-#else
-        .has_isp_temper = false,
-#endif
-
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-        .has_isp_hue = true,
-#else
-        .has_isp_hue = false,
-#endif
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
-        .has_isp_dpc = true,
-#else
-        .has_isp_dpc = false,
-#endif
-
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-        .has_isp_drc = true,
-#else
-        .has_isp_drc = false,
-#endif
-
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-        .has_isp_defog = true,
-        .has_isp_backlight_comp = true,
-#else
-        .has_isp_defog = false,
-        .has_isp_backlight_comp = false,
-#endif
-
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-        .has_isp_highlight_depress = true,
-#else
-        .has_isp_highlight_depress = false,
-#endif
-
-#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-        .has_isp_ae_comp = true,
-#else
-        .has_isp_ae_comp = false,
-#endif
-
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-        .has_isp_max_gain = true,
-#else
-        .has_isp_max_gain = false,
-#endif
-
-        // Encoder capabilities
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        .has_h265 = true,
-        .has_smart_rc = true,
-        .has_super_frm = true,
-        .has_intra_refresh = true,
-#else
-        .has_h265 = false,
-        .has_smart_rc = false,
-        .has_super_frm = false,
-        .has_intra_refresh = false,
-#endif
-
-        // OSD capabilities
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        .has_osd_region_invert = true,
-#else
-        .has_osd_region_invert = false,
-#endif
-
-        // System capabilities
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        .uses_xburst2 = true,
-        .uses_kernel_4 = true,
-#else
-        .uses_xburst2 = false,
-        .uses_kernel_4 = false,
-#endif
-    };
-    
-    return caps;
-}
 
 } // namespace hal
