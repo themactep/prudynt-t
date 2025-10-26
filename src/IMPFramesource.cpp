@@ -1,3 +1,4 @@
+#include "imp_hal.hpp"
 #include "Logger.hpp"
 #include "IMPFramesource.hpp"
 #include <dlfcn.h>

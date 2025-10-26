@@ -147,9 +147,11 @@ int IMPAudio::init()
 
     IMPAudioIChnParam chnParam{};
     chnParam.usrFrmDepth = 30; // frame buffer depth
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
     if (hal::caps().has_audio_aec_channel) {
         chnParam.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
     }
+#endif
     chnParam.Rev = 0;
 
     ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
