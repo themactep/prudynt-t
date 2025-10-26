@@ -687,9 +687,9 @@ int get_encoder_type(const char* format)
 bool supports_jpeg_quality_table()
 {
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    return caps().has_jpeg_set_qtable;
+    return hal::caps().has_jpeg_set_qtable;
 #else
-    return \!caps().has_jpeg_set_qtable;
+    return !hal::caps().has_jpeg_set_qtable;
 #endif
 }
 
