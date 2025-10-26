@@ -328,7 +328,7 @@ int set_sharpness(unsigned char val)
 
 int set_sinter_strength(unsigned char val)
 {
-    if (!caps().has_isp_sinter()) {
+    if (!caps().has_isp_sinter) {
         LOG_DEBUG("set_sinter_strength not supported on this platform");
         return 0;
     }
@@ -337,7 +337,7 @@ int set_sinter_strength(unsigned char val)
 
 int set_temper_strength(unsigned char val)
 {
-    if (!caps().has_isp_temper()) {
+    if (!caps().has_isp_temper) {
         LOG_DEBUG("set_temper_strength not supported on this platform");
         return 0;
     }
@@ -346,7 +346,7 @@ int set_temper_strength(unsigned char val)
 
 int set_hue(unsigned char val)
 {
-    if (!caps().has_isp_hue()) {
+    if (!caps().has_isp_hue) {
         LOG_DEBUG("set_hue not supported on this platform");
         return 0;
     }
@@ -413,7 +413,7 @@ int set_anti_flicker(int mode)
 
 int set_ae_compensation(int val)
 {
-    if (!caps().has_isp_ae_comp()) {
+    if (!caps().has_isp_ae_comp) {
         LOG_DEBUG("set_ae_compensation not supported on this platform");
         return 0;
     }
@@ -422,7 +422,7 @@ int set_ae_compensation(int val)
 
 int set_dpc_strength(unsigned char val)
 {
-    if (!caps().has_isp_dpc()) {
+    if (!caps().has_isp_dpc) {
         LOG_DEBUG("set_dpc_strength not supported on this platform");
         return 0;
     }
@@ -431,7 +431,7 @@ int set_dpc_strength(unsigned char val)
 
 int set_drc_strength(unsigned char val)
 {
-    if (!caps().has_isp_drc()) {
+    if (!caps().has_isp_drc) {
         LOG_DEBUG("set_drc_strength not supported on this platform");
         return 0;
     }
@@ -440,7 +440,7 @@ int set_drc_strength(unsigned char val)
 
 int set_defog_strength(uint8_t val)
 {
-    if (!caps().has_isp_defog()) {
+    if (!caps().has_isp_defog) {
         LOG_DEBUG("set_defog_strength not supported on this platform");
         return 0;
     }
@@ -449,7 +449,7 @@ int set_defog_strength(uint8_t val)
 
 int set_backlight_comp(unsigned char val)
 {
-    if (!caps().has_isp_backlight_comp()) {
+    if (!caps().has_isp_backlight_comp) {
         LOG_DEBUG("set_backlight_comp not supported on this platform");
         return 0;
     }
@@ -458,7 +458,7 @@ int set_backlight_comp(unsigned char val)
 
 int set_highlight_depress(unsigned char val)
 {
-    if (!caps().has_isp_highlight_depress()) {
+    if (!caps().has_isp_highlight_depress) {
         LOG_DEBUG("set_highlight_depress not supported on this platform");
         return 0;
     }
@@ -467,7 +467,7 @@ int set_highlight_depress(unsigned char val)
 
 int set_max_again(unsigned char val)
 {
-    if (!caps().has_isp_max_gain()) {
+    if (!caps().has_isp_max_gain) {
         LOG_DEBUG("set_max_again not supported on this platform");
         return 0;
     }
@@ -476,7 +476,7 @@ int set_max_again(unsigned char val)
 
 int set_max_dgain(unsigned char val)
 {
-    if (!caps().has_isp_max_gain()) {
+    if (!caps().has_isp_max_gain) {
         LOG_DEBUG("set_max_dgain not supported on this platform");
         return 0;
     }

@@ -147,7 +147,7 @@ int IMPAudio::init()
 
     IMPAudioIChnParam chnParam{};
     chnParam.usrFrmDepth = 30; // frame buffer depth
-    if (caps().has_audio_aec_channel()) {
+    if (caps().has_audio_aec_channel) {
         chnParam.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
     }
     chnParam.Rev = 0;
@@ -205,7 +205,7 @@ int IMPAudio::init()
         enabledHpf = true;
     }
 
-if (caps().has_audio_agc() && cfg->audio.input_agc_enabled) {
+if (caps().has_audio_agc && cfg->audio.input_agc_enabled) {
         IMPAudioAgcConfig agcConfig = {
             /**< Gain level, with a range of [0, 31]. This represents the target
             volume level, measured in dB (decibels), and is a negative value. The
@@ -220,7 +220,7 @@ if (caps().has_audio_agc() && cfg->audio.input_agc_enabled) {
         LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableAgc({" << agcConfig.TargetLevelDbfs << ", " << agcConfig.CompressionGaindB << "})");
         enabledAgc = true;
     }
-if (caps().has_audio_alc() && cfg->audio.input_alc_gain > 0)
+if (caps().has_audio_alc && cfg->audio.input_alc_gain > 0)
     {
         typedef int (*pfn_ai_setalc)(int,int,int);
         void* h = dlopen(nullptr, RTLD_LAZY);
