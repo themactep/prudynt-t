@@ -12,7 +12,7 @@ extern void MakeTables(int q, uint8_t *lqt, uint8_t *cqt);
 namespace hal {
 
 static PlatformCaps g_caps = {
-    // Encoder capabilities
+    // Encoder capabilities (must match struct order)
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
     .has_h265 = true,
     .has_capped_quality = true,
@@ -45,7 +45,7 @@ static PlatformCaps g_caps = {
     .has_intra_refresh = false,
 #endif
 
-    // Audio capabilities
+    // Audio capabilities (must match struct order)
 #if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
     .has_audio_aec_channel = true,
 #else
@@ -54,12 +54,8 @@ static PlatformCaps g_caps = {
 
 #if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
     .has_audio_agc = true,
-    .has_audio_hpf = true,
-    .has_audio_ns = true,
 #else
     .has_audio_agc = false,
-    .has_audio_hpf = false,
-    .has_audio_ns = false,
 #endif
 
 #if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
@@ -68,14 +64,22 @@ static PlatformCaps g_caps = {
     .has_audio_alc = false,
 #endif
 
-    // ISP capabilities
-#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    .has_audio_hpf = true,
+    .has_audio_ns = true,
+#else
+    .has_audio_hpf = false,
+    .has_audio_ns = false,
+#endif
+
+    // ISP capabilities (must match struct order)
+#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
     .has_isp_sinter = true,
 #else
     .has_isp_sinter = false,
 #endif
 
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
     .has_isp_temper = true,
 #else
     .has_isp_temper = false,
@@ -83,12 +87,8 @@ static PlatformCaps g_caps = {
 
 #if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     .has_isp_hue = true,
-    .has_isp_defog = true,
-    .has_isp_backlight_comp = true,
 #else
     .has_isp_hue = false,
-    .has_isp_defog = false,
-    .has_isp_backlight_comp = false,
 #endif
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100)
@@ -99,19 +99,31 @@ static PlatformCaps g_caps = {
 
 #if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     .has_isp_drc = true,
-    .has_isp_highlight_depress = true,
 #else
     .has_isp_drc = false,
+#endif
+
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    .has_isp_defog = true,
+    .has_isp_backlight_comp = true,
+#else
+    .has_isp_defog = false,
+    .has_isp_backlight_comp = false,
+#endif
+
+#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    .has_isp_highlight_depress = true,
+#else
     .has_isp_highlight_depress = false,
 #endif
 
-#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
     .has_isp_ae_comp = true,
 #else
     .has_isp_ae_comp = false,
 #endif
 
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
     .has_isp_max_gain = true,
 #else
     .has_isp_max_gain = false,
@@ -133,8 +145,6 @@ static PlatformCaps g_caps = {
     .uses_kernel_4 = false,
 #endif
 };
-
-const PlatformCaps& caps() { return g_caps; }
 
 void set_jpeg_quality_qtable(int encChn, int quality, const char* cpu_hint)
 {
