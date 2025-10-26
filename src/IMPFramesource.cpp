@@ -4,7 +4,6 @@
 
 #define MODULE "IMP_FRAMESOURCE"
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 
 IMPFramesource *IMPFramesource::createNew(
     _stream *stream,
