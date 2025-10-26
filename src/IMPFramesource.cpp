@@ -69,7 +69,7 @@ int IMPFramesource::init()
     LOG_DEBUG("  fps=" << chnAttr.outFrmRateNum << "/" << chnAttr.outFrmRateDen << " nrVBs=" << chnAttr.nrVBs << " pixFmt=" << chnAttr.pixFmt);
 
 #if !defined(KERNEL_VERSION_4)
-#if defined(PLATFORM_T31)
+    if (hal::caps().has_framesource_chn_rotate) {
 
     int rot_rotation = stream->rotation;
     int rot_height = stream->height;
@@ -94,7 +94,7 @@ int IMPFramesource::init()
        LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate(0, rotation, rot_height, rot_width)");
     }
 
-#endif
+    }
 #endif
 
     ret = IMP_FrameSource_CreateChn(chnNr, &chnAttr);

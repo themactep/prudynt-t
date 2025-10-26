@@ -134,6 +134,13 @@ static PlatformCaps g_caps = {
     .has_osd_region_invert = true,
 #else
     .has_osd_region_invert = false,
+
+    // Framesource capabilities
+#if defined(PLATFORM_T31)
+    .has_framesource_chn_rotate = true,
+#else
+    .has_framesource_chn_rotate = false,
+#endif
 #endif
 
     // System capabilities

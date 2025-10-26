@@ -61,6 +61,9 @@ struct PlatformCaps {
     
     // OSD capabilities
     bool has_osd_region_invert;
+
+    // Framesource capabilities
+    bool has_framesource_chn_rotate;
     
     // System capabilities
     bool uses_xburst2;
