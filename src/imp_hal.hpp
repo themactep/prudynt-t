@@ -59,6 +59,11 @@ struct PlatformCaps {
     bool has_isp_highlight_depress;
     bool has_isp_ae_comp;
     bool has_isp_max_gain;
+    bool has_isp_hflip;
+    bool has_isp_vflip;
+    bool has_isp_running_mode;
+    bool has_isp_anti_flicker;
+    bool has_isp_wb;
     
     // OSD capabilities
     bool has_osd_region_invert;

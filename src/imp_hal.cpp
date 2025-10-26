@@ -73,13 +73,13 @@ static PlatformCaps g_caps = {
 #endif
 
     // ISP capabilities (must match struct order)
-#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     .has_isp_sinter = true,
 #else
     .has_isp_sinter = false,
 #endif
 
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     .has_isp_temper = true,
 #else
     .has_isp_temper = false,
@@ -97,7 +97,7 @@ static PlatformCaps g_caps = {
     .has_isp_dpc = false,
 #endif
 
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     .has_isp_drc = true,
 #else
     .has_isp_drc = false,
@@ -128,6 +128,19 @@ static PlatformCaps g_caps = {
 #else
     .has_isp_max_gain = false,
 #endif
+
+    // ISP control capabilities
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+    .has_isp_hflip = true,
+    .has_isp_vflip = true,
+#else
+    .has_isp_hflip = false,  // T40/T41 use combined HVFLIP
+    .has_isp_vflip = false,  // T40/T41 use combined HVFLIP
+#endif
+
+    .has_isp_running_mode = true,  // All platforms support running mode
+    .has_isp_anti_flicker = true,  // All platforms support anti-flicker
+    .has_isp_wb = true,            // All platforms support white balance
 
     // OSD capabilities
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -353,8 +366,17 @@ int set_sinter_strength(unsigned char val)
         LOG_DEBUG("set_sinter_strength not supported on this platform");
         return 0;
     }
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    // Simple value API
     return IMP_ISP_Tuning_SetSinterStrength(val);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+    // Struct-based API
+    IMPISPSinterDenoiseAttr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.enable = IMPISP_TUNING_OPS_MODE_ENABLE;
+    attr.type = IMPISP_TUNING_OPS_MODE_MANUAL;
+    attr.sinter_strength = val;
+    return IMP_ISP_Tuning_SetSinterDnsAttr(&attr);
 #else
     return 0;
 #endif
@@ -366,8 +388,16 @@ int set_temper_strength(unsigned char val)
         LOG_DEBUG("set_temper_strength not supported on this platform");
         return 0;
     }
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    // Simple value API
     return IMP_ISP_Tuning_SetTemperStrength(val);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+    // Struct-based API
+    IMPISPTemperDenoiseAttr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.type = IMPISP_TEMPER_MANUAL;
+    attr.val = val;
+    return IMP_ISP_Tuning_SetTemperDnsCtl(&attr);
 #else
     return 0;
 #endif
@@ -478,8 +508,16 @@ int set_drc_strength(unsigned char val)
         LOG_DEBUG("set_drc_strength not supported on this platform");
         return 0;
     }
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41) && !defined(PLATFORM_T10) && !defined(PLATFORM_T20)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    // Simple value API
     return IMP_ISP_Tuning_SetDRC_Strength(val);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+    // Struct-based API
+    IMPISPDrcAttr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.mode = IMPISP_DRC_MANUAL;
+    attr.drc_strength = val;
+    return IMP_ISP_Tuning_SetRawDRC(&attr);
 #else
     return 0;
 #endif
