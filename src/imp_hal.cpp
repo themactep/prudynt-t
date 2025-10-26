@@ -332,7 +332,11 @@ int set_sinter_strength(unsigned char val)
         LOG_DEBUG("set_sinter_strength not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     return IMP_ISP_Tuning_SetSinterStrength(val);
+#else
+    return 0;
+#endif
 }
 
 int set_temper_strength(unsigned char val)
@@ -341,7 +345,11 @@ int set_temper_strength(unsigned char val)
         LOG_DEBUG("set_temper_strength not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     return IMP_ISP_Tuning_SetTemperStrength(val);
+#else
+    return 0;
+#endif
 }
 
 int set_hue(unsigned char val)
@@ -350,7 +358,11 @@ int set_hue(unsigned char val)
         LOG_DEBUG("set_hue not supported on this platform");
         return 0;
     }
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetBcshHue(IMPVI_MAIN, &val);
+#else
     return IMP_ISP_Tuning_SetBcshHue(val);
+#endif
 }
 
 int set_hflip(bool enable)
@@ -417,7 +429,11 @@ int set_ae_compensation(int val)
         LOG_DEBUG("set_ae_compensation not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     return IMP_ISP_Tuning_SetAeComp(val);
+#else
+    return 0;
+#endif
 }
 
 int set_dpc_strength(unsigned char val)
@@ -426,7 +442,11 @@ int set_dpc_strength(unsigned char val)
         LOG_DEBUG("set_dpc_strength not supported on this platform");
         return 0;
     }
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
     return IMP_ISP_Tuning_SetDPC_Strength(val);
+#else
+    return 0;
+#endif
 }
 
 int set_drc_strength(unsigned char val)
@@ -435,7 +455,11 @@ int set_drc_strength(unsigned char val)
         LOG_DEBUG("set_drc_strength not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41) && !defined(PLATFORM_T10) && !defined(PLATFORM_T20)
     return IMP_ISP_Tuning_SetDRC_Strength(val);
+#else
+    return 0;
+#endif
 }
 
 int set_defog_strength(uint8_t val)
@@ -444,7 +468,11 @@ int set_defog_strength(uint8_t val)
         LOG_DEBUG("set_defog_strength not supported on this platform");
         return 0;
     }
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     return IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t*>(&val));
+#else
+    return 0;
+#endif
 }
 
 int set_backlight_comp(unsigned char val)
@@ -453,7 +481,11 @@ int set_backlight_comp(unsigned char val)
         LOG_DEBUG("set_backlight_comp not supported on this platform");
         return 0;
     }
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     return IMP_ISP_Tuning_SetBacklightComp(val);
+#else
+    return 0;
+#endif
 }
 
 int set_highlight_depress(unsigned char val)
@@ -462,7 +494,11 @@ int set_highlight_depress(unsigned char val)
         LOG_DEBUG("set_highlight_depress not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41) && !defined(PLATFORM_T10) && !defined(PLATFORM_T20)
     return IMP_ISP_Tuning_SetHiLightDepress(val);
+#else
+    return 0;
+#endif
 }
 
 int set_max_again(unsigned char val)
@@ -471,7 +507,11 @@ int set_max_again(unsigned char val)
         LOG_DEBUG("set_max_again not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     return IMP_ISP_Tuning_SetMaxAgain(val);
+#else
+    return 0;
+#endif
 }
 
 int set_max_dgain(unsigned char val)
@@ -480,7 +520,11 @@ int set_max_dgain(unsigned char val)
         LOG_DEBUG("set_max_dgain not supported on this platform");
         return 0;
     }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     return IMP_ISP_Tuning_SetMaxDgain(val);
+#else
+    return 0;
+#endif
 }
 
 int set_wb(int mode, unsigned short rgain, unsigned short bgain)
