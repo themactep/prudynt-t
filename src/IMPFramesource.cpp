@@ -69,7 +69,7 @@ int IMPFramesource::init()
     LOG_DEBUG("  fps=" << chnAttr.outFrmRateNum << "/" << chnAttr.outFrmRateDen << " nrVBs=" << chnAttr.nrVBs << " pixFmt=" << chnAttr.pixFmt);
 
 #if !defined(KERNEL_VERSION_4)
-#if defined(PLATFORM_T31) && !defined(PLATFORM_C100)
+#if defined(PLATFORM_T31)
 
     int rot_rotation = stream->rotation;
     int rot_height = stream->height;
