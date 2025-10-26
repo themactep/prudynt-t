@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <imp/imp_common.h>
 #include <imp/imp_encoder.h>
+#include <imp/imp_isp.h>
 
 // Normalize IMP type names across SDKs
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
