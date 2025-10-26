@@ -559,7 +559,6 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain)
 }
 
 } // namespace isp
-} // namespace hal
 
 // ============================================================================
 // Platform Capabilities Implementation

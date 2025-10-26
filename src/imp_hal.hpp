@@ -125,7 +125,6 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
 
 // Convenience namespace for capability checks
-} // namespace hal
 
 // ============================================================================
 // Video Encoder Stream HAL
