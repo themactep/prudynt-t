@@ -125,6 +125,12 @@ int set_max_dgain(unsigned char val);
 // White balance
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
+// Sensor management functions (abstract IMPVI_MAIN parameter)
+int add_sensor(IMPSensorInfo* sinfo);
+int enable_sensor(IMPSensorInfo* sinfo);
+int disable_sensor();
+int del_sensor(IMPSensorInfo* sinfo);
+
 } // namespace isp
 
 

@@ -58,18 +58,10 @@ int IMPSystem::init()
 
     /* sensor */
     sinfo = create_sensor_info(cfg->sensor.model);
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    ret = IMP_ISP_AddSensor(IMPVI_MAIN, &sinfo);
-#else
-    ret = IMP_ISP_AddSensor(&sinfo);
-#endif
+    ret = hal::isp::add_sensor(&sinfo);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_AddSensor(&sinfo)");
 
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    ret = IMP_ISP_EnableSensor(IMPVI_MAIN, &sinfo);
-#else
-    ret = IMP_ISP_EnableSensor();
-#endif
+    ret = hal::isp::enable_sensor(&sinfo);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableSensor()");
 
     /* system */
@@ -220,18 +212,10 @@ int IMPSystem::destroy()
     ret = IMP_System_Exit();
     LOG_DEBUG_OR_ERROR(ret, "IMP_System_Exit()");
 
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    ret = IMP_ISP_DisableSensor(IMPVI_MAIN);
-#else
-    ret = IMP_ISP_DisableSensor();
-#endif
+    ret = hal::isp::disable_sensor();
     LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DisableSensor()");
 
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    ret = IMP_ISP_DelSensor(IMPVI_MAIN, &sinfo);
-#else
-    ret = IMP_ISP_DelSensor(&sinfo);
-#endif
+    ret = hal::isp::del_sensor(&sinfo);
     LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DelSensor()");
 
     ret = IMP_ISP_DisableTuning();

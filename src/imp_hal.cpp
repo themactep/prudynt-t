@@ -700,3 +700,41 @@ bool supports_jpeg_quality_table()
 #endif
 }
 
+
+int add_sensor(IMPSensorInfo* sinfo)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_AddSensor(IMPVI_MAIN, sinfo);
+#else
+    return IMP_ISP_AddSensor(sinfo);
+#endif
+}
+
+int enable_sensor(IMPSensorInfo* sinfo)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_EnableSensor(IMPVI_MAIN, sinfo);
+#else
+    (void)sinfo; // Unused on older platforms
+    return IMP_ISP_EnableSensor();
+#endif
+}
+
+int disable_sensor()
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_DisableSensor(IMPVI_MAIN);
+#else
+    return IMP_ISP_DisableSensor();
+#endif
+}
+
+int del_sensor(IMPSensorInfo* sinfo)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_DelSensor(IMPVI_MAIN, sinfo);
+#else
+    return IMP_ISP_DelSensor(sinfo);
+#endif
+}
+
