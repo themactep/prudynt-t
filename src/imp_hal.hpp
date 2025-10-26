@@ -125,34 +125,4 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
 
 // Convenience namespace for capability checks
-namespace caps {
-    inline bool has_audio_aec_channel() { return get_platform_caps().has_audio_aec_channel; }
-    inline bool has_audio_agc() { return get_platform_caps().has_audio_agc; }
-    inline bool has_audio_alc() { return get_platform_caps().has_audio_alc; }
-    inline bool has_audio_hpf() { return get_platform_caps().has_audio_hpf; }
-    inline bool has_audio_ns() { return get_platform_caps().has_audio_ns; }
-    
-    inline bool has_isp_sinter() { return get_platform_caps().has_isp_sinter; }
-    inline bool has_isp_temper() { return get_platform_caps().has_isp_temper; }
-    inline bool has_isp_hue() { return get_platform_caps().has_isp_hue; }
-    inline bool has_isp_dpc() { return get_platform_caps().has_isp_dpc; }
-    inline bool has_isp_drc() { return get_platform_caps().has_isp_drc; }
-    inline bool has_isp_defog() { return get_platform_caps().has_isp_defog; }
-    inline bool has_isp_backlight_comp() { return get_platform_caps().has_isp_backlight_comp; }
-    inline bool has_isp_highlight_depress() { return get_platform_caps().has_isp_highlight_depress; }
-    inline bool has_isp_ae_comp() { return get_platform_caps().has_isp_ae_comp; }
-    inline bool has_isp_max_gain() { return get_platform_caps().has_isp_max_gain; }
-    
-    inline bool has_h265() { return get_platform_caps().has_h265; }
-    inline bool has_smart_rc() { return get_platform_caps().has_smart_rc; }
-    inline bool has_super_frm() { return get_platform_caps().has_super_frm; }
-    inline bool has_intra_refresh() { return get_platform_caps().has_intra_refresh; }
-    
-    inline bool has_osd_region_invert() { return get_platform_caps().has_osd_region_invert; }
-    
-    inline bool uses_xburst2() { return get_platform_caps().uses_xburst2; }
-    inline bool uses_kernel_4() { return get_platform_caps().uses_kernel_4; }
-}
-
-} // namespace caps
 } // namespace hal
