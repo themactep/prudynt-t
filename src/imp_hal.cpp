@@ -230,34 +230,29 @@ int set_sharpness(unsigned char val)
 
 int set_sinter_strength(unsigned char val)
 {
-#if defined(PLATFORM_T21) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_sinter_strength not supported on this platform");
-    return 0;
-#else
+    if (\!caps::has_isp_sinter()) {
+        LOG_DEBUG("set_sinter_strength not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetSinterStrength(val);
-#endif
 }
 
 int set_temper_strength(unsigned char val)
 {
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_temper_strength not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_temper()) {
+        LOG_DEBUG("set_temper_strength not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetTemperStrength(val);
-#endif
 }
 
 int set_hue(unsigned char val)
 {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
-    LOG_DEBUG("set_hue not supported on this platform");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    return IMP_ISP_Tuning_SetBcshHue(IMPVI, &val);
-#else
+    if (\!caps::has_isp_hue()) {
+        LOG_DEBUG("set_hue not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetBcshHue(val);
-#endif
 }
 
 int set_hflip(bool enable)
@@ -320,100 +315,74 @@ int set_anti_flicker(int mode)
 
 int set_ae_compensation(int val)
 {
-#if defined(PLATFORM_T21)
-    LOG_DEBUG("set_ae_compensation not supported on T21");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_ae_compensation not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_ae_comp()) {
+        LOG_DEBUG("set_ae_compensation not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetAeComp(val);
-#endif
 }
 
 int set_dpc_strength(unsigned char val)
 {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
-    LOG_DEBUG("set_dpc_strength not supported on this platform");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_dpc_strength not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_dpc()) {
+        LOG_DEBUG("set_dpc_strength not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetDPC_Strength(val);
-#endif
 }
 
 int set_drc_strength(unsigned char val)
 {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20)
-    LOG_DEBUG("set_drc_strength not supported on this platform");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_drc_strength not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_drc()) {
+        LOG_DEBUG("set_drc_strength not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetDRC_Strength(val);
-#endif
 }
 
 int set_defog_strength(uint8_t val)
 {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
-    LOG_DEBUG("set_defog_strength not supported on this platform");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_defog_strength not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_defog()) {
+        LOG_DEBUG("set_defog_strength not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t*>(&val));
-#endif
 }
 
 int set_backlight_comp(unsigned char val)
 {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
-    LOG_DEBUG("set_backlight_comp not supported on this platform");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_backlight_comp not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_backlight_comp()) {
+        LOG_DEBUG("set_backlight_comp not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetBacklightComp(val);
-#endif
 }
 
 int set_highlight_depress(unsigned char val)
 {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20)
-    LOG_DEBUG("set_highlight_depress not supported on this platform");
-    return 0;
-#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_highlight_depress not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_highlight_depress()) {
+        LOG_DEBUG("set_highlight_depress not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetHiLightDepress(val);
-#endif
 }
 
 int set_max_again(unsigned char val)
 {
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_max_again not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_max_gain()) {
+        LOG_DEBUG("set_max_again not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetMaxAgain(val);
-#endif
 }
 
 int set_max_dgain(unsigned char val)
 {
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    LOG_DEBUG("set_max_dgain not available in T40 SDK");
-    return 0;
-#else
+    if (\!caps::has_isp_max_gain()) {
+        LOG_DEBUG("set_max_dgain not supported on this platform");
+        return 0;
+    }
     return IMP_ISP_Tuning_SetMaxDgain(val);
-#endif
 }
 
 int set_wb(int mode, unsigned short rgain, unsigned short bgain)
@@ -434,4 +403,129 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain)
 }
 
 } // namespace isp
+} // namespace hal
+
+// ============================================================================
+// Platform Capabilities Implementation
+// ============================================================================
+
+const PlatformCapabilities& get_platform_caps() {
+    static PlatformCapabilities caps = {
+        // Audio capabilities
+#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .has_audio_aec_channel = true,
+#else
+        .has_audio_aec_channel = false,
+#endif
+
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .has_audio_agc = true,
+#else
+        .has_audio_agc = false,
+#endif
+
+#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+        .has_audio_alc = true,
+#else
+        .has_audio_alc = false,
+#endif
+
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .has_audio_hpf = true,
+        .has_audio_ns = true,
+#else
+        .has_audio_hpf = false,
+        .has_audio_ns = false,
+#endif
+
+        // ISP capabilities
+#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+        .has_isp_sinter = true,
+#else
+        .has_isp_sinter = false,
+#endif
+
+#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+        .has_isp_temper = true,
+#else
+        .has_isp_temper = false,
+#endif
+
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+        .has_isp_hue = true,
+#else
+        .has_isp_hue = false,
+#endif
+
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
+        .has_isp_dpc = true,
+#else
+        .has_isp_dpc = false,
+#endif
+
+#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+        .has_isp_drc = true,
+#else
+        .has_isp_drc = false,
+#endif
+
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+        .has_isp_defog = true,
+        .has_isp_backlight_comp = true,
+#else
+        .has_isp_defog = false,
+        .has_isp_backlight_comp = false,
+#endif
+
+#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+        .has_isp_highlight_depress = true,
+#else
+        .has_isp_highlight_depress = false,
+#endif
+
+#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+        .has_isp_ae_comp = true,
+#else
+        .has_isp_ae_comp = false,
+#endif
+
+#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+        .has_isp_max_gain = true,
+#else
+        .has_isp_max_gain = false,
+#endif
+
+        // Encoder capabilities
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .has_h265 = true,
+        .has_smart_rc = true,
+        .has_super_frm = true,
+        .has_intra_refresh = true,
+#else
+        .has_h265 = false,
+        .has_smart_rc = false,
+        .has_super_frm = false,
+        .has_intra_refresh = false,
+#endif
+
+        // OSD capabilities
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .has_osd_region_invert = true,
+#else
+        .has_osd_region_invert = false,
+#endif
+
+        // System capabilities
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .uses_xburst2 = true,
+        .uses_kernel_4 = true,
+#else
+        .uses_xburst2 = false,
+        .uses_kernel_4 = false,
+#endif
+    };
+    
+    return caps;
+}
+
 } // namespace hal
