@@ -6,10 +6,6 @@
 
 #define MODULE "IMPENCODER"
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
 
 IMPEncoder *IMPEncoder::createNew(
     _stream *stream,
@@ -60,14 +56,8 @@ void IMPEncoder::initProfile()
     memset(&chnAttr, 0, sizeof(IMPEncoderCHNAttr));
     rcAttr = &chnAttr.rcAttr;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    IMPEncoderRcMode rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
-    IMPEncoderProfile encoderProfile = IMP_ENC_PROFILE_AVC_HIGH;
-
-    if (strcmp(stream->format, "H265") == 0)
-    {
-        encoderProfile = IMP_ENC_PROFILE_HEVC_MAIN;
-    }
+    IMPEncoderRcMode rcMode = (IMPEncoderRcMode)hal::encoder::get_encoder_rc_mode_smart();
+    IMPEncoderProfile encoderProfile = (IMPEncoderProfile)hal::encoder::get_encoder_profile_high(stream->format);
     else if (strcmp(stream->format, "JPEG") == 0)
     {
         encoderProfile = IMP_ENC_PROFILE_JPEG;
@@ -184,30 +174,14 @@ void IMPEncoder::initProfile()
     // Apply optional overrides from stream{0,1} via HAL
     hal::apply_rc_overrides(chnAttr, rcMode, *stream);
 
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+    hal::encoder::init_encoder_channel_attr(chnAttr, stream->format, stream->width, stream->height);
+    
     if (strcmp(stream->format, "JPEG") == 0)
     {
-        IMPEncoderAttr *encAttr;
-        encAttr = &chnAttr.encAttr;
-        encAttr->enType = PT_JPEG;
-        encAttr->bufSize = 0;
-        encAttr->profile = 2;
-        encAttr->picWidth = stream->width;
-        encAttr->picHeight = stream->height;
         return;
     }
-    else if (strcmp(stream->format, "H264") == 0)
-    {
-        chnAttr.encAttr.enType = PT_H264;
-    }
-#if defined(PLATFORM_T30)
-    else if (strcmp(stream->format, "H265") == 0)
-    {
-        chnAttr.encAttr.enType = PT_H265;
-    }
-#endif
 
-    IMPEncoderRcMode rcMode = ENC_RC_MODE_SMART;
+    IMPEncoderRcMode rcMode = (IMPEncoderRcMode)hal::encoder::get_encoder_rc_mode_smart();
 
     if (strcmp(stream->mode, "FIXQP") == 0)
     {
@@ -340,12 +314,10 @@ int IMPEncoder::init()
 
     initProfile();
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
+    if (hal::caps().has_bufshare && cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
         ret = hal::maybe_enable_bufshare(2, encChn, true);
         LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "maybe_enable_bufshare(2, " << encChn << ")");
     }
-#endif
 
     ret = IMP_Encoder_CreateChn(encChn, &chnAttr);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateChn(" << encChn << ", chnAttr)");
@@ -378,8 +350,7 @@ int IMPEncoder::init()
             LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&fs, &enc)");
         }
     }
-#if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) || !defined(PLATFORM_T40) || !defined(PLATFORM_T41))
-    else
+    else if (hal::encoder::supports_jpeg_quality_table())
     {
         IMPEncoderJpegeQl pstJpegeQl;
         // fix for bad jpeg image quality on T10 based cameras

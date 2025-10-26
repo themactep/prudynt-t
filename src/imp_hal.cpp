@@ -609,3 +609,87 @@ int get_h265_nal_type(const IMPEncoderPack& pack)
 
 } // namespace encoder
 } // namespace hal
+
+void init_encoder_channel_attr(IMPEncoderCHNAttr& chnAttr, const char* format, int width, int height)
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    // T31/C100/T40/T41 use newer API - initialization handled by caller
+    (void)chnAttr;
+    (void)format;
+    (void)width;
+    (void)height;
+#else
+    // Older platforms need explicit initialization
+    if (strcmp(format, "JPEG") == 0)
+    {
+        IMPEncoderAttr *encAttr = &chnAttr.encAttr;
+        encAttr->enType = PT_JPEG;
+        encAttr->bufSize = 0;
+        encAttr->profile = 2;
+        encAttr->picWidth = width;
+        encAttr->picHeight = height;
+    }
+    else if (strcmp(format, "H264") == 0)
+    {
+        chnAttr.encAttr.enType = PT_H264;
+    }
+#if defined(PLATFORM_T30)
+    else if (strcmp(format, "H265") == 0)
+    {
+        chnAttr.encAttr.enType = PT_H265;
+    }
+#endif
+#endif
+}
+
+int get_encoder_rc_mode_smart()
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ENC_RC_MODE_CAPPED_QUALITY;
+#else
+    return ENC_RC_MODE_SMART;
+#endif
+}
+
+int get_encoder_profile_high(const char* format)
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    if (strcmp(format, "H265") == 0)
+    {
+        return IMP_ENC_PROFILE_HEVC_MAIN;
+    }
+    return IMP_ENC_PROFILE_AVC_HIGH;
+#else
+    // Older platforms use different profile values
+    return 2; // High profile
+#endif
+}
+
+int get_encoder_type(const char* format)
+{
+    if (strcmp(format, "JPEG") == 0)
+    {
+        return PT_JPEG;
+    }
+    else if (strcmp(format, "H264") == 0)
+    {
+        return PT_H264;
+    }
+#if defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    else if (strcmp(format, "H265") == 0)
+    {
+        return PT_H265;
+    }
+#endif
+    return PT_H264; // Default
+}
+
+bool supports_jpeg_quality_table()
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return caps().has_jpeg_set_qtable;
+#else
+    return \!caps().has_jpeg_set_qtable;
+#endif
+}
+

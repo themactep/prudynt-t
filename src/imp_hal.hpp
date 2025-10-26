@@ -19,6 +19,12 @@ struct _stream; // fwd decl
 
 namespace hal {
 
+// Type compatibility for different platform APIs
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#define IMPEncoderCHNAttr IMPEncoderChnAttr
+#define IMPEncoderCHNStat IMPEncoderChnStat
+#endif
+
 struct PlatformCaps {
     // Encoder capabilities
     bool has_h265;
@@ -143,6 +149,13 @@ int get_h264_nal_type(const IMPEncoderPack& pack);
 
 // Get H.265 NAL type from stream pack
 int get_h265_nal_type(const IMPEncoderPack& pack);
+
+// Encoder initialization helpers
+void init_encoder_channel_attr(IMPEncoderCHNAttr& chnAttr, const char* format, int width, int height);
+int get_encoder_rc_mode_smart();
+int get_encoder_profile_high(const char* format);
+int get_encoder_type(const char* format);
+bool supports_jpeg_quality_table();
 
 } // namespace encoder
 
