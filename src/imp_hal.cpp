@@ -180,7 +180,6 @@ void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode, const _stream &s
 }
 #endif
 
-} // namespace hal
 
 
 // ============================================================================
