@@ -43,5 +43,45 @@ void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode, const _stream &s
 
 int maybe_enable_bufshare(int jpegEncGrp, int srcEncChn, bool allow_shared);
 
-} // namespace hal
 
+
+
+namespace isp {
+
+// Basic image quality controls
+int set_brightness(unsigned char val);
+int set_contrast(unsigned char val);
+int set_saturation(unsigned char val);
+int set_sharpness(unsigned char val);
+int set_sinter_strength(unsigned char val);
+int set_temper_strength(unsigned char val);
+int set_hue(unsigned char val);
+
+// Flip/mirror controls
+int set_hflip(bool enable);
+int set_vflip(bool enable);
+
+// ISP modes
+int set_running_mode(int mode);
+int set_isp_bypass(bool enable);
+int set_anti_flicker(int mode);
+
+// Exposure controls
+int set_ae_compensation(int val);
+
+// Advanced image processing (may not be available on all platforms)
+int set_dpc_strength(unsigned char val);
+int set_drc_strength(unsigned char val);
+int set_defog_strength(uint8_t val);
+int set_backlight_comp(unsigned char val);
+int set_highlight_depress(unsigned char val);
+
+// Gain controls
+int set_max_again(unsigned char val);
+int set_max_dgain(unsigned char val);
+
+// White balance
+int set_wb(int mode, unsigned short rgain, unsigned short bgain);
+
+} // namespace isp
+} // namespace hal

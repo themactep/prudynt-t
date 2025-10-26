@@ -4,6 +4,7 @@
 #include "Logger.hpp"
 #include <cstring>
 #include <dlfcn.h>
+#include <imp/imp_isp.h>
 
 
 extern void MakeTables(int q, uint8_t *lqt, uint8_t *cqt);
@@ -181,3 +182,257 @@ void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode, const _stream &s
 
 } // namespace hal
 
+
+// ============================================================================
+// ISP Tuning HAL Implementation
+// ============================================================================
+
+namespace isp {
+
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#define IMPVI IMPVI_MAIN
+#endif
+
+int set_brightness(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetBrightness(IMPVI, &val);
+#else
+    return IMP_ISP_Tuning_SetBrightness(val);
+#endif
+}
+
+int set_contrast(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetContrast(IMPVI, &val);
+#else
+    return IMP_ISP_Tuning_SetContrast(val);
+#endif
+}
+
+int set_saturation(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetSaturation(IMPVI, &val);
+#else
+    return IMP_ISP_Tuning_SetSaturation(val);
+#endif
+}
+
+int set_sharpness(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetSharpness(IMPVI, &val);
+#else
+    return IMP_ISP_Tuning_SetSharpness(val);
+#endif
+}
+
+int set_sinter_strength(unsigned char val)
+{
+#if defined(PLATFORM_T21) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_sinter_strength not supported on this platform");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetSinterStrength(val);
+#endif
+}
+
+int set_temper_strength(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_temper_strength not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetTemperStrength(val);
+#endif
+}
+
+int set_hue(unsigned char val)
+{
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+    LOG_DEBUG("set_hue not supported on this platform");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetBcshHue(IMPVI, &val);
+#else
+    return IMP_ISP_Tuning_SetBcshHue(val);
+#endif
+}
+
+int set_hflip(bool enable)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    // T40 uses combined HVFLIP function
+    // For now, we'll need to get current vflip state and set both
+    // This is a limitation - we can't set H and V independently on T40
+    LOG_DEBUG("set_hflip: T40 uses combined HVFLIP - feature limited");
+    return 0; // TODO: implement combined flip handling
+#else
+    IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
+    return IMP_ISP_Tuning_SetISPHflip(mode);
+#endif
+}
+
+int set_vflip(bool enable)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    // T40 uses combined HVFLIP function
+    LOG_DEBUG("set_vflip: T40 uses combined HVFLIP - feature limited");
+    return 0; // TODO: implement combined flip handling
+#else
+    IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
+    return IMP_ISP_Tuning_SetISPVflip(mode);
+#endif
+}
+
+int set_running_mode(int mode)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    IMPISPRunningMode m = (IMPISPRunningMode)mode;
+    return IMP_ISP_Tuning_SetISPRunningMode(IMPVI, &m);
+#else
+    return IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)mode);
+#endif
+}
+
+int set_isp_bypass(bool enable)
+{
+    IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    return IMP_ISP_Tuning_SetISPBypass(IMPVI, &mode);
+#else
+    return IMP_ISP_Tuning_SetISPBypass(mode);
+#endif
+}
+
+int set_anti_flicker(int mode)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    IMPISPAntiflickerAttr attr;
+    attr.mode = (IMPISPAntiflickerMode)mode;
+    attr.freq = 50; // Default to 50Hz, could be made configurable
+    return IMP_ISP_Tuning_SetAntiFlickerAttr(IMPVI, &attr);
+#else
+    return IMP_ISP_Tuning_SetAntiFlickerAttr((IMPISPAntiflickerAttr)mode);
+#endif
+}
+
+int set_ae_compensation(int val)
+{
+#if defined(PLATFORM_T21)
+    LOG_DEBUG("set_ae_compensation not supported on T21");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_ae_compensation not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetAeComp(val);
+#endif
+}
+
+int set_dpc_strength(unsigned char val)
+{
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+    LOG_DEBUG("set_dpc_strength not supported on this platform");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_dpc_strength not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetDPC_Strength(val);
+#endif
+}
+
+int set_drc_strength(unsigned char val)
+{
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20)
+    LOG_DEBUG("set_drc_strength not supported on this platform");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_drc_strength not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetDRC_Strength(val);
+#endif
+}
+
+int set_defog_strength(uint8_t val)
+{
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+    LOG_DEBUG("set_defog_strength not supported on this platform");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_defog_strength not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t*>(&val));
+#endif
+}
+
+int set_backlight_comp(unsigned char val)
+{
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+    LOG_DEBUG("set_backlight_comp not supported on this platform");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_backlight_comp not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetBacklightComp(val);
+#endif
+}
+
+int set_highlight_depress(unsigned char val)
+{
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20)
+    LOG_DEBUG("set_highlight_depress not supported on this platform");
+    return 0;
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_highlight_depress not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetHiLightDepress(val);
+#endif
+}
+
+int set_max_again(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_max_again not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetMaxAgain(val);
+#endif
+}
+
+int set_max_dgain(unsigned char val)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    LOG_DEBUG("set_max_dgain not available in T40 SDK");
+    return 0;
+#else
+    return IMP_ISP_Tuning_SetMaxDgain(val);
+#endif
+}
+
+int set_wb(int mode, unsigned short rgain, unsigned short bgain)
+{
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    // T40 uses IMPISPWBAttr with different structure
+    // For now, log and return success
+    LOG_DEBUG("set_wb: T40 WB API differs - needs implementation");
+    return 0; // TODO: implement T40 WB using IMPISPWBAttr
+#else
+    IMPISPWB wb;
+    memset(&wb, 0, sizeof(IMPISPWB));
+    wb.mode = (isp_core_wb_mode)mode;
+    wb.rgain = rgain;
+    wb.bgain = bgain;
+    return IMP_ISP_Tuning_SetWB(&wb);
+#endif
+}
+
+} // namespace isp
+} // namespace hal

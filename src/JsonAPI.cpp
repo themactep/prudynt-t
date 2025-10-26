@@ -1,3 +1,4 @@
+#include "imp_hal.hpp"
 #include "JsonAPI.hpp"
 #include "Config.hpp"
 #include "globals.hpp"
@@ -159,50 +160,50 @@ namespace {
         };
 
         // Scalars and side-effects
-        add_int("brightness", "image.brightness", []{ IMP_ISP_Tuning_SetBrightness(cfg->image.brightness); });
-        add_int("contrast",   "image.contrast",   []{ IMP_ISP_Tuning_SetContrast(cfg->image.contrast); });
+        add_int("brightness", "image.brightness", []{ hal::isp::set_brightness(cfg->image.brightness); });
+        add_int("contrast",   "image.contrast",   []{ hal::isp::set_contrast(cfg->image.contrast); });
     #if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
-        add_int("hue",        "image.hue",        []{ IMP_ISP_Tuning_SetBcshHue(cfg->image.hue); });
+        add_int("hue",        "image.hue",        []{ hal::isp::set_hue(cfg->image.hue); });
     #endif
-        add_int("saturation", "image.saturation", []{ IMP_ISP_Tuning_SetSaturation(cfg->image.saturation); });
-        add_int("sharpness",  "image.sharpness",  []{ IMP_ISP_Tuning_SetSharpness(cfg->image.sharpness); });
+        add_int("saturation", "image.saturation", []{ hal::isp::set_saturation(cfg->image.saturation); });
+        add_int("sharpness",  "image.sharpness",  []{ hal::isp::set_sharpness(cfg->image.sharpness); });
     #if !defined(PLATFORM_T21)
-        add_int("sinter_strength", "image.sinter_strength", []{ IMP_ISP_Tuning_SetSinterStrength(cfg->image.sinter_strength); });
+        add_int("sinter_strength", "image.sinter_strength", []{ hal::isp::set_sinter_strength(cfg->image.sinter_strength); });
     #endif
-        add_int("temper_strength", "image.temper_strength", []{ IMP_ISP_Tuning_SetTemperStrength(cfg->image.temper_strength); });
+        add_int("temper_strength", "image.temper_strength", []{ hal::isp::set_temper_strength(cfg->image.temper_strength); });
 
         add_boolk("vflip", "image.vflip",
-            []{ IMP_ISP_Tuning_SetISPVflip(IMPISP_TUNING_OPS_MODE_ENABLE); },
-            []{ IMP_ISP_Tuning_SetISPVflip(IMPISP_TUNING_OPS_MODE_DISABLE); });
+            []{ hal::isp::set_vflip(true); },
+            []{ hal::isp::set_vflip(false); });
         add_boolk("hflip", "image.hflip",
-            []{ IMP_ISP_Tuning_SetISPHflip(IMPISP_TUNING_OPS_MODE_ENABLE); },
-            []{ IMP_ISP_Tuning_SetISPHflip(IMPISP_TUNING_OPS_MODE_DISABLE); });
+            []{ hal::isp::set_hflip(true); },
+            []{ hal::isp::set_hflip(false); });
 
-        add_int("anti_flicker", "image.anti_flicker", []{ IMP_ISP_Tuning_SetAntiFlickerAttr((IMPISPAntiflickerAttr)cfg->image.anti_flicker); });
+        add_int("anti_flicker", "image.anti_flicker", []{ hal::isp::set_anti_flicker(cfg->image.anti_flicker); });
 
         if (JsonValue* rm = obj_get(obj, "running_mode")){
-            if (rm->type == JSON_NUMBER){ cfg->set<int>("image.running_mode", (int)rm->value.number); IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)cfg->image.running_mode); }
+            if (rm->type == JSON_NUMBER){ cfg->set<int>("image.running_mode", (int)rm->value.number); hal::isp::set_running_mode(cfg->image.running_mode); }
             add_key(out,s2,"running_mode"); add_num(out, cfg->get<int>("image.running_mode")); wrote=true;
         }
     #if !defined(PLATFORM_T21)
-        add_int("ae_compensation", "image.ae_compensation", []{ IMP_ISP_Tuning_SetAeComp(cfg->image.ae_compensation); });
+        add_int("ae_compensation", "image.ae_compensation", []{ hal::isp::set_ae_compensation(cfg->image.ae_compensation); });
     #endif
     #if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
-        add_int("dpc_strength", "image.dpc_strength", []{ IMP_ISP_Tuning_SetDPC_Strength(cfg->image.dpc_strength); });
-        add_int("drc_strength", "image.drc_strength", []{ IMP_ISP_Tuning_SetDRC_Strength(cfg->image.drc_strength); });
-        add_int("defog_strength", "image.defog_strength", []{ uint8_t t=(uint8_t)cfg->image.defog_strength; IMP_ISP_Tuning_SetDefog_Strength(&t); });
-        add_int("backlight_compensation", "image.backlight_compensation", []{ IMP_ISP_Tuning_SetBacklightComp(cfg->image.backlight_compensation); });
+        add_int("dpc_strength", "image.dpc_strength", []{ hal::isp::set_dpc_strength(cfg->image.dpc_strength); });
+        add_int("drc_strength", "image.drc_strength", []{ hal::isp::set_drc_strength(cfg->image.drc_strength); });
+        add_int("defog_strength", "image.defog_strength", []{ hal::isp::set_defog_strength((uint8_t)cfg->image.defog_strength); });
+        add_int("backlight_compensation", "image.backlight_compensation", []{ hal::isp::set_backlight_comp(cfg->image.backlight_compensation); });
     #endif
-        add_int("highlight_depress", "image.highlight_depress", []{ IMP_ISP_Tuning_SetHiLightDepress(cfg->image.highlight_depress); });
-        add_int("max_again", "image.max_again", []{ IMP_ISP_Tuning_SetMaxAgain(cfg->image.max_again); });
-        add_int("max_dgain", "image.max_dgain", []{ IMP_ISP_Tuning_SetMaxDgain(cfg->image.max_dgain); });
+        add_int("highlight_depress", "image.highlight_depress", []{ hal::isp::set_highlight_depress(cfg->image.highlight_depress); });
+        add_int("max_again", "image.max_again", []{ hal::isp::set_max_again(cfg->image.max_again); });
+        add_int("max_dgain", "image.max_dgain", []{ hal::isp::set_max_dgain(cfg->image.max_dgain); });
 
         // WB bundle
         if (JsonValue* wbmode = obj_get(obj, "core_wb_mode"); wbmode && wbmode->type==JSON_NUMBER){ cfg->set<int>("image.core_wb_mode", (int)wbmode->value.number); }
         if (JsonValue* rg = obj_get(obj, "wb_rgain"); rg && rg->type==JSON_NUMBER){ cfg->set<int>("image.wb_rgain", (int)rg->value.number); }
         if (JsonValue* bg = obj_get(obj, "wb_bgain"); bg && bg->type==JSON_NUMBER){ cfg->set<int>("image.wb_bgain", (int)bg->value.number); }
         if (obj_get(obj, "core_wb_mode") || obj_get(obj, "wb_rgain") || obj_get(obj, "wb_bgain")){
-            IMPISPWB wb{}; if (IMP_ISP_Tuning_GetWB(&wb)==0){ wb.mode=(isp_core_wb_mode)cfg->image.core_wb_mode; wb.rgain=cfg->image.wb_rgain; wb.bgain=cfg->image.wb_bgain; IMP_ISP_Tuning_SetWB(&wb); }
+            hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
             add_key(out,s2,"core_wb_mode"); add_num(out, cfg->get<int>("image.core_wb_mode"));
             add_key(out,s2,"wb_rgain"); add_num(out, cfg->get<int>("image.wb_rgain"));
             add_key(out,s2,"wb_bgain"); add_num(out, cfg->get<int>("image.wb_bgain")); wrote=true;
