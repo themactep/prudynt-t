@@ -1,3 +1,4 @@
+#include "imp_hal.hpp"
 #ifndef OSD_hpp
 #define OSD_hpp
 

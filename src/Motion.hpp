@@ -1,3 +1,4 @@
+#include "imp_hal.hpp"
 #ifndef Motion_hpp
 #define Motion_hpp
 
