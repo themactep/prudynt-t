@@ -73,13 +73,13 @@ static PlatformCaps g_caps = {
 #endif
 
     // ISP capabilities (must match struct order)
-#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     .has_isp_sinter = true,
 #else
     .has_isp_sinter = false,
 #endif
 
-#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     .has_isp_temper = true,
 #else
     .has_isp_temper = false,
@@ -117,13 +117,13 @@ static PlatformCaps g_caps = {
     .has_isp_highlight_depress = false,
 #endif
 
-#if \!defined(PLATFORM_T21) && \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     .has_isp_ae_comp = true,
 #else
     .has_isp_ae_comp = false,
 #endif
 
-#if \!defined(PLATFORM_T40) && \!defined(PLATFORM_T41)
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
     .has_isp_max_gain = true,
 #else
     .has_isp_max_gain = false,
