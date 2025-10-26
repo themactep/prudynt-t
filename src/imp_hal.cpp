@@ -379,10 +379,12 @@ int set_hue(unsigned char val)
         LOG_DEBUG("set_hue not supported on this platform");
         return 0;
     }
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+    return IMP_ISP_Tuning_SetBcshHue(val);
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
     return IMP_ISP_Tuning_SetBcshHue(IMPVI_MAIN, &val);
 #else
-    return IMP_ISP_Tuning_SetBcshHue(val);
+    return 0; // Function doesn't exist on this platform
 #endif
 }
 
