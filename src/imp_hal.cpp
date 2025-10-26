@@ -566,3 +566,47 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain)
 // ============================================================================
 
 
+
+// ============================================================================
+// Video Encoder Stream HAL Implementation
+// ============================================================================
+
+namespace encoder {
+
+uint8_t* get_pack_data_start(const IMPEncoderStream& stream, int pack_index)
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+    return (uint8_t*)stream.virAddr + stream.pack[pack_index].offset;
+#else
+    return (uint8_t*)stream.pack[pack_index].virAddr;
+#endif
+}
+
+uint32_t get_pack_data_length(const IMPEncoderStream& stream, int pack_index)
+{
+    return stream.pack[pack_index].length;
+}
+
+int get_h264_nal_type(const IMPEncoderPack& pack)
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+    return pack.nalType.h264NalType;
+#else
+    return pack.dataType.h264Type;
+#endif
+}
+
+int get_h265_nal_type(const IMPEncoderPack& pack)
+{
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+    return pack.nalType.h265NalType;
+#elif defined(PLATFORM_T30)
+    return pack.dataType.h265Type;
+#else
+    // H.265 not supported on T10/T20/T21/T23
+    return -1;
+#endif
+}
+
+} // namespace encoder
+} // namespace hal

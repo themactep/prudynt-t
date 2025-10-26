@@ -6,6 +6,7 @@
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 
 #undef MODULE
 #define MODULE "VideoWorker"
@@ -68,14 +69,8 @@ void VideoWorker::run()
 
                     if (global_video[encChn]->hasDataCallback)
                     {
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-                        uint8_t *start = (uint8_t *) stream.virAddr + stream.pack[i].offset;
-                        uint8_t *end = start + stream.pack[i].length;
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) \
-    || defined(PLATFORM_T23) || defined(PLATFORM_T30)
-                        uint8_t *start = (uint8_t *) stream.pack[i].virAddr;
-                        uint8_t *end = (uint8_t *) stream.pack[i].virAddr + stream.pack[i].length;
-#endif
+                        uint8_t *start = hal::encoder::get_pack_data_start(stream, i);
+                        uint8_t *end = start + hal::encoder::get_pack_data_length(stream, i);
 
                         H264NALUnit nalu;
 
@@ -89,37 +84,17 @@ void VideoWorker::run()
                         nalu.data.insert(nalu.data.end(), start + 4, end);
                         if (global_video[encChn]->idr == false)
                         {
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-                            if (stream.pack[i].nalType.h264NalType == 7
-                                || stream.pack[i].nalType.h264NalType == 8
-                                || stream.pack[i].nalType.h264NalType == 5)
+                            int h264_type = hal::encoder::get_h264_nal_type(stream.pack[i]);
+                            int h265_type = hal::encoder::get_h265_nal_type(stream.pack[i]);
+                            
+                            if (h264_type == 7 || h264_type == 8 || h264_type == 5)
                             {
                                 global_video[encChn]->idr = true;
                             }
-                            else if (stream.pack[i].nalType.h265NalType == 32)
+                            else if (h265_type == 32)
                             {
                                 global_video[encChn]->idr = true;
                             }
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) \
-    || defined(PLATFORM_T23)
-                            if (stream.pack[i].dataType.h264Type == 7
-                                || stream.pack[i].dataType.h264Type == 8
-                                || stream.pack[i].dataType.h264Type == 5)
-                            {
-                                global_video[encChn]->idr = true;
-                            }
-#elif defined(PLATFORM_T30)
-                            if (stream.pack[i].dataType.h264Type == 7
-                                || stream.pack[i].dataType.h264Type == 8
-                                || stream.pack[i].dataType.h264Type == 5)
-                            {
-                                global_video[encChn]->idr = true;
-                            }
-                            else if (stream.pack[i].dataType.h265Type == 32)
-                            {
-                                global_video[encChn]->idr = true;
-                            }
-#endif
                         }
 
                         if (global_video[encChn]->idr == true)

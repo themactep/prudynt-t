@@ -126,3 +126,25 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
 // Convenience namespace for capability checks
 } // namespace hal
+
+// ============================================================================
+// Video Encoder Stream HAL
+// ============================================================================
+
+namespace encoder {
+
+// Get pointer to NAL unit data in stream pack
+uint8_t* get_pack_data_start(const IMPEncoderStream& stream, int pack_index);
+
+// Get NAL unit data length
+uint32_t get_pack_data_length(const IMPEncoderStream& stream, int pack_index);
+
+// Get H.264 NAL type from stream pack
+int get_h264_nal_type(const IMPEncoderPack& pack);
+
+// Get H.265 NAL type from stream pack
+int get_h265_nal_type(const IMPEncoderPack& pack);
+
+} // namespace encoder
+
+} // namespace hal
