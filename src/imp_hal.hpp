@@ -84,7 +84,7 @@ int set_max_dgain(unsigned char val);
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
 } // namespace isp
-} // namespace hal
+
 
 // ============================================================================
 // Platform Capabilities
@@ -158,5 +158,5 @@ namespace caps {
     inline bool uses_kernel_4() { return get_platform_caps().uses_kernel_4; }
 }
 
-} // namespace isp
+} // namespace caps
 } // namespace hal
