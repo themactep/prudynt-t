@@ -162,14 +162,14 @@ namespace {
         // Scalars and side-effects
         add_int("brightness", "image.brightness", []{ hal::isp::set_brightness(cfg->image.brightness); });
         add_int("contrast",   "image.contrast",   []{ hal::isp::set_contrast(cfg->image.contrast); });
-    #if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
-        add_int("hue",        "image.hue",        []{ hal::isp::set_hue(cfg->image.hue); });
-    #endif
+        if (hal::caps().has_isp_hue) {
+            add_int("hue", "image.hue", []{ hal::isp::set_hue(cfg->image.hue); });
+        }
         add_int("saturation", "image.saturation", []{ hal::isp::set_saturation(cfg->image.saturation); });
         add_int("sharpness",  "image.sharpness",  []{ hal::isp::set_sharpness(cfg->image.sharpness); });
-    #if !defined(PLATFORM_T21)
-        add_int("sinter_strength", "image.sinter_strength", []{ hal::isp::set_sinter_strength(cfg->image.sinter_strength); });
-    #endif
+        if (hal::caps().has_isp_sinter) {
+            add_int("sinter_strength", "image.sinter_strength", []{ hal::isp::set_sinter_strength(cfg->image.sinter_strength); });
+        }
         add_int("temper_strength", "image.temper_strength", []{ hal::isp::set_temper_strength(cfg->image.temper_strength); });
 
         add_boolk("vflip", "image.vflip",
@@ -185,15 +185,21 @@ namespace {
             if (rm->type == JSON_NUMBER){ cfg->set<int>("image.running_mode", (int)rm->value.number); hal::isp::set_running_mode(cfg->image.running_mode); }
             add_key(out,s2,"running_mode"); add_num(out, cfg->get<int>("image.running_mode")); wrote=true;
         }
-    #if !defined(PLATFORM_T21)
-        add_int("ae_compensation", "image.ae_compensation", []{ hal::isp::set_ae_compensation(cfg->image.ae_compensation); });
-    #endif
-    #if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
-        add_int("dpc_strength", "image.dpc_strength", []{ hal::isp::set_dpc_strength(cfg->image.dpc_strength); });
-        add_int("drc_strength", "image.drc_strength", []{ hal::isp::set_drc_strength(cfg->image.drc_strength); });
-        add_int("defog_strength", "image.defog_strength", []{ hal::isp::set_defog_strength((uint8_t)cfg->image.defog_strength); });
-        add_int("backlight_compensation", "image.backlight_compensation", []{ hal::isp::set_backlight_comp(cfg->image.backlight_compensation); });
-    #endif
+        if (hal::caps().has_isp_ae_comp) {
+            add_int("ae_compensation", "image.ae_compensation", []{ hal::isp::set_ae_compensation(cfg->image.ae_compensation); });
+        }
+        if (hal::caps().has_isp_dpc) {
+            add_int("dpc_strength", "image.dpc_strength", []{ hal::isp::set_dpc_strength(cfg->image.dpc_strength); });
+        }
+        if (hal::caps().has_isp_drc) {
+            add_int("drc_strength", "image.drc_strength", []{ hal::isp::set_drc_strength(cfg->image.drc_strength); });
+        }
+        if (hal::caps().has_isp_defog) {
+            add_int("defog_strength", "image.defog_strength", []{ hal::isp::set_defog_strength((uint8_t)cfg->image.defog_strength); });
+        }
+        if (hal::caps().has_isp_backlight_comp) {
+                add_int("backlight_compensation", "image.backlight_compensation", []{ hal::isp::set_backlight_comp(cfg->image.backlight_compensation); });
+        }
         add_int("highlight_depress", "image.highlight_depress", []{ hal::isp::set_highlight_depress(cfg->image.highlight_depress); });
         add_int("max_again", "image.max_again", []{ hal::isp::set_max_again(cfg->image.max_again); });
         add_int("max_dgain", "image.max_dgain", []{ hal::isp::set_max_dgain(cfg->image.max_dgain); });
