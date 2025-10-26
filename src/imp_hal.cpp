@@ -146,6 +146,10 @@ static PlatformCaps g_caps = {
 #endif
 };
 
+const PlatformCaps& caps() {
+    return g_caps;
+}
+
 void set_jpeg_quality_qtable(int encChn, int quality, const char* cpu_hint)
 {
     if (quality < 1 || quality > 100) return;
