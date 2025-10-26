@@ -34,25 +34,15 @@ int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream)
         void *data_ptr;
         size_t data_len;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-        IMPEncoderPack *pack = &stream->pack[i];
-        uint32_t remSize = 0; // Declare remSize here
-        if (pack->length)
-        {
-            remSize = stream->streamSize - pack->offset;
-            data_ptr = (void *) ((char *) stream->virAddr
-                                 + ((remSize < pack->length) ? 0 : pack->offset));
-            data_len = (remSize < pack->length) ? remSize : pack->length;
-        }
-        else
-        {
+        uint8_t *pack_start = hal::encoder::get_pack_data_start(*stream, i);
+        uint32_t pack_len = hal::encoder::get_pack_data_length(*stream, i);
+        
+        if (pack_len == 0) {
             continue; // Skip empty packs
         }
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) \
-    || defined(PLATFORM_T23) || defined(PLATFORM_T30)
-        data_ptr = reinterpret_cast<void *>(stream->pack[i].virAddr);
-        data_len = stream->pack[i].length;
-#endif
+        
+        data_ptr = (void*)pack_start;
+        data_len = pack_len;
 
         // Write data to file
         ret = write(fd, data_ptr, data_len);
@@ -62,18 +52,6 @@ int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream)
             return -1; // Return error on write failure
         }
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-        // Check the condition only under T31 platform, as remSize is used here
-        if (remSize && pack->length > remSize)
-        {
-            ret = write(fd, (void *) ((char *) stream->virAddr), pack->length - remSize);
-            if (ret != static_cast<int>(pack->length - remSize))
-            {
-                printf("Stream write error (remaining part): %s\n", strerror(errno));
-                return -1;
-            }
-        }
-#endif
     }
 
     return 0;
