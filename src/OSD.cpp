@@ -26,6 +26,52 @@
 
 #include "schrift.h"
 
+void replace(std::string& str, const std::string& oldToken, const std::string& newToken) {
+    size_t pos = 0;
+    while ((pos = str.find(oldToken, pos)) != std::string::npos) {
+        str.replace(pos, oldToken.length(), newToken);
+        pos += newToken.length();
+    }
+}
+
+unsigned long getSystemUptime()
+{
+    struct sysinfo info;
+    if (sysinfo(&info) != 0)
+    {
+        return 0;
+    }
+    return info.uptime;
+}
+
+int getIp(char *addressBuffer)
+{
+    struct ifaddrs *ifAddrStruct = nullptr;
+    struct ifaddrs *ifa = nullptr;
+    void *tmpAddrPtr = nullptr;
+
+    getifaddrs(&ifAddrStruct);
+
+    for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next)
+    {
+        if (!ifa->ifa_addr)
+        {
+            continue;
+        }
+        if (ifa->ifa_addr->sa_family == AF_INET)
+        { // check it is IP4
+            tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+        }
+    }
+    if (ifAddrStruct != nullptr)
+        freeifaddrs(ifAddrStruct);
+    return 0;
+}
+
+
+
+
 int OSD::renderGlyph(const char *characters)
 {
 
@@ -262,8 +308,68 @@ int OSD::libschrift_init()
     return 0;
 }
 
+void OSD::set_time(IMPOSDRgnAttr *rgnAttr)
+{
+	strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, ltime);
+	set_text(&osdTime, rgnAttr, timeFormatted,
+			 osd.time_position, osd.time_rotation,
+			 osd.time_font_color, osd.time_font_stroke_color);
+}
+void OSD::set_user(IMPOSDRgnAttr *rgnAttr)
+{
+	std::string usertext = osd.usertext_format;
+
+	if (strstr(osd.usertext_format, "%hostname") != nullptr)
+	{
+		replace(usertext, "%hostname", hostname);
+	}
+
+	if (strstr(osd.usertext_format, "%ipaddress") != nullptr)
+	{
+		replace(usertext, "%ipaddress", ip);
+	}
+
+	if (strstr(osd.usertext_format, "%fps") != nullptr)
+	{
+		char fps[4];
+		snprintf(fps, 4, "%3d", osd.stats.fps);
+		replace(usertext, "%fps", fps);
+	}
+
+	if (strstr(osd.usertext_format, "%bps") != nullptr)
+	{
+		char bps[8];
+		snprintf(bps, 8, "%5d", osd.stats.bps);
+		replace(usertext, "%bps", bps);
+	}
+
+	set_text(&osdUser, rgnAttr, usertext.c_str(),
+			 osd.usertext_position, osd.usertext_rotation,
+			 osd.usertext_font_color, osd.usertext_font_stroke_color);
+
+	usertext.clear();
+}
+
+void OSD::set_uptime(IMPOSDRgnAttr *rgnAttr)
+{
+	unsigned long currentUptime = getSystemUptime();
+	unsigned long days = currentUptime / 86400;
+	unsigned long hours = (currentUptime % 86400) / 3600;
+	unsigned long minutes = (currentUptime % 3600) / 60;
+	//unsigned long seconds = currentUptime % 60;
+
+	snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, days, hours, minutes);
+
+	set_text(&osdUptm, rgnAttr, uptimeFormatted,
+			 osd.uptime_position, osd.uptime_rotation,
+			 osd.uptime_font_color, osd.uptime_font_stroke_color);
+}
+
+
 void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, const char *position, int angle, unsigned int font_color, unsigned int font_stroke_color)
 {
+	LOG_INFO("OSD::set_text() text [" << text << "]");
+
     // parse position string "x,y"
     int posX = 0, posY = 0;
     if (position && *position) {
@@ -331,41 +437,6 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, 
     return;
 }
 
-unsigned long getSystemUptime()
-{
-    struct sysinfo info;
-    if (sysinfo(&info) != 0)
-    {
-        return 0;
-    }
-    return info.uptime;
-}
-
-int getIp(char *addressBuffer)
-{
-    struct ifaddrs *ifAddrStruct = nullptr;
-    struct ifaddrs *ifa = nullptr;
-    void *tmpAddrPtr = nullptr;
-
-    getifaddrs(&ifAddrStruct);
-
-    for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next)
-    {
-        if (!ifa->ifa_addr)
-        {
-            continue;
-        }
-        if (ifa->ifa_addr->sa_family == AF_INET)
-        { // check it is IP4
-            tmpAddrPtr = &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-        }
-    }
-    if (ifAddrStruct != nullptr)
-        freeifaddrs(ifAddrStruct);
-    return 0;
-}
-
 std::string OSD::getConfigPath(const char *itemName)
 {
     return std::string(parent) + ".osd." + itemName;
@@ -376,14 +447,6 @@ int autoFontSize(int pWidth)
     double m = 0.0046875;
     double b = 9.0;
     return static_cast<int>(m * pWidth + b + 0.5);
-}
-
-void replace(std::string& str, const std::string& oldToken, const std::string& newToken) {
-    size_t pos = 0;
-    while ((pos = str.find(oldToken, pos)) != std::string::npos) {
-        str.replace(pos, oldToken.length(), newToken);
-        pos += newToken.length();
-    }
 }
 
 void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height, int angle, bool del = true)
@@ -591,6 +654,11 @@ void OSD::init()
         LOG_DEBUG("libschrift init failed.");
     }
 
+	gettimeofday(&tm, NULL);
+
+	current = time(nullptr);
+	ltime = localtime(&current);
+
     if (osd.time_enabled)
     {
         /* OSD Time */
@@ -603,9 +671,7 @@ void OSD::init()
         memset(&osdTime.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
         osdTime.rgnAttr.type = OSD_REG_PIC;
         osdTime.rgnAttr.fmt = PIX_FMT_BGRA;
-        set_text(&osdTime, &osdTime.rgnAttr, osd.time_format,
-                 osd.time_position, osd.time_rotation,
-                 osd.time_font_color, osd.time_font_stroke_color);
+        set_time(&osdTime.rgnAttr);
         IMP_OSD_SetRgnAttr(osdTime.imp_rgn, &osdTime.rgnAttr);
 
         IMPOSDGrpRgnAttr grpRgnAttr;
@@ -633,9 +699,7 @@ void OSD::init()
         memset(&osdUser.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
         osdUser.rgnAttr.type = OSD_REG_PIC;
         osdUser.rgnAttr.fmt = PIX_FMT_BGRA;
-        set_text(&osdUser, &osdUser.rgnAttr, osd.usertext_format,
-                 osd.usertext_position, osd.usertext_rotation,
-                 osd.usertext_font_color, osd.usertext_font_stroke_color);
+        set_user(&osdUser.rgnAttr);
         IMP_OSD_SetRgnAttr(osdUser.imp_rgn, &osdUser.rgnAttr);
 
         IMPOSDGrpRgnAttr grpRgnAttr;
@@ -660,9 +724,7 @@ void OSD::init()
         memset(&osdUptm.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
         osdUptm.rgnAttr.type = OSD_REG_PIC;
         osdUptm.rgnAttr.fmt = PIX_FMT_BGRA;
-        set_text(&osdUptm, &osdUptm.rgnAttr, osd.uptime_format,
-                 osd.uptime_position, osd.uptime_rotation,
-                 osd.uptime_font_color, osd.uptime_font_stroke_color);
+        set_uptime(&osdUptm.rgnAttr);
         IMP_OSD_SetRgnAttr(osdUptm.imp_rgn, &osdUptm.rgnAttr);
 
         IMPOSDGrpRgnAttr grpRgnAttr;
@@ -845,12 +907,7 @@ void OSD::updateDisplayEverySecond()
             // Format and update system time
             if ((flag & 1) && osd.time_enabled)
             {
-                strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, ltime);
-
-                set_text(&osdTime, nullptr, timeFormatted,
-                         osd.time_position, osd.time_rotation,
-                         osd.time_font_color, osd.time_font_stroke_color);
-
+                set_time(nullptr);
                 flag ^= 1;
                 return;
             }
@@ -858,38 +915,7 @@ void OSD::updateDisplayEverySecond()
             // Format and update user text
             if ((flag & 2) && osd.usertext_enabled)
             {
-                std::string usertext = osd.usertext_format;
-
-                if (strstr(osd.usertext_format, "%hostname") != nullptr)
-                {
-                    replace(usertext, "%hostname", hostname);
-                }
-
-                if (strstr(osd.usertext_format, "%ipaddress") != nullptr)
-                {
-                    replace(usertext, "%ipaddress", ip);
-                }
-
-                if (strstr(osd.usertext_format, "%fps") != nullptr)
-                {
-                    char fps[4];
-                    snprintf(fps, 4, "%3d", osd.stats.fps);
-                    replace(usertext, "%fps", fps);
-                }
-
-                if (strstr(osd.usertext_format, "%bps") != nullptr)
-                {
-                    char bps[8];
-                    snprintf(bps, 8, "%5d", osd.stats.bps);
-                    replace(usertext, "%bps", bps);
-                }
-
-                set_text(&osdUser, nullptr, usertext.c_str(),
-                         osd.usertext_position, osd.usertext_rotation,
-                         osd.usertext_font_color, osd.usertext_font_stroke_color);
-
-                usertext.clear();
-
+                set_user(nullptr);
                 flag ^= 2;
                 return;
             }
@@ -897,18 +923,7 @@ void OSD::updateDisplayEverySecond()
             // Format and update uptime
             if ((flag & 4) && osd.uptime_enabled)
             {
-                unsigned long currentUptime = getSystemUptime();
-                unsigned long days = currentUptime / 86400;
-                unsigned long hours = (currentUptime % 86400) / 3600;
-                unsigned long minutes = (currentUptime % 3600) / 60;
-                //unsigned long seconds = currentUptime % 60;
-
-                snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, days, hours, minutes);
-
-                set_text(&osdUptm, nullptr, uptimeFormatted,
-                         osd.uptime_position, osd.uptime_rotation,
-                         osd.uptime_font_color, osd.uptime_font_stroke_color);
-
+                set_uptime(nullptr);
                 flag ^= 4;
                 return;
             }

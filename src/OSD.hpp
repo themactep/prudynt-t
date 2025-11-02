@@ -79,6 +79,9 @@ private:
     OSDItem osdUptm{};
     OSDItem osdLogo{};
 
+    void set_time(IMPOSDRgnAttr *rgnAttr);
+    void set_user(IMPOSDRgnAttr *rgnAttr);
+    void set_uptime(IMPOSDRgnAttr *rgnAttr);
     void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, const char *position, int angle, unsigned int font_color, unsigned int font_stroke_color);
     std::string getConfigPath(const char *itemName);
 
