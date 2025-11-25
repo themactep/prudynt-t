@@ -13,10 +13,14 @@
 #include "globals.hpp"
 #include <filesystem>
 #include <sys/inotify.h>
+#include <arpa/inet.h>
+#include <faac.h>
 
 #include <iomanip>
 
 #define MODULE "WEBSOCKET"
+
+#include "MP4MuxerFactory.hpp"
 
 #pragma region keys_and_enums
 
@@ -72,6 +76,8 @@ enum
     PNT_FLAG_HTTP_SEND_MESSAGE = 4096,
     PNT_FLAG_HTTP_RECEIVED_MESSAGE = 8192,
     PNT_FLAG_HTTP_SEND_PREVIEW = 16384,
+    PNT_FLAG_HTTP_SEND_MP4 = 65536,
+    PNT_FLAG_HTTP_STREAM_PENDING = 131072,
     PNT_FLAG_HTTP_SEND_INVALID = 32768
 };
 
@@ -490,6 +496,18 @@ struct snapshot_info
     steady_clock::time_point last_snapshot_request;
 };
 
+struct user_ctx;
+
+struct snapshot_sul_wrapper {
+    lws_sorted_usec_list_t sul;
+    struct user_ctx *owner;
+};
+
+struct mp4_sul_wrapper {
+    lws_sorted_usec_list_t sul;
+    struct user_ctx *owner;
+};
+
 struct user_ctx
 {
     char id[SESSION_ID_LENGTH + 1]; // +1 for null terminator
@@ -505,17 +523,28 @@ int flag;                           // bitmask info store e.g. JSON separator ("
     std::string rx_message;
     std::string tx_message;
     std::string message;
-    lws_sorted_usec_list_t sul; // lws Soft Timer
+    snapshot_sul_wrapper snapshot_timer; // lws Soft Timer
+    mp4_sul_wrapper mp4_timer;           // separate timer for mp4 init polling
     struct snapshot_info snapshot;
+    // MP4 HTTP streaming state
+    MP4Muxer* mp4_muxer = nullptr;
+    std::vector<unsigned char> http_stream_buf; // pre-built buffer (with LWS_PRE headroom)
+    std::vector<unsigned char> pending_fragments; // queued fragment bytes (with no LWS_PRE)
+    std::mutex pending_mutex;
+    std::function<void(void)> prev_video_callback; // to restore previous callback
+    std::function<void(void)> prev_audio_callback; // to restore previous audio callback
 
     user_ctx(const char* session_id, lws *wsi_handle)
         : wsi(wsi_handle), value(0), flag(0),
           region(), midx(0), vidx(0), post_data_size(0), rx_message(), tx_message(),
-          message(), sul(), snapshot()
+          message(), snapshot()
     {
         strncpy(id, session_id, SESSION_ID_LENGTH);
         id[SESSION_ID_LENGTH] = '\0';
         root[0] = '\0';  // Initialize root as empty string
+
+        snapshot_timer.owner = this;
+        mp4_timer.owner = this;
     }
 };
 
@@ -2047,10 +2076,139 @@ const char* generateSessionID()
 static void
 send_snapshot(lws_sorted_usec_list_t *sul)
 {
-    struct user_ctx *u_ctx = lws_container_of(sul, struct user_ctx, sul);
+    snapshot_sul_wrapper *wrapper = lws_container_of(sul, snapshot_sul_wrapper, sul);
+    struct user_ctx *u_ctx = wrapper->owner;
     LOG_DDEBUGWS("process shedule. id:" << u_ctx->id);
     u_ctx->flag |= PNT_FLAG_WS_SEND_PREVIEW;
     lws_callback_on_writable(u_ctx->wsi);
+}
+
+static void send_mp4_init(lws_sorted_usec_list_t *sul)
+{
+    mp4_sul_wrapper *wrapper = lws_container_of(sul, mp4_sul_wrapper, sul);
+    struct user_ctx *u_ctx = wrapper->owner;
+    LOG_DDEBUGWS("process mp4 init schedule. id:" << u_ctx->id);
+
+    // Try to obtain SPS/PPS from global video channel (non-blocking reads)
+    std::vector<uint8_t> sps;
+    std::vector<uint8_t> pps;
+    bool have_sps = false;
+    bool have_pps = false;
+
+    // Drain available messages until we find SPS/PPS or none left
+    while (true) {
+        H264NALUnit unit;
+        if (!global_video[0]->msgChannel->read(&unit)) {
+            break; // no more messages currently
+        }
+        if (unit.data.empty()) continue;
+        uint8_t nalType = (unit.data[0] & 0x1F);
+        if (nalType == 7) { // SPS
+            sps = unit.data;
+            have_sps = true;
+            LOG_DEBUG("Found SPS for MP4 init");
+        } else if (nalType == 8) { // PPS
+            pps = unit.data;
+            have_pps = true;
+            LOG_DEBUG("Found PPS for MP4 init");
+        }
+        if (have_sps && have_pps) break;
+    }
+
+    if (!have_sps || !have_pps) {
+        // reschedule after 100ms
+        lws_sul_schedule(lws_get_context(u_ctx->wsi), 0, &u_ctx->mp4_timer.sul, send_mp4_init, LWS_USEC_PER_SEC / 10);
+        return;
+    }
+
+    // Build avcC (AVCDecoderConfigurationRecord)
+    std::vector<uint8_t> avcC;
+    if (sps.size() >= 4) {
+        avcC.push_back(0x01); // configurationVersion
+        avcC.push_back(sps[1]); // AVCProfileIndication
+        avcC.push_back(sps[2]); // profile_compatibility
+        avcC.push_back(sps[3]); // AVCLevelIndication
+        avcC.push_back(0xFF); // 6 bits reserved + lengthSizeMinusOne (3)
+        avcC.push_back(0xE1); // 3 bits reserved + numOfSequenceParameterSets (1)
+        // SPS length
+        uint16_t sps_len = htons((uint16_t)sps.size());
+        avcC.insert(avcC.end(), (uint8_t*)&sps_len, (uint8_t*)&sps_len + 2);
+        avcC.insert(avcC.end(), sps.begin(), sps.end());
+        // PPS
+        avcC.push_back(0x01); // numOfPictureParameterSets
+        uint16_t pps_len = htons((uint16_t)pps.size());
+        avcC.insert(avcC.end(), (uint8_t*)&pps_len, (uint8_t*)&pps_len + 2);
+        avcC.insert(avcC.end(), pps.begin(), pps.end());
+    }
+
+    // initialize muxer with avcC
+    if (u_ctx->mp4_muxer) {
+        MP4Muxer::InitParams params;
+        params.width = cfg->stream0.width;
+        params.height = cfg->stream0.height;
+        params.fps = cfg->stream0.fps;
+        params.avcC = avcC;
+#if defined(AUDIO_SUPPORT)
+        params.sampleRate = cfg->audio.input_sample_rate;
+        params.channels = cfg->audio.input_enabled ? 1 : 0;
+#endif
+
+        // Build AAC AudioSpecificConfig from FAAC encoder parameters if available
+        if (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0) {
+            // Try to retrieve FAAC config by creating a temporary faac encoder
+            unsigned long inputSamples = 0;
+            unsigned long outputBufferSize = 0;
+            void* faacHandle = faacEncOpen(cfg->audio.input_sample_rate, cfg->audio.force_stereo ? 2 : 1, &inputSamples, &outputBufferSize);
+            if (faacHandle) {
+                unsigned char *decoder_info = nullptr;
+                unsigned long decoder_info_len = 0;
+                if (faacEncGetDecoderSpecificInfo(faacHandle, &decoder_info, &decoder_info_len) == 0 && decoder_info && decoder_info_len) {
+                    params.aacConfig.assign(decoder_info, decoder_info + decoder_info_len);
+                    if (decoder_info) free(decoder_info);
+                }
+                faacEncClose(faacHandle);
+            }
+        }
+
+        if (!u_ctx->mp4_muxer->init(params)) {
+            LOG_DEBUG("MP4Muxer init failed during scheduled init");
+            DestroyMP4Muxer(u_ctx->mp4_muxer);
+            u_ctx->mp4_muxer = nullptr;
+            if (lws_return_http_status(u_ctx->wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL) || lws_http_transaction_completed(u_ctx->wsi)) {
+                return;
+            }
+            return;
+        }
+
+        auto init_seg = u_ctx->mp4_muxer->getInitSegment();
+        u_ctx->http_stream_buf.clear();
+        u_ctx->http_stream_buf.resize(LWS_PRE + init_seg.size());
+        if (!init_seg.empty()) {
+            std::memcpy(u_ctx->http_stream_buf.data() + LWS_PRE, init_seg.data(), init_seg.size());
+        }
+
+        // Build AAC AudioSpecificConfig from FAAC encoder parameters if available
+        if (u_ctx->mp4_muxer && cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0) {
+            // Try to retrieve FAAC config by creating a temporary faac encoder
+            unsigned long inputSamples = 0;
+            unsigned long outputBufferSize = 0;
+            void* faacHandle = faacEncOpen(cfg->audio.input_sample_rate, cfg->audio.force_stereo ? 2 : 1, &inputSamples, &outputBufferSize);
+            if (faacHandle) {
+                faacEncConfigurationPtr cfgptr = faacEncGetCurrentConfiguration(faacHandle);
+                // Use faac to get decoder specific info (AudioSpecificConfig)
+                unsigned char *decoder_info = nullptr;
+                unsigned long decoder_info_len = 0;
+                if (faacEncGetDecoderSpecificInfo(faacHandle, &decoder_info, &decoder_info_len) == 0 && decoder_info && decoder_info_len) {
+                    params.aacConfig.assign(decoder_info, decoder_info + decoder_info_len);
+                    if (decoder_info) free(decoder_info);
+                }
+                faacEncClose(faacHandle);
+            }
+        }
+
+        u_ctx->flag |= PNT_FLAG_HTTP_SEND_MP4;
+        lws_callback_on_writable(u_ctx->wsi);
+    }
 }
 
 int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
@@ -2222,7 +2380,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
             int delay = (LWS_USEC_PER_SEC / (global_jpeg[0]->stream->stats.fps + u_ctx->snapshot.throttle)) + first_request_delay;
             LOG_DDEBUGWS("shedule preview image. id:" << u_ctx->id << " delay:" << delay);
-            lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->sul, send_snapshot, delay);
+            lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->snapshot_timer.sul, send_snapshot, delay);
 
             // send response for the image request
             u_ctx->tx_message.append(u_ctx->message);
@@ -2280,7 +2438,26 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         LOG_DDEBUGWS("LWS_CALLBACK_CLOSED id:" << u_ctx->id << ", ip:" << client_ip << ", flag:" << u_ctx->flag);
 
         // cleanup delete possibly existing shedules for this session
-        lws_sul_cancel(&u_ctx->sul);
+        lws_sul_cancel(&u_ctx->snapshot_timer.sul);
+        lws_sul_cancel(&u_ctx->mp4_timer.sul);
+
+        // restore any replaced callbacks and cleanup muxer
+        if (u_ctx->mp4_muxer) {
+            u_ctx->mp4_muxer->close();
+            DestroyMP4Muxer(u_ctx->mp4_muxer);
+            u_ctx->mp4_muxer = nullptr;
+        }
+        {
+            std::lock_guard<std::mutex> lock(global_video[0]->onDataCallbackLock);
+            global_video[0]->onDataCallback = u_ctx->prev_video_callback;
+        }
+        {
+            std::lock_guard<std::mutex> lock(global_audio[0]->onDataCallbackLock);
+            global_audio[0]->onDataCallback = u_ctx->prev_audio_callback;
+        }
+
+        u_ctx->pending_fragments.clear();
+        u_ctx->http_stream_buf.clear();
 
         u_ctx->~user_ctx();
         break;
@@ -2341,6 +2518,24 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 }
 
                 lws_callback_on_writable(wsi);
+                return 0;
+            }
+
+            // HTTP fMP4 init segment endpoint
+            if (strcmp(url_ptr, "/ch0.mp4") == 0)
+            {
+                // create muxer for this session
+                u_ctx->mp4_muxer = CreateMP4Muxer();
+                if (!u_ctx->mp4_muxer) {
+                    LOG_DEBUG("MP4Muxer not available");
+                    if (lws_return_http_status(wsi, HTTP_STATUS_SERVICE_UNAVAILABLE, NULL) || lws_http_transaction_completed(wsi)) {
+                        return -1;
+                    }
+                    return 0;
+                }
+
+                // schedule mp4 init task that will poll for SPS/PPS and initialize muxer
+                lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->mp4_timer.sul, send_mp4_init, 0);
                 return 0;
             }
         }
@@ -2460,6 +2655,174 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                     {
                         return 0;
                     }
+                }
+                return 0;
+            }
+
+            if (u_ctx->flag & PNT_FLAG_HTTP_SEND_MP4)
+            {
+                u_ctx->flag &= ~PNT_FLAG_HTTP_SEND_MP4;
+
+                size_t payload_size = 0;
+                if (u_ctx->http_stream_buf.size() > (size_t)LWS_PRE) {
+                    payload_size = u_ctx->http_stream_buf.size() - LWS_PRE;
+                }
+
+                // Use chunked transfer so we can keep sending fragments.
+                if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, "video/mp4", -1, &p, end) ||
+                    lws_finalize_write_http_header(wsi, start, &p, end))
+                {
+                    LOG_ERROR("lws error sending mp4 init segment");
+                    if (u_ctx->mp4_muxer) {
+                        u_ctx->mp4_muxer->close();
+                        DestroyMP4Muxer(u_ctx->mp4_muxer);
+                        u_ctx->mp4_muxer = nullptr;
+                    }
+                    u_ctx->http_stream_buf.clear();
+                    return -1;
+                }
+                // send init segment as first chunk (if present)
+                if (payload_size > 0)
+                {
+                    // write chunk header
+                    char chunk_hdr[64];
+                    int hlen = snprintf(chunk_hdr, sizeof(chunk_hdr), "%x\r\n", (unsigned int)payload_size);
+                    unsigned char hdrbuf[LWS_PRE + 64];
+                    memset(hdrbuf, 0, sizeof(hdrbuf));
+                    memcpy(hdrbuf + LWS_PRE, chunk_hdr, hlen);
+                    if (lws_write(wsi, hdrbuf + LWS_PRE, hlen, LWS_WRITE_BINARY) <= 0) {
+                        LOG_ERROR("lws error sending mp4 chunk header");
+                        return -1;
+                    }
+
+                    // write payload
+                    if (lws_write(wsi, u_ctx->http_stream_buf.data() + LWS_PRE, payload_size, LWS_WRITE_BINARY) <= 0) {
+                        LOG_ERROR("lws error sending mp4 init payload");
+                        return -1;
+                    }
+
+                    // write CRLF
+                    unsigned char crlf[LWS_PRE + 3];
+                    memset(crlf, 0, sizeof(crlf));
+                    memcpy(crlf + LWS_PRE, "\r\n", 2);
+                    if (lws_write(wsi, crlf + LWS_PRE, 2, LWS_WRITE_BINARY) <= 0) {
+                        LOG_ERROR("lws error sending mp4 chunk CRLF");
+                        return -1;
+                    }
+                }
+
+                // after sending init we register video callback to produce fragments
+                {
+                    std::lock_guard<std::mutex> lock(global_video[0]->onDataCallbackLock);
+                    // save previous callback to restore later
+                    u_ctx->prev_video_callback = global_video[0]->onDataCallback;
+
+                    // set per-session callback
+                    global_video[0]->onDataCallback = [u_ctx]() {
+                        // non-blocking read of all available NAL units
+                        std::vector<uint8_t> sample;
+                        H264NALUnit unit;
+                        while (global_video[0]->msgChannel->read(&unit)) {
+                            if (unit.data.empty()) continue;
+                            uint8_t nalType = (unit.data[0] & 0x1F);
+                            bool isVCL = (nalType == 1 || nalType == 5);
+                            bool isKey = (nalType == 5);
+
+                            // prepend 4-byte NAL length (big-endian)
+                            uint32_t nl = htonl((uint32_t)unit.data.size());
+                            sample.push_back((nl >> 24) & 0xFF);
+                            sample.push_back((nl >> 16) & 0xFF);
+                            sample.push_back((nl >> 8) & 0xFF);
+                            sample.push_back((nl) & 0xFF);
+                            sample.insert(sample.end(), unit.data.begin(), unit.data.end());
+
+                            if (isVCL) {
+                                // finalize sample and mux
+                                auto now = std::chrono::steady_clock::now();
+                                int64_t pts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+                                auto frag = u_ctx->mp4_muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
+                                if (!frag.empty()) {
+                                    std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
+                                    u_ctx->pending_fragments.insert(u_ctx->pending_fragments.end(), frag.begin(), frag.end());
+                                    u_ctx->flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+                                    lws_callback_on_writable(u_ctx->wsi);
+                                }
+                                sample.clear();
+                            }
+                        }
+                    };
+                }
+
+
+                // register audio callback to forward AAC frames into muxer
+                if (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0)
+                {
+                    std::lock_guard<std::mutex> lock(global_audio[0]->onDataCallbackLock);
+                    u_ctx->prev_audio_callback = global_audio[0]->onDataCallback;
+                    global_audio[0]->onDataCallback = [u_ctx]() {
+                        AudioFrame af;
+                        while (global_audio[0]->msgChannel->read(&af)) {
+                            if (af.data.empty() || !u_ctx->mp4_muxer) continue;
+                            // use timestamp from af.time
+                            int64_t pts_ms = af.time.tv_sec * 1000LL + af.time.tv_usec / 1000LL;
+                            auto frag = u_ctx->mp4_muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
+                            if (!frag.empty()) {
+                                std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
+                                u_ctx->pending_fragments.insert(u_ctx->pending_fragments.end(), frag.begin(), frag.end());
+                                u_ctx->flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+                                lws_callback_on_writable(u_ctx->wsi);
+                            }
+                        }
+                    };
+                }
+                // keep connection open; don't call lws_http_transaction_completed here
+                u_ctx->http_stream_buf.clear();
+                return 0;
+            }
+
+            // send pending stream fragments (chunked). Keep sending while writable and fragments exist.
+            if (u_ctx->flag & PNT_FLAG_HTTP_STREAM_PENDING)
+            {
+                std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
+                if (!u_ctx->pending_fragments.empty())
+                {
+                    // send as a single chunk
+                    size_t sz = u_ctx->pending_fragments.size();
+                    // chunk header
+                    char chunk_hdr[64];
+                    int hlen = snprintf(chunk_hdr, sizeof(chunk_hdr), "%x\r\n", (unsigned int)sz);
+                    unsigned char hdrbuf[LWS_PRE + 64];
+                    memset(hdrbuf, 0, sizeof(hdrbuf));
+                    memcpy(hdrbuf + LWS_PRE, chunk_hdr, hlen);
+                    if (lws_write(wsi, hdrbuf + LWS_PRE, hlen, LWS_WRITE_BINARY) <= 0) {
+                        LOG_ERROR("lws error sending mp4 fragment header");
+                        return -1;
+                    }
+
+                    // write payload in chunks if too large
+                    unsigned char *payload_ptr = u_ctx->pending_fragments.data();
+                    size_t remaining = sz;
+                    while (remaining > 0) {
+                        int to_send = (int)std::min<size_t>(remaining, 16384);
+                        if (lws_write(wsi, payload_ptr, to_send, LWS_WRITE_BINARY) <= 0) {
+                            LOG_ERROR("lws error sending mp4 fragment payload");
+                            return -1;
+                        }
+                        payload_ptr += to_send;
+                        remaining -= to_send;
+                    }
+
+                    // write CRLF
+                    unsigned char crlf[LWS_PRE + 3];
+                    memset(crlf, 0, sizeof(crlf));
+                    memcpy(crlf + LWS_PRE, "\r\n", 2);
+                    if (lws_write(wsi, crlf + LWS_PRE, 2, LWS_WRITE_BINARY) <= 0) {
+                        LOG_ERROR("lws error sending mp4 fragment CRLF");
+                        return -1;
+                    }
+
+                    u_ctx->pending_fragments.clear();
+                    u_ctx->flag &= ~PNT_FLAG_HTTP_STREAM_PENDING;
                 }
                 return 0;
             }

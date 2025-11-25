@@ -2,6 +2,7 @@
 #include <thread>
 #include <atomic>
 #include <condition_variable>
+#include <signal.h>
 #include "RTSP.hpp"
 #include "Logger.hpp"
 #include "Config.hpp"
@@ -17,6 +18,7 @@
 #include "Motion.hpp"
 #include "WorkerUtils.hpp"
 #include "IMPBackchannel.hpp"
+#include "MP4ControlSocket.hpp"
 using namespace std::chrono;
 
 std::mutex mutex_main;
@@ -28,8 +30,6 @@ bool global_restart = false;
 bool global_restart_rtsp = false;
 bool global_restart_video = false;
 bool global_restart_audio = false;
-
-bool global_osd_thread_signal = false;
 bool global_main_thread_signal = false;
 bool global_motion_thread_signal = false;
 std::atomic<char> global_rtsp_thread_signal{1};
@@ -48,6 +48,31 @@ RTSP rtsp;
 Motion motion;
 IMPSystem *imp_system = nullptr;
 
+namespace
+{
+    sigset_t shutdown_signal_set;
+
+    void *shutdown_signal_thread(void *arg)
+    {
+        sigset_t local_set = *static_cast<sigset_t *>(arg);
+        int received_signal = 0;
+        while (sigwait(&local_set, &received_signal) == 0)
+        {
+            LOG_INFO("main: received signal " << received_signal << ", initiating shutdown");
+            global_shutdown_requested.store(true, std::memory_order_relaxed);
+            {
+                std::lock_guard<std::mutex> lock(mutex_main);
+                global_restart_rtsp = true;
+                global_restart_video = true;
+                global_restart_audio = true;
+            }
+            global_cv_worker_restart.notify_all();
+            break;
+        }
+        return nullptr;
+    }
+}
+
 bool timesync_wait()
 {
     // I don't really have a better way to do this than
@@ -56,6 +81,10 @@ bool timesync_wait()
     int timeout = 0;
     while (time(NULL) < 1647489843)
     {
+        if (global_shutdown_requested.load(std::memory_order_relaxed))
+        {
+            return false;
+        }
         std::this_thread::sleep_for(seconds(1));
         ++timeout;
         if (timeout == 60)
@@ -84,6 +113,8 @@ int main(int argc, const char *argv[])
     pthread_t rtsp_thread;
     pthread_t motion_thread;
     pthread_t backchannel_thread;
+    pthread_t signal_thread;
+    bool signal_thread_started = false;
 
     if (Logger::init(cfg->general.loglevel))
     {
@@ -92,11 +123,52 @@ int main(int argc, const char *argv[])
     }
     LOG_INFO("Starting Prudynt Video Server.");
 
-    if (!timesync_wait())
+    sigemptyset(&shutdown_signal_set);
+    sigaddset(&shutdown_signal_set, SIGINT);
+    sigaddset(&shutdown_signal_set, SIGTERM);
+    int sigmask_ret = pthread_sigmask(SIG_BLOCK, &shutdown_signal_set, nullptr);
+    if (sigmask_ret != 0)
     {
-        LOG_ERROR("Time is not synchronized.");
+        LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned " << sigmask_ret);
         return 1;
     }
+
+    if (pthread_create(&signal_thread, nullptr, shutdown_signal_thread, &shutdown_signal_set) != 0)
+    {
+        LOG_ERROR("Failed to create shutdown signal watcher thread");
+        return 1;
+    }
+    signal_thread_started = true;
+
+    auto join_signal_thread = [&](bool force_signal) {
+        if (!signal_thread_started)
+        {
+            return;
+        }
+        if (force_signal)
+        {
+            pthread_kill(signal_thread, SIGTERM);
+        }
+        int ret = pthread_join(signal_thread, nullptr);
+        LOG_DEBUG_OR_ERROR(ret, "join shutdown signal thread");
+        signal_thread_started = false;
+    };
+
+    if (!timesync_wait())
+    {
+        if (global_shutdown_requested.load(std::memory_order_relaxed))
+        {
+            LOG_INFO("Shutdown requested before time synchronization completed.");
+            join_signal_thread(false);
+            return 0;
+        }
+        LOG_ERROR("Time is not synchronized.");
+        join_signal_thread(true);
+        return 1;
+    }
+
+        // Start Unix domain socket control server for MP4 recording
+        std::thread(MP4ControlSocket::run).detach();
 
     if (!imp_system)
     {
@@ -115,7 +187,7 @@ int main(int argc, const char *argv[])
     pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
     pthread_create(&ws_thread, nullptr, WS::run, &ws);
 
-    while (true)
+    while (!global_shutdown_requested.load(std::memory_order_relaxed))
     {
         global_restart = true;
 #if defined(AUDIO_SUPPORT)
@@ -190,8 +262,17 @@ int main(int argc, const char *argv[])
         global_restart_audio = false;
         global_restart_rtsp = false;
 
-        while (!global_restart_rtsp && !global_restart_video && !global_restart_audio)
+        while (!global_restart_rtsp && !global_restart_video && !global_restart_audio
+               && !global_shutdown_requested.load(std::memory_order_relaxed))
             global_cv_worker_restart.wait(lck);
+
+        bool shutting_down = global_shutdown_requested.load(std::memory_order_relaxed);
+        if (shutting_down)
+        {
+            global_restart_rtsp = true;
+            global_restart_video = true;
+            global_restart_audio = true;
+        }
         lck.unlock();
 
         global_restart = true;
@@ -270,7 +351,13 @@ int main(int argc, const char *argv[])
                 LOG_DEBUG_OR_ERROR(ret, "join stream0 thread");
             }
         }
+
+        if (global_shutdown_requested.load(std::memory_order_relaxed))
+        {
+            break;
+        }
     }
 
+    join_signal_thread(false);
     return 0;
 }

@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <any>
 #include <mutex>
+#include <memory>
 
 //~65k
 #define ENABLE_LOG_DEBUG
