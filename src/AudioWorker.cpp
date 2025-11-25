@@ -11,6 +11,8 @@
 
 AudioWorker::AudioWorker(int chn)
     : encChn(chn)
+    , mp4_audio_samples(NUM_VIDEO_CHANNELS, 0)
+    , mp4_audio_sample_rate(0)
 {
     LOG_DEBUG("AudioWorker created for channel " << encChn);
 }
@@ -32,6 +34,21 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
 
     uint8_t *start = (uint8_t *) frame.virAddr;
     uint8_t *end = start + frame.len;
+    int sample_size_bytes = frame.bitwidth / 8;
+    int channels = (frame.soundmode == AUDIO_SOUND_MODE_MONO) ? 1 : 2;
+    if (channels <= 0)
+    {
+        channels = global_audio[encChn]->imp_audio ? global_audio[encChn]->imp_audio->outChnCnt : 1;
+    }
+    if (channels <= 0)
+    {
+        channels = 1;
+    }
+    int64_t frame_samples = 0;
+    if (sample_size_bytes > 0)
+    {
+        frame_samples = frame.len / (sample_size_bytes * channels);
+    }
 
     IMPAudioStream stream;
     if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM)
@@ -63,6 +80,59 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
     if (end > start)
     {
         af.data.insert(af.data.end(), start, end);
+    }
+
+    size_t frame_len = (end > start) ? static_cast<size_t>(end - start) : 0;
+    if (frame_samples <= 0)
+    {
+        frame_samples = 1024;
+    }
+
+    bool any_recorder_active = false;
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch)
+    {
+        if (static_cast<size_t>(ch) >= mp4_audio_samples.size())
+        {
+            break;
+        }
+        auto &recorder = global_mp4_recorders[ch];
+        bool recorder_active = recorder.isActive();
+        if (!recorder_active)
+        {
+            mp4_audio_samples[ch] = 0;
+            continue;
+        }
+
+        any_recorder_active = true;
+        if (frame_len == 0)
+        {
+            continue;
+        }
+
+        if (mp4_audio_sample_rate <= 0)
+        {
+            if (global_audio[encChn]->imp_audio)
+            {
+                mp4_audio_sample_rate = global_audio[encChn]->imp_audio->sample_rate;
+            }
+            if (mp4_audio_sample_rate <= 0)
+            {
+                mp4_audio_sample_rate = cfg->audio.input_sample_rate;
+            }
+        }
+
+        int64_t pts_ms = 0;
+        if (mp4_audio_sample_rate > 0)
+        {
+            pts_ms = (mp4_audio_samples[ch] * 1000) / mp4_audio_sample_rate;
+        }
+        recorder.writeAudio(start, frame_len, pts_ms);
+        mp4_audio_samples[ch] += frame_samples;
+    }
+
+    if (!any_recorder_active)
+    {
+        mp4_audio_sample_rate = 0;
     }
 
     if (!af.data.empty() && global_audio[encChn]->hasDataCallback
@@ -144,8 +214,16 @@ void AudioWorker::run()
 
     while (global_audio[encChn]->running)
     {
-        if (global_audio[encChn]->hasDataCallback && cfg->audio.input_enabled
-            && (global_video[0]->hasDataCallback || global_video[1]->hasDataCallback))
+        bool recorder_needs_audio =
+            (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+        bool video_clients_active = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback
+            || global_force_video_active.load(std::memory_order_relaxed)
+            || recorder_needs_audio;
+        bool should_capture_audio = cfg->audio.input_enabled
+            && (global_audio[encChn]->hasDataCallback || recorder_needs_audio)
+            && (video_clients_active || recorder_needs_audio);
+
+        if (should_capture_audio)
         {
             if (IMP_AI_PollingFrame(global_audio[encChn]->devId,
                                     global_audio[encChn]->aiChn,
@@ -214,10 +292,23 @@ void AudioWorker::run()
             /* Since the audio stream is permanently in use by the stream replicator,
              * we send the audio grabber and encoder to standby when no video is requested.
             */
-            while ((global_audio[encChn]->onDataCallback == nullptr
-                    || (!global_video[0]->hasDataCallback && !global_video[1]->hasDataCallback))
-                   && !global_restart_audio)
+            while (!global_restart_audio)
             {
+                bool recorder_needed_now =
+                    (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+                bool video_clients_active_now = global_video[0]->hasDataCallback
+                    || global_video[1]->hasDataCallback
+                    || global_force_video_active.load(std::memory_order_relaxed)
+                    || recorder_needed_now;
+                if (global_audio[encChn]->onDataCallback != nullptr
+                    && (video_clients_active_now || recorder_needed_now))
+                {
+                    break;
+                }
+                if (recorder_needed_now)
+                {
+                    break;
+                }
                 global_audio[encChn]->should_grab_frames.wait(lock_stream);
             }
             global_audio[encChn]->active = true;

@@ -39,7 +39,7 @@ ifneq ($(MAKECMDGOALS),clean)
 # ---------------------------
 ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
 override LDFLAGS       += -static -static-libgcc -static-libstdc++
-LIBS                    = -l:libimp.a \
+                          MP4Muxer_simple.cpp
                           -l:libalog.a \
                           -l:libsysutils.a \
                           -l:libliveMedia.a \
@@ -57,9 +57,6 @@ ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
 else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
 	# uClibc - no additional libraries needed
-else
-	# Default to musl
-LIBS                   += -l:libmuslshim.a
 endif
 
 # Hybrid Binary Configuration
@@ -97,8 +94,7 @@ endif
 # Dynamic Binary Configuration
 # ----------------------------
 else ifneq (,$(findstring -DBINARY_DYNAMIC,$(CFLAGS)))
-# Force dynamic linking and prevent static fallback
-override LDFLAGS       += -Wl,-Bdynamic -Wl,--as-needed
+override LDFLAGS       += -Wl,-Bdynamic
 LIBS                    = -limp \
                           -lalog \
                           -laudioProcess \
@@ -112,7 +108,8 @@ LIBS                    = -limp \
                           -lopus \
                           -lfaac \
                           -lhelix-aac \
-                          -ljct
+                          -ljct \
+                          -latomic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
@@ -161,9 +158,13 @@ BIN_DIR                 = ./bin
 
 # Source and Object Files
 # =======================
-SOURCES                 = $(wildcard $(SRC_DIR)/*.cpp) $(wildcard $(SRC_DIR)/*.c)
-OBJECTS                 = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(wildcard $(SRC_DIR)/*.cpp)) \
-                          $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(wildcard $(SRC_DIR)/*.c))
+SOURCES_CPP             = $(wildcard $(SRC_DIR)/*.cpp)
+SOURCES_C               = $(wildcard $(SRC_DIR)/*.c)
+
+SOURCES                 = $(SOURCES_CPP) $(SOURCES_C)
+
+OBJECTS                 = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SOURCES_CPP)) \
+                          $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SOURCES_C))
 
 $(info Building objects: $(OBJECTS))
 

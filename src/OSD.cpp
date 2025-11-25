@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <vector>
 #include <fstream>
+#include <climits>
 
 #include "schrift.h"
 

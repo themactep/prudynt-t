@@ -5,6 +5,7 @@
 #include "IMPAudio.hpp"
 
 #include <memory>
+#include <vector>
 
 #if defined(AUDIO_SUPPORT)
 
@@ -23,6 +24,8 @@ private:
 
     int encChn;
     std::unique_ptr<AudioReframer> reframer;
+    std::vector<int64_t> mp4_audio_samples;
+    int mp4_audio_sample_rate = 0;
 };
 
 #endif // AUDIO_SUPPORT

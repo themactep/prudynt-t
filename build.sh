@@ -42,14 +42,6 @@ prudynt() {
 	done
 	# If no explicit flag provided, default to dynamic (no flag needed in Makefile)
 
-	# Detect optional -ffmpeg flag in args to enable USE_FFMPEG in Makefile
-	FFMPEG_FLAG=""
-	for arg in "$@"; do
-		if [ "$arg" = "-ffmpeg" ]; then
-			FFMPEG_FLAG="USE_FFMPEG=1"
-		fi
-	done
-
 	# Set debug or release build flags
 	if [ $DEBUG_BUILD -eq 1 ]; then
 		echo "Building with debug information (no optimization, debug symbols, debug logging)"
@@ -62,7 +54,7 @@ prudynt() {
 		STRIP_FLAG=""
 	fi
 
-	# Ensure cross-built FFmpeg pkg-configs are found
+	# Ensure locally built third-party pkg-configs are found
 	export PKG_CONFIG_PATH="$TOP/3rdparty/install/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 	/usr/bin/make -j$(nproc) \
@@ -364,11 +356,6 @@ deps() {
 	make install
 	cd ../../
 
-	# Optional: Build FFmpeg when -ffmpeg is requested
-	if [[ "$3" == "-ffmpeg" || "$4" == "-ffmpeg" || "$5" == "-ffmpeg" ]]; then
-		echo "Build FFmpeg minimal (parsers + BSFs)"
-		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_ffmpeg_deps.sh "$2"
-	fi
 }
 
 if [ $# -eq 0 ]; then
@@ -378,11 +365,10 @@ if [ $# -eq 0 ]; then
 	echo "       ./build.sh full <platform> [options]"
 	echo ""
 	echo "Platforms: T20, T21, T23, T30, T31, C100, T40, T41"
-	echo "Options:   -static | -hybrid | -debug | -ffmpeg"
+	echo "Options:   -static | -hybrid | -debug"
 	echo "  -static:  Static linking (default for -debug)"
 	echo "  -hybrid:  Hybrid linking (some static, some dynamic)"
 	echo "  -debug:   Debug build (no optimization, debug symbols, debug logging)"
-	echo "  -ffmpeg:  Enable USE_FFMPEG support"
 	exit 1
 elif [[ "$1" == "deps" ]]; then
 	deps "${@:2}"

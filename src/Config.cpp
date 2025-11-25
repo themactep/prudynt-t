@@ -476,6 +476,27 @@ bool processLine(const std::string &line, T &value)
     }
 }
 
+// Helper function to convert JsonValue to numeric types
+template<typename T>
+T jsonValueToNumber(JsonValue *value, T defaultValue) {
+    if (!value) return defaultValue;
+
+    if (value->type == JSON_NUMBER) {
+        return static_cast<T>(value->value.number);
+    } else if (value->type == JSON_STRING && value->value.string) {
+        try {
+            if constexpr (std::is_integral_v<T>) {
+                return static_cast<T>(std::stoll(value->value.string));
+            } else {
+                return static_cast<T>(std::stod(value->value.string));
+            }
+        } catch (...) {
+            return defaultValue;
+        }
+    }
+    return defaultValue;
+}
+
 // Helper function to check if this is a sensor parameter with proc path
 template <typename T>
 bool isSensorProcParameter(const ConfigItem<T> &item) {
@@ -682,27 +703,6 @@ std::string jsonValueToString(JsonValue *value) {
         default:
             return "";
     }
-}
-
-// Helper function to convert JsonValue to numeric types
-template<typename T>
-T jsonValueToNumber(JsonValue *value, T defaultValue) {
-    if (!value) return defaultValue;
-
-    if (value->type == JSON_NUMBER) {
-        return static_cast<T>(value->value.number);
-    } else if (value->type == JSON_STRING && value->value.string) {
-        try {
-            if constexpr (std::is_integral_v<T>) {
-                return static_cast<T>(std::stoll(value->value.string));
-            } else {
-                return static_cast<T>(std::stod(value->value.string));
-            }
-        } catch (...) {
-            return defaultValue;
-        }
-    }
-    return defaultValue;
 }
 
 // Helper function to convert JsonValue to bool
