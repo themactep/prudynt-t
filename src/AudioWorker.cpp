@@ -1,5 +1,7 @@
 #include "AudioWorker.hpp"
 
+#include <algorithm>
+
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
@@ -154,6 +156,32 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
         }
     }
 
+    if (global_audio[encChn]->frame_sink_count.load(std::memory_order_relaxed) > 0)
+    {
+        std::vector<std::shared_ptr<AudioFrameSink>> sinks;
+        {
+            std::lock_guard<std::mutex> lock(global_audio[encChn]->frame_sinks_mutex);
+            auto &vec = global_audio[encChn]->frame_sinks;
+            vec.erase(std::remove_if(vec.begin(), vec.end(), [](const std::weak_ptr<AudioFrameSink> &weak) {
+                                   return weak.expired();
+                               }),
+                      vec.end());
+            for (auto &weak : vec)
+            {
+                if (auto sink = weak.lock())
+                {
+                    sinks.push_back(sink);
+                }
+            }
+            global_audio[encChn]->frame_sink_count.store(static_cast<int>(vec.size()), std::memory_order_relaxed);
+        }
+
+        for (auto &sink : sinks)
+        {
+            sink->onAudioFrame(af);
+        }
+    }
+
     if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM
         && IMP_AENC_ReleaseStream(global_audio[encChn]->aeChn, &stream) < 0)
     {
@@ -216,12 +244,18 @@ void AudioWorker::run()
     {
         bool recorder_needs_audio =
             (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+        bool video_live_sinks_present =
+            global_video[0]->live_frame_sink_count.load(std::memory_order_relaxed) > 0 ||
+            global_video[1]->live_frame_sink_count.load(std::memory_order_relaxed) > 0;
+        bool audio_live_sinks_present =
+            global_audio[encChn]->frame_sink_count.load(std::memory_order_relaxed) > 0;
         bool video_clients_active = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback
             || global_force_video_active.load(std::memory_order_relaxed)
-            || recorder_needs_audio;
+            || recorder_needs_audio
+            || video_live_sinks_present;
         bool should_capture_audio = cfg->audio.input_enabled
-            && (global_audio[encChn]->hasDataCallback || recorder_needs_audio)
-            && (video_clients_active || recorder_needs_audio);
+            && (global_audio[encChn]->hasDataCallback || recorder_needs_audio || audio_live_sinks_present)
+            && (video_clients_active || recorder_needs_audio || audio_live_sinks_present);
 
         if (should_capture_audio)
         {
@@ -296,16 +330,22 @@ void AudioWorker::run()
             {
                 bool recorder_needed_now =
                     (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+                bool video_live_sinks_now =
+                    global_video[0]->live_frame_sink_count.load(std::memory_order_relaxed) > 0 ||
+                    global_video[1]->live_frame_sink_count.load(std::memory_order_relaxed) > 0;
+                bool audio_live_sinks_now =
+                    global_audio[encChn]->frame_sink_count.load(std::memory_order_relaxed) > 0;
                 bool video_clients_active_now = global_video[0]->hasDataCallback
                     || global_video[1]->hasDataCallback
                     || global_force_video_active.load(std::memory_order_relaxed)
-                    || recorder_needed_now;
+                    || recorder_needed_now
+                    || video_live_sinks_now;
                 if (global_audio[encChn]->onDataCallback != nullptr
                     && (video_clients_active_now || recorder_needed_now))
                 {
                     break;
                 }
-                if (recorder_needed_now)
+                if (recorder_needed_now || audio_live_sinks_now)
                 {
                     break;
                 }

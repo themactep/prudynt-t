@@ -69,8 +69,39 @@ void VideoWorker::run()
         mp4_sample_ts_base = -1;
     };
 
-    auto flush_mp4_sample = [&](bool recorder_active) {
-        if (!recorder_active || mp4_sample.empty())
+    auto deliver_live_frame = [&](const std::vector<uint8_t> &sample, bool is_key, int64_t pts_ms) {
+        if (!video_state || sample.empty()) {
+            return;
+        }
+
+        std::vector<std::shared_ptr<LiveFrameSink>> sinks;
+        {
+            std::lock_guard<std::mutex> lock(video_state->live_frame_sinks_mutex);
+            auto &vec = video_state->live_frame_sinks;
+            vec.erase(std::remove_if(vec.begin(), vec.end(), [](const std::weak_ptr<LiveFrameSink> &weak) {
+                                   return weak.expired();
+                               }),
+                      vec.end());
+            for (auto &weak : vec) {
+                if (auto sink = weak.lock()) {
+                    sinks.push_back(sink);
+                }
+            }
+            video_state->live_frame_sink_count.store(static_cast<int>(vec.size()), std::memory_order_relaxed);
+        }
+
+        if (sinks.empty()) {
+            return;
+        }
+
+        auto shared_sample = std::make_shared<std::vector<uint8_t>>(sample);
+        for (auto &sink : sinks) {
+            sink->onFrame(shared_sample, is_key, pts_ms);
+        }
+    };
+
+    auto flush_mp4_sample = [&](bool recorder_active, bool live_sinks_active) {
+        if ((!recorder_active && !live_sinks_active) || mp4_sample.empty())
         {
             reset_mp4_sample();
             return;
@@ -118,8 +149,15 @@ void VideoWorker::run()
             video_state->mp4_last_idr_ts.store(mp4_sample_ts, std::memory_order_relaxed);
             video_state->mp4_required_idr_ts.store(mp4_sample_ts, std::memory_order_relaxed);
         }
-        channel_recorder.writeVideo(mp4_sample.data(), mp4_sample.size(), pts_ms,
-                                    mp4_sample_is_key);
+        if (recorder_active)
+        {
+            channel_recorder.writeVideo(mp4_sample.data(), mp4_sample.size(), pts_ms,
+                                        mp4_sample_is_key);
+        }
+        if (live_sinks_active)
+        {
+            deliver_live_frame(mp4_sample, mp4_sample_is_key, pts_ms);
+        }
         reset_mp4_sample();
     };
 
@@ -152,8 +190,12 @@ void VideoWorker::run()
          * 1. a client is connected (hasDataCallback)
          * 2. a jpeg is requested
          * 3. recording explicitly forces the video loop active
+         * 4. an HTTP/live sink is present
          */
-        if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active)
+        bool live_sinks_present = video_state &&
+            (video_state->live_frame_sink_count.load(std::memory_order_relaxed) > 0);
+        if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active
+            || live_sinks_present)
         {
             int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
             if (current_stream_fps != last_mp4_fps)
@@ -181,12 +223,14 @@ void VideoWorker::run()
                 for (uint32_t i = 0; i < stream.packCount; ++i)
                 {
                     bool recorder_active = channel_recorder.isActive();
-                    bool recorder_accepts_samples = recorder_active;
-                    if ((!recorder_active || !recorder_accepts_samples) && mp4_sample_ts != -1)
+                    bool live_sinks_active = video_state &&
+                        (video_state->live_frame_sink_count.load(std::memory_order_relaxed) > 0);
+                    bool need_samples = recorder_active || live_sinks_active;
+                    if (!need_samples && mp4_sample_ts != -1)
                     {
                         reset_mp4_state();
                     }
-                    if (!recorder_accepts_samples)
+                    if (!need_samples)
                     {
                         mp4_sample_ts_base = -1;
                     }
@@ -297,7 +341,7 @@ void VideoWorker::run()
                                                            std::memory_order_relaxed);
                     }
 
-                    if (recorder_accepts_samples && payload_len > 0 && !(nal_is_sps || nal_is_pps))
+                    if (need_samples && payload_len > 0 && !(nal_is_sps || nal_is_pps))
                     {
                         int64_t pack_ts = stream.pack[i].timestamp;
                         bool pack_frame_end = stream.pack[i].frameEnd;
@@ -308,7 +352,7 @@ void VideoWorker::run()
                             {
                                 if (pack_ts != mp4_sample_ts)
                                 {
-                                    flush_mp4_sample(recorder_active);
+                                    flush_mp4_sample(recorder_active, live_sinks_active);
                                 }
                             }
                             else
@@ -316,7 +360,7 @@ void VideoWorker::run()
                                 int64_t delta = pack_ts - mp4_sample_ts;
                                 if (delta <= 0 || delta >= mp4_frame_switch_threshold)
                                 {
-                                    flush_mp4_sample(recorder_active);
+                                    flush_mp4_sample(recorder_active, live_sinks_active);
                                 }
                             }
                         }
@@ -352,6 +396,7 @@ void VideoWorker::run()
                             append_length_prefixed_nal_vec(sps_copy);
                             append_length_prefixed_nal_vec(pps_copy);
                             mp4_inserted_codec_config = true;
+                            LOG_DEBUG("VideoWorker " << encChn << " inserted SPS/PPS for live sinks");
                         }
 
                         append_length_prefixed_nal(start + 4, payload_len);
@@ -363,7 +408,11 @@ void VideoWorker::run()
 
                         if (pack_frame_end)
                         {
-                            flush_mp4_sample(recorder_active);
+                            flush_mp4_sample(recorder_active, live_sinks_active);
+                            if (live_sinks_active)
+                            {
+                                LOG_DEBUG("VideoWorker " << encChn << " flushed frame size=" << mp4_sample.size());
+                            }
                         }
                         else
                         {
@@ -468,7 +517,8 @@ void VideoWorker::run()
             }
         }
            else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video
-               && !global_video[encChn]->run_for_jpeg && !global_force_video_active)
+               && !global_video[encChn]->run_for_jpeg && !global_force_video_active
+               && !live_sinks_present)
         {
             LOG_DDEBUG("VIDEO LOCK" << " channel:" << encChn << " hasCallbackIsNull:"
                                     << (global_video[encChn]->onDataCallback == nullptr)
@@ -483,7 +533,8 @@ void VideoWorker::run()
                 std::unique_lock<std::mutex> lock_stream{mutex_main};
                 global_video[encChn]->active = false;
                 while (global_video[encChn]->onDataCallback == nullptr && !global_restart_video
-                         && !global_video[encChn]->run_for_jpeg && !global_force_video_active)
+                         && !global_video[encChn]->run_for_jpeg && !global_force_video_active
+                         && (!video_state || video_state->live_frame_sink_count.load(std::memory_order_relaxed) == 0))
                      global_video[encChn]->should_grab_frames.wait(lock_stream);
 
             global_video[encChn]->active = true;

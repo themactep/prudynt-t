@@ -56,6 +56,12 @@ struct AudioFrame
     struct timeval time;
 };
 
+struct AudioFrameSink
+{
+    virtual ~AudioFrameSink() = default;
+    virtual void onAudioFrame(const AudioFrame &frame) = 0;
+};
+
 struct H264NALUnit
 {
     std::vector<uint8_t> data;
@@ -63,6 +69,14 @@ struct H264NALUnit
     struct timeval time;
     int64_t imp_ts;
     */
+};
+
+struct LiveFrameSink
+{
+    virtual ~LiveFrameSink() = default;
+    virtual void onFrame(std::shared_ptr<std::vector<uint8_t>> sample,
+                         bool isKey,
+                         int64_t pts_ms) = 0;
 };
 
 struct BackchannelFrame
@@ -126,6 +140,10 @@ struct audio_stream
 
     StreamReplicator *streamReplicator = nullptr;
 
+        std::vector<std::weak_ptr<AudioFrameSink>> frame_sinks;
+        std::mutex frame_sinks_mutex;
+        std::atomic<int> frame_sink_count{0};
+
     audio_stream(int devId, int aiChn, int aeChn)
         : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
           msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)),
@@ -160,6 +178,10 @@ struct video_stream
     std::vector<uint8_t> latest_pps;
     bool have_sps;
     bool have_pps;
+
+        std::vector<std::weak_ptr<LiveFrameSink>> live_frame_sinks;
+        std::mutex live_frame_sinks_mutex;
+        std::atomic<int> live_frame_sink_count{0};
 
     video_stream(int encChn, _stream *stream, const char *name)
         : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0),
