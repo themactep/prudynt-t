@@ -603,7 +603,16 @@ void OSD::init()
         memset(&osdTime.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
         osdTime.rgnAttr.type = OSD_REG_PIC;
         osdTime.rgnAttr.fmt = PIX_FMT_BGRA;
-        set_text(&osdTime, &osdTime.rgnAttr, osd.time_format,
+        const char *initialTimeText = osd.time_format;
+        time_t initNow = time(nullptr);
+        struct tm *initLocal = localtime(&initNow);
+        if (initLocal)
+        {
+            strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, initLocal);
+            initialTimeText = timeFormatted;
+        }
+
+        set_text(&osdTime, &osdTime.rgnAttr, initialTimeText,
                  osd.time_position, osd.time_rotation,
                  osd.time_font_color, osd.time_font_stroke_color);
         IMP_OSD_SetRgnAttr(osdTime.imp_rgn, &osdTime.rgnAttr);
@@ -633,7 +642,29 @@ void OSD::init()
         memset(&osdUser.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
         osdUser.rgnAttr.type = OSD_REG_PIC;
         osdUser.rgnAttr.fmt = PIX_FMT_BGRA;
-        set_text(&osdUser, &osdUser.rgnAttr, osd.usertext_format,
+        std::string initialUserText = osd.usertext_format ? osd.usertext_format : "";
+        if (initialUserText.find("%hostname") != std::string::npos)
+        {
+            replace(initialUserText, "%hostname", hostname);
+        }
+        if (initialUserText.find("%ipaddress") != std::string::npos)
+        {
+            replace(initialUserText, "%ipaddress", ip);
+        }
+        if (initialUserText.find("%fps") != std::string::npos)
+        {
+            char fps_buf[4];
+            snprintf(fps_buf, sizeof(fps_buf), "%3d", osd.stats.fps);
+            replace(initialUserText, "%fps", fps_buf);
+        }
+        if (initialUserText.find("%bps") != std::string::npos)
+        {
+            char bps_buf[8];
+            snprintf(bps_buf, sizeof(bps_buf), "%5d", osd.stats.bps);
+            replace(initialUserText, "%bps", bps_buf);
+        }
+
+        set_text(&osdUser, &osdUser.rgnAttr, initialUserText.c_str(),
                  osd.usertext_position, osd.usertext_rotation,
                  osd.usertext_font_color, osd.usertext_font_stroke_color);
         IMP_OSD_SetRgnAttr(osdUser.imp_rgn, &osdUser.rgnAttr);
@@ -660,7 +691,13 @@ void OSD::init()
         memset(&osdUptm.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
         osdUptm.rgnAttr.type = OSD_REG_PIC;
         osdUptm.rgnAttr.fmt = PIX_FMT_BGRA;
-        set_text(&osdUptm, &osdUptm.rgnAttr, osd.uptime_format,
+        unsigned long initUptime = getSystemUptime();
+        unsigned long initDays = initUptime / 86400;
+        unsigned long initHours = (initUptime % 86400) / 3600;
+        unsigned long initMinutes = (initUptime % 3600) / 60;
+        snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, initDays, initHours, initMinutes);
+
+        set_text(&osdUptm, &osdUptm.rgnAttr, uptimeFormatted,
                  osd.uptime_position, osd.uptime_rotation,
                  osd.uptime_font_color, osd.uptime_font_stroke_color);
         IMP_OSD_SetRgnAttr(osdUptm.imp_rgn, &osdUptm.rgnAttr);
