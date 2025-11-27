@@ -23,6 +23,8 @@
 
 using namespace std::chrono;
 
+class HLSWriter;
+
 // Simple binary semaphore compatible with environments lacking std::binary_semaphore
 class binary_semaphore_compat {
 public:
@@ -236,5 +238,7 @@ extern std::atomic<bool> global_shutdown_requested;
 // so that a START command over the control FIFO does not require an
 // external streaming client.
 extern std::atomic<bool> global_force_video_active;
+
+extern std::shared_ptr<HLSWriter> global_hls_writer;
 
 #endif // GLOBALS_HPP

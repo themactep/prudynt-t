@@ -2,10 +2,13 @@
 #include <random>
 #include <set>
 #include <fstream>
+#include <sstream>
 #include <memory>
+#include <cstring>
 #include <variant>
 #include <algorithm>
 #include <atomic>
+#include <mutex>
 #include "Config.hpp"
 #include "libwebsockets.h"
 #include <imp/imp_osd.h>
@@ -23,11 +26,109 @@
 #define MODULE "WEBSOCKET"
 
 #include "MP4MuxerFactory.hpp"
+#include "HLSWriter.hpp"
 
 #pragma region keys_and_enums
 
 using namespace std::chrono;
 using namespace std::filesystem;
+
+namespace
+{
+constexpr const char *kHlsHttpPrefix = "/hls/";
+constexpr size_t kHlsHttpPrefixLen = 5;
+constexpr const char *kHlsOutputDir = "/run/prudynt/hls/ch0";
+constexpr const char *kHlsPlaylistName = "playlist.m3u8";
+constexpr const char *kHlsInitName = "init.mp4";
+constexpr const char *kHlsSegmentPrefix = "segment_";
+constexpr const char *kHlsSegmentExt = ".m4s";
+
+std::mutex g_hls_writer_mutex;
+
+std::shared_ptr<HLSWriter> ensure_hls_writer_instance()
+{
+    std::lock_guard<std::mutex> lock(g_hls_writer_mutex);
+    if (global_hls_writer)
+    {
+        return global_hls_writer;
+    }
+    int audio_channel = -1;
+#if defined(AUDIO_SUPPORT)
+    if (cfg->audio.input_enabled && std::strcmp(cfg->audio.input_format, "AAC") == 0)
+    {
+        audio_channel = 0;
+    }
+#endif
+    global_hls_writer = HLSWriter::create(0, audio_channel, kHlsOutputDir);
+    return global_hls_writer;
+}
+
+bool is_valid_hls_segment_name(const std::string &name)
+{
+    if (name.find("..") != std::string::npos || name.find('/') != std::string::npos)
+    {
+        return false;
+    }
+    if (name.rfind(kHlsSegmentPrefix, 0) != 0)
+    {
+        return false;
+    }
+    if (name.size() <= std::strlen(kHlsSegmentPrefix) + std::strlen(kHlsSegmentExt))
+    {
+        return false;
+    }
+    return name.rfind(kHlsSegmentExt) == name.size() - std::strlen(kHlsSegmentExt);
+}
+
+std::string rewrite_playlist_with_token(const std::string &playlist,
+                                        const std::string &token_value)
+{
+    if (token_value.empty())
+    {
+        return playlist;
+    }
+    std::string suffix = "?token=" + token_value;
+    std::istringstream input(playlist);
+    std::string line;
+    std::string output;
+    output.reserve(playlist.size() + 64);
+    while (std::getline(input, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+        if (line.rfind("#EXT-X-MAP", 0) == 0)
+        {
+            auto uri_pos = line.find("URI=\"");
+            if (uri_pos != std::string::npos)
+            {
+                uri_pos += 5;
+                auto uri_end = line.find('"', uri_pos);
+                if (uri_end != std::string::npos)
+                {
+                    std::string uri = line.substr(uri_pos, uri_end - uri_pos);
+                    if (uri.find('?') == std::string::npos)
+                    {
+                        uri += suffix;
+                        line.replace(uri_pos, uri_end - uri_pos, uri);
+                    }
+                }
+            }
+        }
+        else if (!line.empty() && line[0] != '#')
+        {
+            if (line.find('?') == std::string::npos)
+            {
+                line.append(suffix);
+            }
+        }
+        output.append(line);
+        output.push_back('\n');
+    }
+    return output;
+}
+} // namespace
 /*
     ToDo's
     add new font scales
@@ -80,7 +181,8 @@ enum
     PNT_FLAG_HTTP_SEND_PREVIEW = 16384,
     PNT_FLAG_HTTP_SEND_MP4 = 65536,
     PNT_FLAG_HTTP_STREAM_PENDING = 131072,
-    PNT_FLAG_HTTP_SEND_INVALID = 32768
+    PNT_FLAG_HTTP_SEND_INVALID = 32768,
+    PNT_FLAG_HTTP_SEND_HLS = 262144
 };
 
 /* ROOT */
@@ -647,6 +749,10 @@ int flag;                           // bitmask info store e.g. JSON separator ("
         std::mutex mp4_muxer_mutex;
         std::shared_ptr<HttpMp4Stream> http_stream_sink;
         std::atomic<bool> http_stream_pending{false};
+        std::string hls_pending_file;
+        std::string hls_pending_mime;
+        bool hls_is_playlist{false};
+        std::string hls_token;
 
     user_ctx(const char* session_id, lws *wsi_handle)
         : wsi(wsi_handle), value(0), flag(0),
@@ -2757,6 +2863,48 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 return 0;
             }
 
+            if (strncmp(url_ptr, kHlsHttpPrefix, kHlsHttpPrefixLen) == 0)
+            {
+                const char *relative_ptr = url_ptr + kHlsHttpPrefixLen;
+                std::string relative = relative_ptr ? std::string(relative_ptr) : std::string();
+                bool valid = false;
+                bool is_playlist = false;
+                std::string mime = "video/mp4";
+                if (relative == kHlsPlaylistName)
+                {
+                    valid = true;
+                    is_playlist = true;
+                    mime = "application/vnd.apple.mpegurl";
+                }
+                else if (relative == kHlsInitName)
+                {
+                    valid = true;
+                }
+                else if (is_valid_hls_segment_name(relative))
+                {
+                    valid = true;
+                }
+
+                if (!valid)
+                {
+                    if (lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL) ||
+                        lws_http_transaction_completed(wsi))
+                    {
+                        return -1;
+                    }
+                    return 0;
+                }
+
+                ensure_hls_writer_instance();
+                u_ctx->hls_pending_file = (std::filesystem::path(kHlsOutputDir) / relative).string();
+                u_ctx->hls_pending_mime = mime;
+                u_ctx->hls_is_playlist = is_playlist;
+                u_ctx->hls_token = url_length > 0 ? std::string(url_token) : std::string();
+                u_ctx->flag |= PNT_FLAG_HTTP_SEND_HLS;
+                lws_callback_on_writable(wsi);
+                return 0;
+            }
+
             // HTTP fMP4 init segment endpoint
             if (strcmp(url_ptr, "/ch0.mp4") == 0)
             {
@@ -2892,6 +3040,99 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                         return 0;
                     }
                 }
+                return 0;
+            }
+
+            if (u_ctx->flag & PNT_FLAG_HTTP_SEND_HLS)
+            {
+                u_ctx->flag &= ~PNT_FLAG_HTTP_SEND_HLS;
+                std::vector<unsigned char> binary_payload;
+                std::string playlist_payload;
+                size_t payload_len = 0;
+
+                if (!u_ctx->hls_pending_file.empty())
+                {
+                    std::ifstream in(u_ctx->hls_pending_file, std::ios::binary);
+                    if (in.is_open())
+                    {
+                        in.seekg(0, std::ios::end);
+                        std::streamsize size = in.tellg();
+                        in.seekg(0, std::ios::beg);
+                        if (size > 0)
+                        {
+                            if (u_ctx->hls_is_playlist)
+                            {
+                                std::string raw(static_cast<size_t>(size), '\0');
+                                in.read(raw.data(), size);
+                                raw.resize(static_cast<size_t>(in.gcount()));
+                                playlist_payload = rewrite_playlist_with_token(raw, u_ctx->hls_token);
+                                payload_len = playlist_payload.size();
+                            }
+                            else
+                            {
+                                binary_payload.resize(static_cast<size_t>(size));
+                                in.read(reinterpret_cast<char *>(binary_payload.data()), size);
+                                binary_payload.resize(static_cast<size_t>(in.gcount()));
+                                payload_len = binary_payload.size();
+                            }
+                        }
+                    }
+                }
+
+                auto finalize_hls_state = [&]() {
+                    u_ctx->hls_pending_file.clear();
+                    u_ctx->hls_pending_mime.clear();
+                    u_ctx->hls_token.clear();
+                    u_ctx->hls_is_playlist = false;
+                };
+
+                if (payload_len == 0)
+                {
+                    if (lws_add_http_common_headers(wsi, HTTP_STATUS_NOT_FOUND, "text/plain", 0, &p, end) ||
+                        lws_finalize_write_http_header(wsi, start, &p, end) ||
+                        lws_http_transaction_completed(wsi))
+                    {
+                        LOG_ERROR("lws error sending HLS 404");
+                        finalize_hls_state();
+                        return -1;
+                    }
+                    finalize_hls_state();
+                    return 0;
+                }
+
+                std::vector<unsigned char> body(LWS_PRE + payload_len);
+                if (u_ctx->hls_is_playlist)
+                {
+                    std::memcpy(body.data() + LWS_PRE, playlist_payload.data(), payload_len);
+                }
+                else
+                {
+                    std::memcpy(body.data() + LWS_PRE, binary_payload.data(), payload_len);
+                }
+
+                if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, u_ctx->hls_pending_mime.c_str(), payload_len, &p, end) ||
+                    lws_add_http_header_by_name(wsi,
+                                                (const unsigned char *)"Access-Control-Allow-Origin",
+                                                (const unsigned char *)"*",
+                                                1,
+                                                &p,
+                                                end) ||
+                    lws_add_http_header_by_name(wsi,
+                                                (const unsigned char *)"Cache-Control",
+                                                (const unsigned char *)"no-store, no-cache, must-revalidate",
+                                                35,
+                                                &p,
+                                                end) ||
+                    lws_finalize_write_http_header(wsi, start, &p, end) ||
+                    !lws_write(wsi, body.data() + LWS_PRE, payload_len, LWS_WRITE_HTTP) ||
+                    lws_http_transaction_completed(wsi))
+                {
+                    LOG_ERROR("lws error sending HLS payload");
+                    finalize_hls_state();
+                    return -1;
+                }
+
+                finalize_hls_state();
                 return 0;
             }
 
