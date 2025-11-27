@@ -3089,6 +3089,12 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 if (payload_len == 0)
                 {
                     if (lws_add_http_common_headers(wsi, HTTP_STATUS_NOT_FOUND, "text/plain", 0, &p, end) ||
+                        lws_add_http_header_by_token(wsi,
+                                                     WSI_TOKEN_HTTP_ACCESS_CONTROL_ALLOW_ORIGIN,
+                                                     (const unsigned char *)"*",
+                                                     1,
+                                                     &p,
+                                                     end) ||
                         lws_finalize_write_http_header(wsi, start, &p, end) ||
                         lws_http_transaction_completed(wsi))
                     {
@@ -3111,14 +3117,14 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 }
 
                 if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, u_ctx->hls_pending_mime.c_str(), payload_len, &p, end) ||
+                    lws_add_http_header_by_token(wsi,
+                                                 WSI_TOKEN_HTTP_ACCESS_CONTROL_ALLOW_ORIGIN,
+                                                 (const unsigned char *)"*",
+                                                 1,
+                                                 &p,
+                                                 end) ||
                     lws_add_http_header_by_name(wsi,
-                                                (const unsigned char *)"Access-Control-Allow-Origin",
-                                                (const unsigned char *)"*",
-                                                1,
-                                                &p,
-                                                end) ||
-                    lws_add_http_header_by_name(wsi,
-                                                (const unsigned char *)"Cache-Control",
+                                                (const unsigned char *)"Cache-Control:",
                                                 (const unsigned char *)"no-store, no-cache, must-revalidate",
                                                 35,
                                                 &p,
