@@ -725,6 +725,9 @@ struct mp4_sul_wrapper {
 
 struct user_ctx
 {
+    bool session_active;
+    bool is_http = false;
+    bool authenticated;
     char id[SESSION_ID_LENGTH + 1]; // +1 for null terminator
     struct lws *wsi;                // libwebsockets handle
     char root[ROOT_MAX_LENGTH];     // json root path (replaced std::string)
@@ -754,8 +757,9 @@ int flag;                           // bitmask info store e.g. JSON separator ("
         bool hls_is_playlist{false};
         std::string hls_token;
 
-    user_ctx(const char* session_id, lws *wsi_handle)
-        : wsi(wsi_handle), value(0), flag(0),
+        user_ctx(const char* session_id, lws *wsi_handle)
+            : session_active(false), authenticated(false),
+                    wsi(wsi_handle), value(0), flag(0),
           region(), midx(0), vidx(0), post_data_size(0), rx_message(), tx_message(),
           message(), snapshot()
     {
@@ -2451,6 +2455,10 @@ send_snapshot(lws_sorted_usec_list_t *sul)
 {
     snapshot_sul_wrapper *wrapper = lws_container_of(sul, snapshot_sul_wrapper, sul);
     struct user_ctx *u_ctx = wrapper->owner;
+    if (!u_ctx || !u_ctx->session_active)
+    {
+        return;
+    }
     LOG_DDEBUGWS("process shedule. id:" << u_ctx->id);
     u_ctx->flag |= PNT_FLAG_WS_SEND_PREVIEW;
     lws_callback_on_writable(u_ctx->wsi);
@@ -2460,6 +2468,10 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul)
 {
     mp4_sul_wrapper *wrapper = lws_container_of(sul, mp4_sul_wrapper, sul);
     struct user_ctx *u_ctx = wrapper->owner;
+    if (!u_ctx || !u_ctx->session_active)
+    {
+        return;
+    }
     LOG_DDEBUGWS("process mp4 init schedule. id:" << u_ctx->id);
 
     auto video_state = global_video[0];
@@ -2583,22 +2595,25 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
     {
     // ############################ WEBSOCKET ###############################
     case LWS_CALLBACK_ESTABLISHED:
+    {
+        new (user) user_ctx(generateSessionID(), wsi);
+        u_ctx = (struct user_ctx *)user;
         LOG_DEBUG("LWS_CALLBACK_ESTABLISHED ip:" << client_ip);
         LOG_DDEBUGWS("LWS_CALLBACK_ESTABLISHED id:" << u_ctx->id << ", ip:" << client_ip);
 
-        // check if security is required and validate token
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
+        const bool token_matches = (strcmp(token, url_token) == 0) ||
+                                   (strcmp(cfg->websocket.token, "auto") != 0 &&
+                                    strcmp(cfg->websocket.token, "") != 0 &&
+                                    strcmp(cfg->websocket.token, url_token) == 0);
         LOG_DEBUG("Expected token: " << std::string(token, WEBSOCKET_TOKEN_LENGTH));
         LOG_DEBUG("Received token: " << url_token);
-        if (strcmp(token, url_token) == 0 ||
-	    (strcmp(cfg->websocket.token, "auto") != 0 &&
-	     strcmp(cfg->websocket.token, "") != 0 &&
-	     strcmp(cfg->websocket.token, url_token) == 0))
+
+        if (token_matches)
         {
-            /* initialize new u_ctx session structure.
-             * assign current wsi and a new sessionid
-             */
-            new (user) user_ctx(generateSessionID(), wsi);
+            u_ctx->session_active = true;
+            u_ctx->is_http = false;
+            u_ctx->authenticated = true;
             LOG_DEBUG("WebSocket connection authenticated and user context initialized");
         }
         else
@@ -2609,15 +2624,21 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                 LOG_DEBUG("Connection refused.");
                 return -1;
             }
-            else
-            {
-                LOG_DEBUG("Allowing unauthenticated connection (ws_secured=false)");
-                new (user) user_ctx(generateSessionID(), wsi);
-            }
+
+            LOG_DEBUG("Allowing unauthenticated connection (ws_secured=false)");
+            u_ctx->session_active = true;
+            u_ctx->is_http = false;
+            u_ctx->authenticated = false;
         }
         break;
+    }
 
     case LWS_CALLBACK_RECEIVE:
+        if (!u_ctx || !u_ctx->session_active)
+        {
+            LOG_WARN("Dropping websocket receive on inactive session from " << client_ip);
+            return -1;
+        }
         LOG_DDEBUGWS("LWS_CALLBACK_RECEIVE " <<
             " id:" << u_ctx->id <<
             " ,flag:" << u_ctx->flag <<
@@ -2740,6 +2761,10 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         break;
 
     case LWS_CALLBACK_SERVER_WRITEABLE:
+        if (!u_ctx || !u_ctx->session_active)
+        {
+            return -1;
+        }
         LOG_DDEBUGWS("LWS_CALLBACK_SERVER_WRITEABLE id:" << u_ctx->id << ", ip:" << client_ip);
 
         // send response message
@@ -2780,25 +2805,32 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
     case LWS_CALLBACK_CLOSED:
     {
+        if (!u_ctx)
+        {
+            break;
+        }
+        bool should_cleanup = u_ctx->session_active;
         LOG_DEBUG("LWS_CALLBACK_CLOSED ip:" << client_ip << " - WebSocket connection closed");
         LOG_DDEBUGWS("LWS_CALLBACK_CLOSED id:" << u_ctx->id << ", ip:" << client_ip << ", flag:" << u_ctx->flag);
 
         // cleanup delete possibly existing shedules for this session
-        lws_sul_cancel(&u_ctx->snapshot_timer.sul);
-        lws_sul_cancel(&u_ctx->mp4_timer.sul);
+        if (should_cleanup)
+        {
+            lws_sul_cancel(&u_ctx->snapshot_timer.sul);
+            lws_sul_cancel(&u_ctx->mp4_timer.sul);
 
-        int audio_channel = (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0) ? 0 : -1;
-        detach_http_stream(u_ctx, 0, audio_channel);
+            int audio_channel = (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0) ? 0 : -1;
+            detach_http_stream(u_ctx, 0, audio_channel);
 
-        // restore any replaced callbacks and cleanup muxer
-        if (u_ctx->mp4_muxer) {
-            u_ctx->mp4_muxer->close();
-            DestroyMP4Muxer(u_ctx->mp4_muxer);
-            u_ctx->mp4_muxer = nullptr;
+            if (u_ctx->mp4_muxer) {
+                u_ctx->mp4_muxer->close();
+                DestroyMP4Muxer(u_ctx->mp4_muxer);
+                u_ctx->mp4_muxer = nullptr;
+            }
+
+            u_ctx->pending_fragments.clear();
+            u_ctx->http_stream_buf.clear();
         }
-
-        u_ctx->pending_fragments.clear();
-        u_ctx->http_stream_buf.clear();
 
         u_ctx->~user_ctx();
         break;
@@ -2808,35 +2840,33 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
     // ############################ HTTP ###############################
     case LWS_CALLBACK_HTTP:
     {
+        new (user) user_ctx(generateSessionID(), wsi);
+        u_ctx = (struct user_ctx *)user;
         LOG_DDEBUGWS("LWS_CALLBACK_HTTP ip:" << client_ip
                                              << " url:" << (char *)url_ptr
                                              << " method:" << request_method);
 
         // check if security is required and validate token
         url_length = lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
-        if (strcmp(token, url_token) == 0 ||
-            (strcmp(cfg->websocket.token, "auto") != 0 &&
-             strcmp(cfg->websocket.token, "") != 0 &&
-             strcmp(cfg->websocket.token, url_token) == 0))
-        {
-            /* initialize new u_ctx session structure.
-            * assign current wsi and a new sessionid
-            ' don't know if we need it for http
-            */
-            new (user) user_ctx(generateSessionID(), wsi);
-        }
-        else
+        const bool token_matches = (strcmp(token, url_token) == 0) ||
+                                   (strcmp(cfg->websocket.token, "auto") != 0 &&
+                                    strcmp(cfg->websocket.token, "") != 0 &&
+                                    strcmp(cfg->websocket.token, url_token) == 0);
+        if (!token_matches && cfg->websocket.http_secured)
         {
             LOG_DEBUG("Unauthenticated http connect from: " << client_ip);
-            if (cfg->websocket.http_secured)
+            LOG_DEBUG("Connection refused.");
+            if (lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, NULL) ||
+                lws_http_transaction_completed(wsi))
             {
-                LOG_DEBUG("Connection refused.");
-                if (lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, NULL) ||
-                    lws_http_transaction_completed(wsi)) {
-                    return -1;
-                }
+                return -1;
             }
+            return 0;
         }
+
+        u_ctx->session_active = true;
+        u_ctx->is_http = true;
+        u_ctx->authenticated = token_matches;
 
         // http GET
         if (request_method == 0)
@@ -2951,11 +2981,19 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         break;
 
     case LWS_CALLBACK_HTTP_BODY:
+        if (!u_ctx || !u_ctx->session_active)
+        {
+            return -1;
+        }
         LOG_DDEBUGWS("LWS_CALLBACK_HTTP_BODY ip:" << client_ip);
         u_ctx->rx_message.append((char *)in, len);
         break;
 
     case LWS_CALLBACK_HTTP_BODY_COMPLETION: //LWS_CALLBACK_HTTP_BODY:
+        if (!u_ctx || !u_ctx->session_active)
+        {
+            return -1;
+        }
         LOG_DDEBUGWS("LWS_CALLBACK_HTTP_BODY ip:" << client_ip << ", data:" << u_ctx->rx_message);
 
         if (u_ctx->flag & PNT_FLAG_HTTP_RECEIVED_MESSAGE)
@@ -2984,6 +3022,10 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         break;
 
     case LWS_CALLBACK_HTTP_WRITEABLE:
+        if (!u_ctx || !u_ctx->session_active)
+        {
+            return -1;
+        }
         LOG_DDEBUGWS("LWS_CALLBACK_HTTP_WRITEABLE ip:" << client_ip << " " << (int)u_ctx->flag);
 
         {
@@ -3276,12 +3318,12 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         break;
 
     case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
-        LOG_DDEBUGWS("LWS_CALLBACK_HTTP_DROP_PROTOCOL ip:" << client_ip << ", id:" << u_ctx->id);
+        if (u_ctx && u_ctx->session_active)
         {
+            LOG_DDEBUGWS("LWS_CALLBACK_HTTP_DROP_PROTOCOL ip:" << client_ip << ", id:" << u_ctx->id);
             int audio_channel = (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0) ? 0 : -1;
             detach_http_stream(u_ctx, 0, audio_channel);
         }
-        u_ctx->~user_ctx();
         break;
 
     default:
@@ -3300,22 +3342,26 @@ void WS::start()
     // ws://<ip>:<port>/?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
     memset(token, 0, sizeof(token));
+    std::filesystem::create_directories("/run/prudynt");
+    const char *tokenFile = "/run/prudynt/websocket_token";
 
     // Check if user has configured a specific token (not "auto" or empty)
     if (cfg->websocket.token &&
         strcmp(cfg->websocket.token, "auto") != 0 &&
-        strcmp(cfg->websocket.token, "") != 0 &&
-        strlen(cfg->websocket.token) == WEBSOCKET_TOKEN_LENGTH) {
-        memcpy(token, cfg->websocket.token, WEBSOCKET_TOKEN_LENGTH);
-        LOG_DEBUG("Using configured token: '"
-                  << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+        cfg->websocket.token[0] != '\0') {
+        size_t configured_len = std::strlen(cfg->websocket.token);
+        if (configured_len > WEBSOCKET_TOKEN_LENGTH)
+        {
+            LOG_WARN("Configured websocket token is longer than " << WEBSOCKET_TOKEN_LENGTH
+                     << " characters; truncating");
+            configured_len = WEBSOCKET_TOKEN_LENGTH;
+        }
+        std::memcpy(token, cfg->websocket.token, configured_len);
+        token[configured_len] = '\0';
+        LOG_DEBUG("Using configured token: " << token);
     }
     else {
         // Token is "auto" or empty, use boot-session persistent token
-        // Create /run/prudynt directory if it doesn't exist
-        std::filesystem::create_directories("/run/prudynt");
-
-        const char* tokenFile = "/run/prudynt/websocket_token";
         std::ifstream inFile(tokenFile);
 
         if (inFile.is_open() && inFile.good()) {
@@ -3340,12 +3386,13 @@ void WS::start()
                       << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
         }
 
-        // Save the token for this boot session (survives app restart, not reboot)
-        std::ofstream outFile(tokenFile);
-        if (outFile.is_open()) {
-            outFile.write(token, WEBSOCKET_TOKEN_LENGTH);
-            outFile.close();
-        }
+    }
+
+    // Save the token for this boot session (survives app restart, not reboot)
+    std::ofstream outFile(tokenFile, std::ios::trunc | std::ios::binary);
+    if (outFile.is_open()) {
+        outFile.write(token, WEBSOCKET_TOKEN_LENGTH);
+        outFile.close();
     }
 
     // Hook libwebsockets logging into our logger for visibility
