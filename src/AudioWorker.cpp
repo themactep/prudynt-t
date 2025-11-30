@@ -239,6 +239,7 @@ void AudioWorker::run()
                 {
                     LOG_ERROR("IMP_AI_GetFrame(" << global_audio[encChn]->devId << ", "
                                                  << global_audio[encChn]->aiChn << ") failed");
+                    continue; // avoid using an uninitialized frame
                 }
 
                 if (reframer)
