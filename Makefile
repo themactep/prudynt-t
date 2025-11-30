@@ -226,7 +226,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(VERSION_FILE)
 # --------------------
 $(TARGET): $(OBJECTS) $(VERSION_FILE)
 	@mkdir -p $(@D)
-	$(CCACHE) $(CXX) $(LDFLAGS) -o $@ $(OBJECTS) $(LIBS) $(STRIP_FLAG)
+	$(CCACHE) $(CXX) -o $@ $(OBJECTS) $(LDFLAGS) $(LIBS) $(STRIP_FLAG)
 
 # =============================================================================
 # Phony Targets
