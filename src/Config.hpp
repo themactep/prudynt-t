@@ -10,6 +10,7 @@
 #include <any>
 #include <mutex>
 #include <memory>
+#include <vector>
 
 //~65k
 #define ENABLE_LOG_DEBUG
@@ -303,6 +304,7 @@ class CFG {
         static CFG *createNew();
         bool readConfig();
         bool updateConfig();
+        bool saveIntValues(const std::vector<std::pair<std::string, int>> &values);
 
 #if defined(AUDIO_SUPPORT)
         _audio audio{};

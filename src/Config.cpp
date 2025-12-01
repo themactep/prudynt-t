@@ -804,6 +804,7 @@ CFG::CFG()
 
 void CFG::load()
 {
+    std::lock_guard<std::mutex> lock(configMutex);
     LOG_DEBUG("CFG::load() - Starting configuration load");
     boolItems = getBoolItems();
     LOG_DEBUG("CFG::load() - Got bool items");
@@ -860,4 +861,35 @@ void CFG::load()
         // ROI handling code will be reimplemented with JCT
     }
     */
+}
+
+bool CFG::saveIntValues(const std::vector<std::pair<std::string, int>> &values)
+{
+    if (values.empty())
+        return true;
+
+    if (filePath.empty()) {
+        LOG_WARN("CFG::saveIntValues() - filePath is empty");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(configMutex);
+    JsonValue *doc = load_config(filePath.c_str());
+    if (!doc) {
+        LOG_ERROR("CFG::saveIntValues() - failed to load config " << filePath);
+        return false;
+    }
+
+    for (const auto &entry : values) {
+        if (!setNestedValue(doc, entry.first, std::to_string(entry.second))) {
+            LOG_WARN("CFG::saveIntValues() - failed to set key " << entry.first);
+        }
+    }
+
+    int rc = save_config(filePath.c_str(), doc);
+    if (rc == 0) {
+        LOG_ERROR("CFG::saveIntValues() - save_config failed for " << filePath);
+    }
+    free_json_value(doc);
+    return rc != 0;
 }

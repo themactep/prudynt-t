@@ -5,6 +5,7 @@
 #include <memory>
 #include <variant>
 #include "Config.hpp"
+#include "ImagingControl.hpp"
 #include "libwebsockets.h"
 #include <imp/imp_osd.h>
 #include <imp/imp_isp.h>
@@ -515,7 +516,8 @@ struct user_ctx
     char root[ROOT_MAX_LENGTH];     // json root path (replaced std::string)
     std::string path;               // json sub path
     int value;                      // to use a number in the JSON parser e.g. encChn (encoder channel)
-int flag;                           // bitmask info store e.g. JSON separator (","") or thread restart
+    int flag;                       // bitmask info store e.g. JSON separator (","") or thread restart
+    bool imaging_dirty;
     roi region;
     int midx;
     int vidx;
@@ -535,7 +537,7 @@ int flag;                           // bitmask info store e.g. JSON separator ("
     std::function<void(void)> prev_audio_callback; // to restore previous audio callback
 
     user_ctx(const char* session_id, lws *wsi_handle)
-        : wsi(wsi_handle), value(0), flag(0),
+        : wsi(wsi_handle), value(0), flag(0), imaging_dirty(false),
           region(), midx(0), vidx(0), post_data_size(0), rx_message(), tx_message(),
           message(), snapshot()
     {
@@ -870,6 +872,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
             {
                 if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                 {
+                    u_ctx->imaging_dirty = true;
                     uint8_t t = static_cast<uint8_t>(cfg->get<int>(u_ctx->path));
                     IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t *>(&t));
                 }
@@ -885,6 +888,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
             {
                 if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                 {
+                    u_ctx->imaging_dirty = true;
                     IMPISPWB wb;
                     memset(&wb, 0, sizeof(IMPISPWB));
                     int ret = IMP_ISP_Tuning_GetWB(&wb);
@@ -908,6 +912,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetBrightness(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -918,6 +923,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetContrast(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -929,6 +935,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetBcshHue(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -942,6 +949,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetSaturation(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -952,6 +960,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetSharpness(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -963,6 +972,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetSinterStrength(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -976,6 +986,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetTemperStrength(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -986,6 +997,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<bool>(u_ctx->path, true))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetISPVflip(IMPISP_TUNING_OPS_MODE_ENABLE);
                     }
                 }
@@ -993,6 +1005,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<bool>(u_ctx->path, false))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetISPVflip(IMPISP_TUNING_OPS_MODE_DISABLE);
                     }
                 }
@@ -1003,6 +1016,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<bool>(u_ctx->path, true))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetISPHflip(IMPISP_TUNING_OPS_MODE_ENABLE);
                     }
                 }
@@ -1010,6 +1024,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<bool>(u_ctx->path, false))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetISPHflip(IMPISP_TUNING_OPS_MODE_DISABLE);
                     }
                 }
@@ -1020,6 +1035,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetAntiFlickerAttr((IMPISPAntiflickerAttr)cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1031,6 +1047,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                     {
                         if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                         {
+                            u_ctx->imaging_dirty = true;
                             IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)cfg->get<int>(u_ctx->path));
                         }
                     }
@@ -1048,6 +1065,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetAeComp(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1062,6 +1080,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetDPC_Strength(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1076,6 +1095,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetDRC_Strength(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1089,6 +1109,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetHiLightDepress(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1100,6 +1121,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetBacklightComp(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1113,6 +1135,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetMaxAgain(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1123,6 +1146,7 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
                 {
                     if (cfg->set<int>(u_ctx->path, atoi(ctx->buf)))
                     {
+                        u_ctx->imaging_dirty = true;
                         IMP_ISP_Tuning_SetMaxDgain(cfg->get<int>(u_ctx->path));
                     }
                 }
@@ -1138,6 +1162,11 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
     {
         u_ctx->message.append("}");
         lejp_parser_pop(ctx);
+        if (u_ctx->imaging_dirty)
+        {
+            ImagingControl::refreshSnapshot();
+            u_ctx->imaging_dirty = false;
+        }
     }
 #endif
     return 0;
@@ -2194,7 +2223,6 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul)
             unsigned long outputBufferSize = 0;
             void* faacHandle = faacEncOpen(cfg->audio.input_sample_rate, cfg->audio.force_stereo ? 2 : 1, &inputSamples, &outputBufferSize);
             if (faacHandle) {
-                faacEncConfigurationPtr cfgptr = faacEncGetCurrentConfiguration(faacHandle);
                 // Use faac to get decoder specific info (AudioSpecificConfig)
                 unsigned char *decoder_info = nullptr;
                 unsigned long decoder_info_len = 0;

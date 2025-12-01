@@ -19,6 +19,7 @@
 #include "WorkerUtils.hpp"
 #include "IMPBackchannel.hpp"
 #include "MP4ControlSocket.hpp"
+#include "ImagingControl.hpp"
 using namespace std::chrono;
 
 std::mutex mutex_main;
@@ -169,6 +170,7 @@ int main(int argc, const char *argv[])
 
         // Start Unix domain socket control server for MP4 recording
         std::thread(MP4ControlSocket::run).detach();
+        ImagingControl::start();
 
     if (!imp_system)
     {
@@ -359,5 +361,6 @@ int main(int argc, const char *argv[])
     }
 
     join_signal_thread(false);
+    ImagingControl::stop();
     return 0;
 }
