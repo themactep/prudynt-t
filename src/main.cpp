@@ -10,6 +10,7 @@
 #include "version.hpp"
 #include "ConfigWatcher.hpp"
 #include "AudioWorker.hpp"
+#include "AudioOutputWorker.hpp"
 #include "BackchannelWorker.hpp"
 #include "VideoWorker.hpp"
 #include "JPEGWorker.hpp"
@@ -19,6 +20,7 @@
 #include "WorkerUtils.hpp"
 #include "IMPBackchannel.hpp"
 #include "MP4ControlSocket.hpp"
+#include "AudioOutputControl.hpp"
 #include "ImagingControl.hpp"
 using namespace std::chrono;
 
@@ -40,6 +42,7 @@ std::shared_ptr<video_stream> global_video[NUM_VIDEO_CHANNELS] = {nullptr};
 #if defined(AUDIO_SUPPORT)
 std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS] = {nullptr};
 std::shared_ptr<backchannel_stream> global_backchannel = nullptr;
+std::shared_ptr<audio_output_stream> global_audio_output = nullptr;
 #endif
 
 std::shared_ptr<CFG> cfg = std::make_shared<CFG>();
@@ -114,6 +117,7 @@ int main(int argc, const char *argv[])
     pthread_t rtsp_thread;
     pthread_t motion_thread;
     pthread_t backchannel_thread;
+    pthread_t audio_output_thread;
     pthread_t signal_thread;
     bool signal_thread_started = false;
 
@@ -175,6 +179,7 @@ int main(int argc, const char *argv[])
 
     // Start Unix domain socket control server for MP4 recording
     std::thread(MP4ControlSocket::run).detach();
+    std::thread(AudioOutputControl::run).detach();
     ImagingControl::start();
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
@@ -184,6 +189,7 @@ int main(int argc, const char *argv[])
 #if defined(AUDIO_SUPPORT)
     global_audio[0] = std::make_shared<audio_stream>(1, 0, 0);
     global_backchannel = std::make_shared<backchannel_stream>();
+    global_audio_output = std::make_shared<audio_output_stream>();
 #endif
 
     pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
@@ -193,10 +199,16 @@ int main(int argc, const char *argv[])
     {
         global_restart = true;
 #if defined(AUDIO_SUPPORT)
+       if (cfg->audio.output_enabled && (global_restart_audio || startup))
+       {
+           int ret = pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, nullptr);
+           LOG_DEBUG_OR_ERROR(ret, "create audio output thread");
+       }
+
         if (cfg->audio.output_enabled && (global_restart_audio || startup))
         {
-             int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
-             LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
+            int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
+            LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
         }
 
         if (cfg->audio.input_enabled && (global_restart_audio || startup))
@@ -299,13 +311,21 @@ int main(int argc, const char *argv[])
             LOG_DEBUG_OR_ERROR(ret, "join audio thread");
         }
 
+        if (global_audio_output && global_audio_output->running && global_restart_audio)
+        {
+            AudioOutputWorker::signalShutdown();
+            int ret = pthread_join(audio_output_thread, NULL);
+            LOG_DEBUG_OR_ERROR(ret, "join audio output thread");
+        }
+
         // stop backchannel
         if (global_backchannel->imp_backchannel && global_restart_audio)
         {
-             global_backchannel->running = false;
-             global_backchannel->should_grab_frames.notify_one();
-             int ret = pthread_join(backchannel_thread, NULL);
-             LOG_DEBUG_OR_ERROR(ret, "join backchannel thread");
+            global_backchannel->running = false;
+            BackchannelWorker::signalShutdown();
+            global_backchannel->should_grab_frames.notify_one();
+            int ret = pthread_join(backchannel_thread, NULL);
+            LOG_DEBUG_OR_ERROR(ret, "join backchannel thread");
         }
 
         if (global_restart_video)

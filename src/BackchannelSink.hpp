@@ -32,6 +32,9 @@ private:
     void scheduleTimeoutCheck();
     static void timeoutCheck(void *clientData);
     void timeoutCheck1();
+    void resetAdaptiveTimeout();
+    void updateAdaptiveTimeout(const struct timeval &presentationTime);
+    static uint64_t toMicroseconds(const struct timeval &tv);
 
     static void afterGettingFrame(void *clientData,
                                   unsigned frameSize,
@@ -58,6 +61,11 @@ private:
 
     bool fIsSending;
     const IMPBackchannelFormat fFormat;
+
+    unsigned fCurrentTimeoutUs;
+    double fAvgInterFrameIntervalUs;
+    bool fHasLastPresentationTime;
+    struct timeval fLastPresentationTime;
 };
 
 #endif // BACKCHANNEL_SINK_HPP

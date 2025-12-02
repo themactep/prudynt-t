@@ -2,13 +2,13 @@
 #define BACKCHANNEL_PROCESSOR_HPP
 
 // Processes audio frames, decodes them, handles session management (who is
-// "current"), resamples, and sends PCM data to a pipe.
+// "current"), resamples, and forwards PCM data to the audio output queue.
 
 #include "IMPBackchannel.hpp"
 #include "globals.hpp"
 
 #include <cstdint>
-#include <cstdio>
+#include <vector>
 
 class BackchannelWorker
 {
@@ -17,6 +17,7 @@ public:
     ~BackchannelWorker();
 
     static void *thread_entry(void *arg);
+    static void signalShutdown();
 
 private:
     void run();
@@ -25,20 +26,13 @@ private:
                                         int input_rate,
                                         int output_rate);
 
-    bool initPipe();
-    void closePipe();
-
     bool processFrame(const BackchannelFrame &frame);
     bool decodeFrame(const uint8_t *payload,
                      size_t payloadSize,
                      IMPBackchannelFormat format,
                      std::vector<int16_t> &outPcmBuffer);
-    bool writePcmToPipe(const std::vector<int16_t> &pcmBuffer);
 
     unsigned int currentSessionId;
-
-    FILE *fPipe;
-    int fPipeFd;
 
     BackchannelWorker(const BackchannelWorker &) = delete;
     BackchannelWorker &operator=(const BackchannelWorker &) = delete;

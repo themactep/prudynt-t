@@ -46,6 +46,11 @@ public:
         return val;
     }
 
+    void clear() {
+        std::unique_lock<std::mutex> lck(cv_mtx);
+        msg_buffer.clear();
+    }
+
 private:
     bool can_read() {
         return !msg_buffer.empty();

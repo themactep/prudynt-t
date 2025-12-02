@@ -13,12 +13,12 @@
     "input_noise_suppression": 0,
     "input_sample_rate": 16000,
     "input_vol": 80,
-    "output_enabled": false,
+    "output_enabled": true,
     "output_sample_rate": 16000
   },
   "general": {
     "allocation_tracking_enabled": false,
-    "audio_debug_verbose": false,
+    "audio_debug_verbose": true,
     "imp_polling_timeout": 500,
     "loglevel": "INFO",
     "memory_monitoring_enabled": true,

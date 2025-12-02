@@ -272,6 +272,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"audio.input_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
         {"audio.input_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
 #if defined(LIB_AUDIO_PROCESSING)
+    {"audio.output_vol", audio.output_vol, 60, [](const int &v) { return v >= 0 && v <= 100; }},
+    {"audio.output_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
+#endif
+#if defined(LIB_AUDIO_PROCESSING)
         {"audio.input_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
         {"audio.input_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10, [](const int &v) { return v >= 0 && v <= 31; }},
         {"audio.input_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0, [](const int &v) { return v >= 0 && v <= 90; }},

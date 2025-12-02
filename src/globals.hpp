@@ -12,12 +12,15 @@
 
 #include "MsgChannel.hpp"
 #include "IMPAudio.hpp"
+#include "IMPAudioOutput.hpp"
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
 #include "IMPBackchannel.hpp"
 #include "MP4Recorder.hpp"
 
 #define MSG_CHANNEL_SIZE 20
+#define BACKCHANNEL_QUEUE_SIZE 200
+#define AUDIO_OUTPUT_QUEUE_SIZE 64
 #define NUM_AUDIO_CHANNELS 1
 #define NUM_VIDEO_CHANNELS 2
 
@@ -66,12 +69,28 @@ struct H264NALUnit
 };
 
 struct BackchannelFrame
-    #include <mutex>
-    #include <condition_variable>
 {
     std::vector<uint8_t> payload;
     IMPBackchannelFormat format;
     unsigned int clientSessionId;
+    bool isShutdownSentinel{false};
+};
+
+enum class AudioPlaybackJobType
+{
+    PCM,
+    CLEAR,
+    STOP
+};
+
+struct AudioPlaybackJob
+{
+    AudioPlaybackJobType type{AudioPlaybackJobType::PCM};
+    std::vector<int16_t> samples;
+    bool hasVolume{false};
+    int volume{0};
+    bool hasGain{false};
+    int gain{0};
 };
 
 struct jpeg_stream
@@ -182,10 +201,24 @@ struct backchannel_stream
     std::atomic<unsigned int> is_sending{0};
 
     backchannel_stream()
-        : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(MSG_CHANNEL_SIZE)),
+        : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(BACKCHANNEL_QUEUE_SIZE)),
         imp_backchannel(nullptr),
         running(false) {}
 };
+
+    struct audio_output_stream
+    {
+        std::shared_ptr<MsgChannel<AudioPlaybackJob>> jobQueue;
+        std::atomic<bool> running{false};
+        pthread_t thread;
+        std::unique_ptr<class IMPAudioOutput> imp_audio_output;
+        std::mutex control_mutex;
+        int current_volume{0};
+        int current_gain{0};
+
+        audio_output_stream()
+        : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(AUDIO_OUTPUT_QUEUE_SIZE)) {}
+    };
 
 
 extern std::condition_variable global_cv_worker_restart;
@@ -204,6 +237,7 @@ extern std::shared_ptr<jpeg_stream> global_jpeg[NUM_VIDEO_CHANNELS];
 extern std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS];
 extern std::shared_ptr<video_stream> global_video[NUM_VIDEO_CHANNELS];
 extern std::shared_ptr<backchannel_stream> global_backchannel;
+extern std::shared_ptr<audio_output_stream> global_audio_output;
 
 extern std::array<MP4Recorder, NUM_VIDEO_CHANNELS> global_mp4_recorders;
 extern std::atomic<int> global_mp4_active_recorders;

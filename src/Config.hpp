@@ -176,6 +176,8 @@ struct _audio {
     bool force_stereo;
     bool output_enabled;
     int output_sample_rate;
+    int output_vol;
+    int output_gain;
 #endif
     // Buffer tuning (in 20 ms frames per channel)
     int buffer_warn_frames;

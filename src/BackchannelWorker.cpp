@@ -1,5 +1,6 @@
 #include "BackchannelWorker.hpp"
 
+#include "AudioOutputWorker.hpp"
 #include "IMPBackchannel.hpp"
 #include "Logger.hpp"
 
@@ -7,22 +8,15 @@
 #include <cmath>
 #include <vector>
 
-#include <fcntl.h>
-#include <unistd.h>
 #include <imp/imp_audio.h>
 
 #define MODULE "BackchannelWorker"
 
 BackchannelWorker::BackchannelWorker()
     : currentSessionId(0)
-    , fPipe(nullptr)
-    , fPipeFd(-1)
 {}
 
-BackchannelWorker::~BackchannelWorker()
-{
-    closePipe();
-}
+BackchannelWorker::~BackchannelWorker() = default;
 
 std::vector<int16_t> BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm,
                                                        int input_rate,
@@ -64,79 +58,6 @@ std::vector<int16_t> BackchannelWorker::resampleLinear(const std::vector<int16_t
     }
 
     return output_pcm;
-}
-
-bool BackchannelWorker::initPipe()
-{
-    if (fPipe)
-    {
-        LOG_DEBUG("Pipe already initialized.");
-        return true;
-    }
-    LOG_DEBUG("Opening pipe to: /bin/iac -s");
-    fPipe = popen("/bin/iac -s", "w");
-    if (fPipe == nullptr)
-    {
-        LOG_ERROR("popen failed: " << strerror(errno));
-        fPipeFd = -1;
-        return false;
-    }
-
-    fPipeFd = fileno(fPipe);
-    if (fPipeFd == -1)
-    {
-        LOG_ERROR("fileno failed: " << strerror(errno));
-        closePipe();
-        return false;
-    }
-
-    int flags = fcntl(fPipeFd, F_GETFL, 0);
-    if (flags == -1)
-    {
-        LOG_ERROR("fcntl(F_GETFL) failed: " << strerror(errno));
-        closePipe();
-        return false;
-    }
-
-    if (fcntl(fPipeFd, F_SETFL, flags | O_NONBLOCK) == -1)
-    {
-        LOG_ERROR("fcntl(F_SETFL, O_NONBLOCK) failed: " << strerror(errno));
-        closePipe();
-        return false;
-    }
-
-    LOG_DEBUG("Pipe opened successfully (fd=" << fPipeFd << ").");
-    return true;
-}
-
-void BackchannelWorker::closePipe()
-{
-    if (fPipe)
-    {
-        LOG_DEBUG("Closing pipe (fd=" << fPipeFd << ").");
-        int ret = pclose(fPipe);
-        fPipe = nullptr;
-        fPipeFd = -1;
-        if (ret == -1)
-        {
-            LOG_ERROR("pclose() failed: " << strerror(errno));
-        }
-        else
-        {
-            if (WIFEXITED(ret))
-            {
-                LOG_DEBUG("Pipe process exited with status: " << WEXITSTATUS(ret));
-            }
-            else if (WIFSIGNALED(ret))
-            {
-                LOG_WARN("Pipe process terminated by signal: " << WTERMSIG(ret));
-            }
-            else
-            {
-                LOG_WARN("Pipe process stopped for unknown reason.");
-            }
-        }
-    }
 }
 
 bool BackchannelWorker::decodeFrame(const uint8_t *payload,
@@ -182,61 +103,6 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload,
     return true;
 }
 
-bool BackchannelWorker::writePcmToPipe(const std::vector<int16_t> &pcmBuffer)
-{
-    if (fPipeFd == -1 || fPipe == nullptr)
-    {
-        LOG_ERROR("Pipe is closed (fd=" << fPipeFd << "), cannot write PCM data.");
-        return false;
-    }
-    if (pcmBuffer.empty())
-    {
-        LOG_DEBUG("Attempted to write empty PCM buffer to pipe.");
-        return true;
-    }
-
-    size_t bytesToWrite = pcmBuffer.size() * sizeof(int16_t);
-    const uint8_t *dataPtr = reinterpret_cast<const uint8_t *>(pcmBuffer.data());
-
-    ssize_t bytesWritten = write(fPipeFd, dataPtr, bytesToWrite);
-
-    if (bytesWritten == static_cast<ssize_t>(bytesToWrite))
-    {
-        // Bytes written match expected size
-    }
-    else if (bytesWritten >= 0)
-    {
-        LOG_WARN("Partial write to pipe (" << bytesWritten << "/" << bytesToWrite
-                                           << "). Assuming pipe clogged.");
-        return true;
-    }
-    else
-    {
-        int saved_errno = errno;
-        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)
-        {
-            LOG_WARN("Pipe clogged (EAGAIN/EWOULDBLOCK). Discarding PCM chunk.");
-            return true;
-        }
-        else if (saved_errno == EPIPE)
-        {
-            LOG_ERROR("write() failed: Broken pipe (EPIPE). Assuming pipe closed by "
-                      "reader.");
-            closePipe();
-            return false;
-        }
-        else
-        {
-            LOG_ERROR("write() failed: errno=" << saved_errno << ": " << strerror(saved_errno)
-                                               << ". Assuming pipe closed.");
-            closePipe();
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool BackchannelWorker::processFrame(const BackchannelFrame &frame)
 {
     if (!cfg->audio.output_enabled)
@@ -260,23 +126,19 @@ bool BackchannelWorker::processFrame(const BackchannelFrame &frame)
     // Resample only if necessary
     int input_rate = IMPBackchannel::getFormatFrequency(frame.format);
     int target_rate = cfg->audio.output_sample_rate;
-    const std::vector<int16_t> *buffer_to_write = &decoded_pcm;
-    std::vector<int16_t> resampled_pcm;
-
+    std::vector<int16_t> pcm_to_send;
     if (input_rate != target_rate)
     {
-        resampled_pcm = resampleLinear(decoded_pcm, input_rate, target_rate);
-        buffer_to_write = &resampled_pcm;
+        pcm_to_send = resampleLinear(decoded_pcm, input_rate, target_rate);
+    }
+    else
+    {
+        pcm_to_send = std::move(decoded_pcm);
     }
 
-    // Write the final mono PCM to the pipe
-    if (buffer_to_write != nullptr && !buffer_to_write->empty())
+    if (!pcm_to_send.empty())
     {
-        if (!writePcmToPipe(*buffer_to_write))
-        {
-            // Error writing to pipe, likely closed. Stop processing loop.
-            return false;
-        }
+        AudioOutputWorker::enqueuePcm(std::move(pcm_to_send));
     }
 
     return true;
@@ -311,6 +173,12 @@ void BackchannelWorker::run()
 
         BackchannelFrame frame = global_backchannel->inputQueue->wait_read();
 
+        if (frame.isShutdownSentinel)
+        {
+            LOG_DEBUG("Received shutdown sentinel frame. Exiting processor loop.");
+            break;
+        }
+
         if (!global_backchannel->running)
         {
             break;
@@ -322,8 +190,8 @@ void BackchannelWorker::run()
             LOG_DEBUG("Received stop signal (zero-payload) from session " << static_cast<unsigned>(frame.clientSessionId));
             if (frame.clientSessionId == currentSessionId && currentSessionId != 0)
             {
-                LOG_INFO("Current session " << static_cast<unsigned>(currentSessionId) << " stopped. Closing pipe.");
-                closePipe();
+                LOG_INFO("Current session " << static_cast<unsigned>(currentSessionId) << " stopped."
+                                             "");
                 currentSessionId = 0;
             }
             else if (currentSessionId == 0)
@@ -346,45 +214,12 @@ void BackchannelWorker::run()
             currentSessionId = frame.clientSessionId;
             LOG_INFO("New current session " << static_cast<unsigned>(currentSessionId) << " playing "
                                             << IMPBackchannel::getFormatName(frame.format)
-                                            << ". Opening pipe.");
-            if (!initPipe())
-            {
-                LOG_ERROR("Failed to open pipe for new session " << static_cast<unsigned>(currentSessionId)
-                                                                 << ". Resetting.");
-                currentSessionId = 0;
-                continue;
-            }
-            // Pipe is open
-            if (!processFrame(frame))
-            {
-                // processFrame returns false if pipe write fails and closes pipe
-                LOG_WARN("processFrame failed for initial frame of session " << static_cast<unsigned>(currentSessionId)
-                                                                             << ". Pipe closed.");
-                currentSessionId = 0;
-            }
+                                            << ".");
+            processFrame(frame);
         }
         else if (frame.clientSessionId == currentSessionId)
         {
-            // Frame is from the current session
-            if (!fPipe)
-            { // Ensure pipe is open (it might have closed unexpectedly)
-                LOG_WARN("Pipe was closed unexpectedly for current session " << static_cast<unsigned>(currentSessionId)
-                                                                             << ". Reopening.");
-                if (!initPipe())
-                {
-                    LOG_ERROR("Failed to reopen pipe for session " << static_cast<unsigned>(currentSessionId)
-                                                                   << ". Resetting.");
-                    currentSessionId = 0;
-                    continue;
-                }
-            }
-            // Pipe should be open
-            if (!processFrame(frame))
-            {
-                // processFrame returns false if pipe write fails and closes pipe
-                LOG_WARN("processFrame failed for session " << static_cast<unsigned>(currentSessionId) << ". Pipe closed.");
-                currentSessionId = 0;
-            }
+            processFrame(frame);
         }
         else
         {
@@ -395,7 +230,6 @@ void BackchannelWorker::run()
     }
 
     LOG_INFO("Processor thread stopping.");
-    closePipe();
 }
 
 void *BackchannelWorker::thread_entry(void *arg)
@@ -413,4 +247,26 @@ void *BackchannelWorker::thread_entry(void *arg)
 
     LOG_INFO("Exiting BackchannelWorker thread.");
     return nullptr;
+}
+
+void BackchannelWorker::signalShutdown()
+{
+    if (!global_backchannel || !global_backchannel->inputQueue)
+    {
+        return;
+    }
+
+    BackchannelFrame sentinel;
+    sentinel.payload.clear();
+    sentinel.format = IMPBackchannelFormat::UNKNOWN;
+    sentinel.clientSessionId = 0;
+    sentinel.isShutdownSentinel = true;
+
+    bool enqueued = global_backchannel->inputQueue->write(sentinel);
+    if (!enqueued)
+    {
+        LOG_WARN("Backchannel shutdown sentinel enqueued after dropping oldest frame (queue was full).");
+    }
+
+    global_backchannel->should_grab_frames.notify_one();
 }
