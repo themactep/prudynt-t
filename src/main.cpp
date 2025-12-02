@@ -168,14 +168,14 @@ int main(int argc, const char *argv[])
         return 1;
     }
 
-        // Start Unix domain socket control server for MP4 recording
-        std::thread(MP4ControlSocket::run).detach();
-        ImagingControl::start();
-
     if (!imp_system)
     {
         imp_system = IMPSystem::createNew();
     }
+
+    // Start Unix domain socket control server for MP4 recording
+    std::thread(MP4ControlSocket::run).detach();
+    ImagingControl::start();
 
     global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
     global_video[1] = std::make_shared<video_stream>(1, &cfg->stream1, "stream1");

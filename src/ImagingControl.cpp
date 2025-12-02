@@ -39,18 +39,24 @@ struct FieldBinding
     const char *config_path;
     int min_value;
     int max_value;
+    int default_value;
     int _image::*member;
     int (*apply_func)(int value);
+    bool supported;
 };
 
 constexpr int kBacklightMin = 0;
 constexpr int kBacklightMax = 10;
+constexpr int kBacklightDefault = 0;
 constexpr int kWideDynamicRangeMin = 0;
 constexpr int kWideDynamicRangeMax = 255;
+constexpr int kWideDynamicRangeDefault = 128;
 constexpr int kToneMin = 0;
-constexpr int kToneMax = 255;
+constexpr int kToneMax = 10;
+constexpr int kToneDefault = 0;
 constexpr int kDefogMin = 0;
 constexpr int kDefogMax = 255;
+constexpr int kDefogDefault = 128;
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_T23)
 constexpr int kNoiseReductionMin = 0;
 constexpr int kNoiseReductionMax = 255;
@@ -58,60 +64,136 @@ constexpr int kNoiseReductionMax = 255;
 constexpr int kNoiseReductionMin = 50;
 constexpr int kNoiseReductionMax = 150;
 #endif
+constexpr int kNoiseReductionDefault = DEFAULT_SINTER;
 
-#if defined(NO_TUNINGS)
-static int noop_apply(int value)
-{
-    (void) value;
-    return 0;
-}
+#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
+constexpr bool kAdvancedHdrSupported = true;
 #else
+constexpr bool kAdvancedHdrSupported = false;
+#endif
+
 static int apply_brightness(int value)
 {
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#else
+    LOG_DEBUG("ImagingControl: apply brightness=" << value);
     return IMP_ISP_Tuning_SetBrightness(value);
+#endif
 }
 
 static int apply_contrast(int value)
 {
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#else
+    LOG_DEBUG("ImagingControl: apply contrast=" << value);
     return IMP_ISP_Tuning_SetContrast(value);
+#endif
 }
 
 static int apply_saturation(int value)
 {
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#else
+    LOG_DEBUG("ImagingControl: apply saturation=" << value);
     return IMP_ISP_Tuning_SetSaturation(value);
+#endif
 }
 
 static int apply_sharpness(int value)
 {
-    return IMP_ISP_Tuning_SetSharpness(value);
-}
-#endif
-
 #if defined(NO_TUNINGS)
-static const FieldBinding kFields[] = {
-    {"brightness", "image.brightness", 0, 255, & _image::brightness, &noop_apply},
-    {"contrast", "image.contrast", 0, 255, & _image::contrast, &noop_apply},
-    {"saturation", "image.saturation", 0, 255, & _image::saturation, &noop_apply},
-    {"sharpness", "image.sharpness", 0, 255, & _image::sharpness, &noop_apply},
-    {"backlight", "image.backlight_compensation", kBacklightMin, kBacklightMax, & _image::backlight_compensation, nullptr},
-    {"wide_dynamic_range", "image.drc_strength", kWideDynamicRangeMin, kWideDynamicRangeMax, & _image::drc_strength, nullptr},
-    {"tone", "image.highlight_depress", kToneMin, kToneMax, & _image::highlight_depress, nullptr},
-    {"defog", "image.defog_strength", kDefogMin, kDefogMax, & _image::defog_strength, nullptr},
-    {"noise_reduction", "image.sinter_strength", kNoiseReductionMin, kNoiseReductionMax, & _image::sinter_strength, nullptr},
-};
+    (void) value;
+    return 0;
 #else
-static const FieldBinding kFields[] = {
-    {"brightness", "image.brightness", 0, 255, & _image::brightness, &apply_brightness},
-    {"contrast", "image.contrast", 0, 255, & _image::contrast, &apply_contrast},
-    {"saturation", "image.saturation", 0, 255, & _image::saturation, &apply_saturation},
-    {"sharpness", "image.sharpness", 0, 255, & _image::sharpness, &apply_sharpness},
-    {"backlight", "image.backlight_compensation", kBacklightMin, kBacklightMax, & _image::backlight_compensation, nullptr},
-    {"wide_dynamic_range", "image.drc_strength", kWideDynamicRangeMin, kWideDynamicRangeMax, & _image::drc_strength, nullptr},
-    {"tone", "image.highlight_depress", kToneMin, kToneMax, & _image::highlight_depress, nullptr},
-    {"defog", "image.defog_strength", kDefogMin, kDefogMax, & _image::defog_strength, nullptr},
-    {"noise_reduction", "image.sinter_strength", kNoiseReductionMin, kNoiseReductionMax, & _image::sinter_strength, nullptr},
-};
+    LOG_DEBUG("ImagingControl: apply sharpness=" << value);
+    return IMP_ISP_Tuning_SetSharpness(value);
 #endif
+}
+
+static int apply_backlight(int value)
+{
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#elif !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
+    LOG_DEBUG("ImagingControl: apply backlight=" << value);
+    return IMP_ISP_Tuning_SetBacklightComp(value);
+#else
+    (void)value;
+    return 0;
+#endif
+}
+
+static int apply_wide_dynamic_range(int value)
+{
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#elif !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
+    LOG_DEBUG("ImagingControl: apply wdr=" << value);
+    return IMP_ISP_Tuning_SetDRC_Strength(value);
+#else
+    (void)value;
+    return 0;
+#endif
+}
+
+static int apply_tone(int value)
+{
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#else
+    LOG_DEBUG("ImagingControl: apply tone=" << value);
+    return IMP_ISP_Tuning_SetHiLightDepress(value);
+#endif
+}
+
+static int apply_defog(int value)
+{
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#elif !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) && !defined(PLATFORM_T30)
+    uint8_t strength = static_cast<uint8_t>(value);
+    LOG_DEBUG("ImagingControl: apply defog=" << static_cast<int>(strength));
+    return IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t *>(&strength));
+#else
+    (void)value;
+    return 0;
+#endif
+}
+
+static int apply_noise_reduction(int value)
+{
+#if defined(NO_TUNINGS)
+    (void) value;
+    return 0;
+#elif !defined(PLATFORM_T21)
+    LOG_DEBUG("ImagingControl: apply noise_reduction=" << value);
+    return IMP_ISP_Tuning_SetSinterStrength(value);
+#else
+    (void)value;
+    return 0;
+#endif
+}
+static const FieldBinding kFields[] = {
+    {"brightness", "image.brightness", 0, 255, 128, & _image::brightness, &apply_brightness, true},
+    {"contrast", "image.contrast", 0, 255, 128, & _image::contrast, &apply_contrast, true},
+    {"saturation", "image.saturation", 0, 255, 128, & _image::saturation, &apply_saturation, true},
+    {"sharpness", "image.sharpness", 0, 255, 128, & _image::sharpness, &apply_sharpness, true},
+    {"backlight", "image.backlight_compensation", kBacklightMin, kBacklightMax, kBacklightDefault, & _image::backlight_compensation, &apply_backlight, kAdvancedHdrSupported},
+    {"wide_dynamic_range", "image.drc_strength", kWideDynamicRangeMin, kWideDynamicRangeMax, kWideDynamicRangeDefault, & _image::drc_strength, &apply_wide_dynamic_range, kAdvancedHdrSupported},
+    {"tone", "image.highlight_depress", kToneMin, kToneMax, kToneDefault, & _image::highlight_depress, &apply_tone, true},
+    {"defog", "image.defog_strength", kDefogMin, kDefogMax, kDefogDefault, & _image::defog_strength, &apply_defog, kAdvancedHdrSupported},
+    {"noise_reduction", "image.sinter_strength", kNoiseReductionMin, kNoiseReductionMax, kNoiseReductionDefault, & _image::sinter_strength, &apply_noise_reduction, true},
+};
 
 struct ParsedAssignment
 {
@@ -172,14 +254,10 @@ bool write_state_snapshot()
     if (!ensure_runtime_dir())
         return false;
 
-    const size_t field_count = sizeof(kFields) / sizeof(kFields[0]);
-    std::vector<int> values(field_count, 0);
+    _image image_state{};
     {
         std::lock_guard<std::mutex> lock(cfg->configMutex);
-        for (size_t i = 0; i < field_count; ++i)
-        {
-            values[i] = (cfg->image).*(kFields[i].member);
-        }
+        image_state = cfg->image;
     }
 
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -188,24 +266,28 @@ bool write_state_snapshot()
 
     std::ostringstream oss;
     oss << "{\n  \"updated_at_ms\": " << now << ",\n  \"fields\": {\n";
-    for (size_t i = 0; i < field_count; ++i)
+    bool first = true;
+    for (const auto &binding : kFields)
     {
-        const auto &binding = kFields[i];
+        int value = image_state.*(binding.member);
         double normalized = 0.0;
         if (binding.max_value > binding.min_value)
         {
-            normalized = static_cast<double>(values[i] - binding.min_value)
+            normalized = static_cast<double>(value - binding.min_value)
                 / static_cast<double>(binding.max_value - binding.min_value);
         }
-        oss << "    \"" << binding.name << "\": {\"value\": " << values[i]
+        if (!first)
+            oss << ",\n";
+        first = false;
+        oss << "    \"" << binding.name << "\": {\"value\": " << value
             << ", \"min\": " << binding.min_value
             << ", \"max\": " << binding.max_value
-            << ", \"normalized\": " << normalized << "}";
-        if (i + 1 < field_count)
-            oss << ',';
-        oss << '\n';
+            << ", \"default\": " << binding.default_value
+            << ", \"normalized\": " << normalized
+            << ", \"supported\": " << (binding.supported ? "true" : "false")
+            << "}";
     }
-    oss << "  }\n}\n";
+    oss << "\n  }\n}\n";
 
     std::string tmp_path = std::string(kStatePath) + ".tmp";
     int fd = open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -305,6 +387,13 @@ bool apply_field(const FieldBinding &binding, int raw_value)
     if (!cfg)
         return false;
 
+    if (!binding.supported)
+    {
+        LOG_DEBUG("ImagingControl: ignoring unsupported field '" << binding.name << "'");
+        return false;
+    }
+
+    LOG_DEBUG("ImagingControl: applying field '" << binding.name << "' raw=" << raw_value);
     if (binding.apply_func)
     {
         int rc = binding.apply_func(raw_value);
