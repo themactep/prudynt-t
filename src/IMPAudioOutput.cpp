@@ -24,8 +24,10 @@ namespace
             return AUDIO_SAMPLE_RATE_16000;
         case 24000:
             return AUDIO_SAMPLE_RATE_24000;
+#ifdef AUDIO_SAMPLE_RATE_32000
         case 32000:
             return AUDIO_SAMPLE_RATE_32000;
+#endif
         case 44100:
             return AUDIO_SAMPLE_RATE_44100;
         case 48000:
