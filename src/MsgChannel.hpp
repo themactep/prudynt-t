@@ -17,11 +17,25 @@ public:
 
     bool write(T msg) {
         std::unique_lock<std::mutex> lck(cv_mtx);
-        msg_buffer.push_front(msg);
+        msg_buffer.push_front(std::move(msg));
         if (msg_buffer.size() > buffer_size) {
             msg_buffer.pop_back();
             return false;
         }
+        write_cv.notify_all();
+        return true;
+    }
+
+    bool write_wait(T msg) {
+        std::unique_lock<std::mutex> lck(cv_mtx);
+        if (buffer_size == 0)
+        {
+            msg_buffer.push_front(std::move(msg));
+            write_cv.notify_all();
+            return true;
+        }
+        space_cv.wait(lck, [&]{ return msg_buffer.size() < buffer_size; });
+        msg_buffer.push_front(std::move(msg));
         write_cv.notify_all();
         return true;
     }
@@ -31,6 +45,7 @@ public:
         if (can_read()) {
             *out = msg_buffer.back();
             msg_buffer.pop_back();
+            space_cv.notify_one();
             return true;
         }
         return false;
@@ -43,12 +58,14 @@ public:
         };
         T val = msg_buffer.back();
         msg_buffer.pop_back();
+        space_cv.notify_one();
         return val;
     }
 
     void clear() {
         std::unique_lock<std::mutex> lck(cv_mtx);
         msg_buffer.clear();
+        space_cv.notify_all();
     }
 
 private:
@@ -59,6 +76,7 @@ private:
     std::deque<T> msg_buffer;
     std::mutex cv_mtx;
     std::condition_variable write_cv;
+    std::condition_variable space_cv;
     unsigned int buffer_size;
 };
 

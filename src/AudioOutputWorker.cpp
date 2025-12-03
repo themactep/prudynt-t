@@ -42,6 +42,67 @@ bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples,
     return true;
 }
 
+bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples,
+                                           bool applyVolume,
+                                           int volume,
+                                           bool applyGain,
+                                           int gain)
+{
+    if (!global_audio_output || !global_audio_output->jobQueue)
+    {
+        LOG_ERROR("Audio output queue is not initialized");
+        return false;
+    }
+
+    AudioPlaybackJob job;
+    job.type = AudioPlaybackJobType::PCM;
+    job.samples = std::move(samples);
+    job.hasVolume = applyVolume;
+    job.volume = volume;
+    job.hasGain = applyGain;
+    job.gain = gain;
+
+    global_audio_output->jobQueue->write_wait(std::move(job));
+    return true;
+}
+
+bool AudioOutputWorker::applyVolumeGain(bool applyVolume,
+                                        int volume,
+                                        bool applyGain,
+                                        int gain)
+{
+    if (!applyVolume && !applyGain)
+    {
+        return true;
+    }
+
+    if (!global_audio_output)
+    {
+        LOG_DEBUG("Audio output stream not available for volume/gain update");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(global_audio_output->control_mutex);
+    if (!global_audio_output->imp_audio_output)
+    {
+        LOG_DEBUG("IMP audio output not ready; deferring volume/gain change");
+        return false;
+    }
+
+    if (applyVolume)
+    {
+        global_audio_output->imp_audio_output->setVolume(volume);
+        global_audio_output->current_volume = volume;
+    }
+    if (applyGain)
+    {
+        global_audio_output->imp_audio_output->setGain(gain);
+        global_audio_output->current_gain = gain;
+    }
+
+    return true;
+}
+
 bool AudioOutputWorker::clearQueue()
 {
     if (!global_audio_output || !global_audio_output->jobQueue)
@@ -117,15 +178,19 @@ void AudioOutputWorker::run()
             continue;
         }
 
-        if (job.hasVolume)
+        if (job.hasVolume || job.hasGain)
         {
-            global_audio_output->imp_audio_output->setVolume(job.volume);
-            global_audio_output->current_volume = job.volume;
-        }
-        if (job.hasGain)
-        {
-            global_audio_output->imp_audio_output->setGain(job.gain);
-            global_audio_output->current_gain = job.gain;
+            std::lock_guard<std::mutex> lock(global_audio_output->control_mutex);
+            if (job.hasVolume)
+            {
+                global_audio_output->imp_audio_output->setVolume(job.volume);
+                global_audio_output->current_volume = job.volume;
+            }
+            if (job.hasGain)
+            {
+                global_audio_output->imp_audio_output->setGain(job.gain);
+                global_audio_output->current_gain = job.gain;
+            }
         }
 
         if (!job.samples.empty())

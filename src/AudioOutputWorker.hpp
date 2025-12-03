@@ -20,6 +20,17 @@ public:
                            bool applyGain = false,
                            int gain = 0);
 
+    static bool enqueuePcmBlocking(std::vector<int16_t> &&samples,
+                                   bool applyVolume = false,
+                                   int volume = 0,
+                                   bool applyGain = false,
+                                   int gain = 0);
+
+    static bool applyVolumeGain(bool applyVolume,
+                                int volume,
+                                bool applyGain,
+                                int gain);
+
     static bool clearQueue();
 
     static void signalShutdown();

@@ -6,6 +6,7 @@
 #include "globals.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -24,6 +26,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include <aaccommon.h>
+#include <aacdec.h>
 
 #define MODULE "AudioOutputControl"
 
@@ -36,7 +41,8 @@ namespace
     {
         AUTO,
         PCM,
-        WAV
+        WAV,
+        AAC
     };
 
     struct PlayCommandOptions
@@ -60,6 +66,8 @@ namespace
             return "pcm";
         case AudioFileFormat::WAV:
             return "wav";
+        case AudioFileFormat::AAC:
+            return "aac";
         default:
             return "auto";
         }
@@ -299,6 +307,234 @@ namespace
         return !payload.samples.empty();
     }
 
+    struct AdtsHeader
+    {
+        int frameLength{0};
+        int sampleRate{0};
+        int channelCount{0};
+        bool hasCrc{false};
+        int headerSize{0};
+        int profile{0};
+    };
+
+    bool parseAdtsHeader(const uint8_t *data, size_t size, AdtsHeader &header)
+    {
+        if (size < 7)
+        {
+            return false;
+        }
+
+        if (data[0] != 0xFF || (data[1] & 0xF0) != 0xF0)
+        {
+            return false;
+        }
+
+        bool protectionAbsent = (data[1] & 0x01) != 0;
+        header.profile = ((data[2] & 0xC0) >> 6) + 1; // 1=Main, 2=LC, etc
+
+        static constexpr int kSamplingRates[] = {
+            96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050,
+            16000, 12000, 11025, 8000, 7350
+        };
+        int sampleRateIndex = (data[2] & 0x3C) >> 2;
+        if (sampleRateIndex < 0 || sampleRateIndex >= static_cast<int>(std::size(kSamplingRates)))
+        {
+            return false;
+        }
+        header.sampleRate = kSamplingRates[sampleRateIndex];
+
+        header.channelCount = ((data[2] & 0x01) << 2) | ((data[3] & 0xC0) >> 6);
+        header.hasCrc = !protectionAbsent;
+        header.headerSize = header.hasCrc ? 9 : 7;
+
+        header.frameLength = ((data[3] & 0x03) << 11)
+                             | (data[4] << 3)
+                             | ((data[5] & 0xE0) >> 5);
+
+        if (header.frameLength < header.headerSize)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool configureDecoderForHeader(HAACDecoder decoder, const AdtsHeader &header)
+    {
+        if (!decoder || header.sampleRate <= 0)
+        {
+            return false;
+        }
+
+        AACFrameInfo frameInfo{};
+        frameInfo.nChans = (header.channelCount > 0) ? header.channelCount : 1;
+        frameInfo.sampRateCore = header.sampleRate;
+        frameInfo.profile = AAC_PROFILE_LC;
+
+        int ret = AACSetRawBlockParams(decoder, 0, &frameInfo);
+        if (ret != ERR_AAC_NONE)
+        {
+            LOG_ERROR("AudioOutputControl: AACSetRawBlockParams failed: " << ret);
+            return false;
+        }
+        return true;
+    }
+
+    bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate)
+    {
+        std::ifstream file(path, std::ios::binary);
+        if (!file)
+        {
+            LOG_ERROR("AudioOutputControl: failed to open AAC file '" << path << "'");
+            return false;
+        }
+
+        std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (buffer.empty())
+        {
+            LOG_WARN("AudioOutputControl: AAC file '" << path << "' is empty");
+            return false;
+        }
+
+        HAACDecoder decoder = AACInitDecoder();
+        if (!decoder)
+        {
+            LOG_ERROR("AudioOutputControl: failed to initialize AAC decoder");
+            return false;
+        }
+        struct DecoderGuard
+        {
+            HAACDecoder handle;
+            explicit DecoderGuard(HAACDecoder h) : handle(h) {}
+            ~DecoderGuard()
+            {
+                if (handle)
+                {
+                    AACFreeDecoder(handle);
+                }
+            }
+        } decoderGuard(decoder);
+
+        bool decoderConfigured = false;
+        size_t offset = 0;
+        constexpr size_t kMaxDecodeSamples = 8192;
+        std::array<int16_t, kMaxDecodeSamples> decodeBuffer{};
+        bool decodedAny = false;
+
+        while (offset + 7 <= buffer.size())
+        {
+            AdtsHeader header;
+            if (!parseAdtsHeader(buffer.data() + offset, buffer.size() - offset, header))
+            {
+                ++offset; // attempt to resync on next byte
+                continue;
+            }
+
+            if (offset + static_cast<size_t>(header.frameLength) > buffer.size())
+            {
+                LOG_WARN("AudioOutputControl: truncated AAC frame near offset " << offset);
+                break;
+            }
+
+            if (!decoderConfigured)
+            {
+                if (!configureDecoderForHeader(decoder, header))
+                {
+                    return false;
+                }
+                decoderConfigured = true;
+            }
+
+            int payloadSize = header.frameLength - header.headerSize;
+            if (payloadSize <= 0)
+            {
+                offset += header.frameLength;
+                continue;
+            }
+
+            unsigned char *framePtr = const_cast<unsigned char *>(buffer.data() + offset + header.headerSize);
+            int bytesLeft = payloadSize;
+
+            int ret = AACDecode(decoder, &framePtr, &bytesLeft, decodeBuffer.data());
+            if (ret != 0 && ret != ERR_AAC_INDATA_UNDERFLOW)
+            {
+                LOG_ERROR("AudioOutputControl: AACDecode failed with " << ret << " at offset " << offset);
+                return false;
+            }
+
+            AACFrameInfo frameInfo{};
+            AACGetLastFrameInfo(decoder, &frameInfo);
+
+            if (frameInfo.outputSamps <= 0)
+            {
+                offset += header.frameLength;
+                continue;
+            }
+
+            if (frameInfo.outputSamps > static_cast<int>(kMaxDecodeSamples))
+            {
+                LOG_ERROR("AudioOutputControl: decoded AAC frame exceeds buffer capacity");
+                return false;
+            }
+
+            if (frameInfo.nChans <= 0)
+            {
+                LOG_WARN("AudioOutputControl: decoded AAC frame reports zero channels");
+                offset += header.frameLength;
+                continue;
+            }
+
+            if (sampleRate == 0)
+            {
+                if (frameInfo.sampRateOut > 0)
+                {
+                    sampleRate = frameInfo.sampRateOut;
+                }
+                else if (header.sampleRate > 0)
+                {
+                    sampleRate = header.sampleRate;
+                }
+            }
+
+            const int channels = frameInfo.nChans;
+            if (channels == 1)
+            {
+                samples.insert(samples.end(),
+                               decodeBuffer.begin(),
+                               decodeBuffer.begin() + frameInfo.outputSamps);
+            }
+            else
+            {
+                const int frames = frameInfo.outputSamps / channels;
+                for (int i = 0; i < frames; ++i)
+                {
+                    int sum = 0;
+                    for (int ch = 0; ch < channels; ++ch)
+                    {
+                        sum += decodeBuffer[static_cast<size_t>(i) * channels + ch];
+                    }
+                    samples.push_back(static_cast<int16_t>(sum / channels));
+                }
+            }
+
+            decodedAny = true;
+            offset += header.frameLength;
+        }
+
+        if (!decodedAny)
+        {
+            LOG_WARN("AudioOutputControl: no decodable AAC frames found in '" << path << "'");
+            return false;
+        }
+
+        if (sampleRate == 0)
+        {
+            sampleRate = defaultSampleRate();
+        }
+
+        return true;
+    }
+
     std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input, int inputRate, int outputRate)
     {
         if (inputRate == outputRate || input.empty())
@@ -356,11 +592,15 @@ namespace
             auto beginIt = samples.begin() + static_cast<std::ptrdiff_t>(offset);
             auto endIt = samples.begin() + static_cast<std::ptrdiff_t>(offset + remaining);
             std::vector<int16_t> block(beginIt, endIt);
-            AudioOutputWorker::enqueuePcm(std::move(block),
-                                          firstChunk && setVolume,
-                                          volume,
-                                          firstChunk && setGain,
-                                          gain);
+            if (!AudioOutputWorker::enqueuePcmBlocking(std::move(block),
+                                                       firstChunk && setVolume,
+                                                       volume,
+                                                       firstChunk && setGain,
+                                                       gain))
+            {
+                LOG_ERROR("AudioOutputControl: failed to enqueue PCM chunk");
+                break;
+            }
             firstChunk = false;
         }
 
@@ -392,6 +632,10 @@ namespace
             {
                 format = AudioFileFormat::WAV;
             }
+            else if (ext == ".aac" || ext == ".adts")
+            {
+                format = AudioFileFormat::AAC;
+            }
             else
             {
                 format = AudioFileFormat::PCM;
@@ -399,7 +643,7 @@ namespace
         }
 
         std::vector<int16_t> samples;
-        int sourceRate = options.hasSampleRate ? options.sampleRate : defaultSampleRate();
+        int sourceRate = options.hasSampleRate ? options.sampleRate : 0;
 
         std::string rateStr = options.hasSampleRate ? std::to_string(options.sampleRate) : std::string("(default)");
         std::string volStr = options.setVolume ? std::to_string(options.volume) : std::string("(unchanged)");
@@ -421,6 +665,13 @@ namespace
             }
             samples = std::move(payload.samples);
             sourceRate = payload.sampleRate;
+        }
+        else if (format == AudioFileFormat::AAC)
+        {
+            if (!decodeAacFile(options.path, samples, sourceRate))
+            {
+                return;
+            }
         }
         else
         {
@@ -451,24 +702,41 @@ namespace
             AudioOutputWorker::clearQueue();
         }
 
+        bool pendingVolume = options.setVolume;
+        bool pendingGain = options.setGain;
+        if ((pendingVolume || pendingGain)
+            && AudioOutputWorker::applyVolumeGain(pendingVolume, options.volume, pendingGain, options.gain))
+        {
+            pendingVolume = false;
+            pendingGain = false;
+        }
+
         LOG_INFO("AudioOutputControl: queuing " << samples.size() << " samples (src=" << sourceRate
              << " Hz -> dst=" << targetRate << " Hz)");
 
         enqueueSamples(samples,
-                   options.setVolume,
-                   options.volume,
-                   options.setGain,
-                   options.gain);
+                       pendingVolume,
+                       options.volume,
+                       pendingGain,
+                       options.gain);
     }
 
     void applyVolumeChange(int volume)
     {
-        AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, true, clampVolume(volume), false, 0);
+        int clamped = clampVolume(volume);
+        if (!AudioOutputWorker::applyVolumeGain(true, clamped, false, 0))
+        {
+            AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, true, clamped, false, 0);
+        }
     }
 
     void applyGainChange(int gain)
     {
-        AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, true, clampGain(gain));
+        int clamped = clampGain(gain);
+        if (!AudioOutputWorker::applyVolumeGain(false, 0, true, clamped))
+        {
+            AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, true, clamped);
+        }
     }
 
     void handleSetCommand(std::istringstream &iss)
@@ -515,7 +783,10 @@ namespace
 
         if (volumeSet || gainSet)
         {
-            AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, volumeSet, volume, gainSet, gain);
+            if (!AudioOutputWorker::applyVolumeGain(volumeSet, volume, gainSet, gain))
+            {
+                AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, volumeSet, volume, gainSet, gain);
+            }
         }
         else
         {
@@ -615,6 +886,10 @@ namespace
                     else if (lowerValue == "pcm")
                     {
                         options.format = AudioFileFormat::PCM;
+                    }
+                    else if (lowerValue == "aac")
+                    {
+                        options.format = AudioFileFormat::AAC;
                     }
                 }
             }
