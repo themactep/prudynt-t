@@ -51,6 +51,8 @@ override LDFLAGS       += -static -static-libgcc -static-libstdc++
                           -l:libopus.a \
                           -l:libfaac.a \
                           -l:libhelix-aac.a \
+                          -l:libhelix-mp3.a \
+                          -l:libflac-lite.a \
                           -ljct
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
@@ -79,6 +81,8 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libopus.a \
                           -l:libfaac.a \
                           -l:libhelix-aac.a \
+                          -l:libhelix-mp3.a \
+                          -l:libflac-lite.a \
                           -Wl,-Bdynamic \
                           -ljct
 
@@ -108,6 +112,8 @@ LIBS                    = -limp \
                           -lopus \
                           -lfaac \
                           -lhelix-aac \
+                          -lhelix-mp3 \
+                          -lflac-lite \
                           -ljct \
                           -latomic
 

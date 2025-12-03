@@ -29,7 +29,19 @@
 
 #include <aaccommon.h>
 #include <aacdec.h>
+
+#ifndef ARDUINO
+#define AUDIO_OUTPUT_CONTROL_DEFINED_ARDUINO
+#define ARDUINO
+#endif
+#include <mp3dec.h>
+#ifdef AUDIO_OUTPUT_CONTROL_DEFINED_ARDUINO
+#undef ARDUINO
+#undef AUDIO_OUTPUT_CONTROL_DEFINED_ARDUINO
+#endif
+
 #include <opus/opus.h>
+#include <FLAC/stream_decoder.h>
 
 #define MODULE "AudioOutputControl"
 
@@ -44,7 +56,9 @@ namespace
         PCM,
         WAV,
         AAC,
-        OPUS
+        OPUS,
+        MP3,
+        FLAC
     };
 
     struct PlayCommandOptions
@@ -66,6 +80,10 @@ namespace
         {
         case AudioFileFormat::AAC:
             return "aac";
+        case AudioFileFormat::FLAC:
+            return "flac";
+        case AudioFileFormat::MP3:
+            return "mp3";
         case AudioFileFormat::OPUS:
             return "opus";
         case AudioFileFormat::PCM:
@@ -539,6 +557,151 @@ namespace
         return true;
     }
 
+    bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples, int &sampleRate)
+    {
+        std::ifstream file(path, std::ios::binary);
+        if (!file)
+        {
+            LOG_ERROR("AudioOutputControl: failed to open MP3 file '" << path << "'");
+            return false;
+        }
+
+        std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (buffer.empty())
+        {
+            LOG_WARN("AudioOutputControl: MP3 file '" << path << "' is empty");
+            return false;
+        }
+
+        HMP3Decoder decoder = MP3InitDecoder();
+        if (!decoder)
+        {
+            LOG_ERROR("AudioOutputControl: failed to initialize MP3 decoder");
+            return false;
+        }
+        struct Mp3DecoderGuard
+        {
+            HMP3Decoder handle;
+            explicit Mp3DecoderGuard(HMP3Decoder h) : handle(h) {}
+            ~Mp3DecoderGuard()
+            {
+                if (handle)
+                {
+                    MP3FreeDecoder(handle);
+                }
+            }
+        } decoderGuard(decoder);
+
+        unsigned char *readPtr = buffer.data();
+        int bytesLeft = static_cast<int>(buffer.size());
+        std::array<int16_t, MAX_NCHAN * MAX_NSAMP * MAX_NGRAN> decodeBuffer{};
+        bool decodedAny = false;
+
+        while (bytesLeft > 0)
+        {
+            int offset = MP3FindSyncWord(readPtr, bytesLeft);
+            if (offset < 0)
+            {
+                break;
+            }
+            readPtr += offset;
+            bytesLeft -= offset;
+            if (bytesLeft <= 0)
+            {
+                break;
+            }
+
+            unsigned char *framePtr = readPtr;
+            int frameBytesLeft = bytesLeft;
+            int err = MP3Decode(decoder, &framePtr, &frameBytesLeft, decodeBuffer.data(), 0);
+            if (err == ERR_MP3_INDATA_UNDERFLOW)
+            {
+                break;
+            }
+            if (err != ERR_MP3_NONE)
+            {
+                LOG_WARN("AudioOutputControl: MP3Decode error " << err << " for '" << path << "', attempting resync");
+                if (bytesLeft <= 1)
+                {
+                    break;
+                }
+                ++readPtr;
+                --bytesLeft;
+                continue;
+            }
+
+            MP3FrameInfo frameInfo{};
+            MP3GetLastFrameInfo(decoder, &frameInfo);
+            if (frameInfo.samprate > 0 && sampleRate == 0)
+            {
+                sampleRate = frameInfo.samprate;
+            }
+
+            int channels = std::max(frameInfo.nChans, 1);
+            size_t outputSamples = static_cast<size_t>(std::max(frameInfo.outputSamps, 0));
+            if (outputSamples == 0)
+            {
+                readPtr = framePtr;
+                bytesLeft = frameBytesLeft;
+                continue;
+            }
+
+            size_t limitedSamples = std::min(outputSamples, decodeBuffer.size());
+            size_t frames = (channels > 0) ? (limitedSamples / static_cast<size_t>(channels)) : 0;
+            if (frames == 0)
+            {
+                readPtr = framePtr;
+                bytesLeft = frameBytesLeft;
+                continue;
+            }
+
+            samples.reserve(samples.size() + frames);
+            if (channels == 1)
+            {
+                samples.insert(samples.end(), decodeBuffer.begin(), decodeBuffer.begin() + limitedSamples);
+            }
+            else
+            {
+                for (size_t i = 0; i < frames; ++i)
+                {
+                    int32_t sum = 0;
+                    for (int ch = 0; ch < channels; ++ch)
+                    {
+                        size_t idx = i * static_cast<size_t>(channels) + static_cast<size_t>(ch);
+                        sum += decodeBuffer[idx];
+                    }
+                    sum /= channels;
+                    if (sum > INT16_MAX)
+                    {
+                        sum = INT16_MAX;
+                    }
+                    else if (sum < INT16_MIN)
+                    {
+                        sum = INT16_MIN;
+                    }
+                    samples.push_back(static_cast<int16_t>(sum));
+                }
+            }
+
+            decodedAny = true;
+            readPtr = framePtr;
+            bytesLeft = frameBytesLeft;
+        }
+
+        if (!decodedAny)
+        {
+            LOG_WARN("AudioOutputControl: no decodable MP3 frames found in '" << path << "'");
+            return false;
+        }
+
+        if (sampleRate == 0)
+        {
+            sampleRate = defaultSampleRate();
+        }
+
+        return true;
+    }
+
     AudioFileFormat inferFormatFromExtension(const std::string &path)
     {
         std::filesystem::path fsPath(path);
@@ -551,9 +714,17 @@ namespace
         {
             return AudioFileFormat::AAC;
         }
+        if (ext == ".mp3" || ext == ".mp2" || ext == ".mpeg")
+        {
+            return AudioFileFormat::MP3;
+        }
         if (ext == ".opus" || ext == ".oga" || ext == ".ogg")
         {
             return AudioFileFormat::OPUS;
+        }
+        if (ext == ".flac")
+        {
+            return AudioFileFormat::FLAC;
         }
         return AudioFileFormat::PCM;
     }
@@ -655,6 +826,42 @@ namespace
         return packet.size() >= 8 && std::memcmp(packet.data(), "OpusHead", 8) == 0;
     }
 
+    bool fileLooksLikeMp3(std::ifstream &file)
+    {
+        std::array<char, 3> signature{};
+        file.read(signature.data(), static_cast<std::streamsize>(signature.size()));
+        if (file.gcount() < static_cast<std::streamsize>(signature.size()))
+        {
+            return false;
+        }
+        if (std::memcmp(signature.data(), "ID3", 3) == 0)
+        {
+            return true;
+        }
+
+        file.clear();
+        file.seekg(0, std::ios::beg);
+        std::array<unsigned char, 2048> buffer{};
+        file.read(reinterpret_cast<char *>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+        std::streamsize readBytes = file.gcount();
+        if (readBytes <= 0)
+        {
+            return false;
+        }
+        return MP3FindSyncWord(buffer.data(), static_cast<int>(readBytes)) >= 0;
+    }
+
+    bool fileLooksLikeFlac(std::ifstream &file)
+    {
+        std::array<char, 4> marker{};
+        file.read(marker.data(), static_cast<std::streamsize>(marker.size()));
+        if (file.gcount() < static_cast<std::streamsize>(marker.size()))
+        {
+            return false;
+        }
+        return std::memcmp(marker.data(), "fLaC", 4) == 0;
+    }
+
     AudioFileFormat detectFormatFromContent(const std::string &path)
     {
         std::ifstream file(path, std::ios::binary);
@@ -685,6 +892,18 @@ namespace
             return AudioFileFormat::OPUS;
         }
 
+        resetStream();
+        if (fileLooksLikeMp3(file))
+        {
+            return AudioFileFormat::MP3;
+        }
+
+        resetStream();
+        if (fileLooksLikeFlac(file))
+        {
+            return AudioFileFormat::FLAC;
+        }
+
         return AudioFileFormat::PCM;
     }
 
@@ -700,6 +919,299 @@ namespace
                | (static_cast<uint32_t>(data[1]) << 8)
                | (static_cast<uint32_t>(data[2]) << 16)
                | (static_cast<uint32_t>(data[3]) << 24);
+    }
+
+    const char *flacInitStatusName(FLAC__StreamDecoderInitStatus status)
+    {
+        switch (status)
+        {
+        case FLAC__STREAM_DECODER_INIT_STATUS_OK:
+            return "ok";
+        case FLAC__STREAM_DECODER_INIT_STATUS_UNSUPPORTED_CONTAINER:
+            return "unsupported container";
+        case FLAC__STREAM_DECODER_INIT_STATUS_INVALID_CALLBACKS:
+            return "invalid callbacks";
+        case FLAC__STREAM_DECODER_INIT_STATUS_MEMORY_ALLOCATION_ERROR:
+            return "memory allocation error";
+        case FLAC__STREAM_DECODER_INIT_STATUS_ERROR_OPENING_FILE:
+            return "error opening file";
+        case FLAC__STREAM_DECODER_INIT_STATUS_ALREADY_INITIALIZED:
+            return "already initialized";
+        default:
+            return "unknown";
+        }
+    }
+
+    const char *flacErrorStatusName(FLAC__StreamDecoderErrorStatus status)
+    {
+        switch (status)
+        {
+        case FLAC__STREAM_DECODER_ERROR_STATUS_LOST_SYNC:
+            return "lost sync";
+        case FLAC__STREAM_DECODER_ERROR_STATUS_BAD_HEADER:
+            return "bad header";
+        case FLAC__STREAM_DECODER_ERROR_STATUS_FRAME_CRC_MISMATCH:
+            return "frame crc mismatch";
+        case FLAC__STREAM_DECODER_ERROR_STATUS_UNPARSEABLE_STREAM:
+            return "unparseable stream";
+        default:
+            return "unknown";
+        }
+    }
+
+    struct FlacDecodeContext
+    {
+        std::vector<int16_t> *samples{nullptr};
+        bool decodedAny{false};
+        int sampleRate{0};
+        std::ifstream *file{nullptr};
+    };
+
+    FLAC__StreamDecoderWriteStatus flacWriteCallback(const FLAC__StreamDecoder * /*decoder*/,
+                                                     const FLAC__Frame *frame,
+                                                     const FLAC__int32 *const buffer[],
+                                                     void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !ctx->samples || !frame || !buffer)
+        {
+            return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+        }
+
+        const unsigned channels = std::max<uint32_t>(frame->header.channels, 1);
+        const unsigned blockSize = frame->header.blocksize;
+        if (ctx->sampleRate == 0 && frame->header.sample_rate > 0)
+        {
+            ctx->sampleRate = static_cast<int>(frame->header.sample_rate);
+        }
+
+        ctx->samples->reserve(ctx->samples->size() + blockSize);
+        for (unsigned i = 0; i < blockSize; ++i)
+        {
+            int64_t sum = 0;
+            for (unsigned ch = 0; ch < channels; ++ch)
+            {
+                sum += buffer[ch][i];
+            }
+            sum /= static_cast<int64_t>(channels);
+            if (sum > INT16_MAX)
+            {
+                sum = INT16_MAX;
+            }
+            else if (sum < INT16_MIN)
+            {
+                sum = INT16_MIN;
+            }
+            ctx->samples->push_back(static_cast<int16_t>(sum));
+        }
+
+        ctx->decodedAny = true;
+        return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
+    }
+
+    void flacMetadataCallback(const FLAC__StreamDecoder * /*decoder*/,
+                               const FLAC__StreamMetadata *metadata,
+                               void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !metadata)
+        {
+            return;
+        }
+        if (metadata->type == FLAC__METADATA_TYPE_STREAMINFO
+            && ctx->sampleRate == 0
+            && metadata->data.stream_info.sample_rate > 0)
+        {
+            ctx->sampleRate = static_cast<int>(metadata->data.stream_info.sample_rate);
+        }
+    }
+
+    void flacErrorCallback(const FLAC__StreamDecoder * /*decoder*/,
+                            FLAC__StreamDecoderErrorStatus status,
+                            void * /*clientData*/)
+    {
+        LOG_WARN("AudioOutputControl: FLAC decoder error: " << flacErrorStatusName(status));
+    }
+
+    FLAC__StreamDecoderReadStatus flacReadCallback(const FLAC__StreamDecoder * /*decoder*/,
+                                                   FLAC__byte buffer[],
+                                                   size_t *bytes,
+                                                   void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !ctx->file || !bytes)
+        {
+            return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
+        }
+        if (*bytes == 0)
+        {
+            return FLAC__STREAM_DECODER_READ_STATUS_CONTINUE;
+        }
+
+        ctx->file->read(reinterpret_cast<char *>(buffer), static_cast<std::streamsize>(*bytes));
+        std::streamsize readBytes = ctx->file->gcount();
+        if (readBytes <= 0)
+        {
+            if (ctx->file->eof())
+            {
+                *bytes = 0;
+                return FLAC__STREAM_DECODER_READ_STATUS_END_OF_STREAM;
+            }
+            ctx->file->clear();
+            return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
+        }
+
+        *bytes = static_cast<size_t>(readBytes);
+        return FLAC__STREAM_DECODER_READ_STATUS_CONTINUE;
+    }
+
+    FLAC__StreamDecoderSeekStatus flacSeekCallback(const FLAC__StreamDecoder * /*decoder*/,
+                                                   FLAC__uint64 absoluteByteOffset,
+                                                   void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !ctx->file)
+        {
+            return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
+        }
+
+        ctx->file->clear();
+        ctx->file->seekg(static_cast<std::streamoff>(absoluteByteOffset), std::ios::beg);
+        if (!(*ctx->file))
+        {
+            ctx->file->clear();
+            return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
+        }
+        return FLAC__STREAM_DECODER_SEEK_STATUS_OK;
+    }
+
+    FLAC__StreamDecoderTellStatus flacTellCallback(const FLAC__StreamDecoder * /*decoder*/,
+                                                   FLAC__uint64 *absoluteByteOffset,
+                                                   void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !ctx->file || !absoluteByteOffset)
+        {
+            return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
+        }
+        auto pos = ctx->file->tellg();
+        if (pos < 0)
+        {
+            return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
+        }
+        *absoluteByteOffset = static_cast<FLAC__uint64>(pos);
+        return FLAC__STREAM_DECODER_TELL_STATUS_OK;
+    }
+
+    FLAC__StreamDecoderLengthStatus flacLengthCallback(const FLAC__StreamDecoder * /*decoder*/,
+                                                       FLAC__uint64 *streamLength,
+                                                       void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !ctx->file || !streamLength)
+        {
+            return FLAC__STREAM_DECODER_LENGTH_STATUS_ERROR;
+        }
+
+        auto current = ctx->file->tellg();
+        ctx->file->seekg(0, std::ios::end);
+        auto end = ctx->file->tellg();
+        if (end < 0)
+        {
+            ctx->file->clear();
+            ctx->file->seekg(current, std::ios::beg);
+            return FLAC__STREAM_DECODER_LENGTH_STATUS_ERROR;
+        }
+        *streamLength = static_cast<FLAC__uint64>(end);
+        ctx->file->seekg(current, std::ios::beg);
+        return FLAC__STREAM_DECODER_LENGTH_STATUS_OK;
+    }
+
+    FLAC__bool flacEofCallback(const FLAC__StreamDecoder * /*decoder*/, void *clientData)
+    {
+        auto *ctx = static_cast<FlacDecodeContext *>(clientData);
+        if (!ctx || !ctx->file)
+        {
+            return true;
+        }
+        return ctx->file->eof();
+    }
+
+    bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate)
+    {
+        FLAC__StreamDecoder *decoder = FLAC__stream_decoder_new();
+        if (!decoder)
+        {
+            LOG_ERROR("AudioOutputControl: failed to create FLAC decoder");
+            return false;
+        }
+        struct FlacDecoderGuard
+        {
+            FLAC__StreamDecoder *handle;
+            bool initialized{false};
+            explicit FlacDecoderGuard(FLAC__StreamDecoder *h) : handle(h) {}
+            ~FlacDecoderGuard()
+            {
+                if (handle)
+                {
+                    if (initialized)
+                    {
+                        FLAC__stream_decoder_finish(handle);
+                    }
+                    FLAC__stream_decoder_delete(handle);
+                }
+            }
+        } decoderGuard(decoder);
+
+        std::ifstream file(path, std::ios::binary);
+        if (!file)
+        {
+            LOG_ERROR("AudioOutputControl: failed to open FLAC file '" << path << "'");
+            return false;
+        }
+
+        FlacDecodeContext ctx{&samples};
+        ctx.file = &file;
+        auto initStatus = FLAC__stream_decoder_init_stream(decoder,
+                                                           flacReadCallback,
+                                                           flacSeekCallback,
+                                                           flacTellCallback,
+                                                           flacLengthCallback,
+                                                           flacEofCallback,
+                                                           flacWriteCallback,
+                                                           flacMetadataCallback,
+                                                           flacErrorCallback,
+                                                           &ctx);
+        if (initStatus != FLAC__STREAM_DECODER_INIT_STATUS_OK)
+        {
+            LOG_ERROR("AudioOutputControl: FLAC init failed for '" << path << "': "
+                      << flacInitStatusName(initStatus));
+            return false;
+        }
+        decoderGuard.initialized = true;
+
+        if (!FLAC__stream_decoder_process_until_end_of_stream(decoder))
+        {
+            LOG_ERROR("AudioOutputControl: FLAC decoding aborted for '" << path << "'");
+            return false;
+        }
+
+        if (!ctx.decodedAny)
+        {
+            LOG_WARN("AudioOutputControl: no FLAC audio frames decoded from '" << path << "'");
+            return false;
+        }
+
+        if (ctx.sampleRate > 0)
+        {
+            sampleRate = ctx.sampleRate;
+        }
+        else if (sampleRate == 0)
+        {
+            sampleRate = defaultSampleRate();
+        }
+
+        return true;
     }
 
     bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate)
@@ -1079,9 +1591,23 @@ namespace
                 return;
             }
         }
+        else if (format == AudioFileFormat::MP3)
+        {
+            if (!decodeMp3File(options.path, samples, sourceRate))
+            {
+                return;
+            }
+        }
         else if (format == AudioFileFormat::OPUS)
         {
             if (!decodeOpusFile(options.path, samples, sourceRate))
+            {
+                return;
+            }
+        }
+        else if (format == AudioFileFormat::FLAC)
+        {
+            if (!decodeFlacFile(options.path, samples, sourceRate))
             {
                 return;
             }
@@ -1335,6 +1861,14 @@ namespace
                     else if (lowerValue == "opus")
                     {
                         options.format = AudioFileFormat::OPUS;
+                    }
+                    else if (lowerValue == "mp3" || lowerValue == "mpeg" || lowerValue == "mp2")
+                    {
+                        options.format = AudioFileFormat::MP3;
+                    }
+                    else if (lowerValue == "flac")
+                    {
+                        options.format = AudioFileFormat::FLAC;
                     }
                 }
             }
