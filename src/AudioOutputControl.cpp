@@ -29,6 +29,7 @@
 
 #include <aaccommon.h>
 #include <aacdec.h>
+#include <opus/opus.h>
 
 #define MODULE "AudioOutputControl"
 
@@ -42,7 +43,8 @@ namespace
         AUTO,
         PCM,
         WAV,
-        AAC
+        AAC,
+        OPUS
     };
 
     struct PlayCommandOptions
@@ -68,6 +70,8 @@ namespace
             return "wav";
         case AudioFileFormat::AAC:
             return "aac";
+        case AudioFileFormat::OPUS:
+            return "opus";
         default:
             return "auto";
         }
@@ -535,6 +539,411 @@ namespace
         return true;
     }
 
+    AudioFileFormat inferFormatFromExtension(const std::string &path)
+    {
+        std::filesystem::path fsPath(path);
+        std::string ext = toLower(fsPath.extension().string());
+        if (ext == ".wav" || ext == ".wave")
+        {
+            return AudioFileFormat::WAV;
+        }
+        if (ext == ".aac" || ext == ".adts")
+        {
+            return AudioFileFormat::AAC;
+        }
+        if (ext == ".opus" || ext == ".oga" || ext == ".ogg")
+        {
+            return AudioFileFormat::OPUS;
+        }
+        return AudioFileFormat::PCM;
+    }
+
+    bool fileLooksLikeWav(std::ifstream &file)
+    {
+        std::array<char, 12> header{};
+        file.read(header.data(), static_cast<std::streamsize>(header.size()));
+        if (file.gcount() < static_cast<std::streamsize>(header.size()))
+        {
+            return false;
+        }
+        return std::memcmp(header.data(), "RIFF", 4) == 0
+               && std::memcmp(header.data() + 8, "WAVE", 4) == 0;
+    }
+
+    bool fileLooksLikeAac(std::ifstream &file)
+    {
+        std::array<uint8_t, 7> header{};
+        file.read(reinterpret_cast<char *>(header.data()), static_cast<std::streamsize>(header.size()));
+        if (file.gcount() < static_cast<std::streamsize>(header.size()))
+        {
+            return false;
+        }
+        AdtsHeader adts{};
+        return parseAdtsHeader(header.data(), header.size(), adts);
+    }
+
+    bool fileLooksLikeOpus(std::ifstream &file)
+    {
+        char capture[4];
+        if (!file.read(capture, sizeof(capture)))
+        {
+            return false;
+        }
+        if (std::strncmp(capture, "OggS", 4) != 0)
+        {
+            return false;
+        }
+
+        std::array<unsigned char, 23> header{};
+        if (!file.read(reinterpret_cast<char *>(header.data()), static_cast<std::streamsize>(header.size())))
+        {
+            return false;
+        }
+
+        uint8_t version = header[0];
+        if (version != 0)
+        {
+            return false;
+        }
+
+        uint8_t headerType = header[1];
+        if ((headerType & 0x02) == 0)
+        {
+            return false;
+        }
+
+        uint8_t pageSegments = header[22];
+        std::vector<uint8_t> lacing(pageSegments);
+        if (pageSegments > 0
+            && !file.read(reinterpret_cast<char *>(lacing.data()), static_cast<std::streamsize>(pageSegments)))
+        {
+            return false;
+        }
+
+        size_t payloadSize = 0;
+        for (uint8_t segLen : lacing)
+        {
+            payloadSize += segLen;
+        }
+
+        std::vector<uint8_t> payload(payloadSize);
+        if (payloadSize > 0
+            && !file.read(reinterpret_cast<char *>(payload.data()), static_cast<std::streamsize>(payload.size())))
+        {
+            return false;
+        }
+
+        std::vector<uint8_t> packet;
+        packet.reserve(256);
+        size_t payloadOffset = 0;
+        for (uint8_t segLen : lacing)
+        {
+            if (payloadOffset + segLen > payload.size())
+            {
+                return false;
+            }
+            packet.insert(packet.end(),
+                          payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
+                          payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset + segLen));
+            payloadOffset += segLen;
+            if (segLen < 255)
+            {
+                break;
+            }
+        }
+
+        return packet.size() >= 8 && std::memcmp(packet.data(), "OpusHead", 8) == 0;
+    }
+
+    AudioFileFormat detectFormatFromContent(const std::string &path)
+    {
+        std::ifstream file(path, std::ios::binary);
+        if (!file)
+        {
+            return AudioFileFormat::PCM;
+        }
+
+        auto resetStream = [&file]() {
+            file.clear();
+            file.seekg(0, std::ios::beg);
+        };
+
+        if (fileLooksLikeWav(file))
+        {
+            return AudioFileFormat::WAV;
+        }
+
+        resetStream();
+        if (fileLooksLikeAac(file))
+        {
+            return AudioFileFormat::AAC;
+        }
+
+        resetStream();
+        if (fileLooksLikeOpus(file))
+        {
+            return AudioFileFormat::OPUS;
+        }
+
+        return AudioFileFormat::PCM;
+    }
+
+    uint16_t readLe16(const unsigned char *data)
+    {
+         return static_cast<uint16_t>(data[0])
+             | (static_cast<uint16_t>(data[1]) << 8);
+    }
+
+    uint32_t readLe32(const unsigned char *data)
+    {
+        return static_cast<uint32_t>(data[0])
+               | (static_cast<uint32_t>(data[1]) << 8)
+               | (static_cast<uint32_t>(data[2]) << 16)
+               | (static_cast<uint32_t>(data[3]) << 24);
+    }
+
+    bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate)
+    {
+        constexpr int kOpusSampleRate = 48000;
+        constexpr int kMaxOpusChannels = 2;
+        constexpr int kMaxFrameSize = 5760; // 120 ms at 48 kHz
+
+        std::ifstream file(path, std::ios::binary);
+        if (!file)
+        {
+            LOG_ERROR("AudioOutputControl: failed to open Opus file '" << path << "'");
+            return false;
+        }
+
+        std::vector<uint8_t> currentPacket;
+        bool haveStreamSerial = false;
+        uint32_t streamSerial = 0;
+        int packetIndex = 0;
+        OpusDecoder *decoder = nullptr;
+        int opusChannels = 0;
+        int samplesToDiscard = 0;
+        bool decodedAny = false;
+        std::array<opus_int16, kMaxFrameSize * kMaxOpusChannels> decodeBuffer{};
+
+        auto destroyDecoder = [&]() {
+            if (decoder)
+            {
+                opus_decoder_destroy(decoder);
+                decoder = nullptr;
+            }
+        };
+
+        auto processPacket = [&](const std::vector<uint8_t> &packet) -> bool {
+            if (packet.empty())
+            {
+                return true;
+            }
+
+            if (packetIndex == 0)
+            {
+                if (packet.size() < 19 || std::memcmp(packet.data(), "OpusHead", 8) != 0)
+                {
+                    LOG_ERROR("AudioOutputControl: invalid Opus ID header in '" << path << "'");
+                    return false;
+                }
+                opusChannels = packet[9];
+                if (opusChannels <= 0 || opusChannels > kMaxOpusChannels)
+                {
+                    LOG_ERROR("AudioOutputControl: unsupported Opus channel count " << opusChannels << " in '" << path << "'");
+                    return false;
+                }
+
+                uint16_t preSkip = readLe16(packet.data() + 10);
+                samplesToDiscard = preSkip;
+
+                int opusError = 0;
+                decoder = opus_decoder_create(kOpusSampleRate, opusChannels, &opusError);
+                if (opusError != OPUS_OK || !decoder)
+                {
+                    LOG_ERROR("AudioOutputControl: failed to create Opus decoder: " << opus_strerror(opusError));
+                    return false;
+                }
+
+                sampleRate = kOpusSampleRate;
+            }
+            else if (packetIndex == 1)
+            {
+                if (packet.size() < 8 || std::memcmp(packet.data(), "OpusTags", 8) != 0)
+                {
+                    LOG_WARN("AudioOutputControl: unexpected Opus comment packet in '" << path << "'");
+                }
+            }
+            else
+            {
+                if (!decoder)
+                {
+                    LOG_ERROR("AudioOutputControl: decoder not initialized before audio packets in '" << path << "'");
+                    return false;
+                }
+
+                int decodedSamples = opus_decode(decoder,
+                                                  packet.data(),
+                                                  static_cast<opus_int32>(packet.size()),
+                                                  decodeBuffer.data(),
+                                                  kMaxFrameSize,
+                                                  0);
+                if (decodedSamples < 0)
+                {
+                    LOG_ERROR("AudioOutputControl: opus_decode failed: " << opus_strerror(decodedSamples));
+                    return false;
+                }
+
+                if (decodedSamples > 0)
+                {
+                    int frames = decodedSamples;
+                    for (int i = 0; i < frames; ++i)
+                    {
+                        if (samplesToDiscard > 0)
+                        {
+                            --samplesToDiscard;
+                            continue;
+                        }
+
+                        int sum = 0;
+                        for (int ch = 0; ch < opusChannels; ++ch)
+                        {
+                            sum += decodeBuffer[static_cast<size_t>(i) * opusChannels + ch];
+                        }
+                        samples.push_back(static_cast<int16_t>(sum / opusChannels));
+                    }
+
+                    decodedAny = true;
+                }
+            }
+
+            ++packetIndex;
+            return true;
+        };
+
+        while (file)
+        {
+            char capture[4];
+            file.read(capture, sizeof(capture));
+            if (!file)
+            {
+                break;
+            }
+            if (std::strncmp(capture, "OggS", 4) != 0)
+            {
+                LOG_ERROR("AudioOutputControl: invalid Ogg capture pattern in '" << path << "'");
+                destroyDecoder();
+                return false;
+            }
+
+            std::array<unsigned char, 23> header{};
+            if (!file.read(reinterpret_cast<char *>(header.data()), header.size()))
+            {
+                LOG_ERROR("AudioOutputControl: truncated Ogg page header in '" << path << "'");
+                destroyDecoder();
+                return false;
+            }
+
+            uint8_t version = header[0];
+            if (version != 0)
+            {
+                LOG_ERROR("AudioOutputControl: unsupported Ogg version in '" << path << "'");
+                destroyDecoder();
+                return false;
+            }
+
+            uint8_t headerType = header[1];
+            (void)headerType;
+            uint32_t serial = readLe32(header.data() + 10);
+            uint8_t pageSegments = header[22];
+
+            if (!haveStreamSerial)
+            {
+                if ((headerType & 0x02) == 0)
+                {
+                    LOG_ERROR("AudioOutputControl: first Ogg page missing BOS flag in '" << path << "'");
+                    destroyDecoder();
+                    return false;
+                }
+                streamSerial = serial;
+                haveStreamSerial = true;
+            }
+            else if (serial != streamSerial)
+            {
+                LOG_ERROR("AudioOutputControl: multiple logical streams not supported in '" << path << "'");
+                destroyDecoder();
+                return false;
+            }
+
+            std::vector<uint8_t> lacing(pageSegments);
+            if (pageSegments > 0 && !file.read(reinterpret_cast<char *>(lacing.data()), pageSegments))
+            {
+                LOG_ERROR("AudioOutputControl: truncated lacing table in '" << path << "'");
+                destroyDecoder();
+                return false;
+            }
+
+            size_t payloadSize = 0;
+            for (uint8_t segLen : lacing)
+            {
+                payloadSize += segLen;
+            }
+
+            std::vector<uint8_t> payload(payloadSize);
+            if (payloadSize > 0 && !file.read(reinterpret_cast<char *>(payload.data()), payloadSize))
+            {
+                LOG_ERROR("AudioOutputControl: truncated page payload in '" << path << "'");
+                destroyDecoder();
+                return false;
+            }
+
+            size_t payloadOffset = 0;
+            for (uint8_t segLen : lacing)
+            {
+                if (payloadOffset + segLen > payload.size())
+                {
+                    LOG_ERROR("AudioOutputControl: invalid segment length in '" << path << "'");
+                    destroyDecoder();
+                    return false;
+                }
+
+                currentPacket.insert(currentPacket.end(),
+                                     payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
+                                     payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset + segLen));
+                payloadOffset += segLen;
+
+                if (segLen < 255)
+                {
+                    if (!processPacket(currentPacket))
+                    {
+                        destroyDecoder();
+                        return false;
+                    }
+                    currentPacket.clear();
+                }
+            }
+        }
+
+        if (!currentPacket.empty())
+        {
+            LOG_WARN("AudioOutputControl: leftover partial Opus packet ignored for '" << path << "'");
+        }
+
+        destroyDecoder();
+
+        if (!decodedAny)
+        {
+            LOG_WARN("AudioOutputControl: no audio payload decoded from Opus file '" << path << "'");
+            return false;
+        }
+
+        if (sampleRate == 0)
+        {
+            sampleRate = kOpusSampleRate;
+        }
+
+        return true;
+    }
+
     std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input, int inputRate, int outputRate)
     {
         if (inputRate == outputRate || input.empty())
@@ -626,19 +1035,16 @@ namespace
         AudioFileFormat format = options.format;
         if (format == AudioFileFormat::AUTO)
         {
-            std::filesystem::path path(options.path);
-            std::string ext = toLower(path.extension().string());
-            if (ext == ".wav" || ext == ".wave")
+            format = inferFormatFromExtension(options.path);
+            if (format == AudioFileFormat::PCM)
             {
-                format = AudioFileFormat::WAV;
-            }
-            else if (ext == ".aac" || ext == ".adts")
-            {
-                format = AudioFileFormat::AAC;
-            }
-            else
-            {
-                format = AudioFileFormat::PCM;
+                AudioFileFormat detected = detectFormatFromContent(options.path);
+                if (detected != AudioFileFormat::PCM)
+                {
+                    LOG_INFO("AudioOutputControl: inferred format '" << formatName(detected)
+                                                                          << "' for '" << options.path << "' by inspecting content");
+                    format = detected;
+                }
             }
         }
 
@@ -669,6 +1075,13 @@ namespace
         else if (format == AudioFileFormat::AAC)
         {
             if (!decodeAacFile(options.path, samples, sourceRate))
+            {
+                return;
+            }
+        }
+        else if (format == AudioFileFormat::OPUS)
+        {
+            if (!decodeOpusFile(options.path, samples, sourceRate))
             {
                 return;
             }
@@ -890,6 +1303,10 @@ namespace
                     else if (lowerValue == "aac")
                     {
                         options.format = AudioFileFormat::AAC;
+                    }
+                    else if (lowerValue == "opus")
+                    {
+                        options.format = AudioFileFormat::OPUS;
                     }
                 }
             }
