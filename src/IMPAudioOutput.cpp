@@ -5,6 +5,10 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <iomanip>
+#include <sstream>
+#include <vector>
 #include <imp/imp_audio.h>
 
 #define MODULE "IMPAudioOutput"
@@ -43,6 +47,7 @@ IMPAudioOutput::IMPAudioOutput(int devId_, int channelId_)
     , maxFrameBytes(0)
     , currentVolume(0)
     , currentGain(0)
+    , configuredSampleRate(0)
 {}
 
 IMPAudioOutput::~IMPAudioOutput()
@@ -137,6 +142,7 @@ bool IMPAudioOutput::configureHardware()
         return false;
     }
 
+    configuredSampleRate = sampleRate;
     return true;
 }
 
@@ -180,6 +186,8 @@ bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount)
         frame.virAddr = reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
         frame.len = static_cast<unsigned int>(chunk);
 
+        rememberPreview(bytePtr, chunk);
+
         if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0)
         {
             LOG_ERROR("IMP_AO_SendFrame failed (len=" << frame.len << ")");
@@ -216,4 +224,71 @@ int IMPAudioOutput::samplerateFromConfig() const
         requestedRate = 16000;
     }
     return requestedRate;
+}
+
+int IMPAudioOutput::playbackSampleRate() const
+{
+    if (configuredSampleRate > 0)
+    {
+        return configuredSampleRate;
+    }
+    return samplerateFromConfig();
+}
+
+bool IMPAudioOutput::playSilence(int durationMs)
+{
+    if (!initialized || durationMs <= 0)
+    {
+        return true;
+    }
+
+    const int rate = playbackSampleRate();
+    if (rate <= 0)
+    {
+        return false;
+    }
+
+    size_t samples = static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
+    if (samples == 0)
+    {
+        samples = std::max(rate / 50, 1); // default to ~20ms of silence
+    }
+
+    std::vector<int16_t> zeros(samples, 0);
+    return playSamples(zeros.data(), zeros.size());
+}
+
+void IMPAudioOutput::rememberPreview(const uint8_t *data, size_t length)
+{
+    bufferPreviewLen = std::min(length, bufferPreview.size());
+    if (bufferPreviewLen > 0 && data)
+    {
+        std::memcpy(bufferPreview.data(), data, bufferPreviewLen);
+    }
+}
+
+void IMPAudioOutput::logLastBufferPreview(const std::string &context) const
+{
+    if (bufferPreviewLen == 0)
+    {
+        LOG_INFO("IMPAudioOutput: " << context << " buffer preview empty");
+        return;
+    }
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < bufferPreviewLen; ++i)
+    {
+        oss << std::setw(2) << static_cast<int>(bufferPreview[i]);
+        if ((i + 1) < bufferPreviewLen)
+        {
+            if ((i + 1) % 16 == 0)
+            {
+                oss << ' ';
+            }
+        }
+    }
+
+    LOG_INFO("IMPAudioOutput: buffer preview after " << context << " (" << bufferPreviewLen
+             << " bytes): " << oss.str());
 }

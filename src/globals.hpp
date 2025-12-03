@@ -8,6 +8,7 @@
 #include <array>
 #include <mutex>
 #include <condition_variable>
+#include <future>
 #include "liveMedia.hh"
 
 #include "MsgChannel.hpp"
@@ -80,7 +81,8 @@ enum class AudioPlaybackJobType
 {
     PCM,
     CLEAR,
-    STOP
+    STOP,
+    WAIT
 };
 
 struct AudioPlaybackJob
@@ -91,6 +93,10 @@ struct AudioPlaybackJob
     int volume{0};
     bool hasGain{false};
     int gain{0};
+    int wait_ms{0};
+    bool flush_after_wait{false};
+    int silence_ms{0};
+    std::shared_ptr<std::promise<void>> completion;
 };
 
 struct jpeg_stream

@@ -4,6 +4,8 @@
 #include "Logger.hpp"
 #include "Config.hpp"
 
+#include <thread>
+
 #define MODULE "AudioOutputWorker"
 
 void *AudioOutputWorker::thread_entry(void * /*arg*/)
@@ -103,7 +105,7 @@ bool AudioOutputWorker::applyVolumeGain(bool applyVolume,
     return true;
 }
 
-bool AudioOutputWorker::clearQueue()
+bool AudioOutputWorker::clearQueue(bool waitForFlush)
 {
     if (!global_audio_output || !global_audio_output->jobQueue)
     {
@@ -114,6 +116,12 @@ bool AudioOutputWorker::clearQueue()
 
     AudioPlaybackJob job;
     job.type = AudioPlaybackJobType::CLEAR;
+    std::shared_ptr<std::promise<void>> completion;
+    if (waitForFlush)
+    {
+        completion = std::make_shared<std::promise<void>>();
+        job.completion = completion;
+    }
 
     bool enqueued = global_audio_output->jobQueue->write(std::move(job));
     if (!enqueued)
@@ -121,6 +129,33 @@ bool AudioOutputWorker::clearQueue()
         LOG_WARN("Audio output queue full while enqueuing clear command; dropped oldest chunk");
     }
 
+    if (waitForFlush && completion)
+    {
+        completion->get_future().wait();
+    }
+
+    return true;
+}
+
+bool AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds waitDuration,
+                                                  bool flushAfterWait,
+                                                  std::chrono::milliseconds silencePadding)
+{
+    if (!global_audio_output || !global_audio_output->jobQueue)
+    {
+        return false;
+    }
+
+    AudioPlaybackJob job;
+    job.type = AudioPlaybackJobType::WAIT;
+    job.wait_ms = static_cast<int>(waitDuration.count());
+    job.flush_after_wait = flushAfterWait;
+    job.silence_ms = static_cast<int>(silencePadding.count());
+    auto completion = std::make_shared<std::promise<void>>();
+    job.completion = completion;
+
+    global_audio_output->jobQueue->write_wait(std::move(job));
+    completion->get_future().wait();
     return true;
 }
 
@@ -130,6 +165,8 @@ void AudioOutputWorker::signalShutdown()
     {
         return;
     }
+
+    clearQueue(true);
 
     AudioPlaybackJob job;
     job.type = AudioPlaybackJobType::STOP;
@@ -167,6 +204,10 @@ void AudioOutputWorker::run()
         AudioPlaybackJob job = global_audio_output->jobQueue->wait_read();
         if (job.type == AudioPlaybackJobType::STOP)
         {
+            if (global_audio_output->imp_audio_output)
+            {
+                global_audio_output->imp_audio_output->flush();
+            }
             break;
         }
         if (job.type == AudioPlaybackJobType::CLEAR)
@@ -174,6 +215,36 @@ void AudioOutputWorker::run()
             if (global_audio_output->imp_audio_output)
             {
                 global_audio_output->imp_audio_output->flush();
+            }
+            if (job.completion)
+            {
+                job.completion->set_value();
+            }
+            continue;
+        }
+        if (job.type == AudioPlaybackJobType::WAIT)
+        {
+            if (job.wait_ms > 0)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(job.wait_ms));
+            }
+            if (job.silence_ms > 0 && global_audio_output->imp_audio_output)
+            {
+                if (!global_audio_output->imp_audio_output->playSilence(job.silence_ms))
+                {
+                    LOG_WARN("AudioOutputWorker: failed to inject tail silence");
+                }
+            }
+            if (job.flush_after_wait && global_audio_output->imp_audio_output)
+            {
+                if (global_audio_output->imp_audio_output->flush())
+                {
+                    global_audio_output->imp_audio_output->logLastBufferPreview("WAIT flush");
+                }
+            }
+            if (job.completion)
+            {
+                job.completion->set_value();
             }
             continue;
         }

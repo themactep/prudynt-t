@@ -64,14 +64,14 @@ namespace
     {
         switch (format)
         {
-        case AudioFileFormat::PCM:
-            return "pcm";
-        case AudioFileFormat::WAV:
-            return "wav";
         case AudioFileFormat::AAC:
             return "aac";
         case AudioFileFormat::OPUS:
             return "opus";
+        case AudioFileFormat::PCM:
+            return "pcm";
+        case AudioFileFormat::WAV:
+            return "wav";
         default:
             return "auto";
         }
@@ -1110,9 +1110,12 @@ namespace
             samples = resampleLinear(samples, sourceRate, targetRate);
         }
 
+        const size_t totalSamples = samples.size();
+        auto enqueueStart = std::chrono::steady_clock::now();
+
         if (!options.append)
         {
-            AudioOutputWorker::clearQueue();
+            AudioOutputWorker::clearQueue(true);
         }
 
         bool pendingVolume = options.setVolume;
@@ -1132,6 +1135,31 @@ namespace
                        options.volume,
                        pendingGain,
                        options.gain);
+
+        if (!options.append)
+        {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - enqueueStart);
+            double expectedMsExact = (targetRate > 0)
+                                         ? (static_cast<double>(totalSamples) * 1000.0)
+                                               / static_cast<double>(targetRate)
+                                         : 0.0;
+            int expectedMs = static_cast<int>(std::ceil(expectedMsExact));
+            int remainingMs = expectedMs - static_cast<int>(elapsed.count());
+            if (remainingMs < 0)
+            {
+                remainingMs = 0;
+            }
+            remainingMs += 20; // small guard so flush happens after the tail
+
+            constexpr auto kTailSilence = std::chrono::milliseconds(40);
+            if (!AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(remainingMs),
+                                                              true,
+                                                              kTailSilence))
+            {
+                LOG_WARN("AudioOutputControl: failed to wait for playback completion; audio queue may still be busy");
+            }
+        }
     }
 
     void applyVolumeChange(int volume)
@@ -1322,7 +1350,7 @@ namespace
         else if (op == "STOP")
         {
             LOG_INFO("AudioOutputControl: STOP requested");
-            if (!AudioOutputWorker::clearQueue())
+            if (!AudioOutputWorker::clearQueue(true))
             {
                 LOG_WARN("AudioOutputControl: STOP command ignored; audio output queue not available");
             }

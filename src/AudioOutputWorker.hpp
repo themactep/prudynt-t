@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <chrono>
 
 #include "globals.hpp"
 
@@ -31,7 +32,11 @@ public:
                                 bool applyGain,
                                 int gain);
 
-    static bool clearQueue();
+    static bool clearQueue(bool waitForFlush = false);
+
+    static bool waitForPlaybackCompletion(std::chrono::milliseconds waitDuration,
+                                          bool flushAfterWait,
+                                          std::chrono::milliseconds silencePadding = std::chrono::milliseconds(0));
 
     static void signalShutdown();
 
