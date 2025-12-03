@@ -237,10 +237,7 @@ void AudioOutputWorker::run()
             }
             if (job.flush_after_wait && global_audio_output->imp_audio_output)
             {
-                if (global_audio_output->imp_audio_output->flush())
-                {
-                    global_audio_output->imp_audio_output->logLastBufferPreview("WAIT flush");
-                }
+                global_audio_output->imp_audio_output->flush();
             }
             if (job.completion)
             {

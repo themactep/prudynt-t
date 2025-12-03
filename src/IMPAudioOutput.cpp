@@ -5,9 +5,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
-#include <iomanip>
-#include <sstream>
 #include <vector>
 #include <imp/imp_audio.h>
 
@@ -186,8 +183,6 @@ bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount)
         frame.virAddr = reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
         frame.len = static_cast<unsigned int>(chunk);
 
-        rememberPreview(bytePtr, chunk);
-
         if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0)
         {
             LOG_ERROR("IMP_AO_SendFrame failed (len=" << frame.len << ")");
@@ -256,39 +251,4 @@ bool IMPAudioOutput::playSilence(int durationMs)
 
     std::vector<int16_t> zeros(samples, 0);
     return playSamples(zeros.data(), zeros.size());
-}
-
-void IMPAudioOutput::rememberPreview(const uint8_t *data, size_t length)
-{
-    bufferPreviewLen = std::min(length, bufferPreview.size());
-    if (bufferPreviewLen > 0 && data)
-    {
-        std::memcpy(bufferPreview.data(), data, bufferPreviewLen);
-    }
-}
-
-void IMPAudioOutput::logLastBufferPreview(const std::string &context) const
-{
-    if (bufferPreviewLen == 0)
-    {
-        LOG_INFO("IMPAudioOutput: " << context << " buffer preview empty");
-        return;
-    }
-
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for (size_t i = 0; i < bufferPreviewLen; ++i)
-    {
-        oss << std::setw(2) << static_cast<int>(bufferPreview[i]);
-        if ((i + 1) < bufferPreviewLen)
-        {
-            if ((i + 1) % 16 == 0)
-            {
-                oss << ' ';
-            }
-        }
-    }
-
-    LOG_INFO("IMPAudioOutput: buffer preview after " << context << " (" << bufferPreviewLen
-             << " bytes): " << oss.str());
 }

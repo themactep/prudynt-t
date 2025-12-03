@@ -1041,7 +1041,7 @@ namespace
                 AudioFileFormat detected = detectFormatFromContent(options.path);
                 if (detected != AudioFileFormat::PCM)
                 {
-                    LOG_INFO("AudioOutputControl: inferred format '" << formatName(detected)
+                    LOG_DEBUG("AudioOutputControl: inferred format '" << formatName(detected)
                                                                           << "' for '" << options.path << "' by inspecting content");
                     format = detected;
                 }
@@ -1055,7 +1055,7 @@ namespace
         std::string volStr = options.setVolume ? std::to_string(options.volume) : std::string("(unchanged)");
         std::string gainStr = options.setGain ? std::to_string(options.gain) : std::string("(unchanged)");
 
-        LOG_INFO("AudioOutputControl: PLAY requested (path='" << options.path
+        LOG_DEBUG("AudioOutputControl: PLAY requested (path='" << options.path
              << "', format=" << formatName(format)
              << ", append=" << (options.append ? 1 : 0)
              << ", rate=" << rateStr
@@ -1127,7 +1127,7 @@ namespace
             pendingGain = false;
         }
 
-        LOG_INFO("AudioOutputControl: queuing " << samples.size() << " samples (src=" << sourceRate
+        LOG_DEBUG("AudioOutputControl: queuing " << samples.size() << " samples (src=" << sourceRate
              << " Hz -> dst=" << targetRate << " Hz)");
 
         enqueueSamples(samples,
@@ -1246,7 +1246,7 @@ namespace
         }
         op = toUpper(op);
 
-        LOG_INFO("AudioOutputControl: received command '" << line << "'");
+        LOG_DEBUG("AudioOutputControl: received command '" << line << "'");
 
         if (op == "PLAY")
         {
@@ -1349,7 +1349,7 @@ namespace
         }
         else if (op == "STOP")
         {
-            LOG_INFO("AudioOutputControl: STOP requested");
+            LOG_DEBUG("AudioOutputControl: STOP requested");
             if (!AudioOutputWorker::clearQueue(true))
             {
                 LOG_WARN("AudioOutputControl: STOP command ignored; audio output queue not available");
@@ -1369,7 +1369,7 @@ namespace
                 LOG_WARN("AudioOutputControl: invalid VOLUME value '" << value << "'");
                 return;
             }
-            LOG_INFO("AudioOutputControl: VOLUME=" << parsed);
+            LOG_DEBUG("AudioOutputControl: VOLUME=" << parsed);
             applyVolumeChange(parsed);
         }
         else if (op == "GAIN")
@@ -1386,12 +1386,12 @@ namespace
                 LOG_WARN("AudioOutputControl: invalid GAIN value '" << value << "'");
                 return;
             }
-            LOG_INFO("AudioOutputControl: GAIN=" << parsed);
+            LOG_DEBUG("AudioOutputControl: GAIN=" << parsed);
             applyGainChange(parsed);
         }
         else if (op == "SET")
         {
-            LOG_INFO("AudioOutputControl: SET command received");
+            LOG_DEBUG("AudioOutputControl: SET command received");
             handleSetCommand(iss);
         }
         else
