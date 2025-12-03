@@ -5,36 +5,31 @@
  *  Backchannel Audio Pipeline: Architecture Overview
  *
  *  This module manages backchannel audio, enabling two-way audio
- *  communication from an RTSP client. It involves setting up audio
- *  channels with the IMP audio SDK for decoding received audio.
+ *  communication from an RTSP client. It sets up IMP audio decoder
+ *  channels and ties the RTSP backchannel sink to the main
+ *  AudioOutputWorker so decoded speech can be played on the camera.
  *
- *  Key aspects of the pipeline:
- *   1. RTSP Setup and SDP: The RTSP server creates a
- *      BackchannelServerMediaSubsession for each supported audio format.
- *      The SDP (Session Description Protocol) defines the audio stream
- *      parameters (e.g., codec, sample rate) for the client.
- *   2. Audio Reception and Timeout: The BackchannelSink receives
- *      encoded audio data from the RTSP client and implements a timeout
- *      mechanism. If no data is received for a certain period, it sends
- *      a "stop" frame to signal the end of the session.
- *   3. Frame Queueing: The BackchannelSink encapsulates the received data
- *      into BackchannelFrame objects and enqueues them in a global queue
- *      (global_backchannel->inputQueue). These frames can be either
- *      playback frames (containing audio data) or stop frames (with empty
- *      payload, signaling the end of a session).
- *   4. Audio Processing and Session Management: The BackchannelWorker
- *      dequeues frames from the queue, decodes the audio data using the
- *      IMP audio SDK, and resamples it if necessary. It maintains a
- *      concept of a "current" session, processing only frames from that
- *      session and discarding frames from other sessions.
- *   5. Audio Output: The decoded PCM audio is then sent to a pipe, where
- *      the `/bin/iac` program receives the data and handles the audio
- *      output.
+ *  Pipeline overview:
+ *   1. RTSP Setup: The RTSP server adds a BackchannelServerMediaSubsession
+ *      for each supported codec. The SDP advertises payload type, sample
+ *      rate, and encoding name to the client.
+ *   2. Ingest: BackchannelSink receives RTP payloads from the client,
+ *      enforces an inactivity timeout, and emits BackchannelFrame objects
+ *      into global_backchannel->inputQueue. Zero-length frames act as
+ *      stop signals; normal frames carry encoded audio and the RTSP
+ *      session id.
+ *   3. Processing: BackchannelWorker waits for frames, keeps track of the
+ *      currently active session, and decodes payloads via IMP decoders
+ *      (AAC/PCMU/PCMA, etc). Optional resampling brings the PCM to the
+ *      configured output sample rate.
+ *   4. Playback: The worker forwards decoded PCM to
+ *      AudioOutputWorker::enqueuePcm(), which feeds the same IMP audio
+ *      output path used by local sound effects.
  *
  *  The IMPBackchannel class is responsible for:
- *   - Registering and managing audio decoders (e.g., Opus) with the IMP
- *     audio SDK.
- *   - Creating and destroying the IMP audio channels used for decoding.
+ *   - Registering IMP decoder channels for the supported backchannel
+ *     codecs.
+ *   - Creating and destroying the IMP audio resources used by the worker.
  */
 
 #include "Config.hpp"
