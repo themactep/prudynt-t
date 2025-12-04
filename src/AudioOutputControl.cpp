@@ -49,6 +49,8 @@ namespace
 {
     constexpr const char *kFifoDir = "/run/prudynt";
     constexpr const char *kFifoPath = "/run/prudynt/audio_out";
+    constexpr int kMaxLoopCount = 32;
+    constexpr int kMaxLoopDelayMs = 5000;
 
     enum class AudioFileFormat
     {
@@ -72,6 +74,8 @@ namespace
         int volume{0};
         bool setGain{false};
         int gain{0};
+        int loopCount{1};
+        int loopDelayMs{0};
     };
 
     const char *formatName(AudioFileFormat format)
@@ -156,6 +160,24 @@ namespace
         }
         int sr = cfg->audio.output_sample_rate;
         return (sr > 0) ? sr : 16000;
+    }
+
+    int clampLoopCount(int value)
+    {
+        if (value < 1)
+        {
+            return 1;
+        }
+        return std::min(value, kMaxLoopCount);
+    }
+
+    int clampLoopDelay(int value)
+    {
+        if (value < 0)
+        {
+            return 0;
+        }
+        return std::min(value, kMaxLoopDelayMs);
     }
 
     bool ensureFifo()
@@ -1566,10 +1588,14 @@ namespace
         std::string rateStr = options.hasSampleRate ? std::to_string(options.sampleRate) : std::string("(default)");
         std::string volStr = options.setVolume ? std::to_string(options.volume) : std::string("(unchanged)");
         std::string gainStr = options.setGain ? std::to_string(options.gain) : std::string("(unchanged)");
+        int loopCount = clampLoopCount(options.loopCount);
+        int loopDelayMs = clampLoopDelay(options.loopDelayMs);
 
         LOG_DEBUG("AudioOutputControl: PLAY requested (path='" << options.path
              << "', format=" << formatName(format)
              << ", append=" << (options.append ? 1 : 0)
+             << ", loop=" << loopCount
+             << ", delay=" << loopDelayMs << "ms"
              << ", rate=" << rateStr
              << ", vol=" << volStr
              << ", gain=" << gainStr << ")");
@@ -1636,7 +1662,8 @@ namespace
             samples = resampleLinear(samples, sourceRate, targetRate);
         }
 
-        const size_t totalSamples = samples.size();
+        const size_t samplesPerLoop = samples.size();
+        const size_t totalSamples = samplesPerLoop * static_cast<size_t>(loopCount);
         auto enqueueStart = std::chrono::steady_clock::now();
 
         if (!options.append)
@@ -1653,14 +1680,25 @@ namespace
             pendingGain = false;
         }
 
-        LOG_DEBUG("AudioOutputControl: queuing " << samples.size() << " samples (src=" << sourceRate
-             << " Hz -> dst=" << targetRate << " Hz)");
+           LOG_DEBUG("AudioOutputControl: queuing " << totalSamples << " samples (" << loopCount
+               << " loop(s), src=" << sourceRate << " Hz -> dst=" << targetRate << " Hz)");
 
-        enqueueSamples(samples,
-                       pendingVolume,
-                       options.volume,
-                       pendingGain,
-                       options.gain);
+        for (int loopIdx = 0; loopIdx < loopCount; ++loopIdx)
+           {
+              enqueueSamples(samples,
+                          pendingVolume,
+                          options.volume,
+                          pendingGain,
+                          options.gain);
+
+              pendingVolume = false;
+              pendingGain = false;
+
+            if (loopDelayMs > 0 && loopIdx + 1 < loopCount)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(loopDelayMs));
+            }
+           }
 
         if (!options.append)
         {
@@ -1841,6 +1879,34 @@ namespace
                     if (parseInt(value, parsed))
                     {
                         options.append = (parsed != 0);
+                    }
+                }
+                else if (key == "loop" || key == "loops" || key == "repeat")
+                {
+                    int parsed = 0;
+                    if (parseInt(value, parsed))
+                    {
+                        int clamped = clampLoopCount(parsed);
+                        if (clamped != parsed)
+                        {
+                            LOG_WARN("AudioOutputControl: loop count " << parsed
+                                     << " adjusted to " << clamped << " (max=" << kMaxLoopCount << ")");
+                        }
+                        options.loopCount = clamped;
+                    }
+                }
+                else if (key == "delay" || key == "loopdelay")
+                {
+                    int parsed = 0;
+                    if (parseInt(value, parsed))
+                    {
+                        int clamped = clampLoopDelay(parsed);
+                        if (clamped != parsed)
+                        {
+                            LOG_WARN("AudioOutputControl: loop delay " << parsed
+                                     << " adjusted to " << clamped << " ms (max=" << kMaxLoopDelayMs << ")");
+                        }
+                        options.loopDelayMs = clamped;
                     }
                 }
                 else if (key == "format" || key == "fmt")
