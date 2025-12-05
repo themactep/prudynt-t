@@ -25,6 +25,44 @@ The firmware now ships four fixed-point decoder families for FIFO playback:
 
 Each decoder installs its shared object into `/usr/lib` and exposes headers in staging, so prudynt links dynamically without adding extra runtime daemons. If a format is unavailable it can be toggled off in Buildroot by deselecting the corresponding `BR2_PACKAGE_LIBHELIX_*`, `BR2_PACKAGE_LIBFLAC`, or `BR2_PACKAGE_OPUS` option.
 
+Microphone Tap
+---------------
+
+Prudynt can expose the live microphone feed over a local FIFO so that wake-word
+detectors or other tooling can consume raw PCM without touching RTSP or the
+network stack. Set the following keys in `/etc/prudynt.json` and restart the
+service:
+
+```
+jct /etc/prudynt.json set audio.tap_enabled true
+jct /etc/prudynt.json set audio.tap_path /run/prudynt/audio_in.pcm   # optional
+service prudynt restart
+```
+
+- The FIFO defaults to `/run/prudynt/audio_in.pcm` (mode `0660`).
+- Audio is always little-endian signed 16-bit PCM and mirrors the configured
+  `audio.mic_sample_rate` (legacy `audio.input_sample_rate`) and channel count
+  (typically 16 kHz mono).
+- The writer never blocks: if no reader is attached or a consumer falls behind,
+  samples are dropped so the capture thread keeps up.
+
+Reading from the tap is just standard FIFO consumption. For example, to monitor
+the stream with SoX:
+
+```
+sox -t raw -b 16 -e signed-integer -c 1 -r 16000 \
+    /run/prudynt/audio_in.pcm -d
+```
+
+You can also point analysis tools (e.g. `porcupine`, `sonic-pi`) at the FIFO or
+pipe it into another process:
+
+```
+cat /run/prudynt/audio_in.pcm | your-detector --rate 16000 --format s16le
+```
+
+Disable the tap by setting `audio.tap_enabled` back to `false`. The FIFO is
+removed automatically when Prudynt stops or restarts.
 
 References
 ----------
