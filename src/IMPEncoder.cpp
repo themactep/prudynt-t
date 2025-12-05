@@ -400,12 +400,9 @@ int IMPEncoder::deinit()
             LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &enc)");
         }
     }
-    else
-    {
 
-        ret = IMP_Encoder_StopRecvPic(encChn);
-        LOG_DEBUG("IMP_Encoder_StopRecvPic(" << encChn << ")");
-    }
+    ret = IMP_Encoder_StopRecvPic(encChn);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
 
     ret = IMP_Encoder_UnRegisterChn(encChn);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_UnRegisterChn(" << encChn << ")");

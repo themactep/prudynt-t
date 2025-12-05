@@ -162,11 +162,16 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
     return {
 #if defined(AUDIO_SUPPORT)
         {"audio.input_enabled", audio.input_enabled, true, validateBool},
+        {"audio.mic_enabled", audio.input_enabled, true, validateBool},
         {"audio.output_enabled", audio.output_enabled, true, validateBool},
+        {"audio.spk_enabled", audio.output_enabled, true, validateBool},
         {"audio.force_stereo", audio.force_stereo, false, validateBool},
+        {"audio.tap_enabled", audio.tap_enabled, false, validateBool},
 #if defined(LIB_AUDIO_PROCESSING)
         {"audio.input_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
+        {"audio.mic_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
         {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
+        {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
 #endif
         {"image.isp_bypass", image.isp_bypass, true, validateBool},
@@ -209,6 +214,11 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
             std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"};
             return a.count(std::string(v)) == 1;
         }},
+        {"audio.mic_format", audio.input_format, "OPUS", [](const char *v) {
+            std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"};
+            return a.count(std::string(v)) == 1;
+        }},
+    {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
 #endif
         {"general.loglevel", general.loglevel, "INFO", [](const char *v) {
             std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"};
@@ -267,19 +277,30 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
     return {
 #if defined(AUDIO_SUPPORT)
         {"audio.input_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
+        {"audio.mic_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
         {"audio.input_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
+        {"audio.mic_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
         {"audio.output_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
+        {"audio.spk_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
         {"audio.input_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
+        {"audio.mic_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
         {"audio.input_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
+        {"audio.mic_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
 #if defined(LIB_AUDIO_PROCESSING)
-    {"audio.output_vol", audio.output_vol, 60, [](const int &v) { return v >= 0 && v <= 100; }},
-    {"audio.output_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
+        {"audio.output_vol", audio.output_vol, 60, [](const int &v) { return v >= 0 && v <= 100; }},
+        {"audio.output_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
+        {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= 0 && v <= 100; }},
+        {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
 #endif
 #if defined(LIB_AUDIO_PROCESSING)
         {"audio.input_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
+        {"audio.mic_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
         {"audio.input_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10, [](const int &v) { return v >= 0 && v <= 31; }},
+        {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10, [](const int &v) { return v >= 0 && v <= 31; }},
         {"audio.input_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0, [](const int &v) { return v >= 0 && v <= 90; }},
+        {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0, [](const int &v) { return v >= 0 && v <= 90; }},
         {"audio.input_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
+        {"audio.mic_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
 #endif
 #endif
         {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
@@ -732,9 +753,6 @@ bool CFG::updateConfig()
 
     if (!jsonConfig) return false;
 
-    // Temporarily disable migration to focus on basic JSON serialization
-    // migrateOldColorSettings();
-
     // First, update all values in the existing JSON structure
     for (auto &item : boolItems)
         handleConfigItem2(jsonConfig, item);
@@ -746,8 +764,6 @@ bool CFG::updateConfig()
         handleConfigItem2(jsonConfig, item);
     for (auto &item : floatItems)
         handleConfigItem2(jsonConfig, item);
-
-    // JCT automatically sorts keys, no manual sorting needed
 
     // Handle ROIs - clear existing ROIs and add current ones
     for (int i = 0; i < motion.roi_count; i++)
@@ -793,14 +809,6 @@ std::vector<ConfigItem<float>> CFG::getFloatItems()
     };
 };
 
-void CFG::migrateOldColorSettings()
-{
-    // No migration needed - using new config format with JCT
-    return;
-
-
-}
-
 CFG::CFG()
 {
     load();
@@ -826,9 +834,6 @@ void CFG::load()
 
     if (jsonConfig) {
         LOG_DEBUG("CFG::load() - Processing config items");
-        // Handle backward compatibility migration first - temporarily disabled
-        // migrateOldColorSettings();
-
         LOG_DEBUG("CFG::load() - Processing bool items (" << boolItems.size() << ")");
         for (auto &item : boolItems)
             handleConfigItem(jsonConfig, item);
@@ -859,7 +864,6 @@ void CFG::load()
     }
 
     // TODO: Implement ROI handling with JCT
-    // Handle ROIs from JSON - temporarily disabled during JCT migration
     /*
     if (jsonConfig) {
         // ROI handling code will be reimplemented with JCT

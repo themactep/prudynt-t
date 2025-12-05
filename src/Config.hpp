@@ -166,6 +166,8 @@ struct _audio {
     int input_bitrate;
     int input_gain;
     int input_sample_rate;
+    bool tap_enabled;
+    const char *tap_path;
 #if defined(LIB_AUDIO_PROCESSING)
     int input_alc_gain;
     int input_noise_suppression;
@@ -391,7 +393,6 @@ class CFG {
         std::vector<ConfigItem<int>> getIntItems();
         std::vector<ConfigItem<unsigned int>> getUintItems();
         std::vector<ConfigItem<float>> getFloatItems();
-        void migrateOldColorSettings();
 };
 
 // The configuration is kept in a global singleton that's accessed via this

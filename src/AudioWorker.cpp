@@ -5,14 +5,209 @@
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
+#include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #define MODULE "AudioWorker"
 
 #if defined(AUDIO_SUPPORT)
+
+class AudioTap
+{
+public:
+    AudioTap() = default;
+
+    ~AudioTap()
+    {
+        shutdown();
+    }
+
+    void configure(bool enabled,
+                   const std::string &path,
+                   int sampleRate,
+                   int bitwidth,
+                   int channels)
+    {
+        if (fifoPath != path)
+        {
+            closeWriter();
+            fifoReady = false;
+        }
+
+        fifoPath = path;
+        enabledTap = enabled && !fifoPath.empty();
+        sampleRateHz = (sampleRate > 0) ? sampleRate : 16000;
+        bitwidthBits = (bitwidth > 0) ? bitwidth : 16;
+        channelCount = std::max(1, channels);
+        backpressureWarned = false;
+
+        if (!enabledTap)
+        {
+            shutdown();
+            return;
+        }
+
+        if (!fifoReady && !createFifo())
+        {
+            enabledTap = false;
+            return;
+        }
+
+        LOG_INFO("AudioTap: ready at " << fifoPath << " (" << bitwidthBits << "-bit "
+                                         << sampleRateHz << " Hz, " << channelCount << " ch)");
+    }
+
+    void publish(const uint8_t *data, size_t length)
+    {
+        if (!enabledTap || !data || length == 0)
+        {
+            return;
+        }
+
+        if (!fifoReady && !createFifo())
+        {
+            return;
+        }
+
+        if (fd < 0 && !openWriter())
+        {
+            return;
+        }
+
+        size_t offset = 0;
+        while (offset < length)
+        {
+            ssize_t written = ::write(fd, data + offset, length - offset);
+            if (written > 0)
+            {
+                offset += static_cast<size_t>(written);
+                backpressureWarned = false;
+                continue;
+            }
+
+            if (written < 0 && errno == EINTR)
+            {
+                continue;
+            }
+
+            if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            {
+                if (!backpressureWarned)
+                {
+                    LOG_WARN("AudioTap: FIFO full, dropping PCM samples");
+                    backpressureWarned = true;
+                }
+                break;
+            }
+
+            if (written < 0 && (errno == EPIPE || errno == ENXIO))
+            {
+                LOG_INFO("AudioTap: reader disconnected");
+            }
+            else if (written < 0)
+            {
+                LOG_WARN("AudioTap: write failed: " << strerror(errno));
+            }
+
+            closeWriter();
+            break;
+        }
+    }
+
+    void shutdown()
+    {
+        closeWriter();
+        if (fifoReady && !fifoPath.empty())
+        {
+            ::unlink(fifoPath.c_str());
+        }
+        fifoReady = false;
+        backpressureWarned = false;
+    }
+
+private:
+    bool createFifo()
+    {
+        if (fifoPath.empty())
+        {
+            return false;
+        }
+
+        auto slash = fifoPath.find_last_of('/');
+        if (slash != std::string::npos)
+        {
+            std::string dir = fifoPath.substr(0, slash);
+            if (!dir.empty())
+            {
+                if (::mkdir(dir.c_str(), 0775) < 0 && errno != EEXIST)
+                {
+                    LOG_ERROR("AudioTap: mkdir failed for " << dir << ": " << strerror(errno));
+                    return false;
+                }
+            }
+        }
+
+        if (::unlink(fifoPath.c_str()) < 0 && errno != ENOENT)
+        {
+            LOG_WARN("AudioTap: unlink failed for " << fifoPath << ": " << strerror(errno));
+        }
+        if (::mkfifo(fifoPath.c_str(), 0660) < 0)
+        {
+            if (errno != EEXIST)
+            {
+                LOG_ERROR("AudioTap: mkfifo failed for " << fifoPath << ": " << strerror(errno));
+                return false;
+            }
+        }
+
+        fifoReady = true;
+        return true;
+    }
+
+    bool openWriter()
+    {
+        fd = ::open(fifoPath.c_str(), O_WRONLY | O_NONBLOCK);
+        if (fd < 0)
+        {
+            if (errno != ENXIO)
+            {
+                LOG_WARN("AudioTap: open failed for " << fifoPath << ": " << strerror(errno));
+            }
+            return false;
+        }
+        return true;
+    }
+
+    void closeWriter()
+    {
+        if (fd >= 0)
+        {
+            ::close(fd);
+            fd = -1;
+        }
+    }
+
+    std::string fifoPath;
+    bool enabledTap{false};
+    bool fifoReady{false};
+    int fd{-1};
+    int sampleRateHz{0};
+    int bitwidthBits{0};
+    int channelCount{0};
+    bool backpressureWarned{false};
+};
 
 AudioWorker::AudioWorker(int chn)
     : encChn(chn)
     , mp4_audio_samples(NUM_VIDEO_CHANNELS, 0)
     , mp4_audio_sample_rate(0)
+    , tap(std::make_unique<AudioTap>())
 {
     LOG_DEBUG("AudioWorker created for channel " << encChn);
 }
@@ -162,6 +357,17 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
     }
 }
 
+void AudioWorker::publishTapFrame(const IMPAudioFrame &frame)
+{
+    if (!tap || frame.virAddr == nullptr || frame.len <= 0)
+    {
+        return;
+    }
+
+    tap->publish(reinterpret_cast<uint8_t *>(frame.virAddr),
+                 static_cast<size_t>(frame.len));
+}
+
 void AudioWorker::process_frame(IMPAudioFrame &frame)
 {
     if (global_audio[encChn]->imp_audio->outChnCnt == 2 && frame.soundmode == AUDIO_SOUND_MODE_MONO)
@@ -185,11 +391,13 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
         stereo_frame.len = stereo_size;
         stereo_frame.soundmode = AUDIO_SOUND_MODE_STEREO;
 
+        publishTapFrame(stereo_frame);
         process_audio_frame(stereo_frame);
         delete[] stereo_buffer;
     }
     else
     {
+        publishTapFrame(frame);
         process_audio_frame(frame);
     }
 }
@@ -197,6 +405,30 @@ void AudioWorker::process_frame(IMPAudioFrame &frame)
 void AudioWorker::run()
 {
     LOG_DEBUG("Start audio processing run loop for channel " << encChn);
+
+    if (tap && cfg)
+    {
+        const char *path = cfg->audio.tap_path ? cfg->audio.tap_path : "";
+        int sampleRate = cfg->audio.input_sample_rate;
+        int bitwidth = 16; // Prudynt captures 16-bit PCM frames
+        int channels = 1;
+        if (global_audio[encChn]->imp_audio)
+        {
+            if (global_audio[encChn]->imp_audio->sample_rate > 0)
+            {
+                sampleRate = global_audio[encChn]->imp_audio->sample_rate;
+            }
+            if (global_audio[encChn]->imp_audio->outChnCnt > 0)
+            {
+                channels = global_audio[encChn]->imp_audio->outChnCnt;
+            }
+        }
+        tap->configure(cfg->audio.tap_enabled && cfg->audio.input_enabled,
+                       path,
+                       sampleRate,
+                       bitwidth,
+                       channels);
+    }
 
     // Initialize AudioReframer only if needed, store in member variable
     if (global_audio[encChn]->imp_audio->format == IMPAudioFormat::AAC)
