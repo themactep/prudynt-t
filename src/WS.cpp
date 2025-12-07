@@ -533,8 +533,11 @@ struct user_ctx
     std::vector<unsigned char> http_stream_buf; // pre-built buffer (with LWS_PRE headroom)
     std::vector<unsigned char> pending_fragments; // queued fragment bytes (with no LWS_PRE)
     std::mutex pending_mutex;
-    std::function<void(void)> prev_video_callback; // to restore previous callback
-    std::function<void(void)> prev_audio_callback; // to restore previous audio callback
+    std::shared_ptr<MsgChannel<H264NALUnit>> preview_video_queue;
+    std::shared_ptr<MsgChannel<AudioFrame>> preview_audio_queue;
+    VideoTapEntry video_tap_entry;
+    AudioTapEntry audio_tap_entry;
+    std::vector<uint8_t> preview_video_sample;
 
     user_ctx(const char* session_id, lws *wsi_handle)
         : wsi(wsi_handle), value(0), flag(0), imaging_dirty(false),
@@ -547,6 +550,96 @@ struct user_ctx
 
         snapshot_timer.owner = this;
         mp4_timer.owner = this;
+    }
+
+    ~user_ctx()
+    {
+        teardown_stream_taps();
+    }
+
+    void teardown_stream_taps()
+    {
+        if (video_tap_entry.id)
+        {
+            unregister_video_tap(0, video_tap_entry.id);
+            video_tap_entry = {};
+        }
+        if (audio_tap_entry.id)
+        {
+            unregister_audio_tap(0, audio_tap_entry.id);
+            audio_tap_entry = {};
+        }
+        preview_video_queue.reset();
+        preview_audio_queue.reset();
+        preview_video_sample.clear();
+    }
+
+    void pump_video_preview()
+    {
+        if (!mp4_muxer || !preview_video_queue)
+        {
+            return;
+        }
+
+        H264NALUnit unit;
+        while (preview_video_queue->read(&unit))
+        {
+            if (unit.data.empty())
+            {
+                continue;
+            }
+            uint8_t nalType = unit.data[0] & 0x1F;
+            bool isVCL = (nalType == 1 || nalType == 5);
+            bool isKey = (nalType == 5);
+
+            uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
+            preview_video_sample.push_back(static_cast<uint8_t>((nl >> 24) & 0xFF));
+            preview_video_sample.push_back(static_cast<uint8_t>((nl >> 16) & 0xFF));
+            preview_video_sample.push_back(static_cast<uint8_t>((nl >> 8) & 0xFF));
+            preview_video_sample.push_back(static_cast<uint8_t>(nl & 0xFF));
+            preview_video_sample.insert(preview_video_sample.end(), unit.data.begin(), unit.data.end());
+
+            if (isVCL)
+            {
+                auto now = std::chrono::steady_clock::now();
+                int64_t pts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+                auto frag = mp4_muxer->muxVideo(preview_video_sample.data(), preview_video_sample.size(), pts_ms, isKey);
+                preview_video_sample.clear();
+                if (!frag.empty())
+                {
+                    std::lock_guard<std::mutex> plock(pending_mutex);
+                    pending_fragments.insert(pending_fragments.end(), frag.begin(), frag.end());
+                    flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+                    lws_callback_on_writable(wsi);
+                }
+            }
+        }
+    }
+
+    void pump_audio_preview()
+    {
+        if (!mp4_muxer || !preview_audio_queue)
+        {
+            return;
+        }
+
+        AudioFrame af;
+        while (preview_audio_queue->read(&af))
+        {
+            if (af.data.empty())
+            {
+                continue;
+            }
+            int64_t pts_ms = static_cast<int64_t>(af.time.tv_sec) * 1000LL + af.time.tv_usec / 1000LL;
+            auto frag = mp4_muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
+            if (!frag.empty())
+            {
+                std::lock_guard<std::mutex> plock(pending_mutex);
+                pending_fragments.insert(pending_fragments.end(), frag.begin(), frag.end());
+                flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+                lws_callback_on_writable(wsi);
+            }
+        }
     }
 };
 
@@ -2475,14 +2568,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
             DestroyMP4Muxer(u_ctx->mp4_muxer);
             u_ctx->mp4_muxer = nullptr;
         }
-        {
-            std::lock_guard<std::mutex> lock(global_video[0]->onDataCallbackLock);
-            global_video[0]->onDataCallback = u_ctx->prev_video_callback;
-        }
-        {
-            std::lock_guard<std::mutex> lock(global_audio[0]->onDataCallbackLock);
-            global_audio[0]->onDataCallback = u_ctx->prev_audio_callback;
-        }
+        u_ctx->teardown_stream_taps();
 
         u_ctx->pending_fragments.clear();
         u_ctx->http_stream_buf.clear();
@@ -2739,69 +2825,19 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
                     }
                 }
 
-                // after sending init we register video callback to produce fragments
-                {
-                    std::lock_guard<std::mutex> lock(global_video[0]->onDataCallbackLock);
-                    // save previous callback to restore later
-                    u_ctx->prev_video_callback = global_video[0]->onDataCallback;
+                // register dedicated taps so preview does not steal RTSP callbacks
+                u_ctx->teardown_stream_taps();
+                u_ctx->preview_video_queue = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE);
+                u_ctx->video_tap_entry = register_video_tap(0, u_ctx->preview_video_queue, [u_ctx]() {
+                    u_ctx->pump_video_preview();
+                });
 
-                    // set per-session callback
-                    global_video[0]->onDataCallback = [u_ctx]() {
-                        // non-blocking read of all available NAL units
-                        std::vector<uint8_t> sample;
-                        H264NALUnit unit;
-                        while (global_video[0]->msgChannel->read(&unit)) {
-                            if (unit.data.empty()) continue;
-                            uint8_t nalType = (unit.data[0] & 0x1F);
-                            bool isVCL = (nalType == 1 || nalType == 5);
-                            bool isKey = (nalType == 5);
-
-                            // prepend 4-byte NAL length (big-endian)
-                            uint32_t nl = htonl((uint32_t)unit.data.size());
-                            sample.push_back((nl >> 24) & 0xFF);
-                            sample.push_back((nl >> 16) & 0xFF);
-                            sample.push_back((nl >> 8) & 0xFF);
-                            sample.push_back((nl) & 0xFF);
-                            sample.insert(sample.end(), unit.data.begin(), unit.data.end());
-
-                            if (isVCL) {
-                                // finalize sample and mux
-                                auto now = std::chrono::steady_clock::now();
-                                int64_t pts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                                auto frag = u_ctx->mp4_muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
-                                if (!frag.empty()) {
-                                    std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
-                                    u_ctx->pending_fragments.insert(u_ctx->pending_fragments.end(), frag.begin(), frag.end());
-                                    u_ctx->flag |= PNT_FLAG_HTTP_STREAM_PENDING;
-                                    lws_callback_on_writable(u_ctx->wsi);
-                                }
-                                sample.clear();
-                            }
-                        }
-                    };
-                }
-
-
-                // register audio callback to forward AAC frames into muxer
                 if (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0)
                 {
-                    std::lock_guard<std::mutex> lock(global_audio[0]->onDataCallbackLock);
-                    u_ctx->prev_audio_callback = global_audio[0]->onDataCallback;
-                    global_audio[0]->onDataCallback = [u_ctx]() {
-                        AudioFrame af;
-                        while (global_audio[0]->msgChannel->read(&af)) {
-                            if (af.data.empty() || !u_ctx->mp4_muxer) continue;
-                            // use timestamp from af.time
-                            int64_t pts_ms = af.time.tv_sec * 1000LL + af.time.tv_usec / 1000LL;
-                            auto frag = u_ctx->mp4_muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
-                            if (!frag.empty()) {
-                                std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
-                                u_ctx->pending_fragments.insert(u_ctx->pending_fragments.end(), frag.begin(), frag.end());
-                                u_ctx->flag |= PNT_FLAG_HTTP_STREAM_PENDING;
-                                lws_callback_on_writable(u_ctx->wsi);
-                            }
-                        }
-                    };
+                    u_ctx->preview_audio_queue = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE);
+                    u_ctx->audio_tap_entry = register_audio_tap(0, u_ctx->preview_audio_queue, [u_ctx]() {
+                        u_ctx->pump_audio_preview();
+                    });
                 }
                 // keep connection open; don't call lws_http_transaction_completed here
                 u_ctx->http_stream_buf.clear();

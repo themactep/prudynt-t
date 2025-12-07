@@ -394,19 +394,40 @@ void VideoWorker::run()
 
                         if (global_video[encChn]->idr == true)
                         {
-                            if (!global_video[encChn]->msgChannel->write(nalu))
+                            bool delivered = false;
+                            if (global_video[encChn]->msgChannel->write(nalu))
+                            {
+                                delivered = true;
+                                std::unique_lock<std::mutex> lock_stream{
+                                    global_video[encChn]->onDataCallbackLock};
+                                if (global_video[encChn]->onDataCallback)
+                                    global_video[encChn]->onDataCallback();
+                            }
+                            std::vector<VideoTapEntry> taps_copy;
+                            {
+                                std::lock_guard<std::mutex> tap_lock(global_video[encChn]->tap_mutex);
+                                taps_copy = global_video[encChn]->video_taps;
+                            }
+                            if (!taps_copy.empty())
+                            {
+                                for (auto &tap : taps_copy)
+                                {
+                                    if (auto queue = tap.queue.lock())
+                                    {
+                                        queue->write(nalu);
+                                        if (tap.notify)
+                                        {
+                                            tap.notify();
+                                        }
+                                    }
+                                }
+                            }
+                            if (!delivered)
                             {
                                 LOG_ERROR("video " << "channel:" << encChn << ", "
                                                    << "package:" << i << " of " << stream.packCount
                                                    << ", " << "packageSize:" << nalu.data.size()
                                                    << ".  !sink clogged!");
-                            }
-                            else
-                            {
-                                std::unique_lock<std::mutex> lock_stream{
-                                    global_video[encChn]->onDataCallbackLock};
-                                if (global_video[encChn]->onDataCallback)
-                                    global_video[encChn]->onDataCallback();
                             }
                         }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)

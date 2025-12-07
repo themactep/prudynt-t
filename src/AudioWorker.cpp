@@ -333,19 +333,36 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame)
     if (!af.data.empty() && global_audio[encChn]->hasDataCallback
         && (global_video[0]->hasDataCallback || global_video[1]->hasDataCallback))
     {
-        if (!global_audio[encChn]->msgChannel->write(af))
+        bool delivered = global_audio[encChn]->msgChannel->write(af);
+        if (delivered)
+        {
+            std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
+            if (global_audio[encChn]->onDataCallback)
+                global_audio[encChn]->onDataCallback();
+        }
+        std::vector<AudioTapEntry> taps_copy;
+        {
+            std::lock_guard<std::mutex> tap_lock(global_audio[encChn]->tap_mutex);
+            taps_copy = global_audio[encChn]->audio_taps;
+        }
+        for (auto &tap : taps_copy)
+        {
+            if (auto queue = tap.queue.lock())
+            {
+                queue->write(af);
+                if (tap.notify)
+                {
+                    tap.notify();
+                }
+            }
+        }
+        if (!delivered)
         {
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
             LOG_DDEBUG("audio encChn:" << encChn << ", size:" << af.data.size() << " clogged!");
 #else
             LOG_ERROR("audio encChn:" << encChn << ", size:" << af.data.size() << " clogged!");
 #endif
-        }
-        else
-        {
-            std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
-            if (global_audio[encChn]->onDataCallback)
-                global_audio[encChn]->onDataCallback();
         }
     }
 

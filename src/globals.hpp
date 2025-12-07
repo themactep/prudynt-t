@@ -9,6 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <future>
+#include <algorithm>
 #include "liveMedia.hh"
 
 #include "MsgChannel.hpp"
@@ -75,6 +76,20 @@ struct BackchannelFrame
     IMPBackchannelFormat format;
     unsigned int clientSessionId;
     bool isShutdownSentinel{false};
+};
+
+struct VideoTapEntry
+{
+    uint64_t id{0};
+    std::weak_ptr<MsgChannel<H264NALUnit>> queue;
+    std::function<void(void)> notify;
+};
+
+struct AudioTapEntry
+{
+    uint64_t id{0};
+    std::weak_ptr<MsgChannel<AudioFrame>> queue;
+    std::function<void(void)> notify;
 };
 
 enum class AudioPlaybackJobType
@@ -151,6 +166,9 @@ struct audio_stream
 
     StreamReplicator *streamReplicator = nullptr;
 
+    std::mutex tap_mutex;
+    std::vector<AudioTapEntry> audio_taps;
+
     audio_stream(int devId, int aiChn, int aeChn)
         : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
           msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)),
@@ -185,6 +203,8 @@ struct video_stream
     std::vector<uint8_t> latest_pps;
     bool have_sps;
     bool have_pps;
+    std::mutex tap_mutex;
+    std::vector<VideoTapEntry> video_taps;
 
     video_stream(int encChn, _stream *stream, const char *name)
         : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0),
@@ -254,5 +274,67 @@ extern std::atomic<bool> global_shutdown_requested;
 // so that a START command over the control FIFO does not require an
 // external streaming client.
 extern std::atomic<bool> global_force_video_active;
+
+inline VideoTapEntry register_video_tap(int encChn,
+                                        std::shared_ptr<MsgChannel<H264NALUnit>> queue,
+                                        std::function<void(void)> notify = {})
+{
+    static std::atomic<uint64_t> video_tap_seq{0};
+    VideoTapEntry entry;
+    entry.id = ++video_tap_seq;
+    entry.queue = queue;
+    entry.notify = std::move(notify);
+    if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS)
+    {
+        std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+        global_video[encChn]->video_taps.push_back(entry);
+    }
+    return entry;
+}
+
+inline void unregister_video_tap(int encChn, uint64_t tap_id)
+{
+    if (encChn < 0 || encChn >= NUM_VIDEO_CHANNELS)
+    {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+    auto &taps = global_video[encChn]->video_taps;
+    taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const VideoTapEntry &v) {
+                  return v.id == tap_id;
+              }),
+              taps.end());
+}
+
+inline AudioTapEntry register_audio_tap(int encChn,
+                                        std::shared_ptr<MsgChannel<AudioFrame>> queue,
+                                        std::function<void(void)> notify = {})
+{
+    static std::atomic<uint64_t> audio_tap_seq{0};
+    AudioTapEntry entry;
+    entry.id = ++audio_tap_seq;
+    entry.queue = queue;
+    entry.notify = std::move(notify);
+    if (encChn >= 0 && encChn < NUM_AUDIO_CHANNELS)
+    {
+        std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+        global_audio[encChn]->audio_taps.push_back(entry);
+    }
+    return entry;
+}
+
+inline void unregister_audio_tap(int encChn, uint64_t tap_id)
+{
+    if (encChn < 0 || encChn >= NUM_AUDIO_CHANNELS)
+    {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+    auto &taps = global_audio[encChn]->audio_taps;
+    taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const AudioTapEntry &v) {
+                  return v.id == tap_id;
+              }),
+              taps.end());
+}
 
 #endif // GLOBALS_HPP
