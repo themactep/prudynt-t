@@ -5,6 +5,7 @@
 #include "Logger.hpp"
 #include "Config.hpp"
 #include "OSD.hpp"
+#include "Detection.hpp"
 #include <imp/imp_encoder.h>
 #include <imp/imp_system.h>
 
@@ -52,6 +53,7 @@ public:
     static void flush(int encChn);
 
     OSD *osd = nullptr;
+    Detection *detection = nullptr;
 
 private:
     IMPEncoderCHNAttr chnAttr{};

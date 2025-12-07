@@ -198,6 +198,9 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems()
         {"websocket.enabled", websocket.enabled, true, validateBool},
         {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
         {"websocket.http_secured", websocket.http_secured, true, validateBool},
+        {"detection.enabled", detection.enabled, false, validateBool},
+        {"detection.show_labels", detection.show_labels, true, validateBool},
+        {"detection.show_confidence", detection.show_confidence, true, validateBool},
     };
 };
 
@@ -259,6 +262,7 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems()
             std::string token(v);
             return token == "auto" || token.empty() || token.length() == WEBSOCKET_TOKEN_LENGTH;
         }},
+        {"detection.json_path", detection.json_path, "/tmp/detections.json", validateCharNotEmpty},
     };
 };
 
@@ -374,6 +378,9 @@ std::vector<ConfigItem<int>> CFG::getIntItems()
         {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
         {"websocket.port", websocket.port, 8089, validateInt65535},
         {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
+        {"detection.poll_interval_ms", detection.poll_interval_ms, 500, [](const int &v) { return v >= 100 && v <= 5000; }},
+        {"detection.line_width", detection.line_width, 2, [](const int &v) { return v >= 1 && v <= 10; }},
+        {"detection.max_boxes", detection.max_boxes, 10, [](const int &v) { return v >= 1 && v <= 50; }},
     };
 };
 
@@ -395,6 +402,10 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems()
         {"stream1.osd.uptime_font_stroke_color", stream1.osd.uptime_font_stroke_color, 0xFF000000, validateOSDColor},
         {"stream1.osd.usertext_font_color", stream1.osd.usertext_font_color, 0xFFFFFFFF, validateOSDColor},
         {"stream1.osd.usertext_font_stroke_color", stream1.osd.usertext_font_stroke_color, 0xFF000000, validateOSDColor},
+        // Detection overlay colors (BGRA format)
+        {"detection.box_color", detection.box_color, 0xFF00FF00, validateOSDColor},  // Green
+        {"detection.text_color", detection.text_color, 0xFFFFFFFF, validateOSDColor},  // White
+        {"detection.text_stroke_color", detection.text_stroke_color, 0xFF000000, validateOSDColor},  // Black
     };
 };
 
@@ -786,6 +797,7 @@ std::vector<ConfigItem<float>> CFG::getFloatItems()
     return {
         {"rtsp.packet_loss_threshold", rtsp.packet_loss_threshold, 0.05f, [](const float &v) { return v >= 0.0f && v <= 1.0f; }},
         {"rtsp.bandwidth_margin", rtsp.bandwidth_margin, 1.2f, [](const float &v) { return v >= 1.0f && v <= 3.0f; }},
+        {"detection.min_confidence", detection.min_confidence, 0.5f, [](const float &v) { return v >= 0.0f && v <= 1.0f; }},
     };
 };
 

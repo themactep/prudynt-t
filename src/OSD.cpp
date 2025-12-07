@@ -1,6 +1,8 @@
 #include <cmath>
 #include "OSD.hpp"
 #include "Config.hpp"
+#include "Detection.hpp"
+#include "IMPEncoder.hpp"
 #include <pthread.h>
 #include "Logger.hpp"
 #include "globals.hpp"
@@ -982,6 +984,11 @@ void *OSD::thread_entry(void *arg) {
                                 v->imp_encoder->osd->start();
                             }
                         }
+                    }
+                    // Update detection overlay if enabled
+                    if (v->imp_encoder->detection != nullptr)
+                    {
+                        v->imp_encoder->detection->update();
                     }
                 }
             }

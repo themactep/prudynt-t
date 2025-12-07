@@ -144,8 +144,14 @@ int IMPAudio::init()
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");
 
     IMPAudioIChnParam chnParam = {
-        .usrFrmDepth = 30, // frame buffer depth
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+        .usrFrmDepth = 30,
+        .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT,  // T40/T41 require aecChn to be initialized
         .Rev = 0
+#else
+        .usrFrmDepth = 30,
+        .Rev = 0
+#endif
     };
 
     ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);

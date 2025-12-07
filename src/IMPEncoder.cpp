@@ -312,15 +312,18 @@ int IMPEncoder::init()
 
     initProfile();
 
+    ret = IMP_Encoder_CreateChn(encChn, &chnAttr);
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateChn(" << encChn << ", chnAttr)");
+
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    // T41 docs: SetbufshareChn must be called AFTER the shared video channel is created
+    // but BEFORE the JPEG channel is created. This sets up JPEG channel 2 to share
+    // memory with the video channel.
     if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
         ret = IMP_Encoder_SetbufshareChn(2, encChn);
         LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn << ")");
     }
 #endif
-
-    ret = IMP_Encoder_CreateChn(encChn, &chnAttr);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateChn(" << encChn << ", chnAttr)");
 
     ret = IMP_Encoder_RegisterChn(encGrp, encChn);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_RegisterChn(" << encGrp << ", " << encChn << ")");
@@ -343,6 +346,12 @@ int IMPEncoder::init()
 
             ret = IMP_System_Bind(&osd_cell, &enc);
             LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&osd_cell, &enc)");
+
+            // Initialize detection overlay after OSD binds are complete
+            if (cfg->detection.enabled) {
+                detection = new Detection(encGrp, stream->width, stream->height);
+                detection->init();
+            }
         }
         else
         {
@@ -350,7 +359,8 @@ int IMPEncoder::init()
             LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&fs, &enc)");
         }
     }
-#if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) || !defined(PLATFORM_T40) || !defined(PLATFORM_T41))
+#if !(defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41))
+    // This block is for older platforms (T10/T20/T21/T23/T30) that use IMP_Encoder_SetJpegeQl
     else
     {
         IMPEncoderJpegeQl pstJpegeQl;
@@ -393,6 +403,13 @@ int IMPEncoder::deinit()
             osd->exit();
             delete osd;
             osd = nullptr;
+
+            // Clean up detection overlay
+            if (detection) {
+                detection->exit();
+                delete detection;
+                detection = nullptr;
+            }
         }
         else
         {

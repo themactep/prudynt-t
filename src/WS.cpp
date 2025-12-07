@@ -1168,6 +1168,14 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason)
             u_ctx->imaging_dirty = false;
         }
     }
+#else
+    // When NO_TUNINGS is defined, still need to pop the parser on OBJECT_END
+    if (reason == LEJPCB_OBJECT_END)
+    {
+        u_ctx->flag |= PNT_FLAG_SEPARATOR;
+        u_ctx->message.append("}");
+        lejp_parser_pop(ctx);
+    }
 #endif
     return 0;
 }

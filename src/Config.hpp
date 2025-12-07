@@ -283,6 +283,19 @@ struct _websocket {
 struct _sysinfo {
     const char *cpu = nullptr;
 };
+struct _detection {
+    bool enabled;
+    const char *json_path;
+    int poll_interval_ms;
+    int line_width;
+    unsigned int box_color;
+    unsigned int text_color;
+    unsigned int text_stroke_color;
+    float min_confidence;
+    bool show_labels;
+    bool show_confidence;
+    int max_boxes;
+};
 
 class CFG {
 	public:
@@ -319,6 +332,7 @@ class CFG {
 		_motion motion{};
         _websocket websocket{};
         _sysinfo sysinfo{};
+        _detection detection{};
 
     template <typename T>
     T get(const std::string &name) {
