@@ -12,6 +12,10 @@
 // 4 line regions per box: top, bottom, left, right
 #define LINES_PER_BOX 4
 #define MAX_LINE_REGIONS (MAX_DETECTION_BOXES * LINES_PER_BOX)
+// Fixed line width and max buffer size per line
+// Max line size: 1920 pixels * 4 bytes/pixel * 4 pixels wide = 30720 bytes
+#define DETECTION_LINE_WIDTH 4
+#define MAX_LINE_BUFFER_SIZE (1920 * DETECTION_LINE_WIDTH * 4)
 
 struct DetectionBox {
     float x1, y1, x2, y2;  // Normalized coordinates (0.0-1.0)
@@ -68,8 +72,8 @@ private:
 
     // OSD handles for line regions (4 per box: top, bottom, left, right)
     IMPRgnHandle lineHandles[MAX_LINE_REGIONS];
-    uint8_t* lineBuffers[MAX_LINE_REGIONS];
-    int lineBufferSizes[MAX_LINE_REGIONS];  // Track buffer sizes for reuse
+    // Static buffers - no dynamic allocation, IMP OSD can safely access these
+    static uint8_t lineBuffers[MAX_LINE_REGIONS][MAX_LINE_BUFFER_SIZE];
     bool lineActive[MAX_LINE_REGIONS];
 
     // Last file modification time to avoid unnecessary re-reads

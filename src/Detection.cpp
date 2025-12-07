@@ -7,14 +7,15 @@
 
 extern std::shared_ptr<CFG> cfg;
 
+// Static buffer storage - allocated at compile time, no dynamic allocation
+uint8_t Detection::lineBuffers[MAX_LINE_REGIONS][MAX_LINE_BUFFER_SIZE];
+
 Detection::Detection(int osdGrp, uint16_t stream_width, uint16_t stream_height)
     : osdGrp(osdGrp), stream_width(stream_width), stream_height(stream_height),
       enabled(false), initialized(false), lastModTime(0), currentBoxCount(0)
 {
     for (int i = 0; i < MAX_LINE_REGIONS; i++) {
         lineHandles[i] = -1;
-        lineBuffers[i] = nullptr;
-        lineBufferSizes[i] = 0;
         lineActive[i] = false;
     }
 }
@@ -23,12 +24,15 @@ Detection::~Detection() { exit(); }
 
 int Detection::init()
 {
-    LOG_DEBUG("Detection::init() for osdGrp " << osdGrp << " - on-demand region creation");
-    // Don't pre-create OSD regions here - create them on-demand in drawBox()
-    // This avoids the crash from calling IMP_OSD_SetGrpRgnAttr without valid region data
+    LOG_DEBUG("Detection::init() for osdGrp " << osdGrp << " - lazy allocation mode");
+
+    // Don't pre-allocate buffers - allocate on-demand in drawBox()
+    // This avoids potential memory issues during startup
+    // Buffers will be allocated when first detection is drawn
+
     enabled = true;
     initialized = true;
-    LOG_INFO("Detection overlay initialized (on-demand regions), stream " << stream_width << "x" << stream_height);
+    LOG_INFO("Detection overlay initialized (lazy alloc), stream " << stream_width << "x" << stream_height);
     return 0;
 }
 
@@ -41,12 +45,7 @@ int Detection::exit()
             IMP_OSD_DestroyRgn(lineHandles[i]);
             lineHandles[i] = -1;
         }
-        // Only safe to free buffers after region is destroyed
-        if (lineBuffers[i]) {
-            free(lineBuffers[i]);
-            lineBuffers[i] = nullptr;
-        }
-        lineBufferSizes[i] = 0;
+        // Static buffers - no need to free
         lineActive[i] = false;
     }
     return 0;
@@ -206,31 +205,13 @@ void Detection::drawBox(int index, const DetectionBox& box)
         int num_pixels = w * h;
         int buf_size = num_pixels * 4;
 
-        // Reuse existing buffer if large enough, otherwise reallocate
-        // Note: We don't free the old buffer immediately because IMP may still be using it
-        // Also check for null buffer in case of previous allocation failure
-        if (lineBufferSizes[li] < buf_size || !lineBuffers[li]) {
-            // Need a larger buffer or buffer is null - free old one and allocate new
-            if (lineBuffers[li]) {
-                free(lineBuffers[li]);
-                lineBuffers[li] = nullptr;
-            }
-            lineBufferSizes[li] = 0;
-            lineBuffers[li] = (uint8_t*)malloc(buf_size);
-            if (!lineBuffers[li]) {
-                LOG_ERROR("Failed to allocate line buffer " << li << " size " << buf_size);
-                continue;
-            }
-            lineBufferSizes[li] = buf_size;
-        }
-
-        // Safety check - should never happen but prevents crash
-        if (!lineBuffers[li]) {
-            LOG_ERROR("Line buffer " << li << " is unexpectedly null");
+        // Check static buffer is large enough (should always be true with MAX_LINE_BUFFER_SIZE)
+        if (buf_size > MAX_LINE_BUFFER_SIZE) {
+            LOG_ERROR("Line buffer " << li << " size " << buf_size << " exceeds max " << MAX_LINE_BUFFER_SIZE);
             continue;
         }
 
-        // Fill buffer with solid color using 32-bit writes
+        // Fill static buffer with solid color using 32-bit writes
         uint32_t* buf32 = (uint32_t*)lineBuffers[li];
         for (int p = 0; p < num_pixels; p++) {
             buf32[p] = pixel;
@@ -241,7 +222,6 @@ void Detection::drawBox(int index, const DetectionBox& box)
             lineHandles[li] = IMP_OSD_CreateRgn(nullptr);
             if (lineHandles[li] < 0) {
                 LOG_ERROR("Failed to create OSD region for detection line " << li);
-                // Don't free buffer here - keep it for reuse
                 continue;
             }
             int ret = IMP_OSD_RegisterRgn(lineHandles[li], osdGrp, nullptr);
@@ -249,12 +229,6 @@ void Detection::drawBox(int index, const DetectionBox& box)
                 LOG_ERROR("Failed to register OSD region for detection line " << li);
                 IMP_OSD_DestroyRgn(lineHandles[li]);
                 lineHandles[li] = -1;
-                // Safe to free buffer since region was destroyed
-                if (lineBuffers[li]) {
-                    free(lineBuffers[li]);
-                    lineBuffers[li] = nullptr;
-                    lineBufferSizes[li] = 0;
-                }
                 continue;
             }
         }
