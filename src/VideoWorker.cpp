@@ -1,15 +1,15 @@
 #include "VideoWorker.hpp"
 
+#include <algorithm>
+#include <chrono>
+#include <cstring>
+
 #include "Config.hpp"
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
-
-#include <algorithm>
-#include <chrono>
-#include <cstring>
 
 #undef MODULE
 #define MODULE "VideoWorker"

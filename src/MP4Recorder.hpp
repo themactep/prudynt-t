@@ -1,11 +1,11 @@
 #pragma once
 
-#include "MP4Muxer.hpp"
-
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
+
+#include "MP4Muxer.hpp"
 
 class MP4Recorder {
 public:

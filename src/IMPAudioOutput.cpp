@@ -5,9 +5,8 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <vector>
-
 #include <imp/imp_audio.h>
+#include <vector>
 
 #define MODULE "IMPAudioOutput"
 

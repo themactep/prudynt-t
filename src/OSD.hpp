@@ -4,13 +4,12 @@
 // #include <map>
 #include "Config.hpp"
 #include "schrift.h"
-
-#include <ifaddrs.h>
-#include <memory>
-
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+
 #include <imp/imp_encoder.h>
 #include <imp/imp_osd.h>
+#include <memory>
 #include <netinet/in.h>
 #include <sys/sysinfo.h>
 

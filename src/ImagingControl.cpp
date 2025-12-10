@@ -17,13 +17,13 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
 
 #include <imp/imp_isp.h>
-#include <sys/stat.h>
 
 #define MODULE "ImagingControl"
 

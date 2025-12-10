@@ -1,5 +1,4 @@
 #include "AACSink.hpp"
-
 #include <iomanip>
 #include <sstream>
 

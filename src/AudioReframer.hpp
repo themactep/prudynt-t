@@ -2,7 +2,6 @@
 #define AUDIO_REFRAMER_HPP
 
 #include "RingBuffer.hpp"
-
 #include <cstddef>
 #include <cstdint>
 

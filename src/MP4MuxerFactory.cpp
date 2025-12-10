@@ -1,8 +1,6 @@
 // MP4MuxerFactory.cpp - factory that returns a custom MP4 writer backend.
 #include "MP4MuxerFactory.hpp"
-
 #include "MP4Muxer.hpp"
-
 #include <stdio.h>
 
 // Custom MP4 writer backend.

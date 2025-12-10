@@ -2,7 +2,6 @@
 #define OPUS_ENCODER_HPP
 
 #include "IMPAudio.hpp"
-
 #include <opus/opus.h>
 
 class Opus : public IMPAudioEncoder {

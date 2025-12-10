@@ -1,7 +1,5 @@
 #include "Config.hpp"
-
 #include "Logger.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -147,7 +145,6 @@ bool validateSampleRate(const int &v) {
 
 std::vector<ConfigItem<bool>> CFG::getBoolItems() {
   return {
-#if defined(AUDIO_SUPPORT)
       {"audio.input_enabled", audio.input_enabled, true, validateBool},
       {"audio.mic_enabled", audio.input_enabled, true, validateBool},
       {"audio.output_enabled", audio.output_enabled, true, validateBool},
@@ -162,15 +159,12 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
-#endif
       {"image.isp_bypass", image.isp_bypass, true, validateBool},
       {"image.vflip", image.vflip, false, validateBool},
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
-#if defined(AUDIO_SUPPORT)
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
-#endif
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
       {"stream0.osd.enabled", stream0.osd.enabled, true, validateBool},
@@ -182,9 +176,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
        validateBool},
       {"stream0.osd.usertext_enabled", stream0.osd.usertext_enabled, true,
        validateBool},
-#if defined(AUDIO_SUPPORT)
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
-#endif
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
       {"stream1.osd.enabled", stream1.osd.enabled, true, validateBool},
@@ -200,12 +192,12 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"websocket.enabled", websocket.enabled, true, validateBool},
       {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
       {"websocket.http_secured", websocket.http_secured, true, validateBool},
+      {"recorder.enabled", recorder.enabled, false, validateBool},
   };
 };
 
 std::vector<ConfigItem<const char *>> CFG::getCharItems() {
   return {
-#if defined(AUDIO_SUPPORT)
       {"audio.input_format", audio.input_format, "OPUS",
        [](const char *v) {
          std::set<std::string> a = {"OPUS",  "AAC",   "PCM",
@@ -220,7 +212,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
        }},
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm",
        validateCharNotEmpty},
-#endif
       {"general.loglevel", general.loglevel, "INFO",
        [](const char *v) {
          std::set<std::string> a = {"EMERGENCY", "ALERT",  "CRITICAL", "ERROR",
@@ -243,9 +234,9 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
          return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0;
        }},
       {"stream0.osd.font_path", stream0.osd.font_path,
-       "/usr/share/fonts/UbuntuMono-Regular2.ttf", validateCharNotEmpty},
+       "/usr/share/fonts/default.ttf", validateCharNotEmpty},
       {"stream0.osd.logo_path", stream0.osd.logo_path,
-       "/usr/share/images/thingino_logo_1.bgra", validateCharNotEmpty},
+       "/usr/share/images/thingino_logo_210x64.bgra", validateCharNotEmpty},
       {"stream0.osd.time_format", stream0.osd.time_format, "%F %T",
        validateCharNotEmpty},
       {"stream0.osd.uptime_format", stream0.osd.uptime_format,
@@ -274,9 +265,9 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
          return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0;
        }},
       {"stream1.osd.font_path", stream1.osd.font_path,
-       "/usr/share/fonts/NotoSansDisplay-Condensed2.ttf", validateCharNotEmpty},
+       "/usr/share/fonts/default.ttf", validateCharNotEmpty},
       {"stream1.osd.logo_path", stream1.osd.logo_path,
-       "/usr/share/images/thingino_logo_1.bgra", validateCharNotEmpty},
+       "/usr/share/images/thingino_logo_100x30.bgra", validateCharNotEmpty},
       {"stream1.osd.time_format", stream1.osd.time_format, "%F %T",
        validateCharNotEmpty},
       {"stream1.osd.uptime_format", stream1.osd.uptime_format,
@@ -309,12 +300,16 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
          return token == "auto" || token.empty() ||
                 token.length() == WEBSOCKET_TOKEN_LENGTH;
        }},
+      {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
+      {"recorder.device_path", recorder.device_path, "%hostname",
+       validateCharDummy},
+      {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S",
+       validateCharNotEmpty},
   };
 };
 
 std::vector<ConfigItem<int>> CFG::getIntItems() {
   return {
-#if defined(AUDIO_SUPPORT)
       {"audio.input_bitrate", audio.input_bitrate, 40,
        [](const int &v) { return v >= 6 && v <= 256; }},
       {"audio.mic_bitrate", audio.input_bitrate, 40,
@@ -344,8 +339,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 0 && v <= 100; }},
       {"audio.spk_gain", audio.output_gain, 20,
        [](const int &v) { return v >= 0 && v <= 31; }},
-#endif
-#if defined(LIB_AUDIO_PROCESSING)
       {"audio.input_alc_gain", audio.input_alc_gain, 0,
        [](const int &v) { return v >= -1 && v <= 7; }},
       {"audio.mic_alc_gain", audio.input_alc_gain, 0,
@@ -363,7 +356,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 0 && v <= 3; }},
       {"audio.mic_noise_suppression", audio.input_noise_suppression, 0,
        [](const int &v) { return v >= 0 && v <= 3; }},
-#endif
 #endif
       {"general.imp_polling_timeout", general.imp_polling_timeout, 500,
        [](const int &v) { return v >= 1 && v <= 5000; }},
@@ -507,6 +499,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"websocket.port", websocket.port, 8089, validateInt65535},
       {"websocket.first_image_delay", websocket.first_image_delay, 100,
        validateInt65535},
+      {"recorder.duration", recorder.duration, 60,
+       [](const int &v) { return v > 0 && v <= 3600; }},
+      {"recorder.channel", recorder.channel, 0,
+       [](const int &v) { return v == 0 || v == 1; }},
   };
 };
 
@@ -609,27 +605,6 @@ template <typename T> bool processLine(const std::string &line, T &value) {
     iss >> value;
     return !iss.fail();
   }
-}
-
-// Helper function to convert JsonValue to numeric types
-template <typename T> T jsonValueToNumber(JsonValue *value, T defaultValue) {
-  if (!value)
-    return defaultValue;
-
-  if (value->type == JSON_NUMBER) {
-    return static_cast<T>(value->value.number);
-  } else if (value->type == JSON_STRING && value->value.string) {
-    try {
-      if constexpr (std::is_integral_v<T>) {
-        return static_cast<T>(std::stoll(value->value.string));
-      } else {
-        return static_cast<T>(std::stod(value->value.string));
-      }
-    } catch (...) {
-      return defaultValue;
-    }
-  }
-  return defaultValue;
 }
 
 // Helper function to check if this is a sensor parameter with proc path
@@ -838,6 +813,27 @@ std::string jsonValueToString(JsonValue *value) {
   default:
     return "";
   }
+}
+
+// Helper function to convert JsonValue to numeric types
+template <typename T> T jsonValueToNumber(JsonValue *value, T defaultValue) {
+  if (!value)
+    return defaultValue;
+
+  if (value->type == JSON_NUMBER) {
+    return static_cast<T>(value->value.number);
+  } else if (value->type == JSON_STRING && value->value.string) {
+    try {
+      if constexpr (std::is_integral_v<T>) {
+        return static_cast<T>(std::stoll(value->value.string));
+      } else {
+        return static_cast<T>(std::stod(value->value.string));
+      }
+    } catch (...) {
+      return defaultValue;
+    }
+  }
+  return defaultValue;
 }
 
 // Helper function to convert JsonValue to bool

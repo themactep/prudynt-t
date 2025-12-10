@@ -4,7 +4,6 @@
 
 #include "Logger.hpp"
 #include "MP4Muxer.hpp"
-
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

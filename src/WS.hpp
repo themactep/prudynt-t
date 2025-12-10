@@ -4,13 +4,11 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "libwebsockets.h"
-
 #include <atomic>
-#include <memory>
-#include <utility>
-
 #include <imp/imp_common.h>
 #include <imp/imp_system.h>
+#include <memory>
+#include <utility>
 
 #define WEBSOCKET_TOKEN_LENGTH 32
 #define SESSION_ID_LENGTH 16
@@ -35,9 +33,7 @@ private:
   static signed char rtsp_callback(struct lejp_ctx *ctx, char reason);
   static signed char sensor_callback(struct lejp_ctx *ctx, char reason);
   static signed char image_callback(struct lejp_ctx *ctx, char reason);
-#if defined(AUDIO_SUPPORT)
   static signed char audio_callback(struct lejp_ctx *ctx, char reason);
-#endif
   static signed char stream_callback(struct lejp_ctx *ctx, char reason);
   static signed char stream2_callback(struct lejp_ctx *ctx, char reason);
   static signed char osd_callback(struct lejp_ctx *ctx, char reason);

@@ -3,10 +3,9 @@
 
 #include "Config.hpp"
 #include "Logger.hpp"
+#include <imp/imp_audio.h>
 
 #include <stdexcept>
-
-#include <imp/imp_audio.h>
 
 enum IMPAudioFormat {
   PCM,

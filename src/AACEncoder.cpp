@@ -1,8 +1,6 @@
 #include "AACEncoder.hpp"
-
 #include "Config.hpp"
 #include "Logger.hpp"
-
 #include <cstdint>
 
 AACEncoder *AACEncoder::createNew(int sampleRate, int numChn) {

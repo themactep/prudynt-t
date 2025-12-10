@@ -8,6 +8,6 @@
 #define BUILD_COMMIT COMMIT_TAG
 
 #define VERSION COMPILE_TIME "_" COMMIT_TAG
-#define FULL_VERSION_STRING "prudynt-t v" COMMIT_TAG " " COMPILE_TIME
+#define FULL_VERSION_STRING "prudynt-t " COMMIT_TAG " (" COMPILE_TIME ")"
 
 #endif // VERSION_H_

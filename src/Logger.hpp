@@ -2,7 +2,6 @@
 #define Logger_hpp
 
 #include "Config.hpp"
-
 #include <cstring>
 #include <mutex>
 #include <sstream>
@@ -15,17 +14,12 @@
 #define LOG_WARN(str) Logger::log(Logger::WARN, FILENAME, LogMsg() << str)
 #define LOG_NOTICE(str) Logger::log(Logger::NOTICE, FILENAME, LogMsg() << str)
 #define LOG_INFO(str) Logger::log(Logger::INFO, FILENAME, LogMsg() << str)
+#define LOG_TRACE(str) Logger::log(Logger::TRACE, FILENAME, LogMsg() << str)
 
 #if defined(DDEBUG)
 #define LOG_DDEBUG(str) Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
 #else
 #define LOG_DDEBUG(str) ((void)0)
-#endif
-
-#if defined(DDEBUGWS)
-#define LOG_DDEBUGWS(str) Logger::log(Logger::DEBUG, FILENAME, LogMsg() << str)
-#else
-#define LOG_DDEBUGWS(str) ((void)0)
 #endif
 
 #if defined(ENABLE_LOG_DEBUG)
@@ -124,7 +118,17 @@ struct LogMsg {
 
 class Logger {
 public:
-  enum Level { EMERGENCY, ALERT, CRIT, ERROR, WARN, NOTICE, INFO, DEBUG };
+  enum Level {
+    EMERGENCY,
+    ALERT,
+    CRIT,
+    ERROR,
+    WARN,
+    NOTICE,
+    INFO,
+    DEBUG,
+    TRACE
+  };
 
   static bool init(std::string logLevel);
   static void log(Level level, std::string module, LogMsg msg);

@@ -94,9 +94,9 @@ void JPEGWorker::run() {
      * if jpeg_idle_fps = 0, the thread is put into sleep until a client is
      * connected. if jpeg_idle_fps > 0, we try to reach a frame rate of
      * stream.jpeg_idle_fps. enen if no client is connected. if a client is
-     * connected via WS / HTTP we try to reach a framerate of stream.fps the
-     * thread will fallback into idle / sleep mode if no client request was made
-     * for more than a second
+     * connected via WS / HTTP we try to reach a framerate of stream.fps the thread
+     * will fallback into idle / sleep mode if no client request was made for
+     * more than a second
      */
     auto now = steady_clock::now();
 
@@ -109,7 +109,7 @@ void JPEGWorker::run() {
           duration_cast<milliseconds>(now - global_jpeg[jpgChn]->last_image)
               .count();
 
-      // we remove targetFps/10 millisecond's as image creation time
+      // we remove targetFps/10 milliseconds as image creation time
       // by this we get besser FPS results
       if (targetFps &&
           diff_last_image >= ((1000 / targetFps) - targetFps / 10)) {

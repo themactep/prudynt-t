@@ -36,9 +36,9 @@
 
 // Define the list of backchannel formats and their properties
 // X(EnumName, NameString, PayloadType, Frequency, MimeType)
+// https://www.rfc-editor.org/rfc/rfc3640.html
 #define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
-  /* CTS v19.06 requires the SDP encoding name to be "mpeg4generic" for AAC */ \
-  X(AAC, "mpeg4generic", 97, cfg->audio.output_sample_rate,                    \
+  X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate,                   \
     "audio/mpeg4-generic")                                                     \
   X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \
   X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                       \

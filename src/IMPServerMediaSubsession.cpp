@@ -1,5 +1,4 @@
 #include "IMPServerMediaSubsession.hpp"
-
 #include "Config.hpp"
 #include "GroupsockHelper.hh"
 #include "H264VideoRTPSink.hh"
@@ -7,7 +6,6 @@
 #include "H265VideoRTPSink.hh"
 #include "H265VideoStreamDiscreteFramer.hh"
 #include "IMPDeviceSource.hpp"
-
 #include <iostream>
 #include <memory>
 

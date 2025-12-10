@@ -13,8 +13,8 @@
 
 #include "Logger.hpp"
 
-const char *text_levels[] = {"EMERGENCY", "ALERT",  "CRITICAL", "ERROR",
-                             "WARN",      "NOTICE", "INFO",     "DEBUG"};
+const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN",
+                             "NOTICE",    "INFO",  "DEBUG",    "TRACE"};
 
 Logger::Level stringToLogLevel(const std::string &levelStr) {
   if (levelStr == "EMERGENCY")
@@ -33,6 +33,8 @@ Logger::Level stringToLogLevel(const std::string &levelStr) {
     return Logger::INFO;
   if (levelStr == "DEBUG")
     return Logger::DEBUG;
+  if (levelStr == "TRACE")
+    return Logger::TRACE;
   // Default level if unknown string
   return Logger::INFO; // or any default level you prefer
 }
@@ -45,7 +47,7 @@ bool Logger::init(std::string logLevel) {
   // Initialize the syslog
   openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
   Logger::level = stringToLogLevel(logLevel);
-  LOG_DEBUG("Logger Init.");
+  LOG_INFO("Logger init. level=" << logLevel);
   return false;
 }
 
@@ -55,6 +57,10 @@ void Logger::setLevel(std::string lvl) {
 }
 
 void Logger::log(Level lvl, std::string module, LogMsg msg) {
+  // Filter TRACE logs unless explicitly enabled at runtime
+  if (lvl == Logger::TRACE && Logger::level < Logger::TRACE) {
+    return; // skip both syslog and console for TRACE when not enabled
+  }
   std::unique_lock<std::mutex> lck(log_mtx);
 
   // Filter based on the configured log level

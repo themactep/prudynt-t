@@ -1,9 +1,7 @@
 #include "IMPAudio.hpp"
-
 #include "AACEncoder.hpp"
 #include "Config.hpp"
 #include "Opus.hpp"
-
 #include <thread>
 
 #define MODULE "IMPAUDIO"
@@ -75,7 +73,10 @@ int IMPAudio::init() {
     encattr.type = IMPAudioPalyloadType::PT_G726;
     ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
     bitrate = 16;
-  } else if (strcmp(cfg->audio.input_format, "PCM") != 0) {
+  } else if (strcmp(cfg->audio.input_format, "PCM") == 0) {
+    // PCM format - keep the default format = IMPAudioFormat::PCM set above
+    LOG_INFO("Using PCM format (no encoding)");
+  } else {
     LOG_ERROR("unsupported audio->input_format ("
               << cfg->audio.input_format
               << "). we only support OPUS, AAC, G711A, G711U, G726, and PCM.");
@@ -123,10 +124,10 @@ int IMPAudio::init() {
 
   IMPAudioIChnParam chnParam{};
   chnParam.usrFrmDepth = 30; // frame buffer depth
-  chnParam.Rev = 0;
 #if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   chnParam.aecChn = static_cast<IMPAudioAecChn>(-1);
 #endif
+  chnParam.Rev = 0;
 
   ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
   LOG_DEBUG_OR_ERROR(ret,

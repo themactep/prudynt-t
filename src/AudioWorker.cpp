@@ -10,14 +10,11 @@
 #include <cstring>
 #include <fcntl.h>
 #include <string>
-#include <unistd.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #define MODULE "AudioWorker"
-
-#if defined(AUDIO_SUPPORT)
 
 class AudioTap {
 public:
@@ -383,8 +380,7 @@ void AudioWorker::run() {
     reframer = std::make_unique<AudioReframer>(
         global_audio[encChn]->imp_audio->sample_rate,
         /* inputSamplesPerFrame */
-            global_audio[encChn]->imp_audio->sample_rate *
-            0.040,
+        global_audio[encChn]->imp_audio->sample_rate * 0.040,
         /* outputSamplesPerFrame */ 1024);
     LOG_DEBUG("AudioReframer created for channel " << encChn);
   } else {
@@ -520,5 +516,3 @@ void *AudioWorker::thread_entry(void *arg) {
 
   return 0;
 }
-
-#endif // AUDIO_SUPPORT

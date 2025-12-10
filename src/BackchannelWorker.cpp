@@ -171,8 +171,7 @@ void BackchannelWorker::run() {
                 << static_cast<unsigned>(frame.clientSessionId));
       if (frame.clientSessionId == currentSessionId && currentSessionId != 0) {
         LOG_INFO("Current session " << static_cast<unsigned>(currentSessionId)
-                                    << " stopped."
-                                       "");
+                                    << " stopped.");
         currentSessionId = 0;
       } else if (currentSessionId == 0) {
         LOG_DEBUG("Stop signal received but no current session. Ignoring.");

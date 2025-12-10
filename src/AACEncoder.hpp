@@ -2,7 +2,6 @@
 #define AAC_ENCODER_HPP
 
 #include "IMPAudio.hpp"
-
 #include <faac.h>
 
 class AACEncoder : public IMPAudioEncoder {

@@ -1,5 +1,4 @@
 #include "AudioReframer.hpp"
-
 #include <algorithm>
 #include <stdexcept>
 

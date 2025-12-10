@@ -1,29 +1,35 @@
 #include "MP4ControlSocket.hpp"
 
-#include "Config.hpp"
-#include "Logger.hpp"
-#include "MP4Muxer.hpp"
-#include "globals.hpp"
-
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
+#include <filesystem>
+#include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
 
+#include "Config.hpp"
+#include "Logger.hpp"
+#include "MP4Muxer.hpp"
+#include "globals.hpp"
+
 #include <imp/imp_encoder.h>
-#include <sys/stat.h>
 
 namespace {
+namespace fs = std::filesystem;
 constexpr const char *FIFO_DIR = "/run/prudynt";
 constexpr const char *FIFO_PATH = "/run/prudynt/mp4ctl";
 
@@ -62,6 +68,221 @@ void remove_channel_state_file(int channel) {
   ::unlink(state_path.c_str());
 }
 
+struct StartCommandOptions {
+  std::string path;
+  std::string mount;
+  std::string directory;
+  std::string nameTemplate;
+  int durationSeconds{0};
+  int channel{0};
+  bool loop{false};
+  bool durationProvided{false};
+  bool channelProvided{false};
+  bool mountProvided{false};
+  bool directoryProvided{false};
+  bool nameTemplateProvided{false};
+};
+
+struct RecordingLoopParams {
+  std::string mount;
+  std::string directory;
+  std::string nameTemplate;
+  int durationSeconds{0};
+  int channel{0};
+};
+
+struct LoopState {
+  RecordingLoopParams params;
+  std::atomic<bool> stopRequested{false};
+};
+
+std::array<std::shared_ptr<LoopState>, NUM_VIDEO_CHANNELS> loop_states;
+std::array<std::thread, NUM_VIDEO_CHANNELS> loop_threads;
+std::mutex loop_state_mutex;
+
+std::chrono::system_clock::time_point
+round_up_to_minute(std::chrono::system_clock::time_point tp) {
+  auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(tp);
+  auto epoch_seconds = seconds.time_since_epoch();
+  auto remainder = epoch_seconds.count() % 60;
+  if (remainder == 0) {
+    return seconds;
+  }
+  return seconds + std::chrono::seconds(60 - remainder);
+}
+
+bool sleep_until_time(std::chrono::system_clock::time_point target,
+                      std::atomic<bool> *stop_flag = nullptr) {
+  while (true) {
+    if (stop_flag && stop_flag->load(std::memory_order_relaxed)) {
+      return false;
+    }
+    auto now = std::chrono::system_clock::now();
+    if (now >= target) {
+      return true;
+    }
+    auto remaining =
+        std::chrono::duration_cast<std::chrono::milliseconds>(target - now);
+    if (remaining > std::chrono::milliseconds(250)) {
+      remaining = std::chrono::milliseconds(250);
+    }
+    std::this_thread::sleep_for(remaining);
+  }
+}
+
+struct MountEntry {
+  fs::path mountPoint;
+  std::string fsType;
+  bool readWrite{false};
+  bool valid{false};
+  size_t matchLength{0};
+};
+
+std::string decode_mount_token(const std::string &token) {
+  std::string out;
+  out.reserve(token.size());
+  for (size_t i = 0; i < token.size(); ++i) {
+    char c = token[i];
+    if (c == '\\' && i + 3 < token.size() &&
+        std::isdigit(static_cast<unsigned char>(token[i + 1])) &&
+        std::isdigit(static_cast<unsigned char>(token[i + 2])) &&
+        std::isdigit(static_cast<unsigned char>(token[i + 3]))) {
+      int value = (token[i + 1] - '0') * 64 + (token[i + 2] - '0') * 8 +
+                  (token[i + 3] - '0');
+      out.push_back(static_cast<char>(value));
+      i += 3;
+      continue;
+    }
+    out.push_back(c);
+  }
+  return out;
+}
+
+bool path_has_prefix(const fs::path &path, const fs::path &prefix) {
+  auto path_str = path.generic_string();
+  auto prefix_str = prefix.generic_string();
+  if (prefix_str.empty()) {
+    return false;
+  }
+  if (prefix_str == "/") {
+    return true;
+  }
+  if (path_str.size() < prefix_str.size()) {
+    return false;
+  }
+  if (path_str.compare(0, prefix_str.size(), prefix_str) != 0) {
+    return false;
+  }
+  if (path_str.size() == prefix_str.size()) {
+    return true;
+  }
+  if (prefix_str.back() == '/') {
+    return true;
+  }
+  return path_str[prefix_str.size()] == '/';
+}
+
+bool mount_options_include_rw(const std::string &options) {
+  std::stringstream ss(options);
+  std::string opt;
+  while (std::getline(ss, opt, ',')) {
+    if (opt == "rw") {
+      return true;
+    }
+    if (opt == "ro") {
+      return false;
+    }
+  }
+  return false;
+}
+
+MountEntry find_mount_for_path(const fs::path &input) {
+  MountEntry best;
+  fs::path normalized = input;
+  if (!normalized.is_absolute()) {
+    normalized = fs::absolute(normalized);
+  }
+  normalized = normalized.lexically_normal();
+
+  std::ifstream mounts("/proc/mounts");
+  if (!mounts) {
+    return best;
+  }
+
+  std::string line;
+  while (std::getline(mounts, line)) {
+    if (line.empty()) {
+      continue;
+    }
+    std::istringstream iss(line);
+    std::string device;
+    std::string mount_point;
+    std::string fs_type;
+    std::string options;
+    if (!(iss >> device >> mount_point >> fs_type >> options)) {
+      continue;
+    }
+    fs::path mp(decode_mount_token(mount_point));
+    mp = mp.lexically_normal();
+    if (mp.empty()) {
+      continue;
+    }
+    if (!path_has_prefix(normalized, mp)) {
+      continue;
+    }
+    size_t depth = mp.generic_string().size();
+    if (!best.valid || depth > best.matchLength) {
+      best.mountPoint = mp;
+      best.fsType = fs_type;
+      best.readWrite = mount_options_include_rw(options);
+      best.valid = true;
+      best.matchLength = depth;
+    }
+  }
+  return best;
+}
+
+bool validate_mount_entry(const MountEntry &entry, std::string &reason) {
+  if (!entry.valid) {
+    reason = "path is not located on an active mount";
+    return false;
+  }
+  if (!entry.readWrite) {
+    reason = "target filesystem is read-only";
+    return false;
+  }
+  if (entry.fsType == "overlay") {
+    reason = "overlay filesystem is not allowed for recordings";
+    return false;
+  }
+  return true;
+}
+
+bool validate_path_mount(const fs::path &path, std::string &reason) {
+  auto entry = find_mount_for_path(path);
+  return validate_mount_entry(entry, reason);
+}
+
+bool validate_mount_point_path(fs::path mount_path, std::string &reason) {
+  if (mount_path.empty()) {
+    reason = "mount path is empty";
+    return false;
+  }
+  if (!mount_path.is_absolute()) {
+    mount_path = fs::absolute(mount_path);
+  }
+  mount_path = mount_path.lexically_normal();
+  auto entry = find_mount_for_path(mount_path);
+  if (!entry.valid || entry.mountPoint != mount_path) {
+    reason = "mount point '" + mount_path.string() + "' is not active";
+    return false;
+  }
+  return validate_mount_entry(entry, reason);
+}
+
+bool start_recording(const std::string &path, int target_channel);
+void stop_recording(int channel);
+
 std::mutex stop_timer_mutex;
 std::array<std::thread, NUM_VIDEO_CHANNELS> stop_timer_threads;
 std::array<std::atomic<bool>, NUM_VIDEO_CHANNELS> stop_timer_cancel;
@@ -72,6 +293,23 @@ struct StopTimerInitializer {
     }
   }
 } stop_timer_initializer;
+
+std::shared_ptr<video_stream>
+wait_for_video_channel(int channel, std::chrono::milliseconds timeout) {
+  if (channel < 0 || channel >= NUM_VIDEO_CHANNELS) {
+    return nullptr;
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    auto video = global_video[channel];
+    if (video) {
+      return video;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  return global_video[channel];
+}
 
 bool snapshot_codec_config(std::vector<uint8_t> &sps, std::vector<uint8_t> &pps,
                            int channel = -1) {
@@ -145,7 +383,6 @@ bool build_avcc(const std::vector<uint8_t> &sps,
   return true;
 }
 
-#if defined(AUDIO_SUPPORT)
 bool build_aac_config(std::vector<uint8_t> &aacConfig) {
   if (!cfg || !cfg->audio.input_enabled ||
       std::strcmp(cfg->audio.input_format, "AAC") != 0) {
@@ -218,7 +455,6 @@ bool build_aac_config(std::vector<uint8_t> &aacConfig) {
   finalize_bits(current_byte, bit_count, aacConfig);
   return true;
 }
-#endif
 
 bool start_recording(const std::string &path, int target_channel) {
   if (!cfg) {
@@ -230,10 +466,11 @@ bool start_recording(const std::string &path, int target_channel) {
     return false;
   }
 
-  auto video = global_video[target_channel];
+  auto video =
+      wait_for_video_channel(target_channel, std::chrono::milliseconds(2000));
   if (!video) {
-    LOG_ERROR("MP4ControlSocket: video channel " << target_channel
-                                                 << " not available");
+    LOG_ERROR("MP4ControlSocket: video channel "
+              << target_channel << " not available (timed out waiting)");
     return false;
   }
 
@@ -304,7 +541,6 @@ bool start_recording(const std::string &path, int target_channel) {
   }
   init.sampleRate = 0;
   init.channels = 0;
-#if defined(AUDIO_SUPPORT)
   if (cfg->audio.input_enabled) {
 #if defined(LIB_AUDIO_PROCESSING)
     init.channels = cfg->audio.force_stereo ? 2 : 1;
@@ -323,7 +559,6 @@ bool start_recording(const std::string &path, int target_channel) {
       init.sampleRate = 0;
     }
   }
-#endif
 
   if (!build_avcc(sps, pps, init.avcC)) {
     LOG_ERROR("MP4ControlSocket: failed to build avcC from SPS/PPS");
@@ -439,6 +674,353 @@ bool parse_int_token(const std::string &token, int &value) {
   value = static_cast<int>(v);
   return true;
 }
+
+bool parse_bool_token(const std::string &token, bool &value) {
+  if (token.empty()) {
+    return false;
+  }
+  if (token == "1" || token == "true" || token == "TRUE" || token == "yes" ||
+      token == "on") {
+    value = true;
+    return true;
+  }
+  if (token == "0" || token == "false" || token == "FALSE" || token == "no" ||
+      token == "off") {
+    value = false;
+    return true;
+  }
+  return false;
+}
+
+std::string default_string(const char *value, const char *fallback) {
+  if (value && *value) {
+    return value;
+  }
+  return fallback;
+}
+
+int default_recorder_duration() {
+  if (cfg && cfg->recorder.duration > 0) {
+    return cfg->recorder.duration;
+  }
+  return 60;
+}
+
+int default_recorder_channel() {
+  if (cfg) {
+    return cfg->recorder.channel;
+  }
+  return 0;
+}
+
+std::string default_recorder_mount() {
+  if (cfg) {
+    return default_string(cfg->recorder.mount, "/mnt/mmc");
+  }
+  return "/mnt/mmc";
+}
+
+std::string default_recorder_directory() {
+  if (cfg) {
+    return default_string(cfg->recorder.device_path, "%hostname");
+  }
+  return "%hostname";
+}
+
+std::string default_recorder_template() {
+  if (cfg) {
+    return default_string(cfg->recorder.filename, "%Y/%m/%d/%H-%M-%S");
+  }
+  return "%Y/%m/%d/%H-%M-%S";
+}
+
+RecordingLoopParams build_loop_params(const StartCommandOptions &options,
+                                      bool *ok_out = nullptr) {
+  bool ok = true;
+  RecordingLoopParams params;
+  params.channel = options.channel;
+  if (params.channel < 0 || params.channel >= NUM_VIDEO_CHANNELS) {
+    params.channel = default_recorder_channel();
+  }
+  params.durationSeconds =
+      (options.durationProvided && options.durationSeconds > 0)
+          ? options.durationSeconds
+          : default_recorder_duration();
+  params.mount =
+      options.mountProvided ? options.mount : default_recorder_mount();
+  params.directory = options.directoryProvided ? options.directory
+                                               : default_recorder_directory();
+  params.nameTemplate = options.nameTemplateProvided
+                            ? options.nameTemplate
+                            : default_recorder_template();
+  if (params.durationSeconds <= 0) {
+    ok = false;
+  }
+  if (params.mount.empty()) {
+    ok = false;
+  }
+  if (params.nameTemplate.empty()) {
+    ok = false;
+  }
+  if (ok_out) {
+    *ok_out = ok;
+  }
+  return params;
+}
+
+bool ensure_parent_directory(const fs::path &path) {
+  auto parent = path.parent_path();
+  if (parent.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  if (fs::exists(parent, ec)) {
+    return !ec;
+  }
+  fs::create_directories(parent, ec);
+  if (ec) {
+    LOG_WARN("MP4ControlSocket: failed to create directories for "
+             << parent << " error=" << ec.message());
+    return false;
+  }
+  return true;
+}
+
+std::string
+format_segment_name(const std::string &templ,
+                    std::chrono::system_clock::time_point reference =
+                        std::chrono::system_clock::now()) {
+  auto tt = std::chrono::system_clock::to_time_t(reference);
+  std::tm tm_buf{};
+#if defined(_WIN32)
+  localtime_s(&tm_buf, &tt);
+#else
+  localtime_r(&tt, &tm_buf);
+#endif
+  char buffer[256];
+  if (std::strftime(buffer, sizeof(buffer), templ.c_str(), &tm_buf) == 0) {
+    return "segment";
+  }
+  return buffer;
+}
+
+std::string
+build_loop_target_path(const RecordingLoopParams &params,
+                       std::chrono::system_clock::time_point reference =
+                           std::chrono::system_clock::now()) {
+  std::string reason;
+  if (!validate_mount_point_path(fs::path(params.mount), reason)) {
+    LOG_ERROR("MP4ControlSocket: refusing to record on mount '"
+              << params.mount << "': " << reason);
+    return {};
+  }
+  fs::path root(params.mount);
+  if (!params.directory.empty()) {
+    root /= params.directory;
+  }
+  std::string name = format_segment_name(params.nameTemplate, reference);
+  if (name.size() < 4 || name.substr(name.size() - 4) != ".mp4") {
+    name += ".mp4";
+  }
+  fs::path fullPath = root / name;
+  if (!ensure_parent_directory(fullPath)) {
+    return {};
+  }
+  return fullPath.string();
+}
+
+bool wait_until_channel_idle(int channel,
+                             std::atomic<bool> *stop_flag = nullptr) {
+  if (channel < 0 || channel >= NUM_VIDEO_CHANNELS) {
+    return false;
+  }
+  while (global_mp4_recorders[channel].isActive()) {
+    if (stop_flag && stop_flag->load(std::memory_order_relaxed)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  return true;
+}
+
+bool wait_for_recording_completion(int channel,
+                                   std::atomic<bool> *stop_flag = nullptr) {
+  if (channel < 0 || channel >= NUM_VIDEO_CHANNELS) {
+    return false;
+  }
+  while (global_mp4_recorders[channel].isActive()) {
+    if (stop_flag && stop_flag->load(std::memory_order_relaxed)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  return true;
+}
+
+bool begin_segment(const std::string &path, int channel, int duration_seconds) {
+  if (path.empty()) {
+    LOG_ERROR("MP4ControlSocket: cannot START without a target path");
+    return false;
+  }
+  std::string reason;
+  if (!validate_path_mount(fs::path(path), reason)) {
+    LOG_ERROR("MP4ControlSocket: refusing to record to '" << path
+                                                          << "': " << reason);
+    return false;
+  }
+  bool ok = start_recording(path, channel);
+  if (!ok) {
+    return false;
+  }
+  write_channel_state_file(channel, path, duration_seconds);
+  if (duration_seconds > 0) {
+    schedule_stop_timer(channel, duration_seconds);
+  }
+  return true;
+}
+
+void stop_loop_locked(int channel) {
+  if (channel < 0 || channel >= NUM_VIDEO_CHANNELS) {
+    return;
+  }
+  if (!loop_states[channel]) {
+    return;
+  }
+  loop_states[channel]->stopRequested.store(true, std::memory_order_relaxed);
+  if (loop_threads[channel].joinable()) {
+    loop_threads[channel].join();
+  }
+  loop_states[channel].reset();
+}
+
+void stop_loop_for_channel(int channel) {
+  std::lock_guard<std::mutex> lock(loop_state_mutex);
+  stop_loop_locked(channel);
+}
+
+void stop_all_loops() {
+  std::lock_guard<std::mutex> lock(loop_state_mutex);
+  for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+    stop_loop_locked(ch);
+  }
+}
+
+void loop_worker(int channel, std::shared_ptr<LoopState> state) {
+  if (!state) {
+    return;
+  }
+
+  constexpr auto kMinute = std::chrono::seconds(60);
+  constexpr auto kShortClipThreshold = std::chrono::seconds(15);
+
+  bool first_segment_pending = true;
+  auto next_start = std::chrono::system_clock::now();
+
+  while (!state->stopRequested.load(std::memory_order_relaxed)) {
+    if (!wait_until_channel_idle(channel, &state->stopRequested)) {
+      break;
+    }
+
+    int segment_duration_seconds = state->params.durationSeconds;
+    std::chrono::system_clock::time_point segment_start;
+
+    if (first_segment_pending) {
+      segment_start = std::chrono::system_clock::now();
+      auto boundary = round_up_to_minute(segment_start);
+      if (boundary <= segment_start) {
+        boundary += kMinute;
+      }
+      auto span = std::chrono::duration_cast<std::chrono::seconds>(
+          boundary - segment_start);
+      if (span < kShortClipThreshold) {
+        boundary += kMinute;
+        span = std::chrono::duration_cast<std::chrono::seconds>(boundary -
+                                                                segment_start);
+      }
+      segment_duration_seconds = static_cast<int>(span.count());
+      if (segment_duration_seconds <= 0) {
+        segment_duration_seconds = state->params.durationSeconds;
+      }
+      next_start = boundary;
+    } else {
+      auto now = std::chrono::system_clock::now();
+      if (next_start <= now) {
+        next_start = round_up_to_minute(now);
+      }
+      auto scheduled_start = next_start;
+      if (!sleep_until_time(scheduled_start, &state->stopRequested)) {
+        break;
+      }
+      segment_start = scheduled_start;
+      segment_duration_seconds = state->params.durationSeconds;
+      next_start =
+          scheduled_start + std::chrono::seconds(state->params.durationSeconds);
+      next_start = round_up_to_minute(next_start);
+    }
+
+    auto target = build_loop_target_path(state->params, segment_start);
+    if (target.empty()) {
+      next_start = round_up_to_minute(std::chrono::system_clock::now());
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+      continue;
+    }
+    if (!begin_segment(target, channel, segment_duration_seconds)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      next_start = round_up_to_minute(std::chrono::system_clock::now());
+      continue;
+    }
+    first_segment_pending = false;
+
+    if (!wait_for_recording_completion(channel, &state->stopRequested)) {
+      break;
+    }
+  }
+  cancel_stop_timer(channel);
+  stop_recording(channel);
+}
+
+void start_loop_for_channel(const RecordingLoopParams &params) {
+  if (params.channel < 0 || params.channel >= NUM_VIDEO_CHANNELS) {
+    LOG_ERROR("MP4ControlSocket: invalid loop channel " << params.channel);
+    return;
+  }
+  if (params.durationSeconds <= 0) {
+    LOG_ERROR("MP4ControlSocket: loop duration must be > 0");
+    return;
+  }
+  std::lock_guard<std::mutex> lock(loop_state_mutex);
+  stop_loop_locked(params.channel);
+  auto state = std::make_shared<LoopState>();
+  state->params = params;
+  loop_states[params.channel] = state;
+  loop_threads[params.channel] =
+      std::thread(loop_worker, params.channel, state);
+  LOG_INFO("MP4ControlSocket: loop recorder enabled on channel "
+           << params.channel);
+}
+
+bool handle_loop_start(const StartCommandOptions &options) {
+  bool ok = false;
+  auto params = build_loop_params(options, &ok);
+  if (!ok) {
+    LOG_ERROR("MP4ControlSocket: invalid loop START request "
+              "(mount/duration/name required)");
+    return false;
+  }
+  std::string reason;
+  if (!validate_mount_point_path(fs::path(params.mount), reason)) {
+    LOG_ERROR("MP4ControlSocket: loop START rejected for mount '"
+              << params.mount << "': " << reason);
+    return false;
+  }
+  if ((params.durationSeconds % 60) != 0) {
+    LOG_WARN("MP4ControlSocket: loop duration "
+             << params.durationSeconds
+             << "s is not a multiple of 60s; minute alignment may add padding");
+  }
+  start_loop_for_channel(params);
+  return true;
+}
 } // namespace
 
 void MP4ControlSocket::run() {
@@ -487,76 +1069,128 @@ void MP4ControlSocket::run() {
       LOG_INFO("MP4ControlSocket: parsed op='" << op << "'");
 
       if (op == "START") {
-        std::string path;
-        iss >> path;
-        int duration_seconds = 0;
-        int channel = 0;
-        bool duration_set = false;
-        bool channel_set = false;
+        StartCommandOptions options;
+        options.channel = default_recorder_channel();
+        std::vector<std::string> positional;
         std::string token;
         while (iss >> token) {
-          std::string key;
-          std::string value = token;
           auto eq_pos = token.find('=');
-          if (eq_pos != std::string::npos) {
-            key = token.substr(0, eq_pos);
-            value = token.substr(eq_pos + 1);
+          if (eq_pos == std::string::npos) {
+            positional.push_back(token);
+            continue;
+          }
+          std::string key = token.substr(0, eq_pos);
+          std::string value = token.substr(eq_pos + 1);
+          if (key.empty()) {
+            continue;
           }
           int parsed_value = 0;
-          if (!parse_int_token(value, parsed_value)) {
-            LOG_WARN("MP4ControlSocket: ignoring non-numeric token '"
-                     << token << "' in START command");
+          if (key == "dur" || key == "duration") {
+            if (parse_int_token(value, parsed_value)) {
+              options.durationSeconds = parsed_value;
+              options.durationProvided = true;
+            } else {
+              LOG_WARN("MP4ControlSocket: invalid duration token '" << token
+                                                                    << "'");
+            }
             continue;
           }
-          auto assign_if_matches = [&](const std::string &k, const char *opt1,
-                                       const char *opt2, bool &flag,
-                                       int &dest) {
-            if (!flag && !k.empty() && (k == opt1 || k == opt2)) {
-              dest = parsed_value;
-              flag = true;
-              return true;
+          if (key == "ch" || key == "channel") {
+            if (parse_int_token(value, parsed_value)) {
+              options.channel = parsed_value;
+              options.channelProvided = true;
+            } else {
+              LOG_WARN("MP4ControlSocket: invalid channel token '" << token
+                                                                   << "'");
             }
-            return false;
-          };
-          if (!key.empty()) {
-            if (assign_if_matches(key, "dur", "duration", duration_set,
-                                  duration_seconds)) {
-              continue;
-            }
-            if (assign_if_matches(key, "ch", "channel", channel_set, channel)) {
-              continue;
-            }
-            LOG_WARN("MP4ControlSocket: unrecognized key '"
-                     << key << "' in START command");
             continue;
           }
-          if (!duration_set) {
-            duration_seconds = parsed_value;
-            duration_set = true;
-          } else if (!channel_set) {
-            channel = parsed_value;
-            channel_set = true;
+          if (key == "loop") {
+            if (!parse_bool_token(value, options.loop)) {
+              options.loop = (value != "0");
+            }
+            continue;
+          }
+          if (key == "mount") {
+            options.mount = value;
+            options.mountProvided = true;
+            continue;
+          }
+          if (key == "dir" || key == "directory") {
+            options.directory = value;
+            options.directoryProvided = true;
+            continue;
+          }
+          if (key == "name" || key == "template") {
+            options.nameTemplate = value;
+            options.nameTemplateProvided = true;
+            continue;
+          }
+          if (key == "path") {
+            options.path = value;
+            continue;
+          }
+          LOG_WARN("MP4ControlSocket: unrecognized key '"
+                   << key << "' in START command");
+        }
+
+        if (!positional.empty() && options.path.empty()) {
+          options.path = positional[0];
+        }
+        if (positional.size() > 1 && options.durationSeconds == 0) {
+          int parsed_value = 0;
+          if (parse_int_token(positional[1], parsed_value)) {
+            options.durationSeconds = parsed_value;
+            options.durationProvided = true;
           }
         }
+        if (positional.size() > 2) {
+          int parsed_value = 0;
+          if (parse_int_token(positional[2], parsed_value)) {
+            options.channel = parsed_value;
+            options.channelProvided = true;
+          }
+        }
+
+        if (options.loop) {
+          handle_loop_start(options);
+          continue;
+        }
+
+        int channel = options.channel;
+        if (channel < 0 || channel >= NUM_VIDEO_CHANNELS) {
+          channel = default_recorder_channel();
+        }
+
+        std::string path = options.path;
+        if (path.empty() &&
+            (!options.mount.empty() || !options.directory.empty() ||
+             !options.nameTemplate.empty())) {
+          bool single_ok = false;
+          auto params = build_loop_params(options, &single_ok);
+          if (single_ok) {
+            path = build_loop_target_path(params);
+            channel = params.channel;
+            if (options.durationSeconds == 0) {
+              options.durationSeconds = params.durationSeconds;
+            }
+          }
+        }
+
+        int duration_seconds = options.durationSeconds;
+        if (duration_seconds < 0) {
+          duration_seconds = 0;
+        }
+
         LOG_INFO("MP4ControlSocket: START requested, path='"
                  << path << "' duration=" << duration_seconds
                  << "s channel=" << channel);
-        bool recorder_active = false;
-        if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {
-          recorder_active = global_mp4_recorders[channel].isActive();
-        }
-        if (!recorder_active) {
-          cancel_stop_timer(channel);
-        }
 
-        bool ok = !path.empty() && start_recording(path, channel);
+        stop_loop_for_channel(channel);
+
+        bool ok = begin_segment(path, channel, duration_seconds);
         if (!ok) {
           LOG_ERROR("MP4ControlSocket: START failed for path '" << path << "'");
-        } else {
-          write_channel_state_file(channel, path, duration_seconds);
-          if (duration_seconds > 0) {
-            schedule_stop_timer(channel, duration_seconds);
-          }
         }
       } else if (op == "STOP") {
         int stop_channel = -1;
@@ -587,10 +1221,12 @@ void MP4ControlSocket::run() {
         if (stop_channel >= 0) {
           LOG_INFO("MP4ControlSocket: STOP requested for channel "
                    << stop_channel);
+          stop_loop_for_channel(stop_channel);
           cancel_stop_timer(stop_channel);
           stop_recording(stop_channel);
         } else {
           LOG_INFO("MP4ControlSocket: STOP requested for all channels");
+          stop_all_loops();
           cancel_all_stop_timers();
           stop_all_recordings();
         }
@@ -602,6 +1238,7 @@ void MP4ControlSocket::run() {
     ::close(fd);
   }
 
+  stop_all_loops();
   cancel_all_stop_timers();
   stop_all_recordings();
   ::unlink(FIFO_PATH);

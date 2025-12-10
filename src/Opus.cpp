@@ -1,5 +1,4 @@
 #include "Opus.hpp"
-
 #include "Config.hpp"
 #include "Logger.hpp"
 
@@ -21,7 +20,8 @@ int Opus::open() {
     return -1;
   }
 
-  int bitrate = cfg->audio.input_bitrate * 1000;
+  // Configure encoder for maximum quality at the configured bitrate
+  int bitrate = cfg->audio.input_bitrate * 1000; // bps
   opusError = opus_encoder_ctl(encoder, OPUS_SET_BITRATE(bitrate));
   if (opusError != OPUS_OK) {
     LOG_ERROR("Failed to set bitrate ("
@@ -55,7 +55,7 @@ int Opus::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
                   reinterpret_cast<unsigned char *>(outbuf), 1024);
 
   if (bytesEncoded < 0) {
-    LOG_WARN("Encoding failed with error code: " << *outLen);
+    LOG_WARN("Opus encoding failed with error code: " << *outLen);
     return -1;
   }
 

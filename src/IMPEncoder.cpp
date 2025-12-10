@@ -1,5 +1,4 @@
 #include "IMPEncoder.hpp"
-
 #include "Config.hpp"
 
 #define MODULE "IMPENCODER"
@@ -267,11 +266,11 @@ void IMPEncoder::initProfile() {
 #endif // defined(PLATFORM_T10) || defined(PLATFORM_T20) ||
        // defined(PLATFORM_T21) || defined(PLATFORM_T23) ||
        // defined(PLATFORM_T30)
-  LOG_DEBUG("STREAM PROFILE "
-            << stream->rtsp_endpoint << ", "
-            << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum << ", "
-            << "bps:" << stream->bitrate << ", " << "gop:" << stream->gop
-            << ", " << "profile:" << stream->profile << ", " <<
+  LOG_DEBUG("STREAM PROFILE " << stream->rtsp_endpoint << ", "
+                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum << ", "
+                              << "bps:" << stream->bitrate << ", "
+                              << "gop:" << stream->gop << ", "
+                              << "profile:" << stream->profile << ", " <<
             //        "mode:" << rcMode << ", " <<
             stream->width << "x" << stream->height);
 }

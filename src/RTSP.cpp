@@ -1,5 +1,4 @@
 #include "RTSP.hpp"
-
 #include "BackchannelServerMediaSubsession.hpp"
 #include "IMPBackchannel.hpp"
 
@@ -59,13 +58,11 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
   ServerMediaSession *sms = ServerMediaSession::createNew(
       *env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
   IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
-      *env, (is_h265 ? vps : nullptr), sps, pps,
-      chnNr // Conditional VPS
+      *env, (is_h265 ? vps : nullptr), sps, pps, chnNr // Conditional VPS
   );
 
   sms->addSubsession(sub);
 
-#if defined(AUDIO_SUPPORT)
   if (cfg->audio.input_enabled && stream.audio_enabled) {
     IMPAudioServerMediaSubsession *audioSub =
         IMPAudioServerMediaSubsession::createNew(*env, 0);
@@ -87,7 +84,6 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     X_FOREACH_BACKCHANNEL_FORMAT(ADD_BACKCHANNEL_SUBSESSION)
 #undef ADD_BACKCHANNEL_SUBSESSION
   }
-#endif
 
   rtspServer->addServerMediaSession(sms);
 

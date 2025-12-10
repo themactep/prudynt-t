@@ -9,22 +9,19 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <vector>
-
 #include <sys/time.h>
+#include <vector>
 
 //~65k
 #define ENABLE_LOG_DEBUG
 
-// Some more debug output not usefull for users (Developer Debug)
+// Some more debug output not useful for users (Developer Debug)
 // #define DDEBUG
 // #define DDEBUGWS
 
 // under development
 // #define USE_STEREO_SIMULATOR
 
-// enable audio support
-#define AUDIO_SUPPORT
 // enable audio processing library
 #define LIB_AUDIO_PROCESSING
 #define USE_AUDIO_STREAM_REPLICATOR
@@ -160,7 +157,6 @@ struct _image {
   int wb_rgain;
   int wb_bgain;
 };
-#if defined(AUDIO_SUPPORT)
 struct _audio {
   bool input_enabled;
   const char *input_format;
@@ -187,7 +183,6 @@ struct _audio {
   int buffer_warn_frames;
   int buffer_cap_frames;
 };
-#endif
 struct _osd {
   int font_size;
   int font_stroke_size;
@@ -252,9 +247,7 @@ struct _stream {
   const char *jpeg_path;
   _osd osd;
   _stream_stats stats;
-#if defined(AUDIO_SUPPORT)
   bool audio_enabled;
-#endif
 };
 struct _motion {
   int monitor_stream;
@@ -289,6 +282,14 @@ struct _websocket {
 struct _sysinfo {
   const char *cpu = nullptr;
 };
+struct _recorder {
+  bool enabled;
+  const char *mount;
+  const char *device_path;
+  const char *filename;
+  int duration;
+  int channel;
+};
 
 class CFG {
 public:
@@ -312,9 +313,7 @@ public:
   bool updateConfig();
   bool saveIntValues(const std::vector<std::pair<std::string, int>> &values);
 
-#if defined(AUDIO_SUPPORT)
   _audio audio{};
-#endif
   _general general{};
   _rtsp rtsp{};
   _sensor sensor{};
@@ -325,6 +324,7 @@ public:
   _motion motion{};
   _websocket websocket{};
   _sysinfo sysinfo{};
+  _recorder recorder{};
 
   template <typename T> T get(const std::string &name) {
     T result = T{};

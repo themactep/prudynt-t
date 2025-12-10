@@ -5,8 +5,6 @@
 #include "Logger.hpp"
 #include "globals.hpp"
 
-#include <aaccommon.h>
-#include <aacdec.h>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -17,17 +15,20 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
+#include <aaccommon.h>
+#include <aacdec.h>
 
 #ifndef ARDUINO
 #define AUDIO_OUTPUT_CONTROL_DEFINED_ARDUINO

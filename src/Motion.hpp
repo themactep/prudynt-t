@@ -7,7 +7,6 @@
 #include "imp/imp_ivs.h"
 #include "imp/imp_ivs_move.h"
 #include "imp/imp_system.h"
-
 #include <atomic>
 #include <memory>
 #include <thread>

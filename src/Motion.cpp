@@ -149,8 +149,13 @@ int Motion::init() {
   // Sensitivity range is 0-4
   move_param.sense[0] = cfg->motion.sensitivity;
   move_param.skipFrameCnt = cfg->motion.skip_frame_count;
-  move_param.frameInfo.width = cfg->motion.frame_width;
-  move_param.frameInfo.height = cfg->motion.frame_height;
+
+  // Adjust motion frame dimensions for video rotation
+  int motion_width = cfg->motion.frame_width;
+  int motion_height = cfg->motion.frame_height;
+
+  move_param.frameInfo.width = motion_width;
+  move_param.frameInfo.height = motion_height;
 
   LOG_INFO("Motion detection:" << " sensibility: " << move_param.sense[0]
                                << ", skipCnt:" << move_param.skipFrameCnt

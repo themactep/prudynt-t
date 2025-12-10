@@ -1,7 +1,5 @@
 #include "IMPDeviceSource.hpp"
-
 #include "GroupsockHelper.hh"
-
 #include <iostream>
 
 // explicit instantiation

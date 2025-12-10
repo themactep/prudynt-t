@@ -1,15 +1,7 @@
 #ifndef GLOBALS_HPP
 #define GLOBALS_HPP
 
-#include "IMPAudio.hpp"
-#include "IMPAudioOutput.hpp"
-#include "IMPBackchannel.hpp"
-#include "IMPEncoder.hpp"
-#include "IMPFramesource.hpp"
-#include "MP4Recorder.hpp"
-#include "MsgChannel.hpp"
 #include "liveMedia.hh"
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -19,6 +11,14 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+
+#include "IMPAudio.hpp"
+#include "IMPAudioOutput.hpp"
+#include "IMPBackchannel.hpp"
+#include "IMPEncoder.hpp"
+#include "IMPFramesource.hpp"
+#include "MP4Recorder.hpp"
+#include "MsgChannel.hpp"
 
 #define MSG_CHANNEL_SIZE 20
 #define BACKCHANNEL_QUEUE_SIZE 200
@@ -121,8 +121,10 @@ struct jpeg_stream {
 
   void request() {
     auto now = steady_clock::now();
-    std::unique_lock lck(mutex_main);
-    last_subscriber = now;
+    {
+      std::unique_lock lck(mutex_main);
+      last_subscriber = now;
+    }
   }
 
   bool request_or_overrun() {

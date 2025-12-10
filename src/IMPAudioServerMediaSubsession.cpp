@@ -1,5 +1,4 @@
 #include "IMPAudioServerMediaSubsession.hpp"
-
 #include "AACSink.hpp"
 #include "GroupsockHelper.hh"
 #include "IMPAudio.hpp"

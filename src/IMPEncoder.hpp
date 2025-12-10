@@ -4,9 +4,7 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "OSD.hpp"
-
 #include <array>
-
 #include <imp/imp_encoder.h>
 #include <imp/imp_system.h>
 

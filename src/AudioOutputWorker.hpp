@@ -1,11 +1,11 @@
 #ifndef AUDIO_OUTPUT_WORKER_HPP
 #define AUDIO_OUTPUT_WORKER_HPP
 
-#include "globals.hpp"
-
 #include <chrono>
 #include <cstdint>
 #include <vector>
+
+#include "globals.hpp"
 
 class AudioOutputWorker {
 public:

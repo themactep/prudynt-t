@@ -1,5 +1,4 @@
 #include "IMPFramesource.hpp"
-
 #include "Logger.hpp"
 
 #define MODULE "IMP_FRAMESOURCE"

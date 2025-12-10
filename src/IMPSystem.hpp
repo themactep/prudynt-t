@@ -3,13 +3,11 @@
 
 #include "Config.hpp"
 #include "Logger.hpp"
-
-#include <memory>
-
 #include <imp/imp_framesource.h>
 #include <imp/imp_isp.h>
 #include <imp/imp_osd.h>
 #include <imp/imp_system.h>
+#include <memory>
 #include <sys/time.h>
 #include <sysutils/su_base.h>
 

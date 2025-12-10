@@ -1,5 +1,4 @@
 #include "IMPSystem.hpp"
-
 #include "Config.hpp"
 
 #define MODULE "IMP_SYSTEM"

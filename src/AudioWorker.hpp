@@ -7,8 +7,6 @@
 #include <memory>
 #include <vector>
 
-#if defined(AUDIO_SUPPORT)
-
 class AudioTap;
 
 class AudioWorker {
@@ -31,5 +29,4 @@ private:
   std::unique_ptr<AudioTap> tap;
 };
 
-#endif // AUDIO_SUPPORT
 #endif // AUDIO_WORKER_HPP

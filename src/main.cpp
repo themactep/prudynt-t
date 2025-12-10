@@ -23,6 +23,7 @@
 #include <condition_variable>
 #include <signal.h>
 #include <thread>
+
 using namespace std::chrono;
 
 std::mutex mutex_main;
@@ -40,11 +41,9 @@ std::atomic<char> global_rtsp_thread_signal{1};
 
 std::shared_ptr<jpeg_stream> global_jpeg[NUM_VIDEO_CHANNELS] = {nullptr};
 std::shared_ptr<video_stream> global_video[NUM_VIDEO_CHANNELS] = {nullptr};
-#if defined(AUDIO_SUPPORT)
 std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS] = {nullptr};
 std::shared_ptr<backchannel_stream> global_backchannel = nullptr;
 std::shared_ptr<audio_output_stream> global_audio_output = nullptr;
-#endif
 
 std::shared_ptr<CFG> cfg = std::make_shared<CFG>();
 
@@ -120,6 +119,7 @@ int main(int argc, const char *argv[]) {
     LOG_ERROR("Logger initialization failed.");
     return 1;
   }
+  LOG_INFO("PRUDYNT-T Next-Gen Video Daemon: " << FULL_VERSION_STRING);
   LOG_INFO("Starting Prudynt Video Server.");
 
   sigemptyset(&shutdown_signal_set);
@@ -175,18 +175,15 @@ int main(int argc, const char *argv[]) {
   global_video[1] = std::make_shared<video_stream>(1, &cfg->stream1, "stream1");
   global_jpeg[0] = std::make_shared<jpeg_stream>(2, &cfg->stream2);
 
-#if defined(AUDIO_SUPPORT)
   global_audio[0] = std::make_shared<audio_stream>(1, 0, 0);
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
-#endif
 
   pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
   pthread_create(&ws_thread, nullptr, WS::run, &ws);
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     global_restart = true;
-#if defined(AUDIO_SUPPORT)
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
       int ret = pthread_create(&audio_output_thread, nullptr,
                                AudioOutputWorker::thread_entry, nullptr);
@@ -208,7 +205,6 @@ int main(int argc, const char *argv[]) {
       // wait for initialization done
       sh.has_started.acquire();
     }
-#endif
     if (global_restart_video || startup) {
       if (cfg->stream0.enabled) {
         start_video(0);

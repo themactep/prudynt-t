@@ -3,7 +3,6 @@
 
 #include "FramedSource.hh"
 #include "globals.hpp"
-
 #include <condition_variable>
 #include <mutex>
 #include <queue>

@@ -2,7 +2,6 @@
 #define WORKERUTILS_HPP
 
 #include "globals.hpp" // for binary_semaphore_compat
-
 #include <sys/time.h>
 
 // Struct used for signaling thread startup completion

@@ -2,7 +2,6 @@
 #define IMPFramesource_hpp
 
 #include "Logger.hpp"
-
 #include <imp/imp_framesource.h>
 
 class IMPFramesource {

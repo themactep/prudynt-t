@@ -1,10 +1,10 @@
 #include "MP4Recorder.hpp"
 
-#include "Logger.hpp"
-#include "MP4MuxerFactory.hpp"
-
 #include <fcntl.h>
 #include <unistd.h>
+
+#include "Logger.hpp"
+#include "MP4MuxerFactory.hpp"
 
 #undef MODULE
 #define MODULE "MP4Recorder"

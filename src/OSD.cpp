@@ -1,9 +1,7 @@
 #include "OSD.hpp"
-
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
-
 #include <cmath>
 #include <pthread.h>
 #include <unistd.h>
@@ -21,8 +19,6 @@
 #define picHeight uHeight
 #endif
 
-#include "schrift.h"
-
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
@@ -30,6 +26,8 @@
 #include <fstream>
 #include <unordered_map>
 #include <vector>
+
+#include "schrift.h"
 
 int OSD::renderGlyph(const char *characters) {
   while (*characters) {
