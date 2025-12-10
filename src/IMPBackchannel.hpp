@@ -36,76 +36,83 @@
 
 // Define the list of backchannel formats and their properties
 // X(EnumName, NameString, PayloadType, Frequency, MimeType)
-#define X_FOREACH_BACKCHANNEL_FORMAT(X) \
-    /* CTS v19.06 requires the SDP encoding name to be "mpeg4generic" for AAC */ \
-    X(AAC, "mpeg4generic", 97, cfg->audio.output_sample_rate, "audio/mpeg4-generic") \
-    X(PCMU, "PCMU", 0, 8000, "audio/PCMU") \
-    X(PCMA, "PCMA", 8, 8000, "audio/PCMA") \
-    /* Add new formats here */
+#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
+  /* CTS v19.06 requires the SDP encoding name to be "mpeg4generic" for AAC */ \
+  X(AAC, "mpeg4generic", 97, cfg->audio.output_sample_rate,                    \
+    "audio/mpeg4-generic")                                                     \
+  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \
+  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                       \
+  /* Add new formats here */
 
-#define APPLY_ENUM(EnumName, NameString, PayloadType, Frequency, MimeType) EnumName,
-enum class IMPBackchannelFormat { UNKNOWN = -1, X_FOREACH_BACKCHANNEL_FORMAT(APPLY_ENUM) };
+#define APPLY_ENUM(EnumName, NameString, PayloadType, Frequency, MimeType)     \
+  EnumName,
+enum class IMPBackchannelFormat {
+  UNKNOWN = -1,
+  X_FOREACH_BACKCHANNEL_FORMAT(APPLY_ENUM)
+};
 #undef APPLY_ENUM
 
-class IMPBackchannel
-{
+class IMPBackchannel {
 public:
-    static IMPBackchannel *createNew();
-    IMPBackchannel() { init(); }
-    ~IMPBackchannel() { deinit(); };
-    int init();
-    void deinit();
+  static IMPBackchannel *createNew();
+  IMPBackchannel() {
+    init();
+  }
+  ~IMPBackchannel() {
+    deinit();
+  };
+  int init();
+  void deinit();
 
-    static const char *getFormatName(IMPBackchannelFormat format)
-    {
-#define RETURN_NAME(EnumName, NameString, PayloadType, Frequency, MimeType) \
-    { \
-        if (IMPBackchannelFormat::EnumName == format) \
-            return NameString; \
-    }
-        X_FOREACH_BACKCHANNEL_FORMAT(RETURN_NAME)
+  static const char *getFormatName(IMPBackchannelFormat format) {
+#define RETURN_NAME(EnumName, NameString, PayloadType, Frequency, MimeType)    \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return NameString;                                                       \
+  }
+    X_FOREACH_BACKCHANNEL_FORMAT(RETURN_NAME)
 #undef RETURN_NAME
-        return "UNKNOWN";
-    }
+    return "UNKNOWN";
+  }
 
-    static int getFormatPayloadType(IMPBackchannelFormat format)
-    {
-#define RETURN_PAYLOADTYPE(EnumName, NameString, PayloadType, Frequency, MimeType) \
-    { \
-        if (IMPBackchannelFormat::EnumName == format) \
-            return PayloadType; \
-    }
-        X_FOREACH_BACKCHANNEL_FORMAT(RETURN_PAYLOADTYPE)
+  static int getFormatPayloadType(IMPBackchannelFormat format) {
+#define RETURN_PAYLOADTYPE(EnumName, NameString, PayloadType, Frequency,       \
+                           MimeType)                                           \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return PayloadType;                                                      \
+  }
+    X_FOREACH_BACKCHANNEL_FORMAT(RETURN_PAYLOADTYPE)
 #undef RETURN_PAYLOADTYPE
-        return 96;
-    }
+    return 96;
+  }
 
-    static int getFormatFrequency(IMPBackchannelFormat format)
-    {
-#define RETURN_FREQUENCY(EnumName, NameString, PayloadType, Frequency, MimeType) \
-    { \
-        if (IMPBackchannelFormat::EnumName == format) \
-            return Frequency; \
-    }
-        X_FOREACH_BACKCHANNEL_FORMAT(RETURN_FREQUENCY)
+  static int getFormatFrequency(IMPBackchannelFormat format) {
+#define RETURN_FREQUENCY(EnumName, NameString, PayloadType, Frequency,         \
+                         MimeType)                                             \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return Frequency;                                                        \
+  }
+    X_FOREACH_BACKCHANNEL_FORMAT(RETURN_FREQUENCY)
 #undef RETURN_FREQUENCY
-        return 0;
-    }
+    return 0;
+  }
 
-    static const char *getFormatMimeType(IMPBackchannelFormat format)
-    {
-#define RETURN_MIME_TYPE(EnumName, NameString, PayloadType, Frequency, MimeType) \
-    { \
-        if (IMPBackchannelFormat::EnumName == format) \
-            return MimeType; \
-    }
-        X_FOREACH_BACKCHANNEL_FORMAT(RETURN_MIME_TYPE)
+  static const char *getFormatMimeType(IMPBackchannelFormat format) {
+#define RETURN_MIME_TYPE(EnumName, NameString, PayloadType, Frequency,         \
+                         MimeType)                                             \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return MimeType;                                                         \
+  }
+    X_FOREACH_BACKCHANNEL_FORMAT(RETURN_MIME_TYPE)
 #undef RETURN_MIME_TYPE
-        return "audio/unknown";
-    }
+    return "audio/unknown";
+  }
 
 private:
-    int aacDecoderHandle{-1};
+  int aacDecoderHandle{-1};
 };
 
 #endif // IMP_BACKCHANNEL_HPP

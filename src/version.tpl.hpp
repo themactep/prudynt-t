@@ -10,4 +10,4 @@
 #define VERSION COMPILE_TIME "_" COMMIT_TAG
 #define FULL_VERSION_STRING "prudynt-t v" COMMIT_TAG " " COMPILE_TIME
 
-#endif   // VERSION_H_
+#endif // VERSION_H_

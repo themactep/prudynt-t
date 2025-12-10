@@ -3,29 +3,23 @@
 
 #include "OnDemandServerMediaSubsession.hh"
 
-class IMPAudioServerMediaSubsession : public OnDemandServerMediaSubsession
-{
+class IMPAudioServerMediaSubsession : public OnDemandServerMediaSubsession {
 public:
-    static IMPAudioServerMediaSubsession* createNew(
-        UsageEnvironment& env,
-        int audioChn);
+  static IMPAudioServerMediaSubsession *createNew(UsageEnvironment &env,
+                                                  int audioChn);
 
 protected:
-    IMPAudioServerMediaSubsession(
-        UsageEnvironment& env,
-        int audioChn);
-    virtual ~IMPAudioServerMediaSubsession();
+  IMPAudioServerMediaSubsession(UsageEnvironment &env, int audioChn);
+  virtual ~IMPAudioServerMediaSubsession();
 
-    virtual FramedSource* createNewStreamSource(
-        unsigned clientSessionId,
-        unsigned& estBitrate);
-    virtual RTPSink* createNewRTPSink(
-        Groupsock* rtpGroupsock,
-        unsigned char rtpPayloadTypeIfDynamic,
-        FramedSource* inputSource);
+  virtual FramedSource *createNewStreamSource(unsigned clientSessionId,
+                                              unsigned &estBitrate);
+  virtual RTPSink *createNewRTPSink(Groupsock *rtpGroupsock,
+                                    unsigned char rtpPayloadTypeIfDynamic,
+                                    FramedSource *inputSource);
 
 private:
-    int audioChn;
+  int audioChn;
 };
 
 #endif // IMPAudioServerMediaSubsession_hpp

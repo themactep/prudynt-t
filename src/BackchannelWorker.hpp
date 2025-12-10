@@ -10,32 +10,29 @@
 #include <cstdint>
 #include <vector>
 
-class BackchannelWorker
-{
+class BackchannelWorker {
 public:
-    BackchannelWorker();
-    ~BackchannelWorker();
+  BackchannelWorker();
+  ~BackchannelWorker();
 
-    static void *thread_entry(void *arg);
-    static void signalShutdown();
+  static void *thread_entry(void *arg);
+  static void signalShutdown();
 
 private:
-    void run();
+  void run();
 
-    std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input_pcm,
-                                        int input_rate,
-                                        int output_rate);
+  std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input_pcm,
+                                      int input_rate, int output_rate);
 
-    bool processFrame(const BackchannelFrame &frame);
-    bool decodeFrame(const uint8_t *payload,
-                     size_t payloadSize,
-                     IMPBackchannelFormat format,
-                     std::vector<int16_t> &outPcmBuffer);
+  bool processFrame(const BackchannelFrame &frame);
+  bool decodeFrame(const uint8_t *payload, size_t payloadSize,
+                   IMPBackchannelFormat format,
+                   std::vector<int16_t> &outPcmBuffer);
 
-    unsigned int currentSessionId;
+  unsigned int currentSessionId;
 
-    BackchannelWorker(const BackchannelWorker &) = delete;
-    BackchannelWorker &operator=(const BackchannelWorker &) = delete;
+  BackchannelWorker(const BackchannelWorker &) = delete;
+  BackchannelWorker &operator=(const BackchannelWorker &) = delete;
 };
 
 #endif // BACKCHANNEL_PROCESSOR_HPP

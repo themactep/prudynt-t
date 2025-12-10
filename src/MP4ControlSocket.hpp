@@ -11,5 +11,5 @@
 
 class MP4ControlSocket {
 public:
-    static void run();
+  static void run();
 };

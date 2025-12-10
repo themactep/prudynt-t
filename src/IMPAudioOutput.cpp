@@ -6,251 +6,218 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+
 #include <imp/imp_audio.h>
 
 #define MODULE "IMPAudioOutput"
 
-namespace
-{
-    constexpr int kFrameDurationMs = 20;
+namespace {
+constexpr int kFrameDurationMs = 20;
 
-    auto toImpSampleRate(int sampleRate)
-    {
-        switch (sampleRate)
-        {
-        case 8000:
-            return AUDIO_SAMPLE_RATE_8000;
-        case 16000:
-            return AUDIO_SAMPLE_RATE_16000;
-        case 24000:
-            return AUDIO_SAMPLE_RATE_24000;
+auto toImpSampleRate(int sampleRate) {
+  switch (sampleRate) {
+  case 8000:
+    return AUDIO_SAMPLE_RATE_8000;
+  case 16000:
+    return AUDIO_SAMPLE_RATE_16000;
+  case 24000:
+    return AUDIO_SAMPLE_RATE_24000;
 #ifdef AUDIO_SAMPLE_RATE_32000
-        case 32000:
-            return AUDIO_SAMPLE_RATE_32000;
+  case 32000:
+    return AUDIO_SAMPLE_RATE_32000;
 #endif
-        case 44100:
-            return AUDIO_SAMPLE_RATE_44100;
-        case 48000:
-            return AUDIO_SAMPLE_RATE_48000;
-        default:
-            LOG_WARN("Unsupported AO sample rate " << sampleRate << ", falling back to 16000Hz");
-            return AUDIO_SAMPLE_RATE_16000;
-        }
-    }
+  case 44100:
+    return AUDIO_SAMPLE_RATE_44100;
+  case 48000:
+    return AUDIO_SAMPLE_RATE_48000;
+  default:
+    LOG_WARN("Unsupported AO sample rate " << sampleRate
+                                           << ", falling back to 16000Hz");
+    return AUDIO_SAMPLE_RATE_16000;
+  }
 }
+} // namespace
 
 IMPAudioOutput::IMPAudioOutput(int devId_, int channelId_)
-    : initialized(false)
-    , devId(devId_)
-    , channelId(channelId_)
-    , maxFrameBytes(0)
-    , currentVolume(0)
-    , currentGain(0)
-    , configuredSampleRate(0)
-{}
-
-IMPAudioOutput::~IMPAudioOutput()
-{
-    deinit();
+    : initialized(false), devId(devId_), channelId(channelId_),
+      maxFrameBytes(0), currentVolume(0), currentGain(0),
+      configuredSampleRate(0) {
 }
 
-bool IMPAudioOutput::init()
-{
-    if (initialized)
-    {
-        return true;
-    }
+IMPAudioOutput::~IMPAudioOutput() {
+  deinit();
+}
 
-    if (!configureHardware())
-    {
-        return false;
-    }
-
-    currentVolume = cfg->audio.output_vol;
-    currentGain = cfg->audio.output_gain;
-
-    setVolume(currentVolume);
-    setGain(currentGain);
-
-    initialized = true;
+bool IMPAudioOutput::init() {
+  if (initialized) {
     return true;
+  }
+
+  if (!configureHardware()) {
+    return false;
+  }
+
+  currentVolume = cfg->audio.output_vol;
+  currentGain = cfg->audio.output_gain;
+
+  setVolume(currentVolume);
+  setGain(currentGain);
+
+  initialized = true;
+  return true;
 }
 
-void IMPAudioOutput::deinit()
-{
-    if (!initialized)
-    {
-        return;
-    }
+void IMPAudioOutput::deinit() {
+  if (!initialized) {
+    return;
+  }
 
-    if (IMP_AO_FlushChnBuf(devId, channelId) != 0)
-    {
-        LOG_WARN("IMP_AO_FlushChnBuf failed for channel " << channelId);
-    }
+  if (IMP_AO_FlushChnBuf(devId, channelId) != 0) {
+    LOG_WARN("IMP_AO_FlushChnBuf failed for channel " << channelId);
+  }
 
-    if (IMP_AO_DisableChn(devId, channelId) != 0)
-    {
-        LOG_WARN("IMP_AO_DisableChn failed for channel " << channelId);
-    }
+  if (IMP_AO_DisableChn(devId, channelId) != 0) {
+    LOG_WARN("IMP_AO_DisableChn failed for channel " << channelId);
+  }
 
-    if (IMP_AO_Disable(devId) != 0)
-    {
-        LOG_WARN("IMP_AO_Disable failed for device " << devId);
-    }
+  if (IMP_AO_Disable(devId) != 0) {
+    LOG_WARN("IMP_AO_Disable failed for device " << devId);
+  }
 
-    initialized = false;
+  initialized = false;
 }
 
-bool IMPAudioOutput::configureHardware()
-{
-    const int sampleRate = samplerateFromConfig();
-    auto aoSampleRate = toImpSampleRate(sampleRate);
+bool IMPAudioOutput::configureHardware() {
+  const int sampleRate = samplerateFromConfig();
+  auto aoSampleRate = toImpSampleRate(sampleRate);
 
-    IMPAudioIOAttr attr{};
-    attr.samplerate = aoSampleRate;
-    attr.bitwidth = AUDIO_BIT_WIDTH_16;
-    attr.soundmode = AUDIO_SOUND_MODE_MONO;
-    attr.frmNum = 20;
-    attr.numPerFrm = std::max(sampleRate / (1000 / kFrameDurationMs), 1);
-    attr.chnCnt = 1;
+  IMPAudioIOAttr attr{};
+  attr.samplerate = aoSampleRate;
+  attr.bitwidth = AUDIO_BIT_WIDTH_16;
+  attr.soundmode = AUDIO_SOUND_MODE_MONO;
+  attr.frmNum = 20;
+  attr.numPerFrm = std::max(sampleRate / (1000 / kFrameDurationMs), 1);
+  attr.chnCnt = 1;
 
-    maxFrameBytes = attr.numPerFrm * static_cast<int>(sizeof(int16_t));
+  maxFrameBytes = attr.numPerFrm * static_cast<int>(sizeof(int16_t));
 
-    if (IMP_AO_SetPubAttr(devId, &attr) != 0)
-    {
-        LOG_ERROR("IMP_AO_SetPubAttr failed");
-        return false;
+  if (IMP_AO_SetPubAttr(devId, &attr) != 0) {
+    LOG_ERROR("IMP_AO_SetPubAttr failed");
+    return false;
+  }
+
+  if (IMP_AO_GetPubAttr(devId, &attr) != 0) {
+    LOG_ERROR("IMP_AO_GetPubAttr failed");
+    return false;
+  }
+
+  if (IMP_AO_Enable(devId) != 0) {
+    LOG_ERROR("IMP_AO_Enable failed");
+    return false;
+  }
+
+  if (IMP_AO_EnableChn(devId, channelId) != 0) {
+    LOG_ERROR("IMP_AO_EnableChn failed for channel " << channelId);
+    IMP_AO_Disable(devId);
+    return false;
+  }
+
+  configuredSampleRate = sampleRate;
+  return true;
+}
+
+bool IMPAudioOutput::setVolume(int volume) {
+  currentVolume = volume;
+  if (IMP_AO_SetVol(devId, channelId, volume) != 0) {
+    LOG_WARN("IMP_AO_SetVol failed (volume=" << volume << ")");
+    return false;
+  }
+  return true;
+}
+
+bool IMPAudioOutput::setGain(int gain) {
+  currentGain = gain;
+  if (IMP_AO_SetGain(devId, channelId, gain) != 0) {
+    LOG_WARN("IMP_AO_SetGain failed (gain=" << gain << ")");
+    return false;
+  }
+  return true;
+}
+
+bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount) {
+  if (!initialized || samples == nullptr || sampleCount == 0) {
+    return false;
+  }
+
+  const uint8_t *bytePtr = reinterpret_cast<const uint8_t *>(samples);
+  size_t remainingBytes = sampleCount * sizeof(int16_t);
+
+  while (remainingBytes > 0) {
+    const size_t chunk =
+        (maxFrameBytes > 0)
+            ? std::min(static_cast<size_t>(maxFrameBytes), remainingBytes)
+            : remainingBytes;
+    IMPAudioFrame frame{};
+    frame.virAddr =
+        reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
+    frame.len = static_cast<unsigned int>(chunk);
+
+    if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0) {
+      LOG_ERROR("IMP_AO_SendFrame failed (len=" << frame.len << ")");
+      return false;
     }
 
-    if (IMP_AO_GetPubAttr(devId, &attr) != 0)
-    {
-        LOG_ERROR("IMP_AO_GetPubAttr failed");
-        return false;
-    }
+    bytePtr += chunk;
+    remainingBytes -= chunk;
+  }
 
-    if (IMP_AO_Enable(devId) != 0)
-    {
-        LOG_ERROR("IMP_AO_Enable failed");
-        return false;
-    }
+  return true;
+}
 
-    if (IMP_AO_EnableChn(devId, channelId) != 0)
-    {
-        LOG_ERROR("IMP_AO_EnableChn failed for channel " << channelId);
-        IMP_AO_Disable(devId);
-        return false;
-    }
+bool IMPAudioOutput::flush() {
+  if (!initialized) {
+    return false;
+  }
 
-    configuredSampleRate = sampleRate;
+  if (IMP_AO_FlushChnBuf(devId, channelId) != 0) {
+    LOG_WARN("IMP_AO_FlushChnBuf failed during flush request for channel "
+             << channelId);
+    return false;
+  }
+  return true;
+}
+
+int IMPAudioOutput::samplerateFromConfig() const {
+  int requestedRate = cfg->audio.output_sample_rate;
+  if (requestedRate <= 0) {
+    requestedRate = 16000;
+  }
+  return requestedRate;
+}
+
+int IMPAudioOutput::playbackSampleRate() const {
+  if (configuredSampleRate > 0) {
+    return configuredSampleRate;
+  }
+  return samplerateFromConfig();
+}
+
+bool IMPAudioOutput::playSilence(int durationMs) {
+  if (!initialized || durationMs <= 0) {
     return true;
-}
+  }
 
-bool IMPAudioOutput::setVolume(int volume)
-{
-    currentVolume = volume;
-    if (IMP_AO_SetVol(devId, channelId, volume) != 0)
-    {
-        LOG_WARN("IMP_AO_SetVol failed (volume=" << volume << ")");
-        return false;
-    }
-    return true;
-}
+  const int rate = playbackSampleRate();
+  if (rate <= 0) {
+    return false;
+  }
 
-bool IMPAudioOutput::setGain(int gain)
-{
-    currentGain = gain;
-    if (IMP_AO_SetGain(devId, channelId, gain) != 0)
-    {
-        LOG_WARN("IMP_AO_SetGain failed (gain=" << gain << ")");
-        return false;
-    }
-    return true;
-}
+  size_t samples =
+      static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
+  if (samples == 0) {
+    samples = std::max(rate / 50, 1); // default to ~20ms of silence
+  }
 
-bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount)
-{
-    if (!initialized || samples == nullptr || sampleCount == 0)
-    {
-        return false;
-    }
-
-    const uint8_t *bytePtr = reinterpret_cast<const uint8_t *>(samples);
-    size_t remainingBytes = sampleCount * sizeof(int16_t);
-
-    while (remainingBytes > 0)
-    {
-        const size_t chunk = (maxFrameBytes > 0) ? std::min(static_cast<size_t>(maxFrameBytes), remainingBytes)
-                                                 : remainingBytes;
-        IMPAudioFrame frame{};
-        frame.virAddr = reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
-        frame.len = static_cast<unsigned int>(chunk);
-
-        if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0)
-        {
-            LOG_ERROR("IMP_AO_SendFrame failed (len=" << frame.len << ")");
-            return false;
-        }
-
-        bytePtr += chunk;
-        remainingBytes -= chunk;
-    }
-
-    return true;
-}
-
-bool IMPAudioOutput::flush()
-{
-    if (!initialized)
-    {
-        return false;
-    }
-
-    if (IMP_AO_FlushChnBuf(devId, channelId) != 0)
-    {
-        LOG_WARN("IMP_AO_FlushChnBuf failed during flush request for channel " << channelId);
-        return false;
-    }
-    return true;
-}
-
-int IMPAudioOutput::samplerateFromConfig() const
-{
-    int requestedRate = cfg->audio.output_sample_rate;
-    if (requestedRate <= 0)
-    {
-        requestedRate = 16000;
-    }
-    return requestedRate;
-}
-
-int IMPAudioOutput::playbackSampleRate() const
-{
-    if (configuredSampleRate > 0)
-    {
-        return configuredSampleRate;
-    }
-    return samplerateFromConfig();
-}
-
-bool IMPAudioOutput::playSilence(int durationMs)
-{
-    if (!initialized || durationMs <= 0)
-    {
-        return true;
-    }
-
-    const int rate = playbackSampleRate();
-    if (rate <= 0)
-    {
-        return false;
-    }
-
-    size_t samples = static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
-    if (samples == 0)
-    {
-        samples = std::max(rate / 50, 1); // default to ~20ms of silence
-    }
-
-    std::vector<int16_t> zeros(samples, 0);
-    return playSamples(zeros.data(), zeros.size());
+  std::vector<int16_t> zeros(samples, 0);
+  return playSamples(zeros.data(), zeros.size());
 }

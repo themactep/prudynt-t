@@ -1,24 +1,24 @@
 #ifndef GLOBALS_HPP
 #define GLOBALS_HPP
 
-#include <memory>
-#include <functional>
-#include <atomic>
-#include <vector>
-#include <array>
-#include <mutex>
-#include <condition_variable>
-#include <future>
-#include <algorithm>
-#include "liveMedia.hh"
-
-#include "MsgChannel.hpp"
 #include "IMPAudio.hpp"
 #include "IMPAudioOutput.hpp"
+#include "IMPBackchannel.hpp"
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
-#include "IMPBackchannel.hpp"
 #include "MP4Recorder.hpp"
+#include "MsgChannel.hpp"
+#include "liveMedia.hh"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 #define MSG_CHANNEL_SIZE 20
 #define BACKCHANNEL_QUEUE_SIZE 200
@@ -28,224 +28,216 @@
 
 using namespace std::chrono;
 
-// Simple binary semaphore compatible with environments lacking std::binary_semaphore
+// Simple binary semaphore compatible with environments lacking
+// std::binary_semaphore
 class binary_semaphore_compat {
 public:
-    explicit binary_semaphore_compat(int initial = 0) : count(initial) {}
+  explicit binary_semaphore_compat(int initial = 0) : count(initial) {
+  }
 
-    void release() {
-        std::lock_guard<std::mutex> lock(m);
-        if (count == 0) {
-            count = 1;
-            cv.notify_one();
-        }
+  void release() {
+    std::lock_guard<std::mutex> lock(m);
+    if (count == 0) {
+      count = 1;
+      cv.notify_one();
     }
+  }
 
-    void acquire() {
-        std::unique_lock<std::mutex> lock(m);
-        cv.wait(lock, [&]{ return count > 0; });
-        count = 0;
-    }
+  void acquire() {
+    std::unique_lock<std::mutex> lock(m);
+    cv.wait(lock, [&] { return count > 0; });
+    count = 0;
+  }
 
 private:
-    std::mutex m;
-    std::condition_variable cv;
-    int count;
+  std::mutex m;
+  std::condition_variable cv;
+  int count;
 };
 
-extern std::mutex mutex_main; // protects global_restart_rtsp and global_restart_video
+extern std::mutex
+    mutex_main; // protects global_restart_rtsp and global_restart_video
 
-struct AudioFrame
-{
-    std::vector<uint8_t> data;
-    struct timeval time;
+struct AudioFrame {
+  std::vector<uint8_t> data;
+  struct timeval time;
 };
 
-struct H264NALUnit
-{
-    std::vector<uint8_t> data;
-    /* timestamp fix, can be removed if solved
-    struct timeval time;
-    int64_t imp_ts;
-    */
+struct H264NALUnit {
+  std::vector<uint8_t> data;
+  /* timestamp fix, can be removed if solved
+  struct timeval time;
+  int64_t imp_ts;
+  */
 };
 
-struct BackchannelFrame
-{
-    std::vector<uint8_t> payload;
-    IMPBackchannelFormat format;
-    unsigned int clientSessionId;
-    bool isShutdownSentinel{false};
+struct BackchannelFrame {
+  std::vector<uint8_t> payload;
+  IMPBackchannelFormat format;
+  unsigned int clientSessionId;
+  bool isShutdownSentinel{false};
 };
 
-struct VideoTapEntry
-{
-    uint64_t id{0};
-    std::weak_ptr<MsgChannel<H264NALUnit>> queue;
-    std::function<void(void)> notify;
+struct VideoTapEntry {
+  uint64_t id{0};
+  std::weak_ptr<MsgChannel<H264NALUnit>> queue;
+  std::function<void(void)> notify;
 };
 
-struct AudioTapEntry
-{
-    uint64_t id{0};
-    std::weak_ptr<MsgChannel<AudioFrame>> queue;
-    std::function<void(void)> notify;
+struct AudioTapEntry {
+  uint64_t id{0};
+  std::weak_ptr<MsgChannel<AudioFrame>> queue;
+  std::function<void(void)> notify;
 };
 
-enum class AudioPlaybackJobType
-{
-    PCM,
-    CLEAR,
-    STOP,
-    WAIT
+enum class AudioPlaybackJobType { PCM, CLEAR, STOP, WAIT };
+
+struct AudioPlaybackJob {
+  AudioPlaybackJobType type{AudioPlaybackJobType::PCM};
+  std::vector<int16_t> samples;
+  bool hasVolume{false};
+  int volume{0};
+  bool hasGain{false};
+  int gain{0};
+  int wait_ms{0};
+  bool flush_after_wait{false};
+  int silence_ms{0};
+  std::shared_ptr<std::promise<void>> completion;
 };
 
-struct AudioPlaybackJob
-{
-    AudioPlaybackJobType type{AudioPlaybackJobType::PCM};
-    std::vector<int16_t> samples;
-    bool hasVolume{false};
-    int volume{0};
-    bool hasGain{false};
-    int gain{0};
-    int wait_ms{0};
-    bool flush_after_wait{false};
-    int silence_ms{0};
-    std::shared_ptr<std::promise<void>> completion;
+struct jpeg_stream {
+  int encChn;
+  int streamChn;
+  _stream *stream;
+  std::atomic<bool> running; // set to false to make jpeg_grabber thread exit
+  std::atomic<bool> active{false};
+  pthread_t thread;
+  IMPEncoder *imp_encoder;
+  std::condition_variable should_grab_frames;
+  binary_semaphore_compat is_activated{0};
+
+  steady_clock::time_point last_image;
+  steady_clock::time_point last_subscriber;
+
+  void request() {
+    auto now = steady_clock::now();
+    std::unique_lock lck(mutex_main);
+    last_subscriber = now;
+  }
+
+  bool request_or_overrun() {
+    return duration_cast<milliseconds>(steady_clock::now() - last_subscriber)
+               .count() < 1000;
+  }
+
+  jpeg_stream(int encChn, _stream *stream)
+      : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {
+  }
 };
 
-struct jpeg_stream
-{
-    int encChn;
-    int streamChn;
-    _stream *stream;
-    std::atomic<bool> running; // set to false to make jpeg_grabber thread exit
-    std::atomic<bool> active{false};
-    pthread_t thread;
-    IMPEncoder *imp_encoder;
-    std::condition_variable should_grab_frames;
-    binary_semaphore_compat is_activated{0};
+struct audio_stream {
+  int devId;
+  int aiChn;
+  int aeChn;
+  bool running;
+  bool active{false};
+  pthread_t thread;
+  IMPAudio *imp_audio;
+  std::shared_ptr<MsgChannel<AudioFrame>> msgChannel;
+  std::function<void(void)> onDataCallback;
+  /* Check whether onDataCallback is not null in a data race free manner.
+   * Use only for optimizations, i.e., to skip work if no data callback
+   * is registered right now.
+   */
+  std::atomic<bool> hasDataCallback;
+  std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
+  std::condition_variable should_grab_frames;
+  binary_semaphore_compat is_activated{0};
 
-    steady_clock::time_point last_image;
-    steady_clock::time_point last_subscriber;
+  StreamReplicator *streamReplicator = nullptr;
 
-    void request()
-    {
-        auto now = steady_clock::now();
-        std::unique_lock lck(mutex_main);
-        last_subscriber = now;
-    }
+  std::mutex tap_mutex;
+  std::vector<AudioTapEntry> audio_taps;
 
-    bool request_or_overrun() {
-        return duration_cast<milliseconds>(steady_clock::now() - last_subscriber).count() < 1000;
-    }
-
-    jpeg_stream(int encChn, _stream *stream)
-        : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {}
+  audio_stream(int devId, int aiChn, int aeChn)
+      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false),
+        imp_audio(nullptr),
+        msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)),
+        onDataCallback{nullptr}, hasDataCallback{false} {
+  }
 };
 
-struct audio_stream
-{
-    int devId;
-    int aiChn;
-    int aeChn;
-    bool running;
-    bool active{false};
-    pthread_t thread;
-    IMPAudio *imp_audio;
-    std::shared_ptr<MsgChannel<AudioFrame>> msgChannel;
-    std::function<void(void)> onDataCallback;
-    /* Check whether onDataCallback is not null in a data race free manner.
-     * Use only for optimizations, i.e., to skip work if no data callback
-     * is registered right now.
-     */
-    std::atomic<bool> hasDataCallback;
-    std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
-    std::condition_variable should_grab_frames;
-    binary_semaphore_compat is_activated{0};
+struct video_stream {
+  int encChn;
+  _stream *stream;
+  const char *name;
+  bool running;
+  pthread_t thread;
+  bool idr;
+  int idr_fix;
+  bool active{false};
+  IMPEncoder *imp_encoder;
+  IMPFramesource *imp_framesource;
+  std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
+  std::function<void(void)> onDataCallback;
+  bool run_for_jpeg;                 // see comment in audio_stream
+  std::atomic<bool> hasDataCallback; // see comment in audio_stream
+  std::atomic<bool> mp4_waiting_for_idr;
+  std::atomic<int64_t> mp4_required_idr_ts;
+  std::atomic<int64_t> mp4_last_idr_ts;
+  std::atomic<uint64_t> mp4_last_idr_request_ms;
+  std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
+  std::condition_variable should_grab_frames;
+  binary_semaphore_compat is_activated{0};
+  std::mutex codec_config_mutex;
+  std::vector<uint8_t> latest_sps;
+  std::vector<uint8_t> latest_pps;
+  bool have_sps;
+  bool have_pps;
+  std::mutex tap_mutex;
+  std::vector<VideoTapEntry> video_taps;
 
-    StreamReplicator *streamReplicator = nullptr;
-
-    std::mutex tap_mutex;
-    std::vector<AudioTapEntry> audio_taps;
-
-    audio_stream(int devId, int aiChn, int aeChn)
-        : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
-          msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)),
-          onDataCallback{nullptr}, hasDataCallback{false} {}
+  video_stream(int encChn, _stream *stream, const char *name)
+      : encChn(encChn), stream(stream), name(name), running(false), idr(false),
+        idr_fix(0), imp_encoder(nullptr), imp_framesource(nullptr),
+        msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
+        onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
+        mp4_waiting_for_idr{false}, mp4_required_idr_ts{-1},
+        mp4_last_idr_ts{-1}, mp4_last_idr_request_ms{0}, have_sps(false),
+        have_pps(false) {
+  }
 };
 
-struct video_stream
-{
-    int encChn;
-    _stream *stream;
-    const char *name;
-    bool running;
-    pthread_t thread;
-    bool idr;
-    int idr_fix;
-    bool active{false};
-    IMPEncoder *imp_encoder;
-    IMPFramesource *imp_framesource;
-    std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
-    std::function<void(void)> onDataCallback;
-    bool run_for_jpeg;                 // see comment in audio_stream
-    std::atomic<bool> hasDataCallback; // see comment in audio_stream
-    std::atomic<bool> mp4_waiting_for_idr;
-    std::atomic<int64_t> mp4_required_idr_ts;
-    std::atomic<int64_t> mp4_last_idr_ts;
-    std::atomic<uint64_t> mp4_last_idr_request_ms;
-    std::mutex onDataCallbackLock;     // protects onDataCallback from deallocation
-    std::condition_variable should_grab_frames;
-    binary_semaphore_compat is_activated{0};
-    std::mutex codec_config_mutex;
-    std::vector<uint8_t> latest_sps;
-    std::vector<uint8_t> latest_pps;
-    bool have_sps;
-    bool have_pps;
-    std::mutex tap_mutex;
-    std::vector<VideoTapEntry> video_taps;
+struct backchannel_stream {
+  std::shared_ptr<MsgChannel<BackchannelFrame>> inputQueue;
+  IMPBackchannel *imp_backchannel;
+  bool running;
+  pthread_t thread;
+  std::mutex mutex;
+  std::condition_variable should_grab_frames;
+  std::atomic<unsigned int> is_sending{0};
 
-    video_stream(int encChn, _stream *stream, const char *name)
-        : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0),
-          imp_encoder(nullptr), imp_framesource(nullptr),
-          msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
-                    onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
-                    mp4_waiting_for_idr{false}, mp4_required_idr_ts{-1}, mp4_last_idr_ts{-1},
-                    mp4_last_idr_request_ms{0},
-          have_sps(false), have_pps(false) {}
+  backchannel_stream()
+      : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(
+            BACKCHANNEL_QUEUE_SIZE)),
+        imp_backchannel(nullptr), running(false) {
+  }
 };
 
-struct backchannel_stream
-{
-    std::shared_ptr<MsgChannel<BackchannelFrame>> inputQueue;
-    IMPBackchannel* imp_backchannel;
-    bool running;
-    pthread_t thread;
-    std::mutex mutex;
-    std::condition_variable should_grab_frames;
-    std::atomic<unsigned int> is_sending{0};
+struct audio_output_stream {
+  std::shared_ptr<MsgChannel<AudioPlaybackJob>> jobQueue;
+  std::atomic<bool> running{false};
+  pthread_t thread;
+  std::unique_ptr<class IMPAudioOutput> imp_audio_output;
+  std::mutex control_mutex;
+  int current_volume{0};
+  int current_gain{0};
 
-    backchannel_stream()
-        : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(BACKCHANNEL_QUEUE_SIZE)),
-        imp_backchannel(nullptr),
-        running(false) {}
+  audio_output_stream()
+      : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(
+            AUDIO_OUTPUT_QUEUE_SIZE)) {
+  }
 };
-
-    struct audio_output_stream
-    {
-        std::shared_ptr<MsgChannel<AudioPlaybackJob>> jobQueue;
-        std::atomic<bool> running{false};
-        pthread_t thread;
-        std::unique_ptr<class IMPAudioOutput> imp_audio_output;
-        std::mutex control_mutex;
-        int current_volume{0};
-        int current_gain{0};
-
-        audio_output_stream()
-        : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(AUDIO_OUTPUT_QUEUE_SIZE)) {}
-    };
-
 
 extern std::condition_variable global_cv_worker_restart;
 
@@ -275,66 +267,58 @@ extern std::atomic<bool> global_shutdown_requested;
 // external streaming client.
 extern std::atomic<bool> global_force_video_active;
 
-inline VideoTapEntry register_video_tap(int encChn,
-                                        std::shared_ptr<MsgChannel<H264NALUnit>> queue,
-                                        std::function<void(void)> notify = {})
-{
-    static std::atomic<uint64_t> video_tap_seq{0};
-    VideoTapEntry entry;
-    entry.id = ++video_tap_seq;
-    entry.queue = queue;
-    entry.notify = std::move(notify);
-    if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS)
-    {
-        std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
-        global_video[encChn]->video_taps.push_back(entry);
-    }
-    return entry;
-}
-
-inline void unregister_video_tap(int encChn, uint64_t tap_id)
-{
-    if (encChn < 0 || encChn >= NUM_VIDEO_CHANNELS)
-    {
-        return;
-    }
+inline VideoTapEntry
+register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
+                   std::function<void(void)> notify = {}) {
+  static std::atomic<uint64_t> video_tap_seq{0};
+  VideoTapEntry entry;
+  entry.id = ++video_tap_seq;
+  entry.queue = queue;
+  entry.notify = std::move(notify);
+  if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS) {
     std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
-    auto &taps = global_video[encChn]->video_taps;
-    taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const VideoTapEntry &v) {
-                  return v.id == tap_id;
-              }),
-              taps.end());
+    global_video[encChn]->video_taps.push_back(entry);
+  }
+  return entry;
 }
 
-inline AudioTapEntry register_audio_tap(int encChn,
-                                        std::shared_ptr<MsgChannel<AudioFrame>> queue,
-                                        std::function<void(void)> notify = {})
-{
-    static std::atomic<uint64_t> audio_tap_seq{0};
-    AudioTapEntry entry;
-    entry.id = ++audio_tap_seq;
-    entry.queue = queue;
-    entry.notify = std::move(notify);
-    if (encChn >= 0 && encChn < NUM_AUDIO_CHANNELS)
-    {
-        std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
-        global_audio[encChn]->audio_taps.push_back(entry);
-    }
-    return entry;
+inline void unregister_video_tap(int encChn, uint64_t tap_id) {
+  if (encChn < 0 || encChn >= NUM_VIDEO_CHANNELS) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+  auto &taps = global_video[encChn]->video_taps;
+  taps.erase(
+      std::remove_if(taps.begin(), taps.end(),
+                     [&](const VideoTapEntry &v) { return v.id == tap_id; }),
+      taps.end());
 }
 
-inline void unregister_audio_tap(int encChn, uint64_t tap_id)
-{
-    if (encChn < 0 || encChn >= NUM_AUDIO_CHANNELS)
-    {
-        return;
-    }
+inline AudioTapEntry
+register_audio_tap(int encChn, std::shared_ptr<MsgChannel<AudioFrame>> queue,
+                   std::function<void(void)> notify = {}) {
+  static std::atomic<uint64_t> audio_tap_seq{0};
+  AudioTapEntry entry;
+  entry.id = ++audio_tap_seq;
+  entry.queue = queue;
+  entry.notify = std::move(notify);
+  if (encChn >= 0 && encChn < NUM_AUDIO_CHANNELS) {
     std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
-    auto &taps = global_audio[encChn]->audio_taps;
-    taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const AudioTapEntry &v) {
-                  return v.id == tap_id;
-              }),
-              taps.end());
+    global_audio[encChn]->audio_taps.push_back(entry);
+  }
+  return entry;
+}
+
+inline void unregister_audio_tap(int encChn, uint64_t tap_id) {
+  if (encChn < 0 || encChn >= NUM_AUDIO_CHANNELS) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+  auto &taps = global_audio[encChn]->audio_taps;
+  taps.erase(
+      std::remove_if(taps.begin(), taps.end(),
+                     [&](const AudioTapEntry &v) { return v.id == tap_id; }),
+      taps.end());
 }
 
 #endif // GLOBALS_HPP

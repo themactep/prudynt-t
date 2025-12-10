@@ -2,59 +2,55 @@
 #define IMPServerMediaSubsession_hpp
 
 #include "Config.hpp"
-#include "globals.hpp"
-#include "StreamReplicator.hh"
-#include "ServerMediaSession.hh"
 #include "OnDemandServerMediaSubsession.hh"
+#include "ServerMediaSession.hh"
+#include "StreamReplicator.hh"
+#include "globals.hpp"
 
-class IMPServerMediaSubsession : public OnDemandServerMediaSubsession
-{
+class IMPServerMediaSubsession : public OnDemandServerMediaSubsession {
 public:
-    static void init(){};
+  static void init() {};
 
-    static IMPServerMediaSubsession *createNew(
-        UsageEnvironment &env,
-        H264NALUnit *vps, // Change to pointer for optional VPS
-        H264NALUnit sps,
-        H264NALUnit pps,
-        int encChn);
+  static IMPServerMediaSubsession *
+  createNew(UsageEnvironment &env,
+            H264NALUnit *vps, // Change to pointer for optional VPS
+            H264NALUnit sps, H264NALUnit pps, int encChn);
 
 protected:
-    // Constructor with VPS as a pointer for optional usage
-    IMPServerMediaSubsession(
-        UsageEnvironment &env,
-        H264NALUnit *vps, // Change to pointer for optional VPS
-        H264NALUnit sps,
-        H264NALUnit pps,
-        int encChn);
-    virtual ~IMPServerMediaSubsession();
+  // Constructor with VPS as a pointer for optional usage
+  IMPServerMediaSubsession(
+      UsageEnvironment &env,
+      H264NALUnit *vps, // Change to pointer for optional VPS
+      H264NALUnit sps, H264NALUnit pps, int encChn);
+  virtual ~IMPServerMediaSubsession();
 
-    virtual FramedSource *createNewStreamSource(
-        unsigned clientSessionId,
-        unsigned &estBitrate);
-    virtual RTPSink *createNewRTPSink(
-        Groupsock *rtpGroupsock,
-        unsigned char rtpPayloadTypeIfDynamic,
-        FramedSource *inputSource);
+  virtual FramedSource *createNewStreamSource(unsigned clientSessionId,
+                                              unsigned &estBitrate);
+  virtual RTPSink *createNewRTPSink(Groupsock *rtpGroupsock,
+                                    unsigned char rtpPayloadTypeIfDynamic,
+                                    FramedSource *inputSource);
 
-    virtual void startStream(unsigned clientSessionId, void* streamToken, TaskFunc* rtcpRRHandler,
-                             void* rtcpRRHandlerClientData, unsigned short& rtpSeqNum, unsigned& rtpTimestamp,
-                             ServerRequestAlternativeByteHandler* serverRequestAlternativeByteHandler,
-                             void* serverRequestAlternativeByteHandlerClientData) override {
+  virtual void startStream(
+      unsigned clientSessionId, void *streamToken, TaskFunc *rtcpRRHandler,
+      void *rtcpRRHandlerClientData, unsigned short &rtpSeqNum,
+      unsigned &rtpTimestamp,
+      ServerRequestAlternativeByteHandler *serverRequestAlternativeByteHandler,
+      void *serverRequestAlternativeByteHandlerClientData) override {
+    OnDemandServerMediaSubsession::startStream(
+        clientSessionId, streamToken, rtcpRRHandler, rtcpRRHandlerClientData,
+        rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler,
+        serverRequestAlternativeByteHandlerClientData);
 
-        OnDemandServerMediaSubsession::startStream(clientSessionId, streamToken, rtcpRRHandler, rtcpRRHandlerClientData,
-                                                   rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler,
-                                                   serverRequestAlternativeByteHandlerClientData);
+    // request idr frame every second for the next x seconds
+    global_video[encChn]->idr_fix = 5;
+    IMPEncoder::flush(encChn);
+  }
 
-        //request idr frame every second for the next x seconds
-        global_video[encChn]->idr_fix = 5;
-        IMPEncoder::flush(encChn);
-    }
 private:
-    H264NALUnit *vps; // Change to pointer for optional VPS
-    H264NALUnit sps;
-    H264NALUnit pps;
-    int encChn;
+  H264NALUnit *vps; // Change to pointer for optional VPS
+  H264NALUnit sps;
+  H264NALUnit pps;
+  int encChn;
 };
 
 #endif

@@ -5,37 +5,40 @@
 #include <cstdint>
 #include <string>
 
-class IMPAudioOutput
-{
+class IMPAudioOutput {
 public:
-    explicit IMPAudioOutput(int devId = 0, int channelId = 0);
-    ~IMPAudioOutput();
+  explicit IMPAudioOutput(int devId = 0, int channelId = 0);
+  ~IMPAudioOutput();
 
-    bool init();
-    void deinit();
+  bool init();
+  void deinit();
 
-    bool setVolume(int volume);
-    bool setGain(int gain);
+  bool setVolume(int volume);
+  bool setGain(int gain);
 
-    bool playSamples(const int16_t *samples, size_t sampleCount);
-    bool flush();
-    bool playSilence(int durationMs);
+  bool playSamples(const int16_t *samples, size_t sampleCount);
+  bool flush();
+  bool playSilence(int durationMs);
 
-    int getVolume() const { return currentVolume; }
-    int getGain() const { return currentGain; }
+  int getVolume() const {
+    return currentVolume;
+  }
+  int getGain() const {
+    return currentGain;
+  }
 
 private:
-    bool initialized;
-    int devId;
-    int channelId;
-    int maxFrameBytes;
-    int currentVolume;
-    int currentGain;
-    int configuredSampleRate;
+  bool initialized;
+  int devId;
+  int channelId;
+  int maxFrameBytes;
+  int currentVolume;
+  int currentGain;
+  int configuredSampleRate;
 
-    bool configureHardware();
-    int samplerateFromConfig() const;
-    int playbackSampleRate() const;
+  bool configureHardware();
+  int samplerateFromConfig() const;
+  int playbackSampleRate() const;
 };
 
 #endif // IMP_AUDIO_OUTPUT_HPP
