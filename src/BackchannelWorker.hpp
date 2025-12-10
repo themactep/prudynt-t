@@ -10,38 +10,35 @@
 #include <cstdint>
 #include <cstdio>
 
-class BackchannelWorker
-{
+class BackchannelWorker {
 public:
-    BackchannelWorker();
-    ~BackchannelWorker();
+  BackchannelWorker();
+  ~BackchannelWorker();
 
-    static void *thread_entry(void *arg);
+  static void *thread_entry(void *arg);
 
 private:
-    void run();
+  void run();
 
-    std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input_pcm,
-                                        int input_rate,
-                                        int output_rate);
+  std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input_pcm,
+                                      int input_rate, int output_rate);
 
-    bool initPipe();
-    void closePipe();
+  bool initPipe();
+  void closePipe();
 
-    bool processFrame(const BackchannelFrame &frame);
-    bool decodeFrame(const uint8_t *payload,
-                     size_t payloadSize,
-                     IMPBackchannelFormat format,
-                     std::vector<int16_t> &outPcmBuffer);
-    bool writePcmToPipe(const std::vector<int16_t> &pcmBuffer);
+  bool processFrame(const BackchannelFrame &frame);
+  bool decodeFrame(const uint8_t *payload, size_t payloadSize,
+                   IMPBackchannelFormat format,
+                   std::vector<int16_t> &outPcmBuffer);
+  bool writePcmToPipe(const std::vector<int16_t> &pcmBuffer);
 
-    unsigned int currentSessionId;
+  unsigned int currentSessionId;
 
-    FILE *fPipe;
-    int fPipeFd;
+  FILE *fPipe;
+  int fPipeFd;
 
-    BackchannelWorker(const BackchannelWorker &) = delete;
-    BackchannelWorker &operator=(const BackchannelWorker &) = delete;
+  BackchannelWorker(const BackchannelWorker &) = delete;
+  BackchannelWorker &operator=(const BackchannelWorker &) = delete;
 };
 
 #endif // BACKCHANNEL_PROCESSOR_HPP

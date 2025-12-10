@@ -1,18 +1,17 @@
 #ifndef CONFIG_WATCHER_HPP
 #define CONFIG_WATCHER_HPP
 
-class ConfigWatcher
-{
+class ConfigWatcher {
 public:
-    ConfigWatcher();
-    ~ConfigWatcher();
+  ConfigWatcher();
+  ~ConfigWatcher();
 
-    static void *thread_entry(void *arg);
+  static void *thread_entry(void *arg);
 
 private:
-    void run();
-    void watch_using_notify();
-    void watch_using_poll();
+  void run();
+  void watch_using_notify();
+  void watch_using_poll();
 };
 
 #endif // CONFIG_WATCHER_HPP

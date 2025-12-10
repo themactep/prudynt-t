@@ -1,6 +1,6 @@
+#include "IMPAudio.hpp"
 #include "AACEncoder.hpp"
 #include "Config.hpp"
-#include "IMPAudio.hpp"
 #include "Opus.hpp"
 #include <thread>
 
@@ -8,379 +8,372 @@
 
 static thread_local IMPAudioEncoder *encoder = nullptr;
 
-static int openEncoder(void* attr, void* enc)
-{
-    return encoder ? encoder->open() : -1;
+static int openEncoder(void *attr, void *enc) {
+  return encoder ? encoder->open() : -1;
 }
 
-static int encodeFrame(void* enc, IMPAudioFrame* data, unsigned char* outbuf, int* outLen)
-{
-    return encoder ? encoder->encode(data, outbuf, outLen) : -1;
+static int encodeFrame(void *enc, IMPAudioFrame *data, unsigned char *outbuf,
+                       int *outLen) {
+  return encoder ? encoder->encode(data, outbuf, outLen) : -1;
 }
 
-static int closeEncoder(void* enc)
-{
-    return encoder ? encoder->close() : -1;
+static int closeEncoder(void *enc) {
+  return encoder ? encoder->close() : -1;
 }
 
-IMPAudio *IMPAudio::createNew(
-    int devId,
-    int inChn,
-    int aeChn)
-{
-    return new IMPAudio(devId, inChn, aeChn);
+IMPAudio *IMPAudio::createNew(int devId, int inChn, int aeChn) {
+  return new IMPAudio(devId, inChn, aeChn);
 }
 
-int IMPAudio::init()
-{
-    LOG_DEBUG("IMPAudio::init()");
-    int ret;
+int IMPAudio::init() {
+  LOG_DEBUG("IMPAudio::init()");
+  int ret;
 
-    format = IMPAudioFormat::PCM;
-    IMPAudioIOAttr ioattr = {
-        .samplerate = static_cast<IMPAudioSampleRate>(cfg->audio.input_sample_rate),
-        .bitwidth = AUDIO_BIT_WIDTH_16,
-        .soundmode = AUDIO_SOUND_MODE_MONO,
+  format = IMPAudioFormat::PCM;
+  IMPAudioIOAttr ioattr = {
+      .samplerate =
+          static_cast<IMPAudioSampleRate>(cfg->audio.input_sample_rate),
+      .bitwidth = AUDIO_BIT_WIDTH_16,
+      .soundmode = AUDIO_SOUND_MODE_MONO,
 #if defined(PLATFORM_T23)
-        .frmNum = 2,   // T23: Minimum possible buffer (2 is minimum allowed)
+      .frmNum = 2, // T23: Minimum possible buffer (2 is minimum allowed)
 #else
-        .frmNum = 30,  // Other platforms: keep original
+      .frmNum = 30, // Other platforms: keep original
 #endif
 #if defined(PLATFORM_T23)
-        .numPerFrm = 160,  // T23: Force 10ms frames (160 samples at 16kHz)
+      .numPerFrm = 160, // T23: Force 10ms frames (160 samples at 16kHz)
 #else
-        .numPerFrm = 0,    // Other platforms: auto-calculate
+      .numPerFrm = 0, // Other platforms: auto-calculate
 #endif
-        .chnCnt = 1
-    };
-    IMPAudioEncChnAttr encattr = {
-        .type = IMPAudioPalyloadType::PT_PCM,
-        .bufSize = 20,
-        .value = 0
-    };
-    // Unified Opus packetization: 20ms across all platforms (RFC 7587 recommendation)
-    float frameDuration = 0.020f;
+      .chnCnt = 1};
+  IMPAudioEncChnAttr encattr = {
+      .type = IMPAudioPalyloadType::PT_PCM, .bufSize = 20, .value = 0};
+  // Unified Opus packetization: 20ms across all platforms (RFC 7587
+  // recommendation)
+  float frameDuration = 0.020f;
 
-    // Berechne PCM Bitrate basierend auf outChnCnt
-    bitrate = (int)ioattr.bitwidth * (int)ioattr.samplerate * outChnCnt / 1000;
+  // Berechne PCM Bitrate basierend auf outChnCnt
+  bitrate = (int)ioattr.bitwidth * (int)ioattr.samplerate * outChnCnt / 1000;
 
-    // output channel count is 2 if stereo is enabled
-    outChnCnt = cfg->audio.force_stereo ? 2 : 1;
+  // output channel count is 2 if stereo is enabled
+  outChnCnt = cfg->audio.force_stereo ? 2 : 1;
 
-    if (strcmp(cfg->audio.input_format, "OPUS") == 0)
-    {
-        format = IMPAudioFormat::OPUS;
-        bitrate = cfg->audio.input_bitrate;
-        // RFC 7587: Use 20 ms Opus packets over RTP (unified across all platforms)
-        frameDuration = 0.020f;
-        LOG_INFO("Opus: Using 20ms frame duration per RFC 7587 across all platforms");
-        encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
-    }
-    else if (strcmp(cfg->audio.input_format, "AAC") == 0)
-    {
-        format = IMPAudioFormat::AAC;
-        bitrate = cfg->audio.input_bitrate;
-        encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);
-    }
-    else if (strcmp(cfg->audio.input_format, "G711A") == 0)
-    {
-        outChnCnt = 1; // G711A is mono
-        format = IMPAudioFormat::G711A;
-        encattr.type = IMPAudioPalyloadType::PT_G711A;
-        ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
-        bitrate = ioattr.bitwidth / 2 * ioattr.samplerate / 1000;
-    }
-    else if (strcmp(cfg->audio.input_format, "G711U") == 0)
-    {
-        outChnCnt = 1; // G711U is mono
-        format = IMPAudioFormat::G711U;
-        encattr.type = IMPAudioPalyloadType::PT_G711U;
-        ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
-        bitrate = ioattr.bitwidth / 2 * ioattr.samplerate / 1000;
-    }
-    else if (strcmp(cfg->audio.input_format, "G726") == 0)
-    {
-        outChnCnt = 1; // G726 is mono
-        format = IMPAudioFormat::G726;
-        encattr.type = IMPAudioPalyloadType::PT_G726;
-        ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
-        bitrate = 16;
-    }
-    else if (strcmp(cfg->audio.input_format, "PCM") == 0)
-    {
-        // PCM format - keep the default format = IMPAudioFormat::PCM set above
-        LOG_INFO("Using PCM format (no encoding)");
-    }
-    else
-    {
-        LOG_ERROR("unsupported audio->input_format (" << cfg->audio.input_format
-            << "). we only support OPUS, AAC, G711A, G711U, G726, and PCM.");
-    }
+  if (strcmp(cfg->audio.input_format, "OPUS") == 0) {
+    format = IMPAudioFormat::OPUS;
+    bitrate = cfg->audio.input_bitrate;
+    // RFC 7587: Use 20 ms Opus packets over RTP (unified across all platforms)
+    frameDuration = 0.020f;
+    LOG_INFO(
+        "Opus: Using 20ms frame duration per RFC 7587 across all platforms");
+    encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
+  } else if (strcmp(cfg->audio.input_format, "AAC") == 0) {
+    format = IMPAudioFormat::AAC;
+    bitrate = cfg->audio.input_bitrate;
+    encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);
+  } else if (strcmp(cfg->audio.input_format, "G711A") == 0) {
+    outChnCnt = 1; // G711A is mono
+    format = IMPAudioFormat::G711A;
+    encattr.type = IMPAudioPalyloadType::PT_G711A;
+    ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
+    bitrate = ioattr.bitwidth / 2 * ioattr.samplerate / 1000;
+  } else if (strcmp(cfg->audio.input_format, "G711U") == 0) {
+    outChnCnt = 1; // G711U is mono
+    format = IMPAudioFormat::G711U;
+    encattr.type = IMPAudioPalyloadType::PT_G711U;
+    ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
+    bitrate = ioattr.bitwidth / 2 * ioattr.samplerate / 1000;
+  } else if (strcmp(cfg->audio.input_format, "G726") == 0) {
+    outChnCnt = 1; // G726 is mono
+    format = IMPAudioFormat::G726;
+    encattr.type = IMPAudioPalyloadType::PT_G726;
+    ioattr.samplerate = AUDIO_SAMPLE_RATE_8000;
+    bitrate = 16;
+  } else if (strcmp(cfg->audio.input_format, "PCM") == 0) {
+    // PCM format - keep the default format = IMPAudioFormat::PCM set above
+    LOG_INFO("Using PCM format (no encoding)");
+  } else {
+    LOG_ERROR("unsupported audio->input_format ("
+              << cfg->audio.input_format
+              << "). we only support OPUS, AAC, G711A, G711U, G726, and PCM.");
+  }
 
-    sample_rate = ioattr.samplerate;
-    if (sample_rate != cfg->audio.input_sample_rate)
-    {
-        LOG_INFO("Overriding configured input sample rate of "
-            << cfg->audio.input_sample_rate << " Hz because "
-            << cfg->audio.input_format << " requires " << sample_rate
-            << " Hz.");
-    }
+  sample_rate = ioattr.samplerate;
+  if (sample_rate != cfg->audio.input_sample_rate) {
+    LOG_INFO("Overriding configured input sample rate of "
+             << cfg->audio.input_sample_rate << " Hz because "
+             << cfg->audio.input_format << " requires " << sample_rate
+             << " Hz.");
+  }
 
-    // sample points per frame
-    ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
+  // sample points per frame
+  ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
 
-    if (encoder)
-    {
-        IMPAudioEncEncoder enc;
-        enc.maxFrmLen = 1024; // Maximum code stream length
-        std::snprintf(enc.name, sizeof(enc.name), "%s", cfg->audio.input_format);
-        enc.openEncoder = openEncoder;
-        enc.encoderFrm = encodeFrame;
-        enc.closeEncoder = closeEncoder;
+  if (encoder) {
+    IMPAudioEncEncoder enc;
+    enc.maxFrmLen = 1024; // Maximum code stream length
+    std::snprintf(enc.name, sizeof(enc.name), "%s", cfg->audio.input_format);
+    enc.openEncoder = openEncoder;
+    enc.encoderFrm = encodeFrame;
+    enc.closeEncoder = closeEncoder;
 
-        ret = IMP_AENC_RegisterEncoder(&handle, &enc);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_RegisterEncoder(&handle, &enc)");
+    ret = IMP_AENC_RegisterEncoder(&handle, &enc);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_RegisterEncoder(&handle, &enc)");
 
-        encattr.type = static_cast<IMPAudioPalyloadType>(handle);
-    }
+    encattr.type = static_cast<IMPAudioPalyloadType>(handle);
+  }
 
-    if (encattr.type > IMPAudioPalyloadType::PT_PCM)
-    {
-        ret = IMP_AENC_CreateChn(aeChn, &encattr);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
-    }
+  if (encattr.type > IMPAudioPalyloadType::PT_PCM) {
+    ret = IMP_AENC_CreateChn(aeChn, &encattr);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
+  }
 
 #if defined(PLATFORM_T23)
-    // T23 CRITICAL: Both digital and analog MIC have noise issues
-    // Allow testing both via configuration or force one based on testing
-    // Current test: analog MIC still has noise, try digital MIC
-    if (devId == 1) {
-        LOG_INFO("T23: Analog MIC has noise, trying digital MIC (devId=0)");
-        devId = 0;  // Test digital MIC instead
-    }
-    LOG_INFO("T23: Using audio devId=" << devId << " (0=digital MIC, 1=analog MIC)");
+  // T23 CRITICAL: Both digital and analog MIC have noise issues
+  // Allow testing both via configuration or force one based on testing
+  // Current test: analog MIC still has noise, try digital MIC
+  if (devId == 1) {
+    LOG_INFO("T23: Analog MIC has noise, trying digital MIC (devId=0)");
+    devId = 0; // Test digital MIC instead
+  }
+  LOG_INFO("T23: Using audio devId=" << devId
+                                     << " (0=digital MIC, 1=analog MIC)");
 #endif
-    ret = IMP_AI_SetPubAttr(devId, &ioattr);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetPubAttr(" << devId << ")");
-    if (ret != 0) {
-        LOG_ERROR("Failed to set audio public attributes, cannot continue audio initialization");
-        return ret;
-    }
+  ret = IMP_AI_SetPubAttr(devId, &ioattr);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetPubAttr(" << devId << ")");
+  if (ret != 0) {
+    LOG_ERROR("Failed to set audio public attributes, cannot continue audio "
+              "initialization");
+    return ret;
+  }
 
 #if defined(PLATFORM_T23)
-    // T23 CRITICAL: Add delay to stabilize audio clock after configuration
-    usleep(100000);  // 100ms delay for T23 audio hardware stabilization
-    LOG_INFO("T23: Audio hardware stabilization delay applied");
+  // T23 CRITICAL: Add delay to stabilize audio clock after configuration
+  usleep(100000); // 100ms delay for T23 audio hardware stabilization
+  LOG_INFO("T23: Audio hardware stabilization delay applied");
 #endif
 
-    memset(&ioattr, 0x0, sizeof(ioattr));
-    ret = IMP_AI_GetPubAttr(devId, &ioattr);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetPubAttr(" << devId << ")");
-    if (ret != 0) {
-        LOG_ERROR("Failed to get audio public attributes, cannot continue audio initialization");
-        return ret;
-    }
+  memset(&ioattr, 0x0, sizeof(ioattr));
+  ret = IMP_AI_GetPubAttr(devId, &ioattr);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetPubAttr(" << devId << ")");
+  if (ret != 0) {
+    LOG_ERROR("Failed to get audio public attributes, cannot continue audio "
+              "initialization");
+    return ret;
+  }
 
-    ret = IMP_AI_Enable(devId);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");
-    if (ret != 0) {
-        LOG_ERROR("Failed to enable audio device, cannot continue audio initialization");
-        return ret;
-    }
+  ret = IMP_AI_Enable(devId);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");
+  if (ret != 0) {
+    LOG_ERROR(
+        "Failed to enable audio device, cannot continue audio initialization");
+    return ret;
+  }
 
-    IMPAudioIChnParam chnParam = {
+  IMPAudioIChnParam chnParam = {
 #if defined(PLATFORM_T23)
-        .usrFrmDepth = 2,  // T23: Minimum possible frame buffer depth
-        // T23 CRITICAL: AEC channel setting may cause DMA buffer corruption
-        // Use FIRST_LEFT but this will be ignored since we're not using AEC
-        .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT,  // Required for compilation, but AEC disabled
-        .Rev = 0
+      .usrFrmDepth = 2, // T23: Minimum possible frame buffer depth
+      // T23 CRITICAL: AEC channel setting may cause DMA buffer corruption
+      // Use FIRST_LEFT but this will be ignored since we're not using AEC
+      .aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT, // Required for compilation, but
+                                              // AEC disabled
+      .Rev = 0
 #elif defined(PLATFORM_T31)
-        .usrFrmDepth = 30, // T31: Standard frame buffer depth
-        .Rev = 0           // T31 doesn't support aecChn field in IMPAudioIChnParam
+      .usrFrmDepth = 30, // T31: Standard frame buffer depth
+      .Rev = 0 // T31 doesn't support aecChn field in IMPAudioIChnParam
 #else
-        .usrFrmDepth = 30, // Other platforms: keep original
-        .Rev = 0
+      .usrFrmDepth = 30, // Other platforms: keep original
+      .Rev = 0
 #endif
-    };
+  };
 
-    ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
-    if (ret != 0) {
-        LOG_ERROR("Failed to set audio channel parameters, cannot continue audio initialization");
-        return ret;
-    }
+  ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
+  if (ret != 0) {
+    LOG_ERROR("Failed to set audio channel parameters, cannot continue audio "
+              "initialization");
+    return ret;
+  }
 
-    memset(&chnParam, 0x0, sizeof(chnParam));
-    ret = IMP_AI_GetChnParam(devId, inChn, &chnParam);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetChnParam(" << devId << ", " << inChn << ")");
-    if (ret != 0) {
-        LOG_ERROR("Failed to get audio channel parameters, cannot continue audio initialization");
-        return ret;
-    }
+  memset(&chnParam, 0x0, sizeof(chnParam));
+  ret = IMP_AI_GetChnParam(devId, inChn, &chnParam);
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_GetChnParam(" << devId << ", " << inChn << ")");
+  if (ret != 0) {
+    LOG_ERROR("Failed to get audio channel parameters, cannot continue audio "
+              "initialization");
+    return ret;
+  }
 
-    ret = IMP_AI_EnableChn(devId, inChn);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableChn(" << devId << ", " << inChn << ")");
-    if (ret != 0) {
-        LOG_ERROR("Failed to enable audio channel, cannot continue audio initialization");
-        return ret;
-    }
+  ret = IMP_AI_EnableChn(devId, inChn);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableChn(" << devId << ", " << inChn << ")");
+  if (ret != 0) {
+    LOG_ERROR(
+        "Failed to enable audio channel, cannot continue audio initialization");
+    return ret;
+  }
 
 #if defined(PLATFORM_T23)
-    // T23 analog MIC needs higher volume settings to work properly
-    int t23_vol = (devId == 1) ? 90 : cfg->audio.input_vol;
-    ret = IMP_AI_SetVol(devId, inChn, t23_vol);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", " << t23_vol << ")");
+  // T23 analog MIC needs higher volume settings to work properly
+  int t23_vol = (devId == 1) ? 90 : cfg->audio.input_vol;
+  ret = IMP_AI_SetVol(devId, inChn, t23_vol);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", "
+                                           << t23_vol << ")");
+  if (devId == 1) {
+    LOG_INFO("T23: Using higher volume for analog MIC: " << t23_vol);
+  }
+#else
+  ret = IMP_AI_SetVol(devId, inChn, cfg->audio.input_vol);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", "
+                                           << cfg->audio.input_vol << ")");
+#endif
+  if (ret != 0) {
+    LOG_ERROR(
+        "Failed to set audio volume, cannot continue audio initialization");
+    return ret;
+  }
+
+  int vol;
+  ret = IMP_AI_GetVol(devId, inChn, &vol);
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_GetVol(" << devId << ", " << inChn << ", &vol)");
+  if (ret != 0) {
+    LOG_ERROR(
+        "Failed to get audio volume, hardware may not be properly initialized");
+    return ret;
+  }
+
+  if (cfg->audio.input_gain >= 0) {
+#if defined(PLATFORM_T23)
+    // T23 analog MIC needs moderate gain to avoid hardware noise
+    // Limit gain to prevent T23 audio hardware artifacts
+    int t23_gain =
+        (devId == 1) ? 20 : cfg->audio.input_gain; // Reduced from 30 to 20
+    ret = IMP_AI_SetGain(devId, inChn, t23_gain);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", "
+                                              << t23_gain << ")");
     if (devId == 1) {
-        LOG_INFO("T23: Using higher volume for analog MIC: " << t23_vol);
+      LOG_INFO("T23: Using higher gain for analog MIC: " << t23_gain);
     }
 #else
-    ret = IMP_AI_SetVol(devId, inChn, cfg->audio.input_vol);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", " << cfg->audio.input_vol << ")");
+    ret = IMP_AI_SetGain(devId, inChn, cfg->audio.input_gain);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", "
+                                              << cfg->audio.input_gain << ")");
 #endif
     if (ret != 0) {
-        LOG_ERROR("Failed to set audio volume, cannot continue audio initialization");
-        return ret;
+      LOG_ERROR(
+          "Failed to set audio gain, cannot continue audio initialization");
+      return ret;
     }
+  }
 
-    int vol;
-    ret = IMP_AI_GetVol(devId, inChn, &vol);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetVol(" << devId << ", " << inChn << ", &vol)");
-    if (ret != 0) {
-        LOG_ERROR("Failed to get audio volume, hardware may not be properly initialized");
-        return ret;
-    }
+  int gain;
+  ret = IMP_AI_GetGain(devId, inChn, &gain);
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_GetGain(" << devId << ", " << inChn << ", &gain)");
+  if (ret != 0) {
+    LOG_ERROR(
+        "Failed to get audio gain, hardware may not be properly initialized");
+    return ret;
+  }
 
-    if(cfg->audio.input_gain >= 0)
-    {
-#if defined(PLATFORM_T23)
-        // T23 analog MIC needs moderate gain to avoid hardware noise
-        // Limit gain to prevent T23 audio hardware artifacts
-        int t23_gain = (devId == 1) ? 20 : cfg->audio.input_gain;  // Reduced from 30 to 20
-        ret = IMP_AI_SetGain(devId, inChn, t23_gain);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", " << t23_gain << ")");
-        if (devId == 1) {
-            LOG_INFO("T23: Using higher gain for analog MIC: " << t23_gain);
-        }
-#else
-        ret = IMP_AI_SetGain(devId, inChn, cfg->audio.input_gain);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", " << cfg->audio.input_gain << ")");
-#endif
-        if (ret != 0) {
-            LOG_ERROR("Failed to set audio gain, cannot continue audio initialization");
-            return ret;
-        }
-    }
-
-    int gain;
-    ret = IMP_AI_GetGain(devId, inChn, &gain);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetGain(" << devId << ", " << inChn << ", &gain)");
-    if (ret != 0) {
-        LOG_ERROR("Failed to get audio gain, hardware may not be properly initialized");
-        return ret;
-    }
-
-    LOG_INFO("Audio In: format:" << cfg->audio.input_format <<
-            ", vol:" << vol <<
-            ", gain:" << gain <<
-            ", samplerate:" << ioattr.samplerate <<
-            ", bitwidth:" << ioattr.bitwidth <<
-            ", soundmode:" << ioattr.soundmode <<
-            ", frmNum:" << ioattr.frmNum <<
-            ", numPerFrm:" << ioattr.numPerFrm <<
-            ", chnCnt:" << ioattr.chnCnt <<
-            ", usrFrmDepth:" << chnParam.usrFrmDepth);
+  LOG_INFO("Audio In: format:"
+           << cfg->audio.input_format << ", vol:" << vol << ", gain:" << gain
+           << ", samplerate:" << ioattr.samplerate
+           << ", bitwidth:" << ioattr.bitwidth
+           << ", soundmode:" << ioattr.soundmode << ", frmNum:" << ioattr.frmNum
+           << ", numPerFrm:" << ioattr.numPerFrm << ", chnCnt:" << ioattr.chnCnt
+           << ", usrFrmDepth:" << chnParam.usrFrmDepth);
 
 #if defined(LIB_AUDIO_PROCESSING)
-    if (cfg->audio.input_noise_suppression)
-    {
-        ret = IMP_AI_EnableNs(&ioattr, cfg->audio.input_noise_suppression);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableNs(&ioattr, " << cfg->audio.input_noise_suppression << ")");
-        enabledNs = true;
-    }
+  if (cfg->audio.input_noise_suppression) {
+    ret = IMP_AI_EnableNs(&ioattr, cfg->audio.input_noise_suppression);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableNs(&ioattr, "
+                                << cfg->audio.input_noise_suppression << ")");
+    enabledNs = true;
+  }
 
-    if (cfg->audio.input_high_pass_filter)
-    {
-        ret = IMP_AI_EnableHpf(&ioattr);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableHpf(&ioattr)");
-        enabledHpf = true;
-    }
+  if (cfg->audio.input_high_pass_filter) {
+    ret = IMP_AI_EnableHpf(&ioattr);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableHpf(&ioattr)");
+    enabledHpf = true;
+  }
 
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    if(cfg->audio.input_agc_enabled) {
-        IMPAudioAgcConfig agcConfig = {
-            /**< Gain level, with a range of [0, 31]. This represents the target
-            volume level, measured in dB (decibels), and is a negative value. The
-            smaller the value, the higher the volume. */
-            .TargetLevelDbfs = cfg->audio.input_agc_target_level_dbfs,
-            /**< Sets the maximum gain value, with a range of [0, 90]. 0 means no
-            gain, and the larger the value, the higher the gain. */
-            .CompressionGaindB = cfg->audio.input_agc_compression_gain_db,
-        };
-        /* Enable automatic gain control on platforms that advertise it. */
-        ret = IMP_AI_EnableAgc(&ioattr, agcConfig);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableAgc({" << agcConfig.TargetLevelDbfs << ", " << agcConfig.CompressionGaindB << "})");
-        enabledAgc = true;
-    }
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) ||                          \
+    defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  if (cfg->audio.input_agc_enabled) {
+    IMPAudioAgcConfig agcConfig = {
+        /**< Gain level, with a range of [0, 31]. This represents the target
+        volume level, measured in dB (decibels), and is a negative value. The
+        smaller the value, the higher the volume. */
+        .TargetLevelDbfs = cfg->audio.input_agc_target_level_dbfs,
+        /**< Sets the maximum gain value, with a range of [0, 90]. 0 means no
+        gain, and the larger the value, the higher the gain. */
+        .CompressionGaindB = cfg->audio.input_agc_compression_gain_db,
+    };
+    /* Enable automatic gain control on platforms that advertise it. */
+    ret = IMP_AI_EnableAgc(&ioattr, agcConfig);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableAgc({"
+                                << agcConfig.TargetLevelDbfs << ", "
+                                << agcConfig.CompressionGaindB << "})");
+    enabledAgc = true;
+  }
 #endif
 #if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-    if(cfg->audio.input_alc_gain > 0)
-    {
-        ret = IMP_AI_SetAlcGain(devId, inChn, cfg->audio.input_alc_gain);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain(" << devId << ", " << inChn << ", " << cfg->audio.input_alc_gain << ")");
-    }
+  if (cfg->audio.input_alc_gain > 0) {
+    ret = IMP_AI_SetAlcGain(devId, inChn, cfg->audio.input_alc_gain);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain("
+                                << devId << ", " << inChn << ", "
+                                << cfg->audio.input_alc_gain << ")");
+  }
 #endif
-#endif //LIB_AUDIO_PROCESSING
-    return 0;
+#endif // LIB_AUDIO_PROCESSING
+  return 0;
 }
 
-int IMPAudio::deinit()
-{
-    LOG_DEBUG("IMPAudio::deinit()");
-    int ret;
+int IMPAudio::deinit() {
+  LOG_DEBUG("IMPAudio::deinit()");
+  int ret;
 
-    if (enabledNs)
-    {
-        ret = IMP_AI_DisableNs();
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableNs()");
-        enabledNs = false;
-    }
+  if (enabledNs) {
+    ret = IMP_AI_DisableNs();
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableNs()");
+    enabledNs = false;
+  }
 
-    if (enabledHpf)
-    {
-        ret = IMP_AI_DisableHpf();
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableHpf()");
-        enabledHpf = false;
-    }
+  if (enabledHpf) {
+    ret = IMP_AI_DisableHpf();
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableHpf()");
+    enabledHpf = false;
+  }
 
-    if (enabledAgc)
-    {
-        ret = IMP_AI_DisableAgc();
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableAgc()");
-        enabledAgc = false;
-    }
+  if (enabledAgc) {
+    ret = IMP_AI_DisableAgc();
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableAgc()");
+    enabledAgc = false;
+  }
 
-    if (encoder)
-    {
-        ret = IMP_AENC_UnRegisterEncoder(&handle);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_UnRegisterEncoder(&handle)");
+  if (encoder) {
+    ret = IMP_AENC_UnRegisterEncoder(&handle);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_UnRegisterEncoder(&handle)");
 
-        delete encoder;
-        encoder = nullptr;
-        handle = 0;
-    }
+    delete encoder;
+    encoder = nullptr;
+    handle = 0;
+  }
 
-    if (format != IMPAudioFormat::PCM)
-    {
-        ret = IMP_AENC_DestroyChn(aeChn);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_DestroyChn(" << aeChn << ")");
-    }
+  if (format != IMPAudioFormat::PCM) {
+    ret = IMP_AENC_DestroyChn(aeChn);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_DestroyChn(" << aeChn << ")");
+  }
 
-    ret = IMP_AI_DisableChn(devId, inChn);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableChn(" << devId << ", " << inChn << ")");
+  ret = IMP_AI_DisableChn(devId, inChn);
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_DisableChn(" << devId << ", " << inChn << ")");
 
-    ret = IMP_AI_Disable(devId);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Disable(" << devId << ")");
+  ret = IMP_AI_Disable(devId);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Disable(" << devId << ")");
 
-    return 0;
+  return 0;
 }
