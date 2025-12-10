@@ -20,19 +20,25 @@ Scripts can watch for the presence/removal of this file to know precisely when t
 
 ```
 START <path> [duration] [channel]
-START <path> dur=<seconds> ch=<channel>
+START path=<absfile> dur=<seconds> ch=<channel>
+START mount=<root> dir=<subdir> name=<strftime> dur=<seconds> ch=<channel> loop=1
 ```
 
-- **path** (required): absolute file path for the new MP4 file. Parents must already exist.
-- **duration** (optional): recording length in seconds. If omitted or `<= 0`, the recorder keeps running until it receives a `STOP`.
-- **channel** (optional): video encoder channel (0 or 1). Defaults to `0`.
-- Named arguments `dur=`/`duration=` and `ch=`/`channel=` can appear in any order; unnamed arguments fill duration, then channel.
+- **path**: absolute file path for a one-shot recording. Parents must already exist unless you rely on `mount/dir/name`.
+- **mount**/**dir**/**name**: when `loop=1`, Prudynt builds each filename by combining the mount point, optional directory, and an `strftime(3)` template. Missing parents are created automatically and `.mp4` is appended when the template does not specify an extension.
+- **duration**: recording length in seconds. If omitted or `<= 0`, the recorder keeps running until a `STOP`. Looped sessions must supply a positive duration so clips rotate predictably.
+- **channel**: video encoder channel (`0` or `1`). Defaults to `recorder.channel` in `prudynt.json`.
+- **loop**: enable seamless looped recording by setting `loop=1`. Omit the flag (or set `loop=0`) for single clips.
+- Named arguments may appear in any order; positional arguments fill path, duration, then channel for backward compatibility.
+- Every START request is validated against `/proc/mounts`. Prudynt only records onto writable mounts and rejects paths that would land on the root/overlay filesystem, even if a script bypasses `/sbin/record` and writes directly to the FIFO.
 
 ### Behaviour
 
 - Only one MP4 recorder may run per channel. If a START arrives while a channel is already recording, the request is rejected and the existing session continues.
 - When duration > 0, MP4ControlSocket sets an auto-stop timer; overlapping STARTs no longer cancel the timer.
 - START wakes the requested video worker, forces the encoder active, requests an IDR, and waits for SPS/PPS before writing the init segment.
+- With `loop=1`, Prudynt takes over scheduling: as soon as one clip finishes (auto-stop timer fires), the next filename is created and recording restarts without a shell-side delay. `STOP` cleanly terminates the loop and any in-flight segment.
+- Looped sessions are normalized to whole-minute boundaries. The first clip starts immediately and runs until the next `HH:MM:00` (or the following minute when fewer than ~15 seconds remain) so that all subsequent clips start exactly on the minute. Durations that are not multiples of 60 seconds may introduce padding while the recorder realigns to the minute grid.
 
 ## STOP command
 
@@ -53,7 +59,7 @@ Trigger a 20-second recording on channel 1:
 printf 'START /mnt/nfs/event.mp4 20 1\n' > /run/prudynt/mp4ctl
 ```
 
-Stop channel 0 immediately:
+Stop channel 0 (including any loop) immediately:
 
 ```sh
 printf 'STOP ch=0\n' > /run/prudynt/mp4ctl
@@ -65,9 +71,10 @@ printf 'STOP ch=0\n' > /run/prudynt/mp4ctl
 - Each recorder logs when it starts/stops and when the auto-stop timer fires, making it easy to trace expected durations.
 - If START fails, check the surrounding log lines for reasons such as missing SPS/PPS, invalid path, or a busy channel.
 
-## Related scripts
+## Related scripts and config
 
-- `overlay/lower/usr/sbin/motion` sends START commands when motion events fire.
-- `package/prudynt-t/files/record` wraps long-running storage management and emits START/STOP commands according to its schedule.
+- `package/prudynt-t/files/record` is the user-facing CLI. It reads the `recorder` domain in `/etc/prudynt.json` (falling back to `/etc/recorder.json` for legacy keys) to assemble START options and writes them to `/run/prudynt/mp4ctl`. The `recorder.device_path` field understands the `%hostname` placeholder, which the script expands before sending requests.
+- `package/prudynt-t/files/S98recorder` is the init hook that calls `/sbin/record` once Prudynt is ready and issues `STOP` during shutdown.
+- Custom automation can write to `/run/prudynt/mp4ctl` directly; the motion example in `overlay/lower/usr/sbin/motion` shows a simple START trigger.
 
-These scripts already target `/run/prudynt/mp4ctl`; any custom tooling should do the same.
+Use the shared FIFO paths above so Prudynt sees a consistent control stream.

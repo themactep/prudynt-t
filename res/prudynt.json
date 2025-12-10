@@ -76,6 +76,14 @@
     "sensitivity": 1,
     "skip_frame_count": 5
   },
+  "recorder": {
+    "channel": 0,
+    "device_path": "%hostname",
+    "duration": 60,
+    "filename": "%Y/%m/%d/%H-%M-%S",
+    "limit": 15,
+    "mount": ""
+  },
   "rtsp": {
     "adaptation_interval_seconds": 5,
     "adaptive_bitrate_enabled": true,
