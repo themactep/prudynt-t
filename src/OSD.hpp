@@ -5,6 +5,7 @@
 #include "Config.hpp"
 #include "schrift.h"
 #include <arpa/inet.h>
+#include <array>
 #include <ifaddrs.h>
 
 #include <imp/imp_common.h>
@@ -12,7 +13,10 @@
 #include <imp/imp_osd.h>
 #include <memory>
 #include <netinet/in.h>
+#include <string>
 #include <sys/sysinfo.h>
+#include <unordered_map>
+#include <vector>
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
     defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -87,11 +91,52 @@ private:
   OSDItem osdUser{};
   OSDItem osdUptm{};
   OSDItem osdLogo{};
+  OSDItem osdBrightness{};
 
   void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text,
                 const char *position, int angle, unsigned int font_color,
                 unsigned int font_stroke_color);
   std::string getConfigPath(const char *itemName);
+  struct BrightnessSample {
+    float current{-1.0f};
+    float average{-1.0f};
+    std::string mode{"UNKNOWN"};
+    bool valid{false};
+  };
+
+  class BrightnessMeter {
+  public:
+    BrightnessMeter();
+    BrightnessSample measure();
+
+  private:
+    struct IspStats {
+      int integrationTime{-1};
+      int maxIntegrationTime{-1};
+      int analogGain{-1};
+      int digitalGain{-1};
+      int ispDigitalGain{-1};
+      int evValue{-1};
+      int currentBrightness{-1};
+      std::string mode;
+    };
+
+    bool readIspStats(IspStats &stats);
+    float computeFromStats(const IspStats &stats, std::string &mode) const;
+    float fallbackTimeBased(std::string &mode) const;
+    void updateHistory(float value);
+    float historyAverage() const;
+
+    static constexpr size_t historySize = 10;
+    std::array<float, historySize> history;
+    size_t historyIndex;
+    bool historyFilled;
+    bool lastReadFailed;
+  } brightnessMeter;
+
+  std::string buildBrightnessText(const BrightnessSample &sample);
+  void updateBrightnessText();
+  std::string lastBrightnessText;
 
   IMPEncoderCHNAttr channelAttributes;
 

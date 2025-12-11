@@ -1400,7 +1400,7 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
       int hnd = -1;
       if (reason == LEJPCB_VAL_NUM_INT) {
         if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-          _regions regions{-1, -1, -1, -1};
+          _regions regions{-1, -1, -1, -1, -1};
 
           if (u_ctx->value == 0) {
             regions = cfg->stream0.osd.regions;

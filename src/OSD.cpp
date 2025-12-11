@@ -19,15 +19,33 @@
 #define picHeight uHeight
 #endif
 
+#include <algorithm>
+#include <array>
+#include <cctype>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "schrift.h"
+
+namespace {
+constexpr uint8_t OSD_FLAG_TIME = 1U << 0;
+constexpr uint8_t OSD_FLAG_USER = 1U << 1;
+constexpr uint8_t OSD_FLAG_UPTIME = 1U << 2;
+constexpr uint8_t OSD_FLAG_BRIGHTNESS = 1U << 3;
+constexpr const char *PRIMARY_ISP_STATS = "/proc/jz/isp/isp-m0";
+constexpr const char *SECONDARY_ISP_STATS = "/tmp/test-isp-m0";
+constexpr float MAX_ANALOG_GAIN = 160.0f;
+constexpr float MAX_DIGITAL_GAIN = 80.0f;
+constexpr float DEFAULT_DAY_BRIGHTNESS = 70.0f;
+constexpr float DEFAULT_NIGHT_BRIGHTNESS = 25.0f;
+} // namespace
 
 int OSD::renderGlyph(const char *characters) {
   while (*characters) {
@@ -382,6 +400,256 @@ void replace(std::string &str, const std::string &oldToken,
   }
 }
 
+OSD::BrightnessMeter::BrightnessMeter()
+    : history{}, historyIndex(0), historyFilled(false), lastReadFailed(false) {
+  history.fill(-1.0f);
+}
+
+bool OSD::BrightnessMeter::readIspStats(IspStats &stats) {
+  const char *activePath = PRIMARY_ISP_STATS;
+  std::ifstream file(activePath);
+  if (!file.is_open()) {
+    file.open(SECONDARY_ISP_STATS);
+    if (file.is_open()) {
+      activePath = SECONDARY_ISP_STATS;
+    }
+  }
+
+  if (!file.is_open()) {
+    if (!lastReadFailed) {
+      LOG_WARN("BrightnessMeter: unable to read ISP stats from "
+               << PRIMARY_ISP_STATS);
+      lastReadFailed = true;
+    }
+    return false;
+  }
+
+  lastReadFailed = false;
+  bool parsed = false;
+  std::string line;
+  while (std::getline(file, line)) {
+    if (line.find("ISP Runing Mode :") != std::string::npos) {
+      char modeBuf[32] = {0};
+      if (sscanf(line.c_str(), "ISP Runing Mode : %31s", modeBuf) == 1) {
+        stats.mode = modeBuf;
+        parsed = true;
+      }
+    } else if (line.find("SENSOR Integration Time :") != std::string::npos) {
+      if (sscanf(line.c_str(), "SENSOR Integration Time : %d",
+                 &stats.integrationTime) == 1) {
+        parsed = true;
+      }
+    } else if (line.find("SENSOR Max Integration Time :") !=
+               std::string::npos) {
+      if (sscanf(line.c_str(), "SENSOR Max Integration Time : %d",
+                 &stats.maxIntegrationTime) == 1) {
+        parsed = true;
+      }
+    } else if (line.find("SENSOR analog gain :") != std::string::npos) {
+      if (sscanf(line.c_str(), "SENSOR analog gain : %d", &stats.analogGain) ==
+          1) {
+        parsed = true;
+      }
+    } else if (line.find("SENSOR digital gain :") != std::string::npos) {
+      if (sscanf(line.c_str(), "SENSOR digital gain : %d",
+                 &stats.digitalGain) == 1) {
+        parsed = true;
+      }
+    } else if (line.find("ISP digital gain :") != std::string::npos) {
+      if (sscanf(line.c_str(), "ISP digital gain : %d",
+                 &stats.ispDigitalGain) == 1) {
+        parsed = true;
+      }
+    } else if (line.find("ISP EV value:") != std::string::npos) {
+      if (sscanf(line.c_str(), "ISP EV value: %d", &stats.evValue) == 1) {
+        parsed = true;
+      }
+    } else if (line.find("Brightness :") != std::string::npos) {
+      if (sscanf(line.c_str(), "Brightness : %d", &stats.currentBrightness) ==
+          1) {
+        parsed = true;
+      }
+    }
+  }
+
+  return parsed;
+}
+
+float OSD::BrightnessMeter::computeFromStats(const IspStats &stats,
+                                             std::string &mode) const {
+  std::string ispMode = stats.mode;
+  if (!ispMode.empty()) {
+    std::transform(
+        ispMode.begin(), ispMode.end(), ispMode.begin(),
+        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+  }
+
+  float brightness = -1.0f;
+  if (stats.integrationTime >= 0 && stats.maxIntegrationTime > 0) {
+    float exposureRatio = static_cast<float>(stats.integrationTime) /
+                          static_cast<float>(stats.maxIntegrationTime);
+    brightness = (1.0f - exposureRatio) * 100.0f;
+
+    if (stats.analogGain >= 0) {
+      float gainFactor =
+          1.0f + (static_cast<float>(stats.analogGain) / MAX_ANALOG_GAIN);
+      brightness /= gainFactor;
+    }
+
+    if (stats.ispDigitalGain > 0) {
+      float digitalFactor =
+          1.0f + (static_cast<float>(stats.ispDigitalGain) / MAX_DIGITAL_GAIN);
+      brightness /= digitalFactor;
+    }
+
+    brightness = std::clamp(brightness, 0.0f, 100.0f);
+    mode = ispMode.empty() ? "UNKNOWN" : ispMode;
+    return brightness;
+  }
+
+  if (stats.currentBrightness >= 0) {
+    brightness =
+        (static_cast<float>(stats.currentBrightness) / 255.0f) * 100.0f;
+    brightness = std::clamp(brightness, 0.0f, 100.0f);
+    mode = ispMode.empty() ? "UNKNOWN" : ispMode;
+    return brightness;
+  }
+
+  if (!ispMode.empty()) {
+    if (ispMode == "DAY") {
+      mode = ispMode;
+      return DEFAULT_DAY_BRIGHTNESS;
+    }
+    if (ispMode == "NIGHT") {
+      mode = ispMode;
+      return DEFAULT_NIGHT_BRIGHTNESS;
+    }
+  }
+
+  return -1.0f;
+}
+
+float OSD::BrightnessMeter::fallbackTimeBased(std::string &mode) const {
+  time_t now = time(nullptr);
+  if (now == static_cast<time_t>(-1)) {
+    mode = "UNKNOWN";
+    return -1.0f;
+  }
+
+  struct tm *tmInfo = localtime(&now);
+  if (!tmInfo) {
+    mode = "UNKNOWN";
+    return -1.0f;
+  }
+
+  bool isDay = tmInfo->tm_hour >= 6 && tmInfo->tm_hour <= 18;
+  mode = isDay ? "DAY" : "NIGHT";
+  return isDay ? DEFAULT_DAY_BRIGHTNESS : DEFAULT_NIGHT_BRIGHTNESS;
+}
+
+void OSD::BrightnessMeter::updateHistory(float value) {
+  history[historyIndex] = value;
+  historyIndex = (historyIndex + 1) % history.size();
+  if (historyIndex == 0) {
+    historyFilled = true;
+  }
+}
+
+float OSD::BrightnessMeter::historyAverage() const {
+  size_t limit = historyFilled ? history.size() : historyIndex;
+  if (limit == 0) {
+    return -1.0f;
+  }
+
+  float sum = 0.0f;
+  size_t count = 0;
+  for (size_t i = 0; i < limit; ++i) {
+    if (history[i] >= 0.0f) {
+      sum += history[i];
+      ++count;
+    }
+  }
+
+  if (count == 0) {
+    return -1.0f;
+  }
+
+  return sum / static_cast<float>(count);
+}
+
+OSD::BrightnessSample OSD::BrightnessMeter::measure() {
+  BrightnessSample sample;
+  IspStats stats;
+  std::string mode;
+
+  float brightness = -1.0f;
+  if (readIspStats(stats)) {
+    brightness = computeFromStats(stats, mode);
+  }
+
+  if (brightness < 0.0f) {
+    brightness = fallbackTimeBased(mode);
+  }
+
+  sample.current = brightness;
+  if (!mode.empty()) {
+    sample.mode = mode;
+  }
+
+  if (brightness >= 0.0f) {
+    updateHistory(brightness);
+    sample.average = historyAverage();
+    if (sample.average < 0.0f) {
+      sample.average = brightness;
+    }
+    sample.valid = true;
+  }
+
+  return sample;
+}
+
+std::string OSD::buildBrightnessText(const BrightnessSample &sample) {
+  auto formatValue = [](float value) {
+    if (value < 0.0f) {
+      return std::string("--");
+    }
+    char buffer[16];
+    snprintf(buffer, sizeof(buffer), "%.1f", value);
+    return std::string(buffer);
+  };
+
+  std::string text = osd.brightness_format ? osd.brightness_format
+                                           : "Brightness:%b%% Avg:%a%% %m";
+  replace(text, "%b", formatValue(sample.current));
+  replace(text, "%a", formatValue(sample.average));
+  const std::string modeText =
+      sample.mode.empty() ? std::string("UNKNOWN") : sample.mode;
+  replace(text, "%m", modeText);
+  replace(text, "%%", "%");
+  return text;
+}
+
+void OSD::updateBrightnessText() {
+  BrightnessSample sample = brightnessMeter.measure();
+  if (!sample.valid) {
+    sample.mode = "UNAVAIL";
+  }
+
+  std::string text = buildBrightnessText(sample);
+  if (text.empty()) {
+    text = "Brightness unavailable";
+  }
+
+  if (text == lastBrightnessText && osdBrightness.data != nullptr) {
+    return;
+  }
+
+  lastBrightnessText = text;
+  set_text(&osdBrightness, nullptr, text.c_str(), osd.brightness_position,
+           osd.brightness_rotation, osd.brightness_font_color,
+           osd.brightness_font_stroke_color);
+}
+
 void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width,
                           uint16_t &height, int angle, bool del = true) {
   double angleRad = angle * (M_PI / 180.0);
@@ -661,6 +929,39 @@ void OSD::init() {
     IMP_OSD_SetGrpRgnAttr(osdUser.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
+  if (osd.brightness_enabled) {
+    osdBrightness.data = nullptr;
+    osdBrightness.imp_rgn = IMP_OSD_CreateRgn(nullptr);
+    IMP_OSD_RegisterRgn(osdBrightness.imp_rgn, osdGrp, nullptr);
+    osd.regions.brightness = osdBrightness.imp_rgn;
+
+    memset(&osdBrightness.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
+    osdBrightness.rgnAttr.type = OSD_REG_PIC;
+    osdBrightness.rgnAttr.fmt = PIX_FMT_BGRA;
+
+    BrightnessSample sample = brightnessMeter.measure();
+    if (!sample.valid) {
+      sample.mode = "UNAVAIL";
+    }
+    std::string initialBrightnessText = buildBrightnessText(sample);
+    lastBrightnessText = initialBrightnessText;
+
+    set_text(&osdBrightness, &osdBrightness.rgnAttr,
+             initialBrightnessText.c_str(), osd.brightness_position,
+             osd.brightness_rotation, osd.brightness_font_color,
+             osd.brightness_font_stroke_color);
+    IMP_OSD_SetRgnAttr(osdBrightness.imp_rgn, &osdBrightness.rgnAttr);
+
+    IMPOSDGrpRgnAttr grpRgnAttr;
+    memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
+    grpRgnAttr.show = 1;
+    grpRgnAttr.layer = 5;
+    grpRgnAttr.gAlphaEn = 1;
+    grpRgnAttr.fgAlhpa = 255;
+    grpRgnAttr.bgAlhpa = 0;
+    IMP_OSD_SetGrpRgnAttr(osdBrightness.imp_rgn, osdGrp, &grpRgnAttr);
+  }
+
   if (osd.uptime_enabled) {
     /* OSD Uptime */
 
@@ -823,6 +1124,10 @@ int OSD::exit() {
   LOG_DEBUG_OR_ERROR(ret,
                      "IMP_OSD_ShowRgn(osdLogo.imp_rgn, " << osdGrp << ", 0)");
 
+  ret = IMP_OSD_ShowRgn(osdBrightness.imp_rgn, osdGrp, 0);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdBrightness.imp_rgn, " << osdGrp
+                                                                    << ", 0)");
+
   ret = IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, osdGrp);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, " << osdGrp
                                                                     << ")");
@@ -839,10 +1144,15 @@ int OSD::exit() {
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp
                                                                     << ")");
 
+  ret = IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, osdGrp);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, "
+                              << osdGrp << ")");
+
   IMP_OSD_DestroyRgn(osdTime.imp_rgn);
   IMP_OSD_DestroyRgn(osdUser.imp_rgn);
   IMP_OSD_DestroyRgn(osdUptm.imp_rgn);
   IMP_OSD_DestroyRgn(osdLogo.imp_rgn);
+  IMP_OSD_DestroyRgn(osdBrightness.imp_rgn);
 
   ret = IMP_OSD_DestroyGroup(osdGrp);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_DestroyGroup(" << osdGrp << ")");
@@ -852,6 +1162,7 @@ int OSD::exit() {
   free(osdUser.data);
   free(osdUptm.data);
   free(osdLogo.data);
+  free(osdBrightness.data);
 
   sft_freefont(sft->font);
   return 0;
@@ -865,28 +1176,35 @@ void OSD::updateDisplayEverySecond() {
 
   // Check if we have moved to a new second
   if (ltime->tm_sec != last_updated_second) {
-    flag |= 7;
+    flag = 0;
+    if (osd.time_enabled) {
+      flag |= OSD_FLAG_TIME;
+    }
+    if (osd.usertext_enabled) {
+      flag |= OSD_FLAG_USER;
+    }
+    if (osd.uptime_enabled) {
+      flag |= OSD_FLAG_UPTIME;
+    }
+    if (osd.brightness_enabled) {
+      flag |= OSD_FLAG_BRIGHTNESS;
+    }
     // Update the last second tracker
     last_updated_second = ltime->tm_sec;
   } else {
-    // The flag ensures that only 1 OSD object is updated
-    // on calling OSD::updateDisplayEverySecond()
-    // this should relieve the system
     if (flag != 0) {
-      // Format and update system time
-      if ((flag & 1) && osd.time_enabled) {
+      if ((flag & OSD_FLAG_TIME) && osd.time_enabled) {
         strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, ltime);
 
         set_text(&osdTime, nullptr, timeFormatted, osd.time_position,
                  osd.time_rotation, osd.time_font_color,
                  osd.time_font_stroke_color);
 
-        flag ^= 1;
+        flag ^= OSD_FLAG_TIME;
         return;
       }
 
-      // Format and update user text
-      if ((flag & 2) && osd.usertext_enabled) {
+      if ((flag & OSD_FLAG_USER) && osd.usertext_enabled) {
         std::string usertext = osd.usertext_format;
 
         if (strstr(osd.usertext_format, "%hostname") != nullptr) {
@@ -915,17 +1233,15 @@ void OSD::updateDisplayEverySecond() {
 
         usertext.clear();
 
-        flag ^= 2;
+        flag ^= OSD_FLAG_USER;
         return;
       }
 
-      // Format and update uptime
-      if ((flag & 4) && osd.uptime_enabled) {
+      if ((flag & OSD_FLAG_UPTIME) && osd.uptime_enabled) {
         unsigned long currentUptime = getSystemUptime();
         unsigned long days = currentUptime / 86400;
         unsigned long hours = (currentUptime % 86400) / 3600;
         unsigned long minutes = (currentUptime % 3600) / 60;
-        // unsigned long seconds = currentUptime % 60;
 
         snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format,
                  days, hours, minutes);
@@ -934,7 +1250,13 @@ void OSD::updateDisplayEverySecond() {
                  osd.uptime_rotation, osd.uptime_font_color,
                  osd.uptime_font_stroke_color);
 
-        flag ^= 4;
+        flag ^= OSD_FLAG_UPTIME;
+        return;
+      }
+
+      if ((flag & OSD_FLAG_BRIGHTNESS) && osd.brightness_enabled) {
+        updateBrightnessText();
+        flag ^= OSD_FLAG_BRIGHTNESS;
         return;
       }
     }

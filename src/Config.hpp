@@ -17,7 +17,6 @@
 
 // Some more debug output not useful for users (Developer Debug)
 // #define DDEBUG
-// #define DDEBUGWS
 
 // under development
 // #define USE_STEREO_SIMULATOR
@@ -95,6 +94,7 @@ struct _regions {
   int user;
   int uptime;
   int logo;
+  int brightness;
 };
 struct _general {
   const char *loglevel;
@@ -195,18 +195,22 @@ struct _osd {
   const char *uptime_position;
   int uptime_rotation;
   const char *logo_position;
+  const char *brightness_position;
   int logo_transparency;
   int logo_rotation;
+  int brightness_rotation;
   int start_delay;
   bool enabled;
   bool time_enabled;
   bool usertext_enabled;
   bool uptime_enabled;
   bool logo_enabled;
+  bool brightness_enabled;
   const char *font_path;
   const char *time_format;
   const char *uptime_format;
   const char *usertext_format;
+  const char *brightness_format;
   const char *logo_path;
   // Individual color settings for each text element
   unsigned int time_font_color;
@@ -215,6 +219,8 @@ struct _osd {
   unsigned int uptime_font_stroke_color;
   unsigned int usertext_font_color;
   unsigned int usertext_font_stroke_color;
+  unsigned int brightness_font_color;
+  unsigned int brightness_font_stroke_color;
   _regions regions;
   _stream_stats stats;
   std::atomic<int> thread_signal;
