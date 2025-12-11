@@ -157,6 +157,7 @@ struct audio_stream {
   binary_semaphore_compat is_activated{0};
 
   StreamReplicator *streamReplicator = nullptr;
+  std::atomic<int> rtsp_client_count{0};
 
   std::mutex tap_mutex;
   std::vector<AudioTapEntry> audio_taps;

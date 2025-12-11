@@ -166,6 +166,7 @@ struct _audio {
   int input_sample_rate;
   bool tap_enabled;
   const char *tap_path;
+  bool mic_is_digital;
 #if defined(LIB_AUDIO_PROCESSING)
   int input_alc_gain;
   int input_noise_suppression;

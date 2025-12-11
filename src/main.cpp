@@ -103,7 +103,7 @@ void start_video(int encChn) {
 }
 
 int main(int argc, const char *argv[]) {
-  LOG_INFO("PRUDYNT-T Next-Gen Video Daemon: " << FULL_VERSION_STRING);
+  LOG_INFO("PRUDYNT-T Video Daemon: " << FULL_VERSION_STRING);
 
   pthread_t cw_thread;
   pthread_t ws_thread;
@@ -119,7 +119,7 @@ int main(int argc, const char *argv[]) {
     LOG_ERROR("Logger initialization failed.");
     return 1;
   }
-  LOG_INFO("PRUDYNT-T Next-Gen Video Daemon: " << FULL_VERSION_STRING);
+
   LOG_INFO("Starting Prudynt Video Server.");
 
   sigemptyset(&shutdown_signal_set);
@@ -166,6 +166,18 @@ int main(int argc, const char *argv[]) {
     imp_system = IMPSystem::createNew();
   }
 
+  bool mic_is_digital = cfg && cfg->audio.mic_is_digital;
+  int audio_input_device_id = mic_is_digital ? 0 : 1;
+  const char *cpu_info =
+      (cfg->sysinfo.cpu && cfg->sysinfo.cpu[0] != '\0') ? cfg->sysinfo.cpu
+                                                         : "unknown";
+  LOG_INFO("Audio input: selected AI device " << audio_input_device_id
+                                               << " (" << (mic_is_digital
+                                                               ? "digital"
+                                                               : "analog")
+                                               << " mic, CPU " << cpu_info
+                                               << ")");
+
   // Start Unix domain socket control server for MP4 recording
   std::thread(MP4ControlSocket::run).detach();
   std::thread(AudioOutputControl::run).detach();
@@ -175,7 +187,8 @@ int main(int argc, const char *argv[]) {
   global_video[1] = std::make_shared<video_stream>(1, &cfg->stream1, "stream1");
   global_jpeg[0] = std::make_shared<jpeg_stream>(2, &cfg->stream2);
 
-  global_audio[0] = std::make_shared<audio_stream>(1, 0, 0);
+  global_audio[0] =
+      std::make_shared<audio_stream>(audio_input_device_id, 0, 0);
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 

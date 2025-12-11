@@ -17,6 +17,7 @@ protected:
   virtual RTPSink *createNewRTPSink(Groupsock *rtpGroupsock,
                                     unsigned char rtpPayloadTypeIfDynamic,
                                     FramedSource *inputSource);
+  virtual void closeStreamSource(FramedSource *inputSource) override;
 
 private:
   int audioChn;

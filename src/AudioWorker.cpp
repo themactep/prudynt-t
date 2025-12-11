@@ -53,6 +53,14 @@ public:
                                    << channelCount << " ch)");
   }
 
+  bool hasActiveReader() const {
+    return enabledTap && fd >= 0;
+  }
+
+  bool wantsCapture() const {
+    return enabledTap;
+  }
+
   void publish(const uint8_t *data, size_t length) {
     if (!enabledTap || !data || length == 0) {
       return;
@@ -395,10 +403,12 @@ void AudioWorker::run() {
         global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
         global_force_video_active.load(std::memory_order_relaxed) ||
         recorder_needs_audio;
+    bool tap_requests_audio = tap && tap->wantsCapture();
     bool should_capture_audio =
         cfg->audio.input_enabled &&
-        (global_audio[encChn]->hasDataCallback || recorder_needs_audio) &&
-        (video_clients_active || recorder_needs_audio);
+      (global_audio[encChn]->hasDataCallback || recorder_needs_audio ||
+       tap_requests_audio) &&
+      (video_clients_active || recorder_needs_audio || tap_requests_audio);
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId,

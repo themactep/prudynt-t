@@ -2,6 +2,8 @@
 #include "AACEncoder.hpp"
 #include "Config.hpp"
 #include "Opus.hpp"
+#include <cctype>
+#include <cerrno>
 #include <thread>
 
 #define MODULE "IMPAUDIO"
@@ -20,6 +22,12 @@ static int encodeFrame(void *enc, IMPAudioFrame *data, unsigned char *outbuf,
 static int closeEncoder(void *enc) {
   return encoder ? encoder->close() : -1;
 }
+
+#include <cctype>
+
+namespace {
+constexpr IMPAudioAecChn kDefaultAecChannel = AUDIO_AEC_CHANNEL_FIRST_LEFT;
+} // namespace
 
 IMPAudio *IMPAudio::createNew(int devId, int inChn, int aeChn) {
   return new IMPAudio(devId, inChn, aeChn);
@@ -124,23 +132,40 @@ int IMPAudio::init() {
 
   IMPAudioIChnParam chnParam{};
   chnParam.usrFrmDepth = 30; // frame buffer depth
-#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  chnParam.aecChn = static_cast<IMPAudioAecChn>(-1);
-#endif
+  chnParam.aecChn = kDefaultAecChannel;
   chnParam.Rev = 0;
 
   ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
+  if (ret != 0) {
+    int err = errno;
+    LOG_ERROR("IMP_AI_SetChnParam(" << devId << ", " << inChn
+                                     << ") failed: ret=" << ret
+                                     << ", errno=" << err << " ("
+                                     << strerror(err) << ")");
+    return ret;
+  } else {
+    LOG_DEBUG("IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
+  }
 
   memset(&chnParam, 0x0, sizeof(chnParam));
   ret = IMP_AI_GetChnParam(devId, inChn, &chnParam);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_AI_GetChnParam(" << devId << ", " << inChn << ")");
+  if (ret != 0) {
+    return ret;
+  } else {
+    LOG_DEBUG("IMP_AI_GetChnParam(" << devId << ", " << inChn << ")");
+  }
 
   ret = IMP_AI_EnableChn(devId, inChn);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableChn(" << devId << ", " << inChn << ")");
-
+  if (ret != 0) {
+    int err = errno;
+    LOG_ERROR("IMP_AI_EnableChn(" << devId << ", " << inChn
+                                   << ") failed: ret=" << ret
+                                   << ", errno=" << err << " ("
+                                   << strerror(err) << ")");
+    return ret;
+  } else {
+    LOG_DEBUG("IMP_AI_EnableChn(" << devId << ", " << inChn << ")");
+  }
   ret = IMP_AI_SetVol(devId, inChn, cfg->audio.input_vol);
   LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", "
                                            << cfg->audio.input_vol << ")");
