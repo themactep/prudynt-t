@@ -138,26 +138,56 @@ endif
 
 # Platform-Specific Include Directories
 # =====================================
+# Prefer the globally selected SDK if provided, otherwise fall back to
+# per-platform defaults to keep existing behavior for older setups.
+LIBIMP_PLATFORM         :=
+LIBIMP_LANG             :=
+LIBIMP_DEFAULT_SDK_VERSION :=
+
 ifneq (,$(findstring -DPLATFORM_C100,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/C100/2.1.0/en
+    LIBIMP_PLATFORM        := C100
+    LIBIMP_LANG            := en
+    LIBIMP_DEFAULT_SDK_VERSION := 2.1.0
 else ifneq (,$(or $(findstring -DPLATFORM_T20,$(CFLAGS)), $(findstring -DPLATFORM_T10,$(CFLAGS))))
-	LIBIMP_INC_DIR          = ./include/T20/3.12.0/zh
+    LIBIMP_PLATFORM        := T20
+    LIBIMP_LANG            := zh
+    LIBIMP_DEFAULT_SDK_VERSION := 3.12.0
 else ifneq (,$(findstring -DPLATFORM_T21,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T21/1.0.33/zh
+    LIBIMP_PLATFORM        := T21
+    LIBIMP_LANG            := zh
+    LIBIMP_DEFAULT_SDK_VERSION := 1.0.33
 else ifneq (,$(findstring -DPLATFORM_T23,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T23/1.1.0/zh
+    LIBIMP_PLATFORM        := T23
+    LIBIMP_LANG            := zh
+    LIBIMP_DEFAULT_SDK_VERSION := 1.1.0
 else ifneq (,$(findstring -DPLATFORM_T30,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T30/1.0.5/zh
+    LIBIMP_PLATFORM        := T30
+    LIBIMP_LANG            := zh
+    LIBIMP_DEFAULT_SDK_VERSION := 1.0.5
 else ifneq (,$(findstring -DPLATFORM_T31,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T31/1.1.6/en
+    LIBIMP_PLATFORM        := T31
+    LIBIMP_LANG            := en
+    LIBIMP_DEFAULT_SDK_VERSION := 1.1.6
 else ifneq (,$(findstring -DPLATFORM_T40,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T40/1.2.0/zh
+    LIBIMP_PLATFORM        := T40
+    LIBIMP_LANG            := zh
+    LIBIMP_DEFAULT_SDK_VERSION := 1.2.0
 else ifneq (,$(findstring -DPLATFORM_T41,$(CFLAGS)))
-	LIBIMP_INC_DIR          = ./include/T41/1.2.0/zh
+    LIBIMP_PLATFORM        := T41
+    LIBIMP_LANG            := zh
+    LIBIMP_DEFAULT_SDK_VERSION := 1.2.0
 else
-	# Default platform
-	LIBIMP_INC_DIR          = ./include/T31/1.1.6/en
+    LIBIMP_PLATFORM        := T31
+    LIBIMP_LANG            := en
+    LIBIMP_DEFAULT_SDK_VERSION := 1.1.6
 endif
+
+LIBIMP_SDK_VERSION      := $(strip $(SDK_VERSION))
+ifeq ($(LIBIMP_SDK_VERSION),)
+    LIBIMP_SDK_VERSION     := $(LIBIMP_DEFAULT_SDK_VERSION)
+endif
+
+LIBIMP_INC_DIR          = ./include/$(LIBIMP_PLATFORM)/$(LIBIMP_SDK_VERSION)/$(LIBIMP_LANG)
 
 # Directory Structure
 # ===================
