@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 
+#include <imp/imp_common.h>
 #include <imp/imp_encoder.h>
 #include <imp/imp_osd.h>
 #include <memory>

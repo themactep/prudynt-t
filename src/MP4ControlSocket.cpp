@@ -26,6 +26,7 @@
 #include "MP4Muxer.hpp"
 #include "globals.hpp"
 
+#include <imp/imp_common.h>
 #include <imp/imp_encoder.h>
 
 namespace {
