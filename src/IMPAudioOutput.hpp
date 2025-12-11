@@ -15,6 +15,7 @@ public:
 
   bool setVolume(int volume);
   bool setGain(int gain);
+  bool setMute(bool mute);
 
   bool playSamples(const int16_t *samples, size_t sampleCount);
   bool flush();
@@ -34,6 +35,7 @@ private:
   int maxFrameBytes;
   int currentVolume;
   int currentGain;
+  bool currentMute;
   int configuredSampleRate;
 
   bool configureHardware();

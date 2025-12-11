@@ -39,7 +39,7 @@ auto toImpSampleRate(int sampleRate) {
 
 IMPAudioOutput::IMPAudioOutput(int devId_, int channelId_)
     : initialized(false), devId(devId_), channelId(channelId_),
-      maxFrameBytes(0), currentVolume(0), currentGain(0),
+      maxFrameBytes(0), currentVolume(0), currentGain(0), currentMute(false),
       configuredSampleRate(0) {
 }
 
@@ -61,6 +61,7 @@ bool IMPAudioOutput::init() {
 
   setVolume(currentVolume);
   setGain(currentGain);
+  setMute(currentMute);
 
   initialized = true;
   return true;
@@ -138,6 +139,15 @@ bool IMPAudioOutput::setGain(int gain) {
   currentGain = gain;
   if (IMP_AO_SetGain(devId, channelId, gain) != 0) {
     LOG_WARN("IMP_AO_SetGain failed (gain=" << gain << ")");
+    return false;
+  }
+  return true;
+}
+
+bool IMPAudioOutput::setMute(bool mute) {
+  currentMute = mute;
+  if (IMP_AO_SetVolMute(devId, channelId, mute ? 1 : 0) != 0) {
+    LOG_WARN("IMP_AO_SetVolMute failed (mute=" << mute << ")");
     return false;
   }
   return true;

@@ -99,6 +99,8 @@ struct AudioPlaybackJob {
   int volume{0};
   bool hasGain{false};
   int gain{0};
+  bool hasMute{false};
+  bool mute{false};
   int wait_ms{0};
   bool flush_after_wait{false};
   int silence_ms{0};
@@ -235,6 +237,7 @@ struct audio_output_stream {
   std::mutex control_mutex;
   int current_volume{0};
   int current_gain{0};
+  bool current_mute{false};
 
   audio_output_stream()
       : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(

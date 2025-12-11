@@ -488,6 +488,16 @@ void *VideoWorker::thread_entry(void *arg) {
       global_video[encChn]->stream, &cfg->sensor, encChn);
   global_video[encChn]->imp_encoder = IMPEncoder::createNew(
       global_video[encChn]->stream, encChn, encChn, global_video[encChn]->name);
+  if (!global_video[encChn]->imp_encoder) {
+    LOG_ERROR("Failed to create encoder for stream " << encChn);
+    sh->has_started.release();
+    if (global_video[encChn]->imp_framesource) {
+      delete global_video[encChn]->imp_framesource;
+      global_video[encChn]->imp_framesource = nullptr;
+    }
+    return 0;
+  }
+
   global_video[encChn]->imp_framesource->enable();
   global_video[encChn]->run_for_jpeg = false;
 

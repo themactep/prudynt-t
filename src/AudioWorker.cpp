@@ -406,9 +406,9 @@ void AudioWorker::run() {
     bool tap_requests_audio = tap && tap->wantsCapture();
     bool should_capture_audio =
         cfg->audio.input_enabled &&
-      (global_audio[encChn]->hasDataCallback || recorder_needs_audio ||
-       tap_requests_audio) &&
-      (video_clients_active || recorder_needs_audio || tap_requests_audio);
+        (global_audio[encChn]->hasDataCallback || recorder_needs_audio ||
+         tap_requests_audio) &&
+        (video_clients_active || recorder_needs_audio || tap_requests_audio);
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId,

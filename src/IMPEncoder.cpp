@@ -1,5 +1,6 @@
 #include "IMPEncoder.hpp"
 #include "Config.hpp"
+#include <cstdint>
 
 #define MODULE "IMPENCODER"
 
@@ -9,9 +10,35 @@
 #define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
 
+namespace {
+inline uint32_t align_up(uint32_t value, uint32_t alignment) {
+  if (alignment == 0) {
+    return value;
+  }
+  uint32_t remainder = value % alignment;
+  if (remainder == 0) {
+    return value;
+  }
+  return value + (alignment - remainder);
+}
+} // namespace
+
 IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp,
                                   const char *name) {
-  return new IMPEncoder(stream, encChn, encGrp, name);
+  IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, name);
+  if (!encoder) {
+    return nullptr;
+  }
+
+  int ret = encoder->init();
+  if (ret != 0) {
+    LOG_ERROR("Failed to initialize encoder channel "
+              << encChn << " (grp " << encGrp << ") ret=" << ret);
+    delete encoder;
+    return nullptr;
+  }
+
+  return encoder;
 }
 
 void IMPEncoder::flush(int encChn) {
@@ -267,7 +294,8 @@ void IMPEncoder::initProfile() {
        // defined(PLATFORM_T21) || defined(PLATFORM_T23) ||
        // defined(PLATFORM_T30)
   LOG_DEBUG("STREAM PROFILE " << stream->rtsp_endpoint << ", "
-                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum << ", "
+                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum
+                              << ", "
                               << "bps:" << stream->bitrate << ", "
                               << "gop:" << stream->gop << ", "
                               << "profile:" << stream->profile << ", " <<
@@ -279,8 +307,17 @@ int IMPEncoder::init() {
   LOG_DEBUG("IMPEncoder::init(" << encChn << ", " << encGrp << ")");
 
   int ret = 0;
+  is_jpeg_stream = (strcmp(stream->format, "JPEG") == 0);
+  const bool is_jpeg = is_jpeg_stream;
 
   initProfile();
+
+  if (!is_jpeg && chnAttr.encAttr.bufSize == 0) {
+    uint32_t yuv_size = static_cast<uint32_t>(stream->width) *
+                        static_cast<uint32_t>(stream->height) * 3 / 2;
+    chnAttr.encAttr.bufSize = static_cast<int>(align_up(yuv_size, 1024));
+    LOG_DEBUG("Encoder bufSize auto-set to " << chnAttr.encAttr.bufSize);
+  }
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
     defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -292,19 +329,35 @@ int IMPEncoder::init() {
   }
 #endif
 
+  if (!is_jpeg) {
+    ret = IMP_Encoder_CreateGroup(encGrp);
+    if (ret != 0) {
+      LOG_ERROR("IMP_Encoder_CreateGroup(" << encGrp << ") failed ret=" << ret);
+      return ret;
+    }
+    group_created = true;
+  }
+
   ret = IMP_Encoder_CreateChn(encChn, &chnAttr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_CreateChn(" << encChn
-                                                            << ", chnAttr)");
+  if (ret != 0) {
+    LOG_ERROR("IMP_Encoder_CreateChn(" << encChn << ") failed ret=" << ret
+                                       << " payload=" << chnAttr.encAttr.enType
+                                       << " bufSize=" << chnAttr.encAttr.bufSize
+                                       << " res=" << stream->width << "x"
+                                       << stream->height);
+    return ret;
+  }
+  chn_created = true;
 
   ret = IMP_Encoder_RegisterChn(encGrp, encChn);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_RegisterChn(" << encGrp << ", "
-                                                              << encChn << ")");
+  if (ret != 0) {
+    LOG_ERROR("IMP_Encoder_RegisterChn(" << encGrp << ", " << encChn
+                                         << ") failed ret=" << ret);
+    return ret;
+  }
+  chn_registered = true;
 
-  if (strcmp(stream->format, "JPEG") != 0) {
-    ret = IMP_Encoder_CreateGroup(encGrp);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                                "IMP_Encoder_CreateGroup(" << encGrp << ")");
-
+  if (!is_jpeg) {
     fs = {DEV_ID_FS, encGrp, 0};
     enc = {DEV_ID_ENC, encGrp, 0};
     osd_cell = {DEV_ID_OSD, encGrp, 0};
@@ -313,13 +366,25 @@ int IMPEncoder::init() {
       osd = OSD::createNew(stream->osd, encGrp, encChn, name);
 
       ret = IMP_System_Bind(&fs, &osd_cell);
-      LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&fs, &osd_cell)");
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &osd_cell)");
+      if (ret != 0) {
+        return ret;
+      }
+      fs_to_osd_bound = true;
 
       ret = IMP_System_Bind(&osd_cell, &enc);
-      LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&osd_cell, &enc)");
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&osd_cell, &enc)");
+      if (ret != 0) {
+        return ret;
+      }
+      osd_to_enc_bound = true;
     } else {
       ret = IMP_System_Bind(&fs, &enc);
-      LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Bind(&fs, &enc)");
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &enc)");
+      if (ret != 0) {
+        return ret;
+      }
+      fs_to_enc_bound = true;
     }
   }
 #if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) ||                      \
@@ -347,47 +412,64 @@ int IMPEncoder::init() {
 int IMPEncoder::deinit() {
   LOG_DEBUG("IMPEncoder::deinit(" << encChn << ", " << encGrp << ")");
 
-  int ret;
+  int ret = 0;
 
-  if (strcmp(stream->format, "JPEG") != 0) {
+  if (!is_jpeg_stream) {
     if (osd) {
-      ret = IMP_System_UnBind(&fs, &osd_cell);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &osd_cell)");
+      if (fs_to_osd_bound) {
+        ret = IMP_System_UnBind(&fs, &osd_cell);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &osd_cell)");
+        fs_to_osd_bound = false;
+      }
 
-      ret = IMP_System_UnBind(&osd_cell, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&osd_cell, &enc)");
+      if (osd_to_enc_bound) {
+        ret = IMP_System_UnBind(&osd_cell, &enc);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&osd_cell, &enc)");
+        osd_to_enc_bound = false;
+      }
 
       osd->exit();
       delete osd;
       osd = nullptr;
-    } else {
+    } else if (fs_to_enc_bound) {
       ret = IMP_System_UnBind(&fs, &enc);
       LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &enc)");
+      fs_to_enc_bound = false;
     }
   }
 
-  ret = IMP_Encoder_StopRecvPic(encChn);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
+  if (chn_created) {
+    ret = IMP_Encoder_StopRecvPic(encChn);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
+  }
 
-  ret = IMP_Encoder_UnRegisterChn(encChn);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                              "IMP_Encoder_UnRegisterChn(" << encChn << ")");
+  if (chn_registered) {
+    ret = IMP_Encoder_UnRegisterChn(encChn);
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                                "IMP_Encoder_UnRegisterChn(" << encChn << ")");
+    chn_registered = false;
+  }
 
-  ret = IMP_Encoder_DestroyChn(encChn);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_DestroyChn(" << encChn << ")");
+  if (chn_created) {
+    ret = IMP_Encoder_DestroyChn(encChn);
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                                "IMP_Encoder_DestroyChn(" << encChn << ")");
+    chn_created = false;
+  }
 
   return ret;
 }
 
 int IMPEncoder::destroy() {
-  int ret;
+  int ret = 0;
 
   // Only destroy group for non-JPEG streams (JPEG streams don't create groups)
-  if (strcmp(stream->format, "JPEG") != 0) {
+  if (!is_jpeg_stream && group_created) {
     ret = IMP_Encoder_DestroyGroup(encGrp);
     LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_DestroyGroup(" << encGrp << ")");
-  } else {
-    ret = 0; // No group to destroy for JPEG
+    if (ret == 0) {
+      group_created = false;
+    }
   }
 
   return ret;

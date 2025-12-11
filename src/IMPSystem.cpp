@@ -1,7 +1,154 @@
 #include "IMPSystem.hpp"
 #include "Config.hpp"
+#include <fstream>
 
 #define MODULE "IMP_SYSTEM"
+
+namespace {
+
+bool read_int_from_file(const char *path, int &value_out) {
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    return false;
+  }
+  int value = 0;
+  file >> value;
+  if (file.fail()) {
+    return false;
+  }
+  value_out = value;
+  return true;
+}
+
+void refresh_sensor_properties_from_proc() {
+  if (!cfg) {
+    return;
+  }
+
+  constexpr const char *kSensorWidthPath = "/proc/jz/sensor/width";
+  constexpr const char *kSensorHeightPath = "/proc/jz/sensor/height";
+  constexpr const char *kSensorMaxFpsPath = "/proc/jz/sensor/max_fps";
+  constexpr const char *kSensorMinFpsPath = "/proc/jz/sensor/min_fps";
+
+  int proc_width = 0;
+  int proc_height = 0;
+  int proc_max_fps = 0;
+  int proc_min_fps = 0;
+  bool width_ok = read_int_from_file(kSensorWidthPath, proc_width);
+  bool height_ok = read_int_from_file(kSensorHeightPath, proc_height);
+  bool max_fps_ok = read_int_from_file(kSensorMaxFpsPath, proc_max_fps);
+  bool min_fps_ok = read_int_from_file(kSensorMinFpsPath, proc_min_fps);
+
+  if (width_ok && proc_width > 0) {
+    if (cfg->sensor.width != proc_width) {
+      LOG_INFO("Sensor width updated from procfs: " << cfg->sensor.width
+                                                    << " -> " << proc_width);
+    }
+    cfg->sensor.width = proc_width;
+  }
+
+  if (height_ok && proc_height > 0) {
+    if (cfg->sensor.height != proc_height) {
+      LOG_INFO("Sensor height updated from procfs: " << cfg->sensor.height
+                                                     << " -> " << proc_height);
+    }
+    cfg->sensor.height = proc_height;
+  }
+
+  if (max_fps_ok && proc_max_fps > 0) {
+    if (cfg->sensor.fps != proc_max_fps) {
+      LOG_INFO("Sensor max_fps updated from procfs: "
+               << cfg->sensor.fps << " -> " << proc_max_fps);
+    }
+    cfg->sensor.fps = proc_max_fps;
+  }
+
+  if (min_fps_ok && proc_min_fps > 0) {
+    if (cfg->sensor.min_fps != proc_min_fps) {
+      LOG_INFO("Sensor min_fps updated from procfs: "
+               << cfg->sensor.min_fps << " -> " << proc_min_fps);
+    }
+    cfg->sensor.min_fps = proc_min_fps;
+  }
+
+  if (cfg->sensor.fps > 0 && cfg->sensor.min_fps > 0 &&
+      cfg->sensor.fps < cfg->sensor.min_fps) {
+    LOG_WARN("Sensor max_fps " << cfg->sensor.fps << " is below min_fps "
+                               << cfg->sensor.min_fps
+                               << ", clamping to min_fps");
+    cfg->sensor.fps = cfg->sensor.min_fps;
+  }
+
+  if ((width_ok || height_ok || max_fps_ok || min_fps_ok) &&
+      cfg->sensor.width > 0 && cfg->sensor.height > 0) {
+    LOG_INFO("Sensor procfs geometry "
+             << cfg->sensor.width << "x" << cfg->sensor.height << " @ "
+             << cfg->sensor.min_fps << "-" << cfg->sensor.fps << " fps");
+  }
+}
+
+void clamp_stream_to_sensor_limits(const char *stream_name, _stream &stream) {
+  if (!cfg) {
+    return;
+  }
+
+  const int sensor_width = cfg->sensor.width;
+  const int sensor_height = cfg->sensor.height;
+  const int sensor_max_fps = cfg->sensor.fps;
+  const int sensor_min_fps = cfg->sensor.min_fps;
+
+  auto log_change = [&](const char *what, int old_val, int new_val) {
+    LOG_INFO(stream_name << ": " << what << " clamped from " << old_val
+                         << " to " << new_val);
+  };
+
+  if (sensor_width > 0) {
+    if (stream.width <= 0) {
+      log_change("width", stream.width, sensor_width);
+      stream.width = sensor_width;
+    } else if (stream.width > sensor_width) {
+      log_change("width", stream.width, sensor_width);
+      stream.width = sensor_width;
+    }
+  }
+
+  if (sensor_height > 0) {
+    if (stream.height <= 0) {
+      log_change("height", stream.height, sensor_height);
+      stream.height = sensor_height;
+    } else if (stream.height > sensor_height) {
+      log_change("height", stream.height, sensor_height);
+      stream.height = sensor_height;
+    }
+  }
+
+  if (sensor_max_fps > 0) {
+    if (stream.fps <= 0) {
+      log_change("fps", stream.fps, sensor_max_fps);
+      stream.fps = sensor_max_fps;
+    } else if (stream.fps > sensor_max_fps) {
+      log_change("fps", stream.fps, sensor_max_fps);
+      stream.fps = sensor_max_fps;
+    }
+  }
+
+  if (sensor_min_fps > 0 && stream.fps > 0 && stream.fps < sensor_min_fps) {
+    log_change("fps", stream.fps, sensor_min_fps);
+    stream.fps = sensor_min_fps;
+  }
+}
+
+void clamp_streams_to_sensor_limits() {
+  if (!cfg) {
+    return;
+  }
+
+  clamp_stream_to_sensor_limits("stream0", cfg->stream0);
+  clamp_stream_to_sensor_limits("stream1", cfg->stream1);
+  clamp_stream_to_sensor_limits("stream2", cfg->stream2);
+}
+
+} // namespace
 
 IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name) {
   IMPSensorInfo out;
@@ -35,6 +182,9 @@ IMPSystem *IMPSystem::createNew() {
 int IMPSystem::init() {
   LOG_DEBUG("IMPSystem::init()");
   int ret = 0;
+
+  refresh_sensor_properties_from_proc();
+  clamp_streams_to_sensor_limits();
 
   ret = IMP_OSD_SetPoolSize(cfg->general.osd_pool_size * 1024);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize("

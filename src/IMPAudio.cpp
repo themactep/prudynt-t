@@ -138,10 +138,9 @@ int IMPAudio::init() {
   ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
   if (ret != 0) {
     int err = errno;
-    LOG_ERROR("IMP_AI_SetChnParam(" << devId << ", " << inChn
-                                     << ") failed: ret=" << ret
-                                     << ", errno=" << err << " ("
-                                     << strerror(err) << ")");
+    LOG_ERROR("IMP_AI_SetChnParam("
+              << devId << ", " << inChn << ") failed: ret=" << ret
+              << ", errno=" << err << " (" << strerror(err) << ")");
     return ret;
   } else {
     LOG_DEBUG("IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
@@ -158,10 +157,9 @@ int IMPAudio::init() {
   ret = IMP_AI_EnableChn(devId, inChn);
   if (ret != 0) {
     int err = errno;
-    LOG_ERROR("IMP_AI_EnableChn(" << devId << ", " << inChn
-                                   << ") failed: ret=" << ret
-                                   << ", errno=" << err << " ("
-                                   << strerror(err) << ")");
+    LOG_ERROR("IMP_AI_EnableChn("
+              << devId << ", " << inChn << ") failed: ret=" << ret
+              << ", errno=" << err << " (" << strerror(err) << ")");
     return ret;
   } else {
     LOG_DEBUG("IMP_AI_EnableChn(" << devId << ", " << inChn << ")");

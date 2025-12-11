@@ -345,11 +345,11 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= -1 && v <= 31; }},
 #if defined(LIB_AUDIO_PROCESSING)
       {"audio.output_vol", audio.output_vol, 60,
-       [](const int &v) { return v >= 0 && v <= 100; }},
+       [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.output_gain", audio.output_gain, 20,
        [](const int &v) { return v >= 0 && v <= 31; }},
       {"audio.spk_vol", audio.output_vol, 60,
-       [](const int &v) { return v >= 0 && v <= 100; }},
+       [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.spk_gain", audio.output_gain, 20,
        [](const int &v) { return v >= 0 && v <= 31; }},
       {"audio.input_alc_gain", audio.input_alc_gain, 0,

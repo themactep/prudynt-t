@@ -125,7 +125,8 @@ void RTSP::start() {
 
     // The replicator stays alive even when no RTSP clients are connected, so
     // clear the consumer tracking state until a real subscriber appears.
-    global_audio[audioChn]->rtsp_client_count.store(0, std::memory_order_relaxed);
+    global_audio[audioChn]->rtsp_client_count.store(0,
+                                                    std::memory_order_relaxed);
     global_audio[audioChn]->hasDataCallback = false;
   }
 #endif

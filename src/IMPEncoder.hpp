@@ -34,7 +34,6 @@ public:
 
   IMPEncoder(_stream *stream, int encChn, int encGrp, const char *name)
       : stream(stream), encChn(encChn), encGrp(encGrp), name(name) {
-    init();
   }
 
   ~IMPEncoder() {
@@ -56,6 +55,14 @@ private:
   IMPCell fs{};
   IMPCell enc{};
   IMPCell osd_cell{};
+
+  bool is_jpeg_stream{false};
+  bool group_created{false};
+  bool chn_created{false};
+  bool chn_registered{false};
+  bool fs_to_enc_bound{false};
+  bool fs_to_osd_bound{false};
+  bool osd_to_enc_bound{false};
 
   _stream *stream{};
   int encChn{};

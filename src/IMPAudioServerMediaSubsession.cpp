@@ -33,8 +33,8 @@ IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
 
   FramedSource *audioSourceReplica = replicator->createStreamReplica();
   if (audioSourceReplica) {
-    global_audio[audioChn]->rtsp_client_count.fetch_add(1,
-                                                        std::memory_order_relaxed);
+    global_audio[audioChn]->rtsp_client_count.fetch_add(
+        1, std::memory_order_relaxed);
     global_audio[audioChn]->hasDataCallback = true;
     global_audio[audioChn]->should_grab_frames.notify_one();
   }
@@ -56,14 +56,15 @@ IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
 }
 #endif
 
-void IMPAudioServerMediaSubsession::closeStreamSource(FramedSource *inputSource) {
+void IMPAudioServerMediaSubsession::closeStreamSource(
+    FramedSource *inputSource) {
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
   if (inputSource) {
     int previous = global_audio[audioChn]->rtsp_client_count.fetch_sub(
         1, std::memory_order_relaxed);
     if (previous <= 1) {
-      global_audio[audioChn]->rtsp_client_count.store(0,
-                                                      std::memory_order_relaxed);
+      global_audio[audioChn]->rtsp_client_count.store(
+          0, std::memory_order_relaxed);
       global_audio[audioChn]->hasDataCallback = false;
     }
   }

@@ -94,9 +94,9 @@ void JPEGWorker::run() {
      * if jpeg_idle_fps = 0, the thread is put into sleep until a client is
      * connected. if jpeg_idle_fps > 0, we try to reach a frame rate of
      * stream.jpeg_idle_fps. enen if no client is connected. if a client is
-     * connected via WS / HTTP we try to reach a framerate of stream.fps the thread
-     * will fallback into idle / sleep mode if no client request was made for
-     * more than a second
+     * connected via WS / HTTP we try to reach a framerate of stream.fps the
+     * thread will fallback into idle / sleep mode if no client request was made
+     * for more than a second
      */
     auto now = steady_clock::now();
 
@@ -249,6 +249,12 @@ void *JPEGWorker::thread_entry(void *arg) {
   global_jpeg[jpgChn]->imp_encoder =
       IMPEncoder::createNew(global_jpeg[jpgChn]->stream, sh->encChn,
                             global_jpeg[jpgChn]->streamChn, "stream2");
+
+  if (!global_jpeg[jpgChn]->imp_encoder) {
+    LOG_ERROR("Failed to create JPEG encoder for channel " << jpgChn);
+    sh->has_started.release();
+    return nullptr;
+  }
 
   // inform main that initialization is complete
   sh->has_started.release();

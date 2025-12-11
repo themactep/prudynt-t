@@ -128,8 +128,38 @@ bool parseInt(const std::string &token, int &value) {
   return true;
 }
 
+bool parseBool(const std::string &token, bool &value) {
+  if (token.empty()) {
+    return false;
+  }
+  std::string lower = toLower(token);
+  if (lower == "true" || lower == "on" || lower == "yes") {
+    value = true;
+    return true;
+  }
+  if (lower == "false" || lower == "off" || lower == "no") {
+    value = false;
+    return true;
+  }
+  if (lower == "1") {
+    value = true;
+    return true;
+  }
+  if (lower == "0") {
+    value = false;
+    return true;
+  }
+  int parsed = 0;
+  if (parseInt(token, parsed)) {
+    value = (parsed != 0);
+    return true;
+  }
+  return false;
+}
+
 int clampVolume(int value) {
-  return std::clamp(value, 0, 100);
+  // SDK IMP_AO_SetVol accepts -30 (mute) through 120 (+30 dB).
+  return std::clamp(value, -30, 120);
 }
 
 int clampGain(int value) {
@@ -853,8 +883,7 @@ bool isUrl(const std::string &value) {
 }
 
 bool bufferLooksLikeWav(const std::vector<uint8_t> &buffer) {
-  return buffer.size() >= 12 &&
-         std::memcmp(buffer.data(), "RIFF", 4) == 0 &&
+  return buffer.size() >= 12 && std::memcmp(buffer.data(), "RIFF", 4) == 0 &&
          std::memcmp(buffer.data() + 8, "WAVE", 4) == 0;
 }
 
@@ -883,8 +912,7 @@ bool bufferLooksLikeOpus(const std::vector<uint8_t> &buffer) {
 }
 
 bool bufferLooksLikeFlac(const std::vector<uint8_t> &buffer) {
-  return buffer.size() >= 4 &&
-         std::memcmp(buffer.data(), "fLaC", 4) == 0;
+  return buffer.size() >= 4 && std::memcmp(buffer.data(), "fLaC", 4) == 0;
 }
 
 bool bufferLooksLikeMp3(const std::vector<uint8_t> &buffer) {
@@ -1453,8 +1481,8 @@ public:
     if (inputRate_ <= 0 || outputRate_ <= 0) {
       increment_ = 1.0;
     } else {
-      increment_ = static_cast<double>(inputRate_) /
-                   static_cast<double>(outputRate_);
+      increment_ =
+          static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
     }
     nextOutputTime_ = 0.0;
     processedSamples_ = 0;
@@ -1493,10 +1521,10 @@ public:
       double segmentStart = static_cast<double>(processedSamples_ - 1);
       double segmentEnd = static_cast<double>(processedSamples_);
       while (nextOutputTime_ <= segmentEnd) {
-        double frac = (segmentEnd - segmentStart) > 0.0
-                          ? (nextOutputTime_ - segmentStart) /
-                                (segmentEnd - segmentStart)
-                          : 0.0;
+        double frac =
+            (segmentEnd - segmentStart) > 0.0
+                ? (nextOutputTime_ - segmentStart) / (segmentEnd - segmentStart)
+                : 0.0;
         double interpolated =
             static_cast<double>(lastSample_) +
             (static_cast<double>(current) - static_cast<double>(lastSample_)) *
@@ -1597,8 +1625,7 @@ public:
       }
       resampler_->process(samples, count, convertBuffer_);
     } else {
-      convertBuffer_.insert(convertBuffer_.end(), samples,
-                            samples + count);
+      convertBuffer_.insert(convertBuffer_.end(), samples, samples + count);
     }
 
     if (convertBuffer_.empty()) {
@@ -1639,8 +1666,8 @@ public:
     }
 
     if (!options_.append) {
-      AudioOutputWorker::waitForPlaybackCompletion(
-          std::chrono::milliseconds(0), true, kStreamingTailSilence);
+      AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(0),
+                                                   true, kStreamingTailSilence);
     }
 
     return true;
@@ -1659,10 +1686,8 @@ private:
     if (shouldStop()) {
       return false;
     }
-    if (!AudioOutputWorker::enqueuePcmBlocking(std::move(chunk),
-                                               pendingVolume_,
-                                               options_.volume,
-                                               pendingGain_,
+    if (!AudioOutputWorker::enqueuePcmBlocking(std::move(chunk), pendingVolume_,
+                                               options_.volume, pendingGain_,
                                                options_.gain)) {
       return false;
     }
@@ -1740,9 +1765,8 @@ private:
       decode_.resize(emitSamples);
       const uint8_t *ptr = buffer_.data() + readOffset_;
       for (size_t i = 0; i < emitSamples; ++i) {
-        int16_t sample = static_cast<int16_t>(ptr[0] |
-                                              (static_cast<int16_t>(ptr[1])
-                                               << 8));
+        int16_t sample =
+            static_cast<int16_t>(ptr[0] | (static_cast<int16_t>(ptr[1]) << 8));
         decode_[i] = sample;
         ptr += kSampleBytes;
       }
@@ -1766,8 +1790,7 @@ private:
 
 class StreamingAacDecoder : public StreamingDecoder {
 public:
-  explicit StreamingAacDecoder(AudioStreamSink &sink)
-      : StreamingDecoder(sink) {
+  explicit StreamingAacDecoder(AudioStreamSink &sink) : StreamingDecoder(sink) {
     decoder_ = AACInitDecoder();
     if (!decoder_) {
       LOG_ERROR("AudioOutputControl: failed to initialize AAC decoder");
@@ -1796,7 +1819,8 @@ public:
 
     if (endOfStream && !buffer_.empty()) {
       LOG_WARN("AudioOutputControl: leftover AAC bytes after end-of-stream, "
-               "dropping " << buffer_.size() << " byte(s)");
+               "dropping "
+               << buffer_.size() << " byte(s)");
       buffer_.clear();
     }
 
@@ -1837,18 +1861,17 @@ private:
 
       const size_t payloadOffset = header.headerSize;
       if (header.frameLength <= header.headerSize) {
-        buffer_.erase(buffer_.begin(),
-                      buffer_.begin() + header.frameLength);
+        buffer_.erase(buffer_.begin(), buffer_.begin() + header.frameLength);
         continue;
       }
 
       unsigned char *framePtr = buffer_.data() + payloadOffset;
       int bytesLeft = header.frameLength - header.headerSize;
-      int decodeStatus = AACDecode(decoder_, &framePtr, &bytesLeft,
-                                   decodeBuffer_.data());
+      int decodeStatus =
+          AACDecode(decoder_, &framePtr, &bytesLeft, decodeBuffer_.data());
       if (decodeStatus != 0 && decodeStatus != ERR_AAC_INDATA_UNDERFLOW) {
         LOG_WARN("AudioOutputControl: AACDecode error " << decodeStatus
-                                                         << ", resyncing");
+                                                        << ", resyncing");
         buffer_.erase(buffer_.begin());
         continue;
       }
@@ -1856,14 +1879,13 @@ private:
       AACFrameInfo info{};
       AACGetLastFrameInfo(decoder_, &info);
       if (info.outputSamps <= 0) {
-        buffer_.erase(buffer_.begin(),
-                      buffer_.begin() + header.frameLength);
+        buffer_.erase(buffer_.begin(), buffer_.begin() + header.frameLength);
         continue;
       }
 
       if (sampleRate_ == 0) {
-        sampleRate_ = (info.sampRateOut > 0) ? info.sampRateOut
-                                             : header.sampleRate;
+        sampleRate_ =
+            (info.sampRateOut > 0) ? info.sampRateOut : header.sampleRate;
         if (sampleRate_ <= 0) {
           sampleRate_ = defaultSampleRate();
         }
@@ -1890,8 +1912,7 @@ private:
         return false;
       }
 
-      buffer_.erase(buffer_.begin(),
-                    buffer_.begin() + header.frameLength);
+      buffer_.erase(buffer_.begin(), buffer_.begin() + header.frameLength);
       progress = true;
     }
     return true;
@@ -1958,7 +1979,7 @@ public:
       }
       if (err != ERR_MP3_NONE) {
         LOG_WARN("AudioOutputControl: MP3Decode error " << err
-                                                         << ", resyncing");
+                                                        << ", resyncing");
         ++readOffset_;
         continue;
       }
@@ -1984,8 +2005,7 @@ public:
                         frameBuffer_.begin() + totalSamples);
       } else {
         decoded_.reserve(totalSamples / channels);
-        for (size_t i = 0;
-             i + static_cast<size_t>(channels) <= totalSamples;
+        for (size_t i = 0; i + static_cast<size_t>(channels) <= totalSamples;
              i += static_cast<size_t>(channels)) {
           int32_t sum = 0;
           for (int ch = 0; ch < channels; ++ch) {
@@ -2121,7 +2141,8 @@ private:
         if ((headerType & 0x02) == 0) {
           LOG_WARN("AudioOutputControl: skipping Opus page without BOS flag");
           buffer_.erase(buffer_.begin(),
-                        buffer_.begin() + static_cast<std::ptrdiff_t>(totalSize));
+                        buffer_.begin() +
+                            static_cast<std::ptrdiff_t>(totalSize));
           continue;
         }
         haveStreamSerial_ = true;
@@ -2144,8 +2165,7 @@ private:
           break;
         }
 
-        currentPacket_.insert(currentPacket_.end(),
-                              payload + payloadOffset,
+        currentPacket_.insert(currentPacket_.end(), payload + payloadOffset,
                               payload + payloadOffset + segLen);
         payloadOffset += segLen;
 
@@ -2221,9 +2241,9 @@ private:
       return false;
     }
 
-    int decodedSamples = opus_decode(
-        decoder_, packet.data(), static_cast<opus_int32>(packet.size()),
-        decodeBuffer_.data(), kMaxFrameSize, 0);
+    int decodedSamples = opus_decode(decoder_, packet.data(),
+                                     static_cast<opus_int32>(packet.size()),
+                                     decodeBuffer_.data(), kMaxFrameSize, 0);
     if (decodedSamples < 0) {
       LOG_WARN("AudioOutputControl: opus_decode failed: "
                << opus_strerror(decodedSamples));
@@ -2328,8 +2348,7 @@ public:
   }
 
   void join() {
-    if (worker_.joinable() &&
-        std::this_thread::get_id() != worker_.get_id()) {
+    if (worker_.joinable() && std::this_thread::get_id() != worker_.get_id()) {
       worker_.join();
     }
   }
@@ -2381,7 +2400,6 @@ private:
       decoder_->finalize();
     }
     sink_->finish();
-
   }
 
   bool handleData(const uint8_t *data, size_t size, bool endOfStream) {
@@ -2446,8 +2464,8 @@ private:
     return total;
   }
 
-  static int progressCallback(void *clientp, curl_off_t, curl_off_t,
-                              curl_off_t, curl_off_t) {
+  static int progressCallback(void *clientp, curl_off_t, curl_off_t, curl_off_t,
+                              curl_off_t) {
     auto *session = static_cast<StreamingSession *>(clientp);
     if (!session) {
       return 0;
@@ -2495,7 +2513,7 @@ bool startStreamingPlayback(const PlayCommandOptions &options) {
   }
   session->start();
   LOG_INFO("AudioOutputControl: started streaming from '" << options.path
-                                                           << "'");
+                                                          << "'");
   return true;
 }
 
@@ -2783,26 +2801,29 @@ void handleCommand(const std::string &line, bool allowPlayback) {
     PlayCommandOptions options;
     std::string token;
     while (iss >> token) {
-      std::string key;
-      std::string value = token;
       auto eq = token.find('=');
-      if (eq != std::string::npos) {
-        key = toLower(token.substr(0, eq));
-        value = token.substr(eq + 1);
-      } else {
-        key.clear();
-      }
-
-      if (options.path.empty() && key.empty()) {
-        options.path = value;
+      if (eq == std::string::npos) {
+        LOG_WARN("AudioOutputControl: ignoring PLAY argument without key '"
+                 << token << "'. Use key=value syntax.");
         continue;
       }
+
+      std::string key = toLower(token.substr(0, eq));
+      std::string value = token.substr(eq + 1);
 
       if (key.empty()) {
+        LOG_WARN("AudioOutputControl: ignoring PLAY argument with empty key '"
+                 << token << "'");
         continue;
       }
 
-      if (key == "path") {
+      if (value.empty()) {
+        LOG_WARN("AudioOutputControl: ignoring PLAY argument '"
+                 << token << "' with empty value");
+        continue;
+      }
+
+      if (key == "path" || key == "url") {
         options.path = value;
       } else if (key == "vol" || key == "volume") {
         int parsed = 0;
@@ -2869,7 +2890,8 @@ void handleCommand(const std::string &line, bool allowPlayback) {
     }
 
     if (options.path.empty()) {
-      LOG_WARN("AudioOutputControl: PLAY command missing path argument");
+      LOG_WARN("AudioOutputControl: PLAY command missing required path=/url= "
+               "argument");
       return;
     }
 
@@ -2880,6 +2902,25 @@ void handleCommand(const std::string &line, bool allowPlayback) {
     if (!AudioOutputWorker::clearQueue(true)) {
       LOG_WARN("AudioOutputControl: STOP command ignored; audio output queue "
                "not available");
+    }
+  } else if (op == "MUTE") {
+    std::string token;
+    if (!(iss >> token)) {
+      LOG_WARN("AudioOutputControl: MUTE command missing argument");
+      return;
+    }
+    auto eq = token.find('=');
+    std::string value =
+        (eq == std::string::npos) ? token : token.substr(eq + 1);
+    bool mute = false;
+    if (!parseBool(value, mute)) {
+      LOG_WARN("AudioOutputControl: invalid MUTE value '" << value << "'");
+      return;
+    }
+    LOG_DEBUG("AudioOutputControl: MUTE=" << (mute ? 1 : 0));
+    if (!AudioOutputWorker::applyMute(mute)) {
+      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0,
+                                    true, mute);
     }
   } else if (op == "VOLUME") {
     std::string value;
@@ -2916,8 +2957,8 @@ void handleCommand(const std::string &line, bool allowPlayback) {
 }
 
 void fifoListenerLoop(const FifoListenerConfig &config) {
-  LOG_INFO("AudioOutputControl: listening on " << config.label
-                                                 << " FIFO " << config.path);
+  LOG_INFO("AudioOutputControl: listening on " << config.label << " FIFO "
+                                               << config.path);
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     int fd = ::open(config.path, O_RDONLY);
     if (fd < 0) {
