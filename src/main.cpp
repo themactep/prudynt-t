@@ -12,6 +12,7 @@
 #include "MP4ControlSocket.hpp"
 #include "Motion.hpp"
 #include "RTSP.hpp"
+#include "VideoPrivacyControl.hpp"
 #include "VideoWorker.hpp"
 #include "WS.hpp"
 #include "WorkerUtils.hpp"
@@ -179,6 +180,7 @@ int main(int argc, const char *argv[]) {
   // Start Unix domain socket control server for MP4 recording
   std::thread(MP4ControlSocket::run).detach();
   std::thread(AudioOutputControl::run).detach();
+  std::thread(VideoPrivacyControl::run).detach();
   ImagingControl::start();
 
   global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");

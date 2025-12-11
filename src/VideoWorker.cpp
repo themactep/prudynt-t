@@ -8,6 +8,7 @@
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
+#include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
@@ -501,6 +502,24 @@ void *VideoWorker::thread_entry(void *arg) {
   global_video[encChn]->imp_framesource->enable();
   global_video[encChn]->run_for_jpeg = false;
 
+  std::shared_ptr<VideoPrivacyMask> privacy_mask;
+  {
+    std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
+    global_video[encChn]->privacy_mask.reset();
+    global_video[encChn]->privacy_mask = std::make_shared<VideoPrivacyMask>(
+        encChn, global_video[encChn]->stream->width,
+        global_video[encChn]->stream->height);
+    privacy_mask = global_video[encChn]->privacy_mask;
+  }
+
+  if (privacy_mask) {
+    bool desired =
+        global_video[encChn]->privacy_requested.load(std::memory_order_relaxed);
+    if (desired) {
+      privacy_mask->setEnabled(true);
+    }
+  }
+
   // inform main that initialization is complete
   sh->has_started.release();
 
@@ -529,6 +548,11 @@ void *VideoWorker::thread_entry(void *arg) {
       delete global_video[encChn]->imp_encoder;
       global_video[encChn]->imp_encoder = nullptr;
     }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
+    global_video[encChn]->privacy_mask.reset();
   }
 
   return 0;

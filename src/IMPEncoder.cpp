@@ -362,30 +362,58 @@ int IMPEncoder::init() {
     enc = {DEV_ID_ENC, encGrp, 0};
     osd_cell = {DEV_ID_OSD, encGrp, 0};
 
+    auto cleanup_manual_osd = [&]() {
+      if (!osd_group_manual)
+        return;
+      if (osd_started_manual) {
+        int stop_ret = IMP_OSD_Stop(encGrp);
+        LOG_DEBUG_OR_ERROR(stop_ret, "IMP_OSD_Stop(" << encGrp << ")");
+        if (stop_ret == 0) {
+          osd_started_manual = false;
+        }
+      }
+      int destroy_ret = IMP_OSD_DestroyGroup(encGrp);
+      LOG_DEBUG_OR_ERROR(destroy_ret,
+                        "IMP_OSD_DestroyGroup(" << encGrp << ")");
+      if (destroy_ret == 0) {
+        osd_group_manual = false;
+      }
+    };
+
     if (stream->osd.enabled) {
       osd = OSD::createNew(stream->osd, encGrp, encChn, name);
-
-      ret = IMP_System_Bind(&fs, &osd_cell);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &osd_cell)");
-      if (ret != 0) {
-        return ret;
-      }
-      fs_to_osd_bound = true;
-
-      ret = IMP_System_Bind(&osd_cell, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&osd_cell, &enc)");
-      if (ret != 0) {
-        return ret;
-      }
-      osd_to_enc_bound = true;
     } else {
-      ret = IMP_System_Bind(&fs, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &enc)");
+      ret = IMP_OSD_CreateGroup(encGrp);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_CreateGroup(" << encGrp << ")");
       if (ret != 0) {
         return ret;
       }
-      fs_to_enc_bound = true;
+      osd_group_manual = true;
+
+      ret = IMP_OSD_Start(encGrp);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Start(" << encGrp << ")");
+      if (ret != 0) {
+        cleanup_manual_osd();
+        return ret;
+      }
+      osd_started_manual = true;
     }
+
+    ret = IMP_System_Bind(&fs, &osd_cell);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &osd_cell)");
+    if (ret != 0) {
+      cleanup_manual_osd();
+      return ret;
+    }
+    fs_to_osd_bound = true;
+
+    ret = IMP_System_Bind(&osd_cell, &enc);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&osd_cell, &enc)");
+    if (ret != 0) {
+      cleanup_manual_osd();
+      return ret;
+    }
+    osd_to_enc_bound = true;
   }
 #if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) ||                      \
       !defined(PLATFORM_T40) || !defined(PLATFORM_T41))
@@ -431,10 +459,17 @@ int IMPEncoder::deinit() {
       osd->exit();
       delete osd;
       osd = nullptr;
-    } else if (fs_to_enc_bound) {
-      ret = IMP_System_UnBind(&fs, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &enc)");
-      fs_to_enc_bound = false;
+    } else {
+      if (osd_to_enc_bound) {
+        ret = IMP_System_UnBind(&osd_cell, &enc);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&osd_cell, &enc)");
+        osd_to_enc_bound = false;
+      }
+      if (fs_to_osd_bound) {
+        ret = IMP_System_UnBind(&fs, &osd_cell);
+        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &osd_cell)");
+        fs_to_osd_bound = false;
+      }
     }
   }
 
@@ -469,6 +504,22 @@ int IMPEncoder::destroy() {
     LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_DestroyGroup(" << encGrp << ")");
     if (ret == 0) {
       group_created = false;
+    }
+  }
+
+  if (!is_jpeg_stream && osd_group_manual) {
+    if (osd_started_manual) {
+      int stop_ret = IMP_OSD_Stop(encGrp);
+      LOG_DEBUG_OR_ERROR(stop_ret, "IMP_OSD_Stop(" << encGrp << ")");
+      if (stop_ret == 0) {
+        osd_started_manual = false;
+      }
+    }
+    int destroy_ret = IMP_OSD_DestroyGroup(encGrp);
+    LOG_DEBUG_OR_ERROR(destroy_ret,
+                      "IMP_OSD_DestroyGroup(" << encGrp << ")");
+    if (destroy_ret == 0) {
+      osd_group_manual = false;
     }
   }
 

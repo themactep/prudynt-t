@@ -78,6 +78,8 @@ struct BackchannelFrame {
   bool isShutdownSentinel{false};
 };
 
+class VideoPrivacyMask;
+
 struct VideoTapEntry {
   uint64_t id{0};
   std::weak_ptr<MsgChannel<H264NALUnit>> queue;
@@ -201,6 +203,9 @@ struct video_stream {
   bool have_pps;
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
+  std::mutex privacy_mutex;
+  std::shared_ptr<VideoPrivacyMask> privacy_mask;
+  std::atomic<bool> privacy_requested{false};
 
   video_stream(int encChn, _stream *stream, const char *name)
       : encChn(encChn), stream(stream), name(name), running(false), idr(false),
