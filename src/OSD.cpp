@@ -516,6 +516,28 @@ OSD::BrightnessSample OSD::BrightnessMeter::measure() {
   IspStats stats;
   std::string mode;
 
+  if (cfg && cfg->get<bool>("daynight.enabled")) {
+    int live_pct = cfg->daynight.live_brightness_percent.load();
+    if (live_pct >= 0) {
+      sample.current = static_cast<float>(live_pct);
+      const char *mode_ptr = cfg->daynight.live_mode.load();
+      if (mode_ptr && *mode_ptr) {
+        sample.mode = mode_ptr;
+        std::transform(sample.mode.begin(), sample.mode.end(), sample.mode.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+      } else {
+        sample.mode = "UNKNOWN";
+      }
+      updateHistory(sample.current);
+      sample.average = historyAverage();
+      if (sample.average < 0.0f) {
+        sample.average = sample.current;
+      }
+      sample.valid = true;
+      return sample;
+    }
+  }
+
   float brightness = -1.0f;
   if (readIspStats(stats)) {
     brightness = computeFromStats(stats, mode);
@@ -763,6 +785,7 @@ void OSD::init() {
     osdTime.data = nullptr;
     osdTime.imp_rgn = IMP_OSD_CreateRgn(nullptr);
     IMP_OSD_RegisterRgn(osdTime.imp_rgn, osdGrp, nullptr);
+    time_region_created = true;
     osd.regions.time = osdTime.imp_rgn;
 
     memset(&osdTime.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
@@ -799,6 +822,7 @@ void OSD::init() {
     osdUser.data = nullptr;
     osdUser.imp_rgn = IMP_OSD_CreateRgn(nullptr);
     IMP_OSD_RegisterRgn(osdUser.imp_rgn, osdGrp, nullptr);
+    user_region_created = true;
     osd.regions.user = osdUser.imp_rgn;
 
     memset(&osdUser.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
@@ -840,6 +864,7 @@ void OSD::init() {
     osdBrightness.data = nullptr;
     osdBrightness.imp_rgn = IMP_OSD_CreateRgn(nullptr);
     IMP_OSD_RegisterRgn(osdBrightness.imp_rgn, osdGrp, nullptr);
+    brightness_region_created = true;
     osd.regions.brightness = osdBrightness.imp_rgn;
 
     memset(&osdBrightness.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
@@ -873,6 +898,7 @@ void OSD::init() {
     osdUptm.data = nullptr;
     osdUptm.imp_rgn = IMP_OSD_CreateRgn(nullptr);
     IMP_OSD_RegisterRgn(osdUptm.imp_rgn, osdGrp, nullptr);
+    uptime_region_created = true;
     osd.regions.uptime = osdUptm.imp_rgn;
 
     memset(&osdUptm.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
@@ -907,6 +933,7 @@ void OSD::init() {
     osdLogo.data = nullptr;
     osdLogo.imp_rgn = IMP_OSD_CreateRgn(nullptr);
     IMP_OSD_RegisterRgn(osdLogo.imp_rgn, osdGrp, nullptr);
+    logo_region_created = true;
     osd.regions.logo = osdLogo.imp_rgn;
 
     memset(&osdLogo.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
@@ -1001,41 +1028,22 @@ int OSD::exit() {
   ret = IMP_OSD_Stop(osdGrp);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Stop(" << osdGrp << ")");
 
-  ret = IMP_OSD_ShowRgn(osdTime.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdTime.imp_rgn, " << osdGrp << ", 0)");
+  auto shutdownRegion = [&](OSDItem &item, const char *label, bool created) {
+    if (!created)
+      return;
+    int rc = IMP_OSD_ShowRgn(item.imp_rgn, osdGrp, 0);
+    LOG_DEBUG_OR_ERROR(rc, "IMP_OSD_ShowRgn(" << label << ", " << osdGrp << ", 0)");
+    rc = IMP_OSD_UnRegisterRgn(item.imp_rgn, osdGrp);
+    LOG_DEBUG_OR_ERROR(rc, "IMP_OSD_UnRegisterRgn(" << label << ", " << osdGrp << ")");
+    IMP_OSD_DestroyRgn(item.imp_rgn);
+    LOG_DEBUG("IMP_OSD_DestroyRgn(" << label << ")");
+  };
 
-  ret = IMP_OSD_ShowRgn(osdUser.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdUser.imp_rgn, " << osdGrp << ", 0)");
-
-  ret = IMP_OSD_ShowRgn(osdUptm.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdUptm.imp_rgn, " << osdGrp << ", 0)");
-
-  ret = IMP_OSD_ShowRgn(osdLogo.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdLogo.imp_rgn, " << osdGrp << ", 0)");
-
-  ret = IMP_OSD_ShowRgn(osdBrightness.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdBrightness.imp_rgn, " << osdGrp << ", 0)");
-
-  ret = IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, " << osdGrp << ")");
-
-  ret = IMP_OSD_UnRegisterRgn(osdUser.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUser.imp_rgn, " << osdGrp << ")");
-
-  ret = IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp << ")");
-
-  ret = IMP_OSD_UnRegisterRgn(osdLogo.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp << ")");
-
-  ret = IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, " << osdGrp << ")");
-
-  IMP_OSD_DestroyRgn(osdTime.imp_rgn);
-  IMP_OSD_DestroyRgn(osdUser.imp_rgn);
-  IMP_OSD_DestroyRgn(osdUptm.imp_rgn);
-  IMP_OSD_DestroyRgn(osdLogo.imp_rgn);
-  IMP_OSD_DestroyRgn(osdBrightness.imp_rgn);
+  shutdownRegion(osdTime, "osdTime.imp_rgn", time_region_created);
+  shutdownRegion(osdUser, "osdUser.imp_rgn", user_region_created);
+  shutdownRegion(osdUptm, "osdUptm.imp_rgn", uptime_region_created);
+  shutdownRegion(osdLogo, "osdLogo.imp_rgn", logo_region_created);
+  shutdownRegion(osdBrightness, "osdBrightness.imp_rgn", brightness_region_created);
 
   ret = IMP_OSD_DestroyGroup(osdGrp);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_DestroyGroup(" << osdGrp << ")");

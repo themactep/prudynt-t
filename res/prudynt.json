@@ -32,6 +32,14 @@
     "zero_copy_buffer_pool_size": 10,
     "zero_copy_enabled": true
   },
+  "daynight": {
+    "enabled": true,
+    "switch_below_percent": 15,
+    "switch_above_percent": 80,
+    "tolerance_percent": 50,
+    "sample_interval_ms": 1000,
+    "script_path": "/sbin/daynight"
+  },
   "image": {
     "ae_compensation": 128,
     "anti_flicker": 2,

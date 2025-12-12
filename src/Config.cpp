@@ -160,6 +160,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
+      {"daynight.enabled", daynight.enabled, true, validateBool},
       {"image.isp_bypass", image.isp_bypass, true, validateBool},
       {"image.vflip", image.vflip, false, validateBool},
       {"image.hflip", image.hflip, false, validateBool},
@@ -206,6 +207,7 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
          return a.count(std::string(v)) == 1;
        }},
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
+      {"daynight.script_path", daynight.script_path, "/sbin/daynight", validateCharNotEmpty},
       {"general.loglevel", general.loglevel, "INFO",
        [](const char *v) {
          std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"};
@@ -291,6 +293,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"audio.mic_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.input_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
       {"audio.mic_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
+      {"daynight.switch_below_percent", daynight.switch_below_percent, 15,
+      [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.switch_above_percent", daynight.switch_above_percent, 80,
+      [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.tolerance_percent", daynight.tolerance_percent, 50, [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000,
+      [](const int &v) { return v >= 100 && v <= 60000; }},
 #if defined(LIB_AUDIO_PROCESSING)
       {"audio.output_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.output_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
@@ -314,6 +323,18 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
+      /* Expert overrides preserved for backward compatibility */
+      {"daynight.ev_night_high", daynight.ev_night_high, 1900000, [](const int &v) { return v >= 0; }},
+      {"daynight.ev_day_low_primary", daynight.ev_day_low_primary, 479832, [](const int &v) { return v >= 0; }},
+      {"daynight.ev_day_low_secondary", daynight.ev_day_low_secondary, 361880, [](const int &v) { return v >= 0; }},
+      {"daynight.gb_gain_delta", daynight.gb_gain_delta, 15, [](const int &v) { return v >= 0 && v <= 1000; }},
+      {"daynight.gb_gain_absolute", daynight.gb_gain_absolute, 145, [](const int &v) { return v >= 0 && v <= 1000; }},
+      {"daynight.night_count_threshold", daynight.night_count_threshold, 6,
+       [](const int &v) { return v >= 1 && v <= 100; }},
+      {"daynight.day_count_threshold", daynight.day_count_threshold, 4,
+       [](const int &v) { return v >= 1 && v <= 100; }},
+      {"daynight.settle_samples_for_gb_record", daynight.settle_samples_for_gb_record, 20,
+       [](const int &v) { return v >= 0 && v <= 200; }},
       {"image.anti_flicker", image.anti_flicker, 2, validateInt2},
       {"image.backlight_compensation", image.backlight_compensation, 0, [](const int &v) { return v >= 0 && v <= 10; }},
       {"image.brightness", image.brightness, 128, validateInt255},

@@ -278,6 +278,32 @@ struct _stream {
   _stream_stats stats;
   bool audio_enabled;
 };
+struct _daynight {
+  // User-configurable knobs
+  bool enabled{true};
+  int switch_below_percent{15};
+  int switch_above_percent{80};
+  int tolerance_percent{50};
+
+  // Optional expert overrides
+  int sample_interval_ms{1000};
+  int ev_night_high{1900000};
+  int ev_day_low_primary{479832};
+  int ev_day_low_secondary{361880};
+  int gb_gain_delta{15};
+  int gb_gain_absolute{145};
+  int night_count_threshold{6};
+  int day_count_threshold{4};
+  int settle_samples_for_gb_record{20};
+  const char *script_path{nullptr};
+
+  // Live telemetry populated by the worker
+  std::atomic<int> live_brightness_percent{-1};
+  std::atomic<int> live_ev{-1};
+  std::atomic<int> live_gb{-1};
+  std::atomic<int> live_gr{-1};
+  std::atomic<const char *> live_mode{"unknown"};
+};
 struct _motion {
   int monitor_stream;
   int debounce_time;
@@ -350,6 +376,7 @@ public:
   _stream stream0{};
   _stream stream1{};
   _stream stream2{};
+  _daynight daynight{};
   _motion motion{};
   _websocket websocket{};
   _sysinfo sysinfo{};

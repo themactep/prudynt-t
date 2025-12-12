@@ -78,6 +78,11 @@ private:
   OSDItem osdUptm{};
   OSDItem osdLogo{};
   OSDItem osdBrightness{};
+  bool time_region_created{false};
+  bool user_region_created{false};
+  bool uptime_region_created{false};
+  bool logo_region_created{false};
+  bool brightness_region_created{false};
 
   void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, const char *position, int angle,
                 unsigned int fill_color, unsigned int stroke_color);
