@@ -7,4 +7,4 @@
 BasedOnStyle: LLVM
 AllowShortFunctionsOnASingleLine: None
 KeepEmptyLinesAtTheStartOfBlocks: false
-
+ColumnLimit: 120
