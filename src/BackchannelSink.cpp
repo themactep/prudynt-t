@@ -173,7 +173,7 @@ void BackchannelSink::sendBackchannelFrame(const uint8_t *payload, unsigned payl
   bool enqueued = global_backchannel->inputQueue->write(std::move(bcFrame));
   if (!enqueued) {
     LOG_WARN("Input queue full for session " << static_cast<unsigned>(fClientSessionId)
-                                             << ". Dropped oldest frame to make room.");
+                                             << ". Frame dropped.");
   }
   global_backchannel->should_grab_frames.notify_one();
 }

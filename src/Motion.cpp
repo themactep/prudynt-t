@@ -1,4 +1,5 @@
 #include "Motion.hpp"
+#include <algorithm>
 
 using namespace std::chrono;
 bool ignoreInitialPeriod = true;
@@ -123,16 +124,16 @@ int Motion::init() {
   ret = IMP_Encoder_GetChnAttr(cfg->motion.monitor_stream, &channelAttributes);
   if (ret == 0) {
     if (cfg->motion.frame_width == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("frame_width"), channelAttributes.encAttr.picWidth, true);
+      cfg->set<int>(getConfigPath("frame_width"), HAL_ENC_ATTR_WIDTH(channelAttributes), true);
     }
     if (cfg->motion.frame_height == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("frame_height"), channelAttributes.encAttr.picHeight, true);
+      cfg->set<int>(getConfigPath("frame_height"), HAL_ENC_ATTR_HEIGHT(channelAttributes), true);
     }
     if (cfg->motion.roi_1_x == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("roi_1_x"), channelAttributes.encAttr.picWidth - 1, true);
+      cfg->set<int>(getConfigPath("roi_1_x"), HAL_ENC_ATTR_WIDTH(channelAttributes) - 1, true);
     }
     if (cfg->motion.roi_1_y == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("roi_1_y"), channelAttributes.encAttr.picHeight - 1, true);
+      cfg->set<int>(getConfigPath("roi_1_y"), HAL_ENC_ATTR_HEIGHT(channelAttributes) - 1, true);
     }
   }
 
@@ -145,6 +146,23 @@ int Motion::init() {
   // Adjust motion frame dimensions for video rotation
   int motion_width = cfg->motion.frame_width;
   int motion_height = cfg->motion.frame_height;
+
+  // Get the monitored stream to check for rotation
+  _stream *monitor_stream_cfg = nullptr;
+  if (cfg->motion.monitor_stream == 0) {
+    monitor_stream_cfg = &cfg->stream0;
+  } else if (cfg->motion.monitor_stream == 1) {
+    monitor_stream_cfg = &cfg->stream1;
+  } else if (cfg->motion.monitor_stream == 2) {
+    monitor_stream_cfg = &cfg->stream2;
+  }
+
+  // Swap dimensions if video is rotated
+  if (monitor_stream_cfg && monitor_stream_cfg->rotation != 0) {
+    std::swap(motion_width, motion_height);
+    LOG_DEBUG("Motion detection dimensions adjusted for " << monitor_stream_cfg->rotation
+                                                          << "° rotation: " << motion_width << "x" << motion_height);
+  }
 
   move_param.frameInfo.width = motion_width;
   move_param.frameInfo.height = motion_height;

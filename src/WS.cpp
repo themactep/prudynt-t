@@ -3,6 +3,7 @@
 #include "ImagingControl.hpp"
 #include "OSD.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 #include "libwebsockets.h"
 #include <arpa/inet.h>
 #include <faac.h>
@@ -771,42 +772,37 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
     u_ctx->flag |= PNT_FLAG_SEPARATOR;
 
     if (ctx->path_match == PNT_IMAGE_DEFOG_STRENGTH) {
-#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
-    !defined(PLATFORM_T30)
-      if (reason == LEJPCB_VAL_NUM_INT) {
-        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-          u_ctx->imaging_dirty = true;
-          uint8_t t = static_cast<uint8_t>(cfg->get<int>(u_ctx->path));
-          IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t *>(&t));
-        }
-      }
-      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-      add_json_null(u_ctx->message);
-#endif
-    } else if (ctx->path_match >= PNT_IMAGE_CORE_WB_MODE && ctx->path_match <= PNT_IMAGE_WB_BGAIN) {
-      if (reason == LEJPCB_VAL_NUM_INT) {
-        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-          u_ctx->imaging_dirty = true;
-          IMPISPWB wb;
-          memset(&wb, 0, sizeof(IMPISPWB));
-          int ret = IMP_ISP_Tuning_GetWB(&wb);
-          if (ret == 0) {
-            wb.mode = (isp_core_wb_mode)cfg->image.core_wb_mode;
-            wb.rgain = cfg->image.wb_rgain;
-            wb.bgain = cfg->image.wb_bgain;
-            ret = IMP_ISP_Tuning_SetWB(&wb);
+      if (!hal::caps().has_isp_defog) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_defog_strength(static_cast<uint8_t>(cfg->get<int>(u_ctx->path)));
           }
         }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       }
-      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+    } else if (ctx->path_match >= PNT_IMAGE_CORE_WB_MODE && ctx->path_match <= PNT_IMAGE_WB_BGAIN) {
+      if (!hal::caps().has_isp_wb) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_wb(cfg->image.core_wb_mode, static_cast<unsigned short>(cfg->image.wb_rgain),
+                             static_cast<unsigned short>(cfg->image.wb_bgain));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      }
     } else {
       switch (ctx->path_match) {
       case PNT_IMAGE_BRIGHTNESS:
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetBrightness(cfg->get<int>(u_ctx->path));
+            hal::isp::set_brightness(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
@@ -815,30 +811,29 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetContrast(cfg->get<int>(u_ctx->path));
+            hal::isp::set_contrast(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_IMAGE_HUE:
-#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
-    !defined(PLATFORM_T30)
+        if (!hal::caps().has_isp_hue) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetBcshHue(cfg->get<int>(u_ctx->path));
+            hal::isp::set_hue(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-        add_json_null(u_ctx->message);
-#endif
         break;
       case PNT_IMAGE_SATURATION:
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetSaturation(cfg->get<int>(u_ctx->path));
+            hal::isp::set_saturation(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
@@ -847,75 +842,95 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetSharpness(cfg->get<int>(u_ctx->path));
+            hal::isp::set_sharpness(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_IMAGE_SINTER_STRENGTH:
-#if !defined(PLATFORM_T21)
+        if (!hal::caps().has_isp_sinter) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetSinterStrength(cfg->get<int>(u_ctx->path));
+            hal::isp::set_sinter_strength(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-        add_json_null(u_ctx->message);
-#endif
         break;
       case PNT_IMAGE_TEMPER_STRENGTH:
+        if (!hal::caps().has_isp_temper) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetTemperStrength(cfg->get<int>(u_ctx->path));
+            hal::isp::set_temper_strength(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_IMAGE_VFLIP:
+        if (!hal::caps().has_isp_vflip) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetISPVflip(IMPISP_TUNING_OPS_MODE_ENABLE);
+            hal::isp::set_vflip(true);
           }
         } else if (reason == LEJPCB_VAL_FALSE) {
           if (cfg->set<bool>(u_ctx->path, false)) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetISPVflip(IMPISP_TUNING_OPS_MODE_DISABLE);
+            hal::isp::set_vflip(false);
           }
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
         break;
       case PNT_IMAGE_HFLIP:
+        if (!hal::caps().has_isp_hflip) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetISPHflip(IMPISP_TUNING_OPS_MODE_ENABLE);
+            hal::isp::set_hflip(true);
           }
         } else if (reason == LEJPCB_VAL_FALSE) {
           if (cfg->set<bool>(u_ctx->path, false)) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetISPHflip(IMPISP_TUNING_OPS_MODE_DISABLE);
+            hal::isp::set_hflip(false);
           }
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
         break;
       case PNT_IMAGE_ANTIFLICKER:
+        if (!hal::caps().has_isp_anti_flicker) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetAntiFlickerAttr((IMPISPAntiflickerAttr)cfg->get<int>(u_ctx->path));
+            hal::isp::set_anti_flicker(cfg->get<int>(u_ctx->path));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_IMAGE_RUNNING_MODE: {
+        if (!hal::caps().has_isp_running_mode) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)cfg->get<int>(u_ctx->path));
+            hal::isp::set_running_mode(cfg->get<int>(u_ctx->path));
           }
         }
 
@@ -926,83 +941,92 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       } break;
       case PNT_IMAGE_AE_COMPENSATION:
-#if !defined(PLATFORM_T21)
+        if (!hal::caps().has_isp_ae_comp) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetAeComp(cfg->get<int>(u_ctx->path));
+            hal::isp::set_ae_compensation(cfg->get<int>(u_ctx->path));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-        add_json_null(u_ctx->message);
-#endif
         break;
       case PNT_IMAGE_DPC_STRENGTH:
-#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
-    !defined(PLATFORM_T30)
+        if (!hal::caps().has_isp_dpc) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetDPC_Strength(cfg->get<int>(u_ctx->path));
+            hal::isp::set_dpc_strength(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-        add_json_null(u_ctx->message);
-#endif
         break;
       case PNT_IMAGE_DRC_STRENGTH:
-#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
-    !defined(PLATFORM_T30)
+        if (!hal::caps().has_isp_drc) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetDRC_Strength(cfg->get<int>(u_ctx->path));
+            hal::isp::set_drc_strength(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-        add_json_null(u_ctx->message);
-#endif
         break;
       case PNT_IMAGE_HIGHLIGHT_DEPRESS:
+        if (!hal::caps().has_isp_highlight_depress) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetHiLightDepress(cfg->get<int>(u_ctx->path));
+            hal::isp::set_highlight_depress(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_IMAGE_BACKLIGHT_COMPENSTATION:
-#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
-    !defined(PLATFORM_T30)
+        if (!hal::caps().has_isp_backlight_comp) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetBacklightComp(cfg->get<int>(u_ctx->path));
+            hal::isp::set_backlight_comp(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-        add_json_null(u_ctx->message);
-#endif
         break;
       case PNT_IMAGE_MAX_AGAIN:
+        if (!hal::caps().has_isp_max_gain) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetMaxAgain(cfg->get<int>(u_ctx->path));
+            hal::isp::set_max_again(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_IMAGE_MAX_DGAIN:
+        if (!hal::caps().has_isp_max_gain) {
+          add_json_null(u_ctx->message);
+          break;
+        }
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             u_ctx->imaging_dirty = true;
-            IMP_ISP_Tuning_SetMaxDgain(cfg->get<int>(u_ctx->path));
+            hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
           }
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));

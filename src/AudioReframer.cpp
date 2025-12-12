@@ -43,7 +43,7 @@ void AudioReframer::getReframedFrame(uint8_t *frameData, int64_t &timestamp) {
   timestamp = currentTimestamp;
   if (inputSampleRate > 0) {
     currentTimestamp += (outputSamplesPerFrame * 1000) / inputSampleRate;
-  }
+  } // else: keep currentTimestamp stable if misconfigured
 }
 
 bool AudioReframer::hasMoreFrames() const {

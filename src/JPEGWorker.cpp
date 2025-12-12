@@ -4,8 +4,11 @@
 #include "Logger.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 
 #include <fcntl.h>  // For O_RDWR, O_CREAT, O_TRUNC flags
+#include <cerrno>
+#include <cstring>
 #include <unistd.h> // For open(), close(), etc.
 
 #define MODULE "JPEGWorker"
@@ -19,45 +22,29 @@ JPEGWorker::~JPEGWorker() {
 }
 
 int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream) {
-  int ret, i, nr_pack = stream->packCount;
-
-  for (i = 0; i < nr_pack; i++) {
-    void *data_ptr;
-    size_t data_len;
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-    IMPEncoderPack *pack = &stream->pack[i];
-    uint32_t remSize = 0; // Declare remSize here
-    if (pack->length) {
-      remSize = stream->streamSize - pack->offset;
-      data_ptr = (void *)((char *)stream->virAddr + ((remSize < pack->length) ? 0 : pack->offset));
-      data_len = (remSize < pack->length) ? remSize : pack->length;
-    } else {
-      continue; // Skip empty packs
+  auto write_chunk = [&](const void *ptr, size_t len) -> bool {
+    if (!len)
+      return true;
+    int ret = write(fd, ptr, len);
+    if (ret != static_cast<int>(len)) {
+      LOG_ERROR("Stream write error: " << strerror(errno));
+      return false;
     }
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
-    defined(PLATFORM_T30)
-    data_ptr = reinterpret_cast<void *>(stream->pack[i].virAddr);
-    data_len = stream->pack[i].length;
-#endif
+    return true;
+  };
 
-    // Write data to file
-    ret = write(fd, data_ptr, data_len);
-    if (ret != static_cast<int>(data_len)) {
-      printf("Stream write error: %s\n", strerror(errno));
-      return -1; // Return error on write failure
-    }
+  const int nr_pack = stream->packCount;
+  for (int i = 0; i < nr_pack; i++) {
+    auto slices = hal::encoder::get_pack_slices(*stream, i);
+    if (!slices.first_ptr || slices.first_len == 0)
+      continue;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-    // Check the condition only under T31 platform, as remSize is used here
-    if (remSize && pack->length > remSize) {
-      ret = write(fd, (void *)((char *)stream->virAddr), pack->length - remSize);
-      if (ret != static_cast<int>(pack->length - remSize)) {
-        printf("Stream write error (remaining part): %s\n", strerror(errno));
+    if (!write_chunk(slices.first_ptr, slices.first_len))
+      return -1;
+    if (slices.second_ptr && slices.second_len > 0) {
+      if (!write_chunk(slices.second_ptr, slices.second_len))
         return -1;
-      }
     }
-#endif
   }
 
   return 0;
@@ -87,9 +74,9 @@ void JPEGWorker::run() {
      * if jpeg_idle_fps = 0, the thread is put into sleep until a client is
      * connected. if jpeg_idle_fps > 0, we try to reach a frame rate of
      * stream.jpeg_idle_fps. enen if no client is connected. if a client is
-     * connected via WS / HTTP we try to reach a framerate of stream.fps the
-     * thread will fallback into idle / sleep mode if no client request was made
-     * for more than a second
+     * connected via WS / HTTP we try to reach a framerate of stream.fps the thread
+     * will fallback into idle / sleep mode if no client request was made for
+     * more than a second
      */
     auto now = steady_clock::now();
 

@@ -2,6 +2,7 @@
 #include "AACEncoder.hpp"
 #include "Config.hpp"
 #include "Opus.hpp"
+#include "imp_hal.hpp"
 #include <cctype>
 #include <cerrno>
 #include <thread>
@@ -192,9 +193,7 @@ int IMPAudio::init() {
     enabledHpf = true;
   }
 
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||                \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  if (cfg->audio.input_agc_enabled) {
+  if (cfg->audio.input_agc_enabled && hal::caps().has_audio_agc) {
     IMPAudioAgcConfig agcConfig = {
         /**< Gain level, with a range of [0, 31]. This represents the target
         volume level, measured in dB (decibels), and is a negative value. The
@@ -210,9 +209,8 @@ int IMPAudio::init() {
                                                  << "})");
     enabledAgc = true;
   }
-#endif
 #if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  if (cfg->audio.input_alc_gain > 0) {
+  if (cfg->audio.input_alc_gain > 0 && hal::caps().has_audio_alc) {
     ret = IMP_AI_SetAlcGain(devId, inChn, cfg->audio.input_alc_gain);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain(" << devId << ", " << inChn << ", " << cfg->audio.input_alc_gain << ")");
   }

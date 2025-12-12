@@ -2,20 +2,11 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 #include <cmath>
 #include <pthread.h>
 #include <unistd.h>
 #include <vector>
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define picWidth uWidth
-#define picHeight uHeight
-#endif
 
 #include <algorithm>
 #include <array>
@@ -729,8 +720,8 @@ void OSD::init() {
     // return true;
   }
 
-  stream_width = channelAttributes.encAttr.picWidth;
-  stream_height = channelAttributes.encAttr.picHeight;
+  stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
+  stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
 
   // Calculate realistic OSD pool size based on typical usage
   // Estimate: ~10% of screen area for OSD elements (text, logos, etc.)
@@ -750,13 +741,12 @@ void OSD::init() {
                                 << stream_height << " resolution");
   }
 
-  // picWidth, picHeight cpp macro !!
   LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: " << stream_width << "x" << stream_height);
 
   ret = IMP_OSD_CreateGroup(osdGrp);
 
-  int fontSize = autoFontSize(channelAttributes.encAttr.picWidth);
-  // int autoOffset = round((float)(channelAttributes.encAttr.picWidth * 0.004)); // Currently unused
+  int fontSize = autoFontSize(HAL_ENC_ATTR_WIDTH(channelAttributes));
+  // int autoOffset = round((float)(HAL_ENC_ATTR_WIDTH(channelAttributes) * 0.004)); // Currently unused
 
   if (osd.font_size == OSD_AUTO_VALUE) {
     // use cfg->set to set noSave, so auto values will not written to config

@@ -258,6 +258,13 @@ struct _stream {
   bool power_saving;
   bool allow_shared;
   const char *mode;
+  // Advanced RC parameters; -1/0 keeps SDK defaults
+  int qp_init{-1};
+  int qp_min{-1};
+  int qp_max{-1};
+  int ip_delta{-1};
+  int pb_delta{-1};
+  int max_bitrate{0};
   const char *rtsp_endpoint;
   const char *rtsp_info;
   const char *format{"JPEG"};

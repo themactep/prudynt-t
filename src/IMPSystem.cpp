@@ -1,5 +1,6 @@
 #include "IMPSystem.hpp"
 #include "Config.hpp"
+#include "imp_hal.hpp"
 #include <fstream>
 
 #define MODULE "IMP_SYSTEM"
@@ -195,19 +196,11 @@ int IMPSystem::init() {
 
   /* sensor */
   sinfo = create_sensor_info(cfg->sensor.model);
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  ret = IMP_ISP_AddSensor(IMPVI_MAIN, &sinfo);
-#else
-  ret = IMP_ISP_AddSensor(&sinfo);
-#endif
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_AddSensor(&sinfo)");
+  ret = hal::isp::add_sensor(&sinfo);
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::add_sensor(&sinfo)");
 
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  ret = IMP_ISP_EnableSensor(IMPVI_MAIN, &sinfo);
-#else
-  ret = IMP_ISP_EnableSensor();
-#endif
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableSensor()");
+  ret = hal::isp::enable_sensor(&sinfo);
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::enable_sensor(&sinfo)");
 
   /* system */
   ret = IMP_System_Init();
@@ -217,112 +210,77 @@ int IMPSystem::init() {
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableTuning()");
 
 #if !defined(NO_TUNINGS)
-  ret = IMP_ISP_Tuning_SetContrast(cfg->image.contrast);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetContrast(" << cfg->image.contrast << ")");
+  ret = hal::isp::set_contrast(static_cast<unsigned char>(cfg->image.contrast));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_contrast(" << cfg->image.contrast << ")");
 
-  ret = IMP_ISP_Tuning_SetSharpness(cfg->image.sharpness);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetSharpness(" << cfg->image.sharpness << ")");
+  ret = hal::isp::set_sharpness(static_cast<unsigned char>(cfg->image.sharpness));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_sharpness(" << cfg->image.sharpness << ")");
 
-  ret = IMP_ISP_Tuning_SetSaturation(cfg->image.saturation);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetSaturation(" << cfg->image.saturation << ")");
+  ret = hal::isp::set_saturation(static_cast<unsigned char>(cfg->image.saturation));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_saturation(" << cfg->image.saturation << ")");
 
-  ret = IMP_ISP_Tuning_SetBrightness(cfg->image.brightness);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetBrightness(" << cfg->image.brightness << ")");
+  ret = hal::isp::set_brightness(static_cast<unsigned char>(cfg->image.brightness));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_brightness(" << cfg->image.brightness << ")");
 
-  ret = IMP_ISP_Tuning_SetContrast(cfg->image.contrast);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetContrast(" << cfg->image.contrast << ")");
+  ret = hal::isp::set_sinter_strength(static_cast<unsigned char>(cfg->image.sinter_strength));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_sinter_strength(" << cfg->image.sinter_strength << ")");
 
-  ret = IMP_ISP_Tuning_SetSharpness(cfg->image.sharpness);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetSharpness(" << cfg->image.sharpness << ")");
+  ret = hal::isp::set_temper_strength(static_cast<unsigned char>(cfg->image.temper_strength));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_temper_strength(" << cfg->image.temper_strength << ")");
 
-  ret = IMP_ISP_Tuning_SetSaturation(cfg->image.saturation);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetSaturation(" << cfg->image.saturation << ")");
+  ret = hal::isp::set_hflip(cfg->image.hflip);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_hflip(" << cfg->image.hflip << ")");
 
-  ret = IMP_ISP_Tuning_SetBrightness(cfg->image.brightness);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetBrightness(" << cfg->image.brightness << ")");
+  ret = hal::isp::set_vflip(cfg->image.vflip);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_vflip(" << cfg->image.vflip << ")");
 
-#if !defined(PLATFORM_T21)
-  ret = IMP_ISP_Tuning_SetSinterStrength(cfg->image.sinter_strength);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetSinterStrength(" << cfg->image.sinter_strength << ")");
-#endif
+  ret = hal::isp::set_running_mode(static_cast<hal::isp::RunningMode>(cfg->image.running_mode));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_running_mode(" << cfg->image.running_mode << ")");
 
-  ret = IMP_ISP_Tuning_SetTemperStrength(cfg->image.temper_strength);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetTemperStrength(" << cfg->image.temper_strength << ")");
+  ret = hal::isp::set_isp_bypass(cfg->image.isp_bypass);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_isp_bypass(" << cfg->image.isp_bypass << ")");
 
-  ret = IMP_ISP_Tuning_SetISPHflip((IMPISPTuningOpsMode)cfg->image.hflip);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetISPHflip(" << cfg->image.hflip << ")");
+  ret = hal::isp::set_anti_flicker(cfg->image.anti_flicker);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_anti_flicker(" << cfg->image.anti_flicker << ")");
 
-  ret = IMP_ISP_Tuning_SetISPVflip((IMPISPTuningOpsMode)cfg->image.vflip);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetISPVflip(" << cfg->image.vflip << ")");
+  ret = hal::isp::set_ae_compensation(cfg->image.ae_compensation);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_ae_compensation(" << cfg->image.ae_compensation << ")");
 
-  ret = IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)cfg->image.running_mode);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetISPRunningMode(" << cfg->image.running_mode << ")");
+  ret = hal::isp::set_max_again(static_cast<unsigned char>(cfg->image.max_again));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_again(" << cfg->image.max_again << ")");
 
-  // Configurable ISP bypass
-  ret = IMP_ISP_Tuning_SetISPBypass(cfg->image.isp_bypass ? IMPISP_TUNING_OPS_MODE_ENABLE
-                                                          : IMPISP_TUNING_OPS_MODE_DISABLE);
-  LOG_DEBUG_OR_ERROR(
-      ret, "IMP_ISP_Tuning_SetISPBypass("
-               << (cfg->image.isp_bypass ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE) << ")");
+  ret = hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->image.max_dgain));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
 
-  IMPISPAntiflickerAttr flickerAttr;
-  memset(&flickerAttr, 0, sizeof(IMPISPAntiflickerAttr));
-  ret = IMP_ISP_Tuning_SetAntiFlickerAttr((IMPISPAntiflickerAttr)cfg->image.anti_flicker);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetAntiFlickerAttr(" << cfg->image.anti_flicker << ")");
+  ret = hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain="
+                                                    << cfg->image.wb_rgain << ", bgain=" << cfg->image.wb_bgain
+                                                    << ")");
 
-#if !defined(PLATFORM_T21)
-  ret = IMP_ISP_Tuning_SetAeComp(cfg->image.ae_compensation);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetAeComp(" << cfg->image.ae_compensation << ")");
-#endif
+  ret = hal::isp::set_hue(static_cast<unsigned char>(cfg->image.hue));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_hue(" << cfg->image.hue << ")");
 
-  ret = IMP_ISP_Tuning_SetMaxAgain(cfg->image.max_again);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetMaxAgain(" << cfg->image.max_again << ")");
+  ret = hal::isp::set_defog_strength(static_cast<uint8_t>(cfg->image.defog_strength));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_defog_strength(" << cfg->image.defog_strength << ")");
 
-  ret = IMP_ISP_Tuning_SetMaxDgain(cfg->image.max_dgain);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetMaxDgain(" << cfg->image.max_dgain << ")");
+  ret = hal::isp::set_dpc_strength(static_cast<unsigned char>(cfg->image.dpc_strength));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_dpc_strength(" << cfg->image.dpc_strength << ")");
 
-  IMPISPWB wb;
-  memset(&wb, 0, sizeof(IMPISPWB));
-  wb.mode = (isp_core_wb_mode)cfg->image.core_wb_mode;
-  wb.rgain = cfg->image.wb_rgain;
-  wb.bgain = cfg->image.wb_bgain;
-  ret = IMP_ISP_Tuning_SetWB(&wb);
-  if (ret != 0) {
-    LOG_ERROR("Unable to set white balance. Mode: " << cfg->image.core_wb_mode << ", rgain: " << cfg->image.wb_rgain
-                                                    << ", bgain: " << cfg->image.wb_bgain);
-  } else {
-    LOG_DEBUG("Set white balance. Mode: " << cfg->image.core_wb_mode << ", rgain: " << cfg->image.wb_rgain
-                                          << ", bgain: " << cfg->image.wb_bgain);
+  ret = hal::isp::set_drc_strength(static_cast<unsigned char>(cfg->image.drc_strength));
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_drc_strength(" << cfg->image.drc_strength << ")");
+
+  const bool backlight_requested = cfg->image.backlight_compensation > 0;
+  const bool highlight_requested = cfg->image.highlight_depress > 0;
+  bool applied_backlight = false;
+  if (backlight_requested) {
+    ret = hal::isp::set_backlight_comp(static_cast<unsigned char>(cfg->image.backlight_compensation));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_backlight_comp(" << cfg->image.backlight_compensation << ")");
+    applied_backlight = (ret == 0);
   }
-
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  ret = IMP_ISP_Tuning_SetBcshHue(cfg->image.hue);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetBcshHue(" << cfg->image.hue << ")");
-
-  uint8_t _defog_strength = static_cast<uint8_t>(cfg->image.defog_strength);
-  ret = IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t *>(&_defog_strength));
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetDefog_Strength(" << cfg->image.defog_strength << ")");
-
-  ret = IMP_ISP_Tuning_SetDPC_Strength(cfg->image.dpc_strength);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetDPC_Strength(" << cfg->image.dpc_strength << ")");
-#endif
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  ret = IMP_ISP_Tuning_SetDRC_Strength(cfg->image.drc_strength);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetDRC_Strength(" << cfg->image.drc_strength << ")");
-#endif
-
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  if (cfg->image.backlight_compensation > 0) {
-    ret = IMP_ISP_Tuning_SetBacklightComp(cfg->image.backlight_compensation);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetBacklightComp(" << cfg->image.backlight_compensation << ")");
-  } else if (cfg->image.highlight_depress > 0) {
-    ret = IMP_ISP_Tuning_SetHiLightDepress(cfg->image.highlight_depress);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetHiLightDepress(" << cfg->image.highlight_depress << ")");
+  if ((!applied_backlight || !hal::caps().has_isp_backlight_comp) && highlight_requested) {
+    ret = hal::isp::set_highlight_depress(static_cast<unsigned char>(cfg->image.highlight_depress));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_highlight_depress(" << cfg->image.highlight_depress << ")");
   }
-#elif defined(PLATFORM_T21) || defined(PLATFORM_T30)
-  ret = IMP_ISP_Tuning_SetHiLightDepress(cfg->image.highlight_depress);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Tuning_SetHiLightDepress(" << cfg->image.highlight_depress << ")");
-#endif
 
   LOG_DEBUG("ISP Tuning Defaults set");
 
@@ -347,8 +305,8 @@ int IMPSystem::init() {
 #endif
 
   // Set the ISP to DAY on launch
-  ret = IMP_ISP_Tuning_SetISPRunningMode(IMPISP_RUNNING_MODE_DAY);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetISPRunningMode(" << IMPISP_RUNNING_MODE_DAY << ")");
+  ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_running_mode(Day)");
 #endif // #if !defined(NO_TUNINGS)
 
   return ret;
@@ -360,19 +318,11 @@ int IMPSystem::destroy() {
   ret = IMP_System_Exit();
   LOG_DEBUG_OR_ERROR(ret, "IMP_System_Exit()");
 
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  ret = IMP_ISP_DisableSensor(IMPVI_MAIN);
-#else
-  ret = IMP_ISP_DisableSensor();
-#endif
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DisableSensor()");
+  ret = hal::isp::disable_sensor();
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::disable_sensor()");
 
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  ret = IMP_ISP_DelSensor(IMPVI_MAIN, &sinfo);
-#else
-  ret = IMP_ISP_DelSensor(&sinfo);
-#endif
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DelSensor()");
+  ret = hal::isp::del_sensor(&sinfo);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::del_sensor(&sinfo)");
 
   ret = IMP_ISP_DisableTuning();
   LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DisableTuning()");

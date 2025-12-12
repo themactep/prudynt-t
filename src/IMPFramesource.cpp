@@ -3,11 +3,6 @@
 
 #define MODULE "IMP_FRAMESOURCE"
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
-
 IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor, int chnNr) {
   return new IMPFramesource(stream, sensor, chnNr);
 }
@@ -34,8 +29,7 @@ int IMPFramesource::init() {
   chnAttr.pixFmt = PIX_FMT_NV12;
   chnAttr.outFrmRateNum = stream->fps;
   chnAttr.outFrmRateDen = 1;
-  // Keep buffers as configured; default to 2 if unset, to remain
-  // memory-friendly on low-RAM devices
+  // Keep buffers as configured; default to 2 if unset, to remain memory-friendly on low-RAM devices
   chnAttr.nrVBs = (stream->buffers > 0 ? stream->buffers : 2);
   chnAttr.type = FS_PHY_CHANNEL;
 
@@ -52,8 +46,8 @@ int IMPFramesource::init() {
     chnAttr.picWidth = stream->height;
     chnAttr.picHeight = stream->width;
     // Breaks OSD
-    //        chnAttr.picWidth = stream->width;
-    //        chnAttr.picHeight = stream->height;
+    // chnAttr.picWidth = stream->width;
+    // chnAttr.picHeight = stream->height;
   } else {
     chnAttr.scaler.outwidth = stream->width;
     chnAttr.scaler.outheight = stream->height;

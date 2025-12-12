@@ -4,15 +4,10 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "OSD.hpp"
+#include "imp_hal.hpp"
 #include <array>
 #include <imp/imp_common.h>
-#include <imp/imp_encoder.h>
 #include <imp/imp_system.h>
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
 
 static const std::array<int, 64> jpeg_chroma_quantizer = {
     {17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99,

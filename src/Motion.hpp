@@ -4,22 +4,13 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 #include "imp/imp_ivs.h"
 #include "imp/imp_ivs_move.h"
 #include "imp/imp_system.h"
 #include <atomic>
 #include <memory>
 #include <thread>
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define picWidth uWidth
-#define picHeight uHeight
-#endif
 
 class Motion {
 public:

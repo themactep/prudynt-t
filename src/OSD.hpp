@@ -3,13 +3,12 @@
 
 // #include <map>
 #include "Config.hpp"
+#include "imp_hal.hpp"
 #include "schrift.h"
 #include <arpa/inet.h>
 #include <array>
 #include <ifaddrs.h>
 
-#include <imp/imp_common.h>
-#include <imp/imp_encoder.h>
 #include <imp/imp_osd.h>
 #include <memory>
 #include <netinet/in.h>
@@ -17,11 +16,6 @@
 #include <sys/sysinfo.h>
 #include <unordered_map>
 #include <vector>
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
 
 struct OSDItem {
   IMPRgnHandle imp_rgn;

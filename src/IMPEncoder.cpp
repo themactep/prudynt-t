@@ -1,13 +1,9 @@
 #include "IMPEncoder.hpp"
 #include "Config.hpp"
+#include "imp_hal.hpp"
 #include <cstdint>
 
 #define MODULE "IMPENCODER"
-
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-#endif
 
 namespace {
 inline uint32_t align_up(uint32_t value, uint32_t alignment) {
@@ -79,8 +75,9 @@ void IMPEncoder::initProfile() {
     encoderProfile = IMP_ENC_PROFILE_HEVC_MAIN;
   } else if (strcmp(stream->format, "JPEG") == 0) {
     encoderProfile = IMP_ENC_PROFILE_JPEG;
-    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP, stream->width, stream->height, 24, 1,
-                                0, 0, stream->jpeg_quality, 0);
+    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP, stream->width,
+                                stream->height, 24, 1, 0, 0,
+                                stream->jpeg_quality, 0);
     // 1000 / stream->jpeg_refresh
     LOG_DEBUG("STREAM PROFILE " << encChn << ", " << encGrp << ", " << stream->format << ", "
                                 << chnAttr.rcAttr.outFrmRate.frmRateNum << "fps, profile:" << stream->profile << ", "
@@ -104,8 +101,8 @@ void IMPEncoder::initProfile() {
                                               "CAPPED_QUALITY on T31");
   }
 
-  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width, stream->height, stream->fps, 1,
-                              stream->gop, 2, -1, stream->bitrate);
+  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width, stream->height,
+                              stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
 
   switch (rcMode) {
   case IMP_ENC_RC_MODE_FIXQP:
@@ -163,6 +160,9 @@ void IMPEncoder::initProfile() {
   case IMP_ENC_RC_MODE_INVALID:
     break;
   }
+
+  hal::apply_rc_overrides(chnAttr, rcMode, *stream);
+
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
     defined(PLATFORM_T30)
   if (strcmp(stream->format, "JPEG") == 0) {
@@ -272,6 +272,8 @@ void IMPEncoder::initProfile() {
     rcAttr->attrRcMode.attrH265Smart.flucLvl = 2;
 #endif // defined(PLATFORM_T30)
   }
+  hal::apply_rc_overrides(chnAttr, rcMode, *stream);
+
   rcAttr->attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
   rcAttr->attrHSkip.hSkipAttr.m = rcAttr->maxGop - 1;
   rcAttr->attrHSkip.hSkipAttr.n = 1;
@@ -307,9 +309,9 @@ int IMPEncoder::init() {
   }
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
-    ret = IMP_Encoder_SetbufshareChn(2, encChn);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn << ")");
+  if (is_jpeg && stream->allow_shared) {
+    ret = hal::maybe_enable_bufshare(encChn, encGrp, stream->allow_shared);
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare(" << encChn << ", " << encGrp << ")");
   }
 #endif
 
@@ -394,23 +396,9 @@ int IMPEncoder::init() {
       return ret;
     }
     osd_to_enc_bound = true;
+  } else {
+    hal::set_jpeg_quality_qtable(encChn, stream->jpeg_quality, cfg->sysinfo.cpu);
   }
-#if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) || !defined(PLATFORM_T40) || !defined(PLATFORM_T41))
-  else {
-    IMPEncoderJpegeQl pstJpegeQl;
-    // fix for bad jpeg image quality on T10 based cameras
-    if (strncmp(cfg->sysinfo.cpu, "T10", 3) == 0) {
-      pstJpegeQl.user_ql_en = 0;
-      LOG_DEBUG("JPEG use default quantization table");
-    } else {
-      MakeTables(stream->jpeg_quality, &(pstJpegeQl.qmem_table[0]), &(pstJpegeQl.qmem_table[64]));
-      pstJpegeQl.user_ql_en = 1;
-      LOG_DEBUG("JPEG use custom user quantization table");
-    }
-
-    IMP_Encoder_SetJpegeQl(2, &pstJpegeQl);
-  }
-#endif
 
   return ret;
 }
