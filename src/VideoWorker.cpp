@@ -507,8 +507,7 @@ void *VideoWorker::thread_entry(void *arg) {
     std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
     global_video[encChn]->privacy_mask.reset();
     global_video[encChn]->privacy_mask = std::make_shared<VideoPrivacyMask>(
-        encChn, global_video[encChn]->stream->width,
-        global_video[encChn]->stream->height);
+      encChn, global_video[encChn]->stream);
     privacy_mask = global_video[encChn]->privacy_mask;
   }
 

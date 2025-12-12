@@ -96,6 +96,21 @@ struct _regions {
   int logo;
   int brightness;
 };
+struct _osd_privacy {
+  bool enabled;
+  const char *text;
+  const char *position;
+  int rotation;
+  int font_size;
+  int font_stroke_size;
+  unsigned int font_color;
+  unsigned int font_stroke_color;
+  const char *image_path;
+  int image_width;
+  int image_height;
+  int layer;
+  int opacity;
+};
 struct _general {
   const char *loglevel;
   int osd_pool_size;
@@ -225,6 +240,7 @@ struct _osd {
   _regions regions;
   _stream_stats stats;
   std::atomic<int> thread_signal;
+  _osd_privacy privacy;
 };
 struct _stream {
   int gop;

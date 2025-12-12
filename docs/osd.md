@@ -1,10 +1,12 @@
-# On-Screen Display Enhancements
+On-Screen Display
+=================
 
-## Integrated Brightness Meter
+Integrated Brightness Meter
+---------------------------
 
 Prudynt now derives the ambient brightness that controls the day/night toggle directly from the Ingenic ISP statistics instead of the external `daynightd` daemon. The meter samples `/proc/jz/isp/isp-m0` (with a `/tmp/test-isp-m0` fallback for development boards), compensates for the current integration time and gain, and smooths the data across a small history window. When ISP data is unavailable it falls back to a simple time-of-day heuristic, so the overlay never goes blank.
 
-### New configuration keys
+### Configuration keys
 
 Each stream inherits the following options under `streamX.osd` (see `res/prudynt.json` for defaults):
 
@@ -18,7 +20,7 @@ Each stream inherits the following options under `streamX.osd` (see `res/prudynt
   - `%m` — current operating mode reported by the ISP (e.g. `DAY`, `NIGHT`).
   - Use `%%` to render a literal percent sign.
 
-Example (stream0):
+### Example (stream0):
 
 ```jsonc
 "osd": {
