@@ -3,14 +3,12 @@
 
 #define MODULE "IMP_FRAMESOURCE"
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
 #define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
 
-IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor,
-                                          int chnNr) {
+IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor, int chnNr) {
   return new IMPFramesource(stream, sensor, chnNr);
 }
 
@@ -65,14 +63,10 @@ int IMPFramesource::init() {
 
   LOG_DEBUG("Channel " << chnNr << " configuration (post-attr):");
   LOG_DEBUG("  pic: " << chnAttr.picWidth << "x" << chnAttr.picHeight);
-  LOG_DEBUG("  crop.enable=" << chnAttr.crop.enable
-                             << " crop=" << chnAttr.crop.width << "x"
-                             << chnAttr.crop.height);
-  LOG_DEBUG("  scaler.enable=" << chnAttr.scaler.enable
-                               << " out=" << chnAttr.scaler.outwidth << "x"
+  LOG_DEBUG("  crop.enable=" << chnAttr.crop.enable << " crop=" << chnAttr.crop.width << "x" << chnAttr.crop.height);
+  LOG_DEBUG("  scaler.enable=" << chnAttr.scaler.enable << " out=" << chnAttr.scaler.outwidth << "x"
                                << chnAttr.scaler.outheight);
-  LOG_DEBUG("  fps=" << chnAttr.outFrmRateNum << "/" << chnAttr.outFrmRateDen
-                     << " nrVBs=" << chnAttr.nrVBs
+  LOG_DEBUG("  fps=" << chnAttr.outFrmRateNum << "/" << chnAttr.outFrmRateDen << " nrVBs=" << chnAttr.nrVBs
                      << " pixFmt=" << chnAttr.pixFmt);
 
 #if !defined(KERNEL_VERSION_4)
@@ -87,34 +81,27 @@ int IMPFramesource::init() {
   // IMP_Encoder_SetFisheyeEnableStatus(1, 1);
 
   if (stream->rotation != 0) {
-    ret = IMP_FrameSource_SetChnRotate(chnNr, rot_rotation, rot_height,
-                                       rot_width);
-    LOG_DEBUG_OR_ERROR(
-        ret,
-        "IMP_FrameSource_SetChnRotate(0, rotation, rot_height, rot_width)");
+    ret = IMP_FrameSource_SetChnRotate(chnNr, rot_rotation, rot_height, rot_width);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate(0, rotation, rot_height, rot_width)");
   }
 
 #endif
 #endif
 
   ret = IMP_FrameSource_CreateChn(chnNr, &chnAttr);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_FrameSource_CreateChn(" << chnNr << ", &chnAttr)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_CreateChn(" << chnNr << ", &chnAttr)");
 
   ret = IMP_FrameSource_SetChnAttr(chnNr, &chnAttr);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_FrameSource_SetChnAttr(" << chnNr << ", &chnAttr)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnAttr(" << chnNr << ", &chnAttr)");
 
 #if !defined(NO_FIFO)
   IMPFSChnFifoAttr fifo;
   ret = IMP_FrameSource_GetChnFifoAttr(chnNr, &fifo);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_FrameSource_GetChnFifoAttr(" << chnNr << ", &fifo)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_GetChnFifoAttr(" << chnNr << ", &fifo)");
 
   fifo.maxdepth = 0;
   ret = IMP_FrameSource_SetChnFifoAttr(chnNr, &fifo);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_FrameSource_SetChnFifoAttr(" << chnNr << ", &fifo)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnFifoAttr(" << chnNr << ", &fifo)");
 
   ret = IMP_FrameSource_SetFrameDepth(chnNr, 0);
   LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetFrameDepth(" << chnNr << ", 0)");
@@ -131,8 +118,7 @@ int IMPFramesource::enable() {
   int ret;
 
   ret = IMP_FrameSource_EnableChn(chnNr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                              "IMP_FrameSource_EnableChn(" << chnNr << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_EnableChn(" << chnNr << ")");
 
   return 0;
 }
@@ -141,8 +127,7 @@ int IMPFramesource::disable() {
   int ret;
 
   ret = IMP_FrameSource_DisableChn(chnNr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                              "IMP_FrameSource_DisableChn(" << chnNr << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_DisableChn(" << chnNr << ")");
 
   return 0;
 }
@@ -151,8 +136,7 @@ int IMPFramesource::destroy() {
   int ret;
 
   ret = IMP_FrameSource_DestroyChn(chnNr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                              "IMP_FrameSource_DestroyChn(" << chnNr << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_DestroyChn(" << chnNr << ")");
 
   return 0;
 }

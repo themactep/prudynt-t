@@ -5,17 +5,14 @@
 
 class IMPAudioServerMediaSubsession : public OnDemandServerMediaSubsession {
 public:
-  static IMPAudioServerMediaSubsession *createNew(UsageEnvironment &env,
-                                                  int audioChn);
+  static IMPAudioServerMediaSubsession *createNew(UsageEnvironment &env, int audioChn);
 
 protected:
   IMPAudioServerMediaSubsession(UsageEnvironment &env, int audioChn);
   virtual ~IMPAudioServerMediaSubsession();
 
-  virtual FramedSource *createNewStreamSource(unsigned clientSessionId,
-                                              unsigned &estBitrate);
-  virtual RTPSink *createNewRTPSink(Groupsock *rtpGroupsock,
-                                    unsigned char rtpPayloadTypeIfDynamic,
+  virtual FramedSource *createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate);
+  virtual RTPSink *createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                     FramedSource *inputSource);
   virtual void closeStreamSource(FramedSource *inputSource) override;
 

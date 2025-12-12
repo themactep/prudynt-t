@@ -16,8 +16,7 @@ MP4Recorder::~MP4Recorder() {
   closeUnlocked();
 }
 
-bool MP4Recorder::start(const std::string &path,
-                        const MP4Muxer::InitParams &params) {
+bool MP4Recorder::start(const std::string &path, const MP4Muxer::InitParams &params) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   closeUnlocked();
@@ -59,8 +58,7 @@ void MP4Recorder::stop() {
   closeUnlocked();
 }
 
-void MP4Recorder::writeVideo(const uint8_t *data, size_t size, int64_t pts_ms,
-                             bool isKey) {
+void MP4Recorder::writeVideo(const uint8_t *data, size_t size, int64_t pts_ms, bool isKey) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!active_ || !muxer_ || fd_ < 0)
     return;

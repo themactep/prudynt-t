@@ -17,14 +17,12 @@ BackchannelWorker::BackchannelWorker() : currentSessionId(0) {
 
 BackchannelWorker::~BackchannelWorker() = default;
 
-std::vector<int16_t>
-BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm,
-                                  int input_rate, int output_rate) {
+std::vector<int16_t> BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm, int input_rate,
+                                                       int output_rate) {
   assert(input_rate != output_rate);
 
   double ratio = static_cast<double>(output_rate) / input_rate;
-  size_t output_size = static_cast<size_t>(
-      std::max(1.0, std::round(static_cast<double>(input_pcm.size()) * ratio)));
+  size_t output_size = static_cast<size_t>(std::max(1.0, std::round(static_cast<double>(input_pcm.size()) * ratio)));
 
   std::vector<int16_t> output_pcm(output_size);
   size_t input_size = input_pcm.size();
@@ -38,13 +36,11 @@ BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm,
     }
 
     int16_t sample1 = input_pcm[index1];
-    int16_t sample2 =
-        (index1 + 1 < input_size) ? input_pcm[index1 + 1] : sample1;
+    int16_t sample2 = (index1 + 1 < input_size) ? input_pcm[index1 + 1] : sample1;
 
     double factor = input_pos - static_cast<double>(index1);
 
-    double interpolated_sample = static_cast<double>(sample1) * (1.0 - factor) +
-                                 static_cast<double>(sample2) * factor;
+    double interpolated_sample = static_cast<double>(sample1) * (1.0 - factor) + static_cast<double>(sample2) * factor;
 
     if (interpolated_sample > INT16_MAX)
       interpolated_sample = INT16_MAX;
@@ -57,8 +53,7 @@ BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm,
   return output_pcm;
 }
 
-bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
-                                    IMPBackchannelFormat format,
+bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize, IMPBackchannelFormat format,
                                     std::vector<int16_t> &outPcmBuffer) {
   IMPAudioStream stream_in;
   stream_in.stream = const_cast<uint8_t *>(payload);
@@ -67,8 +62,7 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
   int adChn = (int)format;
   int ret = IMP_ADEC_SendStream(adChn, &stream_in, BLOCK);
   if (ret != 0) {
-    LOG_ERROR("IMP_ADEC_SendStream failed for channel " << adChn << ": "
-                                                        << ret);
+    LOG_ERROR("IMP_ADEC_SendStream failed for channel " << adChn << ": " << ret);
     return false;
   }
 
@@ -77,13 +71,10 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
   if (ret == 0 && stream_out.len > 0 && stream_out.stream != nullptr) {
     size_t num_samples = stream_out.len / sizeof(int16_t);
     if (stream_out.len % sizeof(int16_t) != 0) {
-      LOG_WARN("Decoded stream length ("
-               << stream_out.len
-               << ") not multiple of int16_t size. Truncating.");
+      LOG_WARN("Decoded stream length (" << stream_out.len << ") not multiple of int16_t size. Truncating.");
     }
     outPcmBuffer.assign(reinterpret_cast<int16_t *>(stream_out.stream),
-                        reinterpret_cast<int16_t *>(stream_out.stream) +
-                            num_samples);
+                        reinterpret_cast<int16_t *>(stream_out.stream) + num_samples);
     IMP_ADEC_ReleaseStream(adChn, &stream_out);
     return true;
   } else if (ret != 0) {
@@ -102,8 +93,7 @@ bool BackchannelWorker::processFrame(const BackchannelFrame &frame) {
   }
 
   std::vector<int16_t> decoded_pcm;
-  if (!decodeFrame(frame.payload.data(), frame.payload.size(), frame.format,
-                   decoded_pcm)) {
+  if (!decodeFrame(frame.payload.data(), frame.payload.size(), frame.format, decoded_pcm)) {
     // Error already logged in decodeFrame
     return true; // Continue processing loop, maybe next frame works
   }
@@ -144,9 +134,7 @@ void BackchannelWorker::run() {
     {
       std::unique_lock<std::mutex> lock(global_backchannel->mutex);
       global_backchannel->should_grab_frames.wait(lock, [&] {
-        return !global_backchannel->running ||
-               global_backchannel->is_sending.load(std::memory_order_acquire) >
-                   0;
+        return !global_backchannel->running || global_backchannel->is_sending.load(std::memory_order_acquire) > 0;
       });
     }
 
@@ -167,19 +155,16 @@ void BackchannelWorker::run() {
 
     // Handle Zero-Payload Frame (Stop Signal)
     if (frame.payload.empty()) {
-      LOG_DEBUG("Received stop signal (zero-payload) from session "
-                << static_cast<unsigned>(frame.clientSessionId));
+      LOG_DEBUG("Received stop signal (zero-payload) from session " << static_cast<unsigned>(frame.clientSessionId));
       if (frame.clientSessionId == currentSessionId && currentSessionId != 0) {
-        LOG_INFO("Current session " << static_cast<unsigned>(currentSessionId)
-                                    << " stopped.");
+        LOG_INFO("Current session " << static_cast<unsigned>(currentSessionId) << " stopped.");
         currentSessionId = 0;
       } else if (currentSessionId == 0) {
         LOG_DEBUG("Stop signal received but no current session. Ignoring.");
       } else {
-        LOG_WARN("Stop signal from non-current session "
-                 << static_cast<unsigned>(frame.clientSessionId)
-                 << " (Current: " << static_cast<unsigned>(currentSessionId)
-                 << "). Ignoring.");
+        LOG_WARN("Stop signal from non-current session " << static_cast<unsigned>(frame.clientSessionId)
+                                                         << " (Current: " << static_cast<unsigned>(currentSessionId)
+                                                         << "). Ignoring.");
       }
       continue;
     }
@@ -188,17 +173,16 @@ void BackchannelWorker::run() {
     if (currentSessionId == 0) {
       // No current session, this frame's sender becomes the current one
       currentSessionId = frame.clientSessionId;
-      LOG_INFO("New current session "
-               << static_cast<unsigned>(currentSessionId) << " playing "
-               << IMPBackchannel::getFormatName(frame.format) << ".");
+      LOG_INFO("New current session " << static_cast<unsigned>(currentSessionId) << " playing "
+                                      << IMPBackchannel::getFormatName(frame.format) << ".");
       processFrame(frame);
     } else if (frame.clientSessionId == currentSessionId) {
       processFrame(frame);
     } else {
       // Frame is from a different session, ignore it
-      LOG_DEBUG("Discarding frame from non-current session "
-                << static_cast<unsigned>(frame.clientSessionId) << " (Current: "
-                << static_cast<unsigned>(currentSessionId) << ")");
+      LOG_DEBUG("Discarding frame from non-current session " << static_cast<unsigned>(frame.clientSessionId)
+                                                             << " (Current: " << static_cast<unsigned>(currentSessionId)
+                                                             << ")");
     }
   }
 

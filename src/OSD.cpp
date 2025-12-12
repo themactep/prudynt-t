@@ -7,14 +7,12 @@
 #include <unistd.h>
 #include <vector>
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
 #define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define picWidth uWidth
 #define picHeight uHeight
 #endif
@@ -54,13 +52,11 @@ int OSD::renderGlyph(const char *characters) {
     SFT_Glyph glyph;
     SFT_Image imageBuffer;
 
-    if (sft_lmetrics(sft, &lmetrics) == 0 &&
-        sft_lookup(sft, *characters, &glyph) == 0) {
+    if (sft_lmetrics(sft, &lmetrics) == 0 && sft_lookup(sft, *characters, &glyph) == 0) {
       if (sft_gmetrics(sft, glyph, &gmetrics) == 0) {
         imageBuffer.width = gmetrics.minWidth;
         imageBuffer.height = gmetrics.minHeight;
-        imageBuffer.pixels =
-            (uint8_t *)malloc(imageBuffer.width * imageBuffer.height);
+        imageBuffer.pixels = (uint8_t *)malloc(imageBuffer.width * imageBuffer.height);
 
         if (sft_render(sft, glyph, imageBuffer) == 0) {
           Glyph g;
@@ -92,8 +88,7 @@ int OSD::renderGlyph(const char *characters) {
   return 0;
 }
 
-void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int WIDTH,
-              int HEIGHT) {
+void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int WIDTH, int HEIGHT) {
   if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
     int index = (y * WIDTH + x) * 4;
     image[index] = color[0];     // B
@@ -103,8 +98,7 @@ void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int WIDTH,
   }
 }
 
-void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y,
-                      int outlineSize, int WIDTH, int HEIGHT,
+void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineSize, int WIDTH, int HEIGHT,
                       const uint8_t *strokeColor) {
   for (int j = -outlineSize; j <= outlineSize; ++j) {
     for (int i = -outlineSize; i <= outlineSize; ++i) {
@@ -115,10 +109,8 @@ void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y,
             uint8_t glyphAlpha = g.bitmap[srcIndex];
             if (glyphAlpha > 0) { // Check alpha value
               // Combine glyph alpha with stroke color alpha
-              uint8_t combinedAlpha =
-                  (uint8_t)((glyphAlpha * strokeColor[3]) / 255);
-              uint8_t pixelColor[4] = {strokeColor[0], strokeColor[1],
-                                       strokeColor[2], combinedAlpha};
+              uint8_t combinedAlpha = (uint8_t)((glyphAlpha * strokeColor[3]) / 255);
+              uint8_t pixelColor[4] = {strokeColor[0], strokeColor[1], strokeColor[2], combinedAlpha};
               setPixel(image, x + w + i, y + h + j, pixelColor, WIDTH, HEIGHT);
             }
           }
@@ -127,52 +119,25 @@ void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y,
     }
   }
 }
-/*
-void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y, int
-outlineSize, int WIDTH, int HEIGHT)
-{
-    for (int j = -outlineSize; j <= outlineSize; ++j)
-    {
-        for (int i = -outlineSize; i <= outlineSize; ++i)
-        {
-            if (abs(i) + abs(j) <= outlineSize)
-            { // Use Manhattan distance
-                for (int h = 0; h < g.height; ++h)
-                {
-                    for (int w = 0; w < g.width; ++w)
-                    {
-                        int srcIndex = (h * g.width + w) * 4;
-                        if (g.bitmap[srcIndex + 3] > 0)
-                        { // Check alpha value
-                            setPixel(image, x + w + i, y + h + j, BGRA_STROKE,
-WIDTH, HEIGHT);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-*/
-int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT,
-                  int outlineSize, unsigned int font_color,
-                  unsigned int font_stroke_color) {
+
+int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT, int outlineSize, unsigned int fill_color,
+                  unsigned int stroke_color) {
   int penX = 1;
   int penY = 1;
 
   // Extract BGRA components from colors
   uint8_t textColor[4] = {
-      (uint8_t)(font_color & 0xFF),         // B
-      (uint8_t)((font_color >> 8) & 0xFF),  // G
-      (uint8_t)((font_color >> 16) & 0xFF), // R
-      (uint8_t)((font_color >> 24) & 0xFF)  // A
+      (uint8_t)(fill_color & 0xFF),         // B
+      (uint8_t)((fill_color >> 8) & 0xFF),  // G
+      (uint8_t)((fill_color >> 16) & 0xFF), // R
+      (uint8_t)((fill_color >> 24) & 0xFF)  // A
   };
 
   uint8_t strokeColor[4] = {
-      (uint8_t)(font_stroke_color & 0xFF),         // B
-      (uint8_t)((font_stroke_color >> 8) & 0xFF),  // G
-      (uint8_t)((font_stroke_color >> 16) & 0xFF), // R
-      (uint8_t)((font_stroke_color >> 24) & 0xFF)  // A
+      (uint8_t)(stroke_color & 0xFF),         // B
+      (uint8_t)((stroke_color >> 8) & 0xFF),  // G
+      (uint8_t)((stroke_color >> 16) & 0xFF), // R
+      (uint8_t)((stroke_color >> 24) & 0xFF)  // A
   };
 
   // Draw text and outline
@@ -196,10 +161,8 @@ int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT,
           uint8_t glyphAlpha = g.bitmap[srcIndex];
           if (glyphAlpha > 0) {
             // Combine glyph alpha with text color alpha
-            uint8_t combinedAlpha =
-                (uint8_t)((glyphAlpha * textColor[3]) / 255);
-            uint8_t pixelColor[4] = {textColor[0], textColor[1], textColor[2],
-                                     combinedAlpha};
+            uint8_t combinedAlpha = (uint8_t)((glyphAlpha * textColor[3]) / 255);
+            uint8_t pixelColor[4] = {textColor[0], textColor[1], textColor[2], combinedAlpha};
             setPixel(image, x + i, y + j, pixelColor, WIDTH, HEIGHT);
           }
         }
@@ -213,8 +176,7 @@ int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT,
   return 0;
 }
 
-int OSD::calculateTextSize(const char *text, uint16_t &width, uint16_t &height,
-                           int outlineSize) {
+int OSD::calculateTextSize(const char *text, uint16_t &width, uint16_t &height, int outlineSize) {
   width = 0;
   height = 0;
 
@@ -275,9 +237,8 @@ int OSD::libschrift_init() {
   return 0;
 }
 
-void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
-                   const char *position, int angle, unsigned int font_color,
-                   unsigned int font_stroke_color) {
+void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, const char *position, int angle,
+                   unsigned int fill_color, unsigned int stroke_color) {
   // parse position string "x,y"
   int posX = 0, posY = 0;
   if (position && *position) {
@@ -307,7 +268,7 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
   }
 
   // size and stroke
-  uint8_t stroke_width = osd.font_stroke_size;
+  uint8_t stroke_width = osd.stroke_size;
   uint16_t item_width = 0;
   uint16_t item_height = 0;
 
@@ -322,8 +283,7 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
   osdItem->data = (uint8_t *)malloc(item_size);
   memset(osdItem->data, 0, item_size);
 
-  drawText(osdItem->data, text, item_width, item_height, stroke_width,
-           font_color, font_stroke_color);
+  drawText(osdItem->data, text, item_width, item_height, stroke_width, fill_color, stroke_color);
 
   if (angle) {
     rotateBGRAImage(osdItem->data, item_width, item_height, angle, true);
@@ -334,8 +294,7 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
       IMP_OSD_GetRgnAttr(osdItem->imp_rgn, &osdItem->rgnAttr);
     }
 
-    set_pos(&osdItem->rgnAttr, posX, posY, item_width, item_height,
-            stream_width, stream_height);
+    set_pos(&osdItem->rgnAttr, posX, posY, item_width, item_height, stream_width, stream_height);
 
     osdItem->rgnAttr.data.picData.pData = osdItem->data;
     osdItem->rgnAttrData = &osdItem->rgnAttr.data;
@@ -391,8 +350,7 @@ int autoFontSize(int pWidth) {
   return static_cast<int>(m * pWidth + b + 0.5);
 }
 
-void replace(std::string &str, const std::string &oldToken,
-             const std::string &newToken) {
+void replace(std::string &str, const std::string &oldToken, const std::string &newToken) {
   size_t pos = 0;
   while ((pos = str.find(oldToken, pos)) != std::string::npos) {
     str.replace(pos, oldToken.length(), newToken);
@@ -400,8 +358,7 @@ void replace(std::string &str, const std::string &oldToken,
   }
 }
 
-OSD::BrightnessMeter::BrightnessMeter()
-    : history{}, historyIndex(0), historyFilled(false), lastReadFailed(false) {
+OSD::BrightnessMeter::BrightnessMeter() : history{}, historyIndex(0), historyFilled(false), lastReadFailed(false) {
   history.fill(-1.0f);
 }
 
@@ -417,8 +374,7 @@ bool OSD::BrightnessMeter::readIspStats(IspStats &stats) {
 
   if (!file.is_open()) {
     if (!lastReadFailed) {
-      LOG_WARN("BrightnessMeter: unable to read ISP stats from "
-               << PRIMARY_ISP_STATS);
+      LOG_WARN("BrightnessMeter: unable to read ISP stats from " << PRIMARY_ISP_STATS);
       lastReadFailed = true;
     }
     return false;
@@ -435,29 +391,23 @@ bool OSD::BrightnessMeter::readIspStats(IspStats &stats) {
         parsed = true;
       }
     } else if (line.find("SENSOR Integration Time :") != std::string::npos) {
-      if (sscanf(line.c_str(), "SENSOR Integration Time : %d",
-                 &stats.integrationTime) == 1) {
+      if (sscanf(line.c_str(), "SENSOR Integration Time : %d", &stats.integrationTime) == 1) {
         parsed = true;
       }
-    } else if (line.find("SENSOR Max Integration Time :") !=
-               std::string::npos) {
-      if (sscanf(line.c_str(), "SENSOR Max Integration Time : %d",
-                 &stats.maxIntegrationTime) == 1) {
+    } else if (line.find("SENSOR Max Integration Time :") != std::string::npos) {
+      if (sscanf(line.c_str(), "SENSOR Max Integration Time : %d", &stats.maxIntegrationTime) == 1) {
         parsed = true;
       }
     } else if (line.find("SENSOR analog gain :") != std::string::npos) {
-      if (sscanf(line.c_str(), "SENSOR analog gain : %d", &stats.analogGain) ==
-          1) {
+      if (sscanf(line.c_str(), "SENSOR analog gain : %d", &stats.analogGain) == 1) {
         parsed = true;
       }
     } else if (line.find("SENSOR digital gain :") != std::string::npos) {
-      if (sscanf(line.c_str(), "SENSOR digital gain : %d",
-                 &stats.digitalGain) == 1) {
+      if (sscanf(line.c_str(), "SENSOR digital gain : %d", &stats.digitalGain) == 1) {
         parsed = true;
       }
     } else if (line.find("ISP digital gain :") != std::string::npos) {
-      if (sscanf(line.c_str(), "ISP digital gain : %d",
-                 &stats.ispDigitalGain) == 1) {
+      if (sscanf(line.c_str(), "ISP digital gain : %d", &stats.ispDigitalGain) == 1) {
         parsed = true;
       }
     } else if (line.find("ISP EV value:") != std::string::npos) {
@@ -465,8 +415,7 @@ bool OSD::BrightnessMeter::readIspStats(IspStats &stats) {
         parsed = true;
       }
     } else if (line.find("Brightness :") != std::string::npos) {
-      if (sscanf(line.c_str(), "Brightness : %d", &stats.currentBrightness) ==
-          1) {
+      if (sscanf(line.c_str(), "Brightness : %d", &stats.currentBrightness) == 1) {
         parsed = true;
       }
     }
@@ -475,30 +424,25 @@ bool OSD::BrightnessMeter::readIspStats(IspStats &stats) {
   return parsed;
 }
 
-float OSD::BrightnessMeter::computeFromStats(const IspStats &stats,
-                                             std::string &mode) const {
+float OSD::BrightnessMeter::computeFromStats(const IspStats &stats, std::string &mode) const {
   std::string ispMode = stats.mode;
   if (!ispMode.empty()) {
-    std::transform(
-        ispMode.begin(), ispMode.end(), ispMode.begin(),
-        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    std::transform(ispMode.begin(), ispMode.end(), ispMode.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
   }
 
   float brightness = -1.0f;
   if (stats.integrationTime >= 0 && stats.maxIntegrationTime > 0) {
-    float exposureRatio = static_cast<float>(stats.integrationTime) /
-                          static_cast<float>(stats.maxIntegrationTime);
+    float exposureRatio = static_cast<float>(stats.integrationTime) / static_cast<float>(stats.maxIntegrationTime);
     brightness = (1.0f - exposureRatio) * 100.0f;
 
     if (stats.analogGain >= 0) {
-      float gainFactor =
-          1.0f + (static_cast<float>(stats.analogGain) / MAX_ANALOG_GAIN);
+      float gainFactor = 1.0f + (static_cast<float>(stats.analogGain) / MAX_ANALOG_GAIN);
       brightness /= gainFactor;
     }
 
     if (stats.ispDigitalGain > 0) {
-      float digitalFactor =
-          1.0f + (static_cast<float>(stats.ispDigitalGain) / MAX_DIGITAL_GAIN);
+      float digitalFactor = 1.0f + (static_cast<float>(stats.ispDigitalGain) / MAX_DIGITAL_GAIN);
       brightness /= digitalFactor;
     }
 
@@ -508,8 +452,7 @@ float OSD::BrightnessMeter::computeFromStats(const IspStats &stats,
   }
 
   if (stats.currentBrightness >= 0) {
-    brightness =
-        (static_cast<float>(stats.currentBrightness) / 255.0f) * 100.0f;
+    brightness = (static_cast<float>(stats.currentBrightness) / 255.0f) * 100.0f;
     brightness = std::clamp(brightness, 0.0f, 100.0f);
     mode = ispMode.empty() ? "UNKNOWN" : ispMode;
     return brightness;
@@ -618,12 +561,10 @@ std::string OSD::buildBrightnessText(const BrightnessSample &sample) {
     return std::string(buffer);
   };
 
-  std::string text = osd.brightness_format ? osd.brightness_format
-                                           : "Brightness:%b%% Avg:%a%% %m";
+  std::string text = osd.brightness_format ? osd.brightness_format : "Brightness:%b%% Avg:%a%% %m";
   replace(text, "%b", formatValue(sample.current));
   replace(text, "%a", formatValue(sample.average));
-  const std::string modeText =
-      sample.mode.empty() ? std::string("UNKNOWN") : sample.mode;
+  const std::string modeText = sample.mode.empty() ? std::string("UNKNOWN") : sample.mode;
   replace(text, "%m", modeText);
   replace(text, "%%", "%");
   return text;
@@ -645,17 +586,14 @@ void OSD::updateBrightnessText() {
   }
 
   lastBrightnessText = text;
-  set_text(&osdBrightness, nullptr, text.c_str(), osd.brightness_position,
-           osd.brightness_rotation, osd.brightness_font_color,
-           osd.brightness_font_stroke_color);
+  set_text(&osdBrightness, nullptr, text.c_str(), osd.brightness_position, osd.brightness_rotation,
+           osd.brightness_fill_color, osd.brightness_stroke_color);
 }
 
-void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width,
-                          uint16_t &height, int angle, bool del = true) {
+void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height, int angle, bool del = true) {
   double angleRad = angle * (M_PI / 180.0);
 
-  int originalCorners[4][2] = {
-      {0, 0}, {width, 0}, {0, height}, {width, height}};
+  int originalCorners[4][2] = {{0, 0}, {width, 0}, {0, height}, {width, height}};
 
   int minX = INT_MAX;
   int maxX = INT_MIN;
@@ -695,17 +633,12 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width,
       int newX = x - newCenterX;
       int newY = y - newCenterY;
 
-      int origX =
-          static_cast<int>(newX * cos(angleRad) + newY * sin(angleRad)) +
-          centerX;
-      int origY =
-          static_cast<int>(-newX * sin(angleRad) + newY * cos(angleRad)) +
-          centerY;
+      int origX = static_cast<int>(newX * cos(angleRad) + newY * sin(angleRad)) + centerX;
+      int origY = static_cast<int>(-newX * sin(angleRad) + newY * cos(angleRad)) + centerY;
 
       if (origX >= 0 && origX < width && origY >= 0 && origY < height) {
         for (int c = 0; c < 4; ++c) {
-          rotatedImage[(y * newWidth + x) * 4 + c] =
-              inputImage[(origY * width + origX) * 4 + c];
+          rotatedImage[(y * newWidth + x) * 4 + c] = inputImage[(origY * width + origX) * 4 + c];
         }
       }
     }
@@ -718,8 +651,7 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width,
   height = newHeight;
 }
 
-uint16_t OSD::get_abs_pos(const uint16_t max, const uint16_t size,
-                          const int pos) {
+uint16_t OSD::get_abs_pos(const uint16_t max, const uint16_t size, const int pos) {
   if (pos == 0) {
     return max / 2 - size / 2;
   }
@@ -729,8 +661,7 @@ uint16_t OSD::get_abs_pos(const uint16_t max, const uint16_t size,
   return pos;
 }
 
-void OSD::set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
-                  uint16_t height, const uint16_t max_width,
+void OSD::set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t height, const uint16_t max_width,
                   const uint16_t max_height) {
   if (width == 0 || height == 0) {
     width = rgnAttr->rect.p1.x - rgnAttr->rect.p0.x + 1;
@@ -787,8 +718,7 @@ void OSD::init() {
   LOG_DEBUG("OSD init for begin");
 
   ret = IMP_OSD_SetPoolSize(cfg->general.osd_pool_size * 1024);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize("
-                              << (cfg->general.osd_pool_size * 1024) << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << (cfg->general.osd_pool_size * 1024) << ")");
 
   // cfg = _cfg;
   last_updated_second = -1;
@@ -805,35 +735,28 @@ void OSD::init() {
   // Calculate realistic OSD pool size based on typical usage
   // Estimate: ~10% of screen area for OSD elements (text, logos, etc.)
   // Formula: (width * height * 4 bytes * 0.1) / 1024 + safety margin
-  int estimated_usage =
-      (stream_width * stream_height * 4 * 0.1) / 1024; // 10% screen coverage
-  int safety_margin = 256;                             // 256KB safety margin
+  int estimated_usage = (stream_width * stream_height * 4 * 0.1) / 1024; // 10% screen coverage
+  int safety_margin = 256;                                               // 256KB safety margin
   int recommended_pool_size = estimated_usage + safety_margin;
   int configured_pool_size = cfg->general.osd_pool_size;
 
   // Only warn if configured size is significantly smaller than recommended
   if (configured_pool_size < recommended_pool_size) {
-    LOG_WARN("OSD pool size ("
-             << configured_pool_size << "KB) may be insufficient for "
-             << stream_width << "x" << stream_height
-             << " resolution with large fonts/logos. "
-             << "Consider increasing to " << recommended_pool_size
-             << "KB for optimal performance");
+    LOG_WARN("OSD pool size (" << configured_pool_size << "KB) may be insufficient for " << stream_width << "x"
+                               << stream_height << " resolution with large fonts/logos. "
+                               << "Consider increasing to " << recommended_pool_size << "KB for optimal performance");
   } else {
-    LOG_DEBUG("OSD pool size (" << configured_pool_size
-                                << "KB) is adequate for " << stream_width << "x"
+    LOG_DEBUG("OSD pool size (" << configured_pool_size << "KB) is adequate for " << stream_width << "x"
                                 << stream_height << " resolution");
   }
 
   // picWidth, picHeight cpp macro !!
-  LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: "
-            << stream_width << "x" << stream_height);
+  LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: " << stream_width << "x" << stream_height);
 
   ret = IMP_OSD_CreateGroup(osdGrp);
 
   int fontSize = autoFontSize(channelAttributes.encAttr.picWidth);
-  // int autoOffset = round((float)(channelAttributes.encAttr.picWidth *
-  // 0.004)); // Currently unused
+  // int autoOffset = round((float)(channelAttributes.encAttr.picWidth * 0.004)); // Currently unused
 
   if (osd.font_size == OSD_AUTO_VALUE) {
     // use cfg->set to set noSave, so auto values will not written to config
@@ -859,24 +782,21 @@ void OSD::init() {
     time_t initNow = time(nullptr);
     struct tm *initLocal = localtime(&initNow);
     if (initLocal) {
-      strftime(timeFormatted, sizeof(timeFormatted), osd.time_format,
-               initLocal);
+      strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, initLocal);
       initialTimeText = timeFormatted;
     }
 
-    set_text(&osdTime, &osdTime.rgnAttr, initialTimeText, osd.time_position,
-             osd.time_rotation, osd.time_font_color,
-             osd.time_font_stroke_color);
+    set_text(&osdTime, &osdTime.rgnAttr, initialTimeText, osd.time_position, osd.time_rotation, osd.time_fill_color,
+             osd.time_stroke_color);
     IMP_OSD_SetRgnAttr(osdTime.imp_rgn, &osdTime.rgnAttr);
 
     IMPOSDGrpRgnAttr grpRgnAttr;
     memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
     grpRgnAttr.show = 1;
     grpRgnAttr.layer = 1;
-    grpRgnAttr.gAlphaEn = 1; // Enable alpha blending for per-pixel transparency
-    grpRgnAttr.fgAlhpa =
-        255; // Full foreground alpha to allow per-pixel alpha control
-    grpRgnAttr.bgAlhpa = 0; // Transparent background
+    grpRgnAttr.gAlphaEn = 1;  // Enable alpha blending for per-pixel transparency
+    grpRgnAttr.fgAlhpa = 255; // Full foreground alpha to allow per-pixel alpha control
+    grpRgnAttr.bgAlhpa = 0;   // Transparent background
     IMP_OSD_SetGrpRgnAttr(osdTime.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
@@ -894,8 +814,7 @@ void OSD::init() {
     memset(&osdUser.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
     osdUser.rgnAttr.type = OSD_REG_PIC;
     osdUser.rgnAttr.fmt = PIX_FMT_BGRA;
-    std::string initialUserText =
-        osd.usertext_format ? osd.usertext_format : "";
+    std::string initialUserText = osd.usertext_format ? osd.usertext_format : "";
     if (initialUserText.find("%hostname") != std::string::npos) {
       replace(initialUserText, "%hostname", hostname);
     }
@@ -913,19 +832,17 @@ void OSD::init() {
       replace(initialUserText, "%bps", bps_buf);
     }
 
-    set_text(&osdUser, &osdUser.rgnAttr, initialUserText.c_str(),
-             osd.usertext_position, osd.usertext_rotation,
-             osd.usertext_font_color, osd.usertext_font_stroke_color);
+    set_text(&osdUser, &osdUser.rgnAttr, initialUserText.c_str(), osd.usertext_position, osd.usertext_rotation,
+             osd.usertext_fill_color, osd.usertext_stroke_color);
     IMP_OSD_SetRgnAttr(osdUser.imp_rgn, &osdUser.rgnAttr);
 
     IMPOSDGrpRgnAttr grpRgnAttr;
     memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
     grpRgnAttr.show = 1;
     grpRgnAttr.layer = 2;
-    grpRgnAttr.gAlphaEn = 1; // Enable alpha blending for per-pixel transparency
-    grpRgnAttr.fgAlhpa =
-        255; // Full foreground alpha to allow per-pixel alpha control
-    grpRgnAttr.bgAlhpa = 0; // Transparent background
+    grpRgnAttr.gAlphaEn = 1;  // Enable alpha blending for per-pixel transparency
+    grpRgnAttr.fgAlhpa = 255; // Full foreground alpha to allow per-pixel alpha control
+    grpRgnAttr.bgAlhpa = 0;   // Transparent background
     IMP_OSD_SetGrpRgnAttr(osdUser.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
@@ -946,10 +863,8 @@ void OSD::init() {
     std::string initialBrightnessText = buildBrightnessText(sample);
     lastBrightnessText = initialBrightnessText;
 
-    set_text(&osdBrightness, &osdBrightness.rgnAttr,
-             initialBrightnessText.c_str(), osd.brightness_position,
-             osd.brightness_rotation, osd.brightness_font_color,
-             osd.brightness_font_stroke_color);
+    set_text(&osdBrightness, &osdBrightness.rgnAttr, initialBrightnessText.c_str(), osd.brightness_position,
+             osd.brightness_rotation, osd.brightness_fill_color, osd.brightness_stroke_color);
     IMP_OSD_SetRgnAttr(osdBrightness.imp_rgn, &osdBrightness.rgnAttr);
 
     IMPOSDGrpRgnAttr grpRgnAttr;
@@ -977,22 +892,19 @@ void OSD::init() {
     unsigned long initDays = initUptime / 86400;
     unsigned long initHours = (initUptime % 86400) / 3600;
     unsigned long initMinutes = (initUptime % 3600) / 60;
-    snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format,
-             initDays, initHours, initMinutes);
+    snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, initDays, initHours, initMinutes);
 
-    set_text(&osdUptm, &osdUptm.rgnAttr, uptimeFormatted, osd.uptime_position,
-             osd.uptime_rotation, osd.uptime_font_color,
-             osd.uptime_font_stroke_color);
+    set_text(&osdUptm, &osdUptm.rgnAttr, uptimeFormatted, osd.uptime_position, osd.uptime_rotation,
+             osd.uptime_fill_color, osd.uptime_stroke_color);
     IMP_OSD_SetRgnAttr(osdUptm.imp_rgn, &osdUptm.rgnAttr);
 
     IMPOSDGrpRgnAttr grpRgnAttr;
     memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
     grpRgnAttr.show = 1;
     grpRgnAttr.layer = 3;
-    grpRgnAttr.gAlphaEn = 1; // Enable alpha blending for per-pixel transparency
-    grpRgnAttr.fgAlhpa =
-        255; // Full foreground alpha to allow per-pixel alpha control
-    grpRgnAttr.bgAlhpa = 0; // Transparent background
+    grpRgnAttr.gAlphaEn = 1;  // Enable alpha blending for per-pixel transparency
+    grpRgnAttr.fgAlhpa = 255; // Full foreground alpha to allow per-pixel alpha control
+    grpRgnAttr.bgAlhpa = 0;   // Transparent background
     IMP_OSD_SetGrpRgnAttr(osdUptm.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
@@ -1019,10 +931,8 @@ void OSD::init() {
       uint16_t logo_width = osd.logo_width;
       uint16_t logo_height = osd.logo_height;
       if (osd.logo_rotation) {
-        uint8_t *imageData =
-            static_cast<uint8_t *>(osdLogo.rgnAttr.data.picData.pData);
-        rotateBGRAImage(imageData, logo_width, logo_height, osd.logo_rotation,
-                        false);
+        uint8_t *imageData = static_cast<uint8_t *>(osdLogo.rgnAttr.data.picData.pData);
+        rotateBGRAImage(imageData, logo_width, logo_height, osd.logo_rotation, false);
         osdLogo.rgnAttr.data.picData.pData = imageData;
       }
 
@@ -1040,29 +950,25 @@ void OSD::init() {
             xb[xl] = '\0';
             logoPosX = atoi(xb);
           } else {
-            LOG_ERROR("Invalid logo_position X: "
-                      << (osd.logo_position ? osd.logo_position : ""));
+            LOG_ERROR("Invalid logo_position X: " << (osd.logo_position ? osd.logo_position : ""));
           }
           if (yl > 0 && yl < sizeof(yb)) {
             memcpy(yb, comma + 1, yl);
             yb[yl] = '\0';
             logoPosY = atoi(yb);
           } else {
-            LOG_ERROR("Invalid logo_position Y: "
-                      << (osd.logo_position ? osd.logo_position : ""));
+            LOG_ERROR("Invalid logo_position Y: " << (osd.logo_position ? osd.logo_position : ""));
           }
         } else {
-          LOG_ERROR("Invalid logo_position format (expected x,y): "
-                    << osd.logo_position);
+          LOG_ERROR("Invalid logo_position format (expected x,y): " << osd.logo_position);
         }
       }
 
-      set_pos(&osdLogo.rgnAttr, logoPosX, logoPosY, logo_width, logo_height,
-              stream_width, stream_height);
+      set_pos(&osdLogo.rgnAttr, logoPosX, logoPosY, logo_width, logo_height, stream_width, stream_height);
     } else {
-      LOG_ERROR("Invalid OSD logo dimensions. Imagesize="
-                << imageSize << ", " << osd.logo_width << "*" << osd.logo_height
-                << "*4=" << (osd.logo_width * osd.logo_height * 4));
+      LOG_ERROR("Invalid OSD logo dimensions. Imagesize=" << imageSize << ", " << osd.logo_width << "*"
+                                                          << osd.logo_height
+                                                          << "*4=" << (osd.logo_width * osd.logo_height * 4));
     }
     // Parse logo_position string "x,y" - TODO: implement position parsing
     // int logoPosX = 0, logoPosY = 0;
@@ -1083,8 +989,6 @@ void OSD::init() {
 
   if (osd.start_delay)
     startup_delay = (int)(osd.start_delay * 1000) / THREAD_SLEEP;
-
-  // start();
 }
 
 int OSD::start() {
@@ -1094,8 +998,7 @@ int OSD::start() {
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Start(" << osdGrp << ")");
 
   ret = IMP_OSD_SetPoolSize(cfg->general.osd_pool_size * 1024);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize("
-                              << (cfg->general.osd_pool_size * 1024) << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << (cfg->general.osd_pool_size * 1024) << ")");
 
   is_started = true;
 
@@ -1109,44 +1012,34 @@ int OSD::exit() {
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Stop(" << osdGrp << ")");
 
   ret = IMP_OSD_ShowRgn(osdTime.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_OSD_ShowRgn(osdTime.imp_rgn, " << osdGrp << ", 0)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdTime.imp_rgn, " << osdGrp << ", 0)");
 
   ret = IMP_OSD_ShowRgn(osdUser.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_OSD_ShowRgn(osdUser.imp_rgn, " << osdGrp << ", 0)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdUser.imp_rgn, " << osdGrp << ", 0)");
 
   ret = IMP_OSD_ShowRgn(osdUptm.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_OSD_ShowRgn(osdUptm.imp_rgn, " << osdGrp << ", 0)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdUptm.imp_rgn, " << osdGrp << ", 0)");
 
   ret = IMP_OSD_ShowRgn(osdLogo.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_OSD_ShowRgn(osdLogo.imp_rgn, " << osdGrp << ", 0)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdLogo.imp_rgn, " << osdGrp << ", 0)");
 
   ret = IMP_OSD_ShowRgn(osdBrightness.imp_rgn, osdGrp, 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdBrightness.imp_rgn, " << osdGrp
-                                                                    << ", 0)");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(osdBrightness.imp_rgn, " << osdGrp << ", 0)");
 
   ret = IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, " << osdGrp
-                                                                    << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdTime.imp_rgn, " << osdGrp << ")");
 
   ret = IMP_OSD_UnRegisterRgn(osdUser.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUser.imp_rgn, " << osdGrp
-                                                                    << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUser.imp_rgn, " << osdGrp << ")");
 
   ret = IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp
-                                                                    << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp << ")");
 
   ret = IMP_OSD_UnRegisterRgn(osdLogo.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp
-                                                                    << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdUptm.imp_rgn, " << osdGrp << ")");
 
   ret = IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, "
-                              << osdGrp << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(osdBrightness.imp_rgn, " << osdGrp << ")");
 
   IMP_OSD_DestroyRgn(osdTime.imp_rgn);
   IMP_OSD_DestroyRgn(osdUser.imp_rgn);
@@ -1196,9 +1089,8 @@ void OSD::updateDisplayEverySecond() {
       if ((flag & OSD_FLAG_TIME) && osd.time_enabled) {
         strftime(timeFormatted, sizeof(timeFormatted), osd.time_format, ltime);
 
-        set_text(&osdTime, nullptr, timeFormatted, osd.time_position,
-                 osd.time_rotation, osd.time_font_color,
-                 osd.time_font_stroke_color);
+        set_text(&osdTime, nullptr, timeFormatted, osd.time_position, osd.time_rotation, osd.time_fill_color,
+                 osd.time_stroke_color);
 
         flag ^= OSD_FLAG_TIME;
         return;
@@ -1227,9 +1119,8 @@ void OSD::updateDisplayEverySecond() {
           replace(usertext, "%bps", bps);
         }
 
-        set_text(&osdUser, nullptr, usertext.c_str(), osd.usertext_position,
-                 osd.usertext_rotation, osd.usertext_font_color,
-                 osd.usertext_font_stroke_color);
+        set_text(&osdUser, nullptr, usertext.c_str(), osd.usertext_position, osd.usertext_rotation,
+                 osd.usertext_fill_color, osd.usertext_stroke_color);
 
         usertext.clear();
 
@@ -1243,12 +1134,10 @@ void OSD::updateDisplayEverySecond() {
         unsigned long hours = (currentUptime % 86400) / 3600;
         unsigned long minutes = (currentUptime % 3600) / 60;
 
-        snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format,
-                 days, hours, minutes);
+        snprintf(uptimeFormatted, sizeof(uptimeFormatted), osd.uptime_format, days, hours, minutes);
 
-        set_text(&osdUptm, nullptr, uptimeFormatted, osd.uptime_position,
-                 osd.uptime_rotation, osd.uptime_font_color,
-                 osd.uptime_font_stroke_color);
+        set_text(&osdUptm, nullptr, uptimeFormatted, osd.uptime_position, osd.uptime_rotation, osd.uptime_fill_color,
+                 osd.uptime_stroke_color);
 
         flag ^= OSD_FLAG_UPTIME;
         return;

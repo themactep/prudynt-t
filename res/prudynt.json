@@ -129,15 +129,15 @@
       "enabled": true,
       "font_path": "/usr/share/fonts/default.ttf",
       "font_size": 32,
-      "font_stroke_size": 1,
+      "stroke_size": 1,
       "start_delay": 0,
       "brightness": {
         "enabled": false,
         "format": "Brightness:%b%% Avg:%a%% %m",
         "position": "10,70",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       },
       "logo": {
         "enabled": true,
@@ -153,9 +153,9 @@
         "text": "PRIVACY ENABLED",
         "position": "0,-120",
         "font_size": 16384,
-        "font_stroke_size": 2,
-        "font_color": "#FF4C4CFF",
-        "font_stroke_color": "#000000FF",
+        "stroke_size": 2,
+        "fill_color": "#FF4C4CFF",
+        "stroke_color": "#000000FF",
         "rotation": 0,
         "layer": 16,
         "opacity": 255,
@@ -168,24 +168,24 @@
         "format": "%F %T",
         "position": "10,10",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       },
       "uptime": {
         "enabled": true,
         "format": "Uptime: %02lu:%02lu:%02lu",
         "position": "-20,10",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       },
       "usertext": {
         "enabled": true,
         "format": "%hostname",
-        "position": "800,10",
+        "position": "0,10",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       }
     },
     "profile": 2,
@@ -217,15 +217,15 @@
       "enabled": true,
       "font_path": "/usr/share/fonts/default.ttf",
       "font_size": 13,
-      "font_stroke_size": 1,
+      "stroke_size": 1,
       "start_delay": 0,
       "brightness": {
         "enabled": false,
         "format": "Brightness:%b%% Avg:%a%% %m",
         "position": "10,70",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       },
       "logo": {
         "enabled": true,
@@ -241,9 +241,9 @@
         "text": "PRIVACY ENABLED",
         "position": "0,-120",
         "font_size": 16384,
-        "font_stroke_size": 2,
-        "font_color": "#FF4C4CFF",
-        "font_stroke_color": "#000000FF",
+        "stroke_size": 2,
+        "fill_color": "#FF4C4CFF",
+        "stroke_color": "#000000FF",
         "rotation": 0,
         "layer": 16,
         "opacity": 255,
@@ -256,24 +256,24 @@
         "format": "%F %T",
         "position": "10,10",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       },
       "uptime": {
         "enabled": true,
         "format": "Uptime: %02lu:%02lu:%02lu",
         "position": "-10,10",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       },
       "usertext": {
         "enabled": true,
         "format": "%hostname",
-        "position": "250,10",
+        "position": "0,10",
         "rotation": 0,
-        "font_color": "#FFFFFFFF",
-        "font_stroke_color": "#000000FF"
+        "fill_color": "#FFFFFFFF",
+        "stroke_color": "#000000FF"
       }
     },
     "profile": 2,

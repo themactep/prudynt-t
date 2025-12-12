@@ -21,12 +21,10 @@ public:
 private:
   void run();
 
-  std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input_pcm,
-                                      int input_rate, int output_rate);
+  std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input_pcm, int input_rate, int output_rate);
 
   bool processFrame(const BackchannelFrame &frame);
-  bool decodeFrame(const uint8_t *payload, size_t payloadSize,
-                   IMPBackchannelFormat format,
+  bool decodeFrame(const uint8_t *payload, size_t payloadSize, IMPBackchannelFormat format,
                    std::vector<int16_t> &outPcmBuffer);
 
   unsigned int currentSessionId;

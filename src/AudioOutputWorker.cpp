@@ -14,8 +14,7 @@ void *AudioOutputWorker::thread_entry(void * /*arg*/) {
   return nullptr;
 }
 
-bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples,
-                                   bool applyVolume, int volume, bool applyGain,
+bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples, bool applyVolume, int volume, bool applyGain,
                                    int gain, bool applyMute, bool mute) {
   if (!global_audio_output || !global_audio_output->jobQueue) {
     LOG_ERROR("Audio output queue is not initialized");
@@ -41,10 +40,8 @@ bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples,
   return true;
 }
 
-bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples,
-                                           bool applyVolume, int volume,
-                                           bool applyGain, int gain,
-                                           bool applyMute, bool mute) {
+bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples, bool applyVolume, int volume, bool applyGain,
+                                           int gain, bool applyMute, bool mute) {
   if (!global_audio_output || !global_audio_output->jobQueue) {
     LOG_ERROR("Audio output queue is not initialized");
     return false;
@@ -64,8 +61,7 @@ bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples,
   return true;
 }
 
-bool AudioOutputWorker::applyVolumeGain(bool applyVolume, int volume,
-                                        bool applyGain, int gain) {
+bool AudioOutputWorker::applyVolumeGain(bool applyVolume, int volume, bool applyGain, int gain) {
   if (!applyVolume && !applyGain) {
     return true;
   }
@@ -141,9 +137,8 @@ bool AudioOutputWorker::clearQueue(bool waitForFlush) {
   return true;
 }
 
-bool AudioOutputWorker::waitForPlaybackCompletion(
-    std::chrono::milliseconds waitDuration, bool flushAfterWait,
-    std::chrono::milliseconds silencePadding) {
+bool AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds waitDuration, bool flushAfterWait,
+                                                  std::chrono::milliseconds silencePadding) {
   if (!global_audio_output || !global_audio_output->jobQueue) {
     return false;
   }
@@ -187,8 +182,7 @@ void AudioOutputWorker::run() {
   global_audio_output->current_volume = cfg->audio.output_vol;
   global_audio_output->current_gain = cfg->audio.output_gain;
 
-  global_audio_output->imp_audio_output =
-      std::make_unique<IMPAudioOutput>(0, 0);
+  global_audio_output->imp_audio_output = std::make_unique<IMPAudioOutput>(0, 0);
   if (!global_audio_output->imp_audio_output->init()) {
     LOG_ERROR("Failed to initialize IMP audio output");
     global_audio_output->imp_audio_output.reset();
@@ -218,8 +212,7 @@ void AudioOutputWorker::run() {
         std::this_thread::sleep_for(std::chrono::milliseconds(job.wait_ms));
       }
       if (job.silence_ms > 0 && global_audio_output->imp_audio_output) {
-        if (!global_audio_output->imp_audio_output->playSilence(
-                job.silence_ms)) {
+        if (!global_audio_output->imp_audio_output->playSilence(job.silence_ms)) {
           LOG_WARN("AudioOutputWorker: failed to inject tail silence");
         }
       }
@@ -252,10 +245,8 @@ void AudioOutputWorker::run() {
     }
 
     if (!job.samples.empty()) {
-      if (!global_audio_output->imp_audio_output->playSamples(
-              job.samples.data(), job.samples.size())) {
-        LOG_WARN("Failed to play PCM chunk (" << job.samples.size()
-                                              << " samples)");
+      if (!global_audio_output->imp_audio_output->playSamples(job.samples.data(), job.samples.size())) {
+        LOG_WARN("Failed to play PCM chunk (" << job.samples.size() << " samples)");
       }
     }
   }

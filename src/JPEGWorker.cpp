@@ -10,10 +10,8 @@
 
 #define MODULE "JPEGWorker"
 
-JPEGWorker::JPEGWorker(int jpgChnIndex, int impEncoderChn)
-    : jpgChn(jpgChnIndex), impEncChn(impEncoderChn) {
-  LOG_DEBUG("JPEGWorker created for JPEG channel index "
-            << jpgChn << " (IMP Encoder Channel " << impEncChn << ")");
+JPEGWorker::JPEGWorker(int jpgChnIndex, int impEncoderChn) : jpgChn(jpgChnIndex), impEncChn(impEncoderChn) {
+  LOG_DEBUG("JPEGWorker created for JPEG channel index " << jpgChn << " (IMP Encoder Channel " << impEncChn << ")");
 }
 
 JPEGWorker::~JPEGWorker() {
@@ -27,20 +25,18 @@ int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream) {
     void *data_ptr;
     size_t data_len;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
-    defined(PLATFORM_C100)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
     IMPEncoderPack *pack = &stream->pack[i];
     uint32_t remSize = 0; // Declare remSize here
     if (pack->length) {
       remSize = stream->streamSize - pack->offset;
-      data_ptr = (void *)((char *)stream->virAddr +
-                          ((remSize < pack->length) ? 0 : pack->offset));
+      data_ptr = (void *)((char *)stream->virAddr + ((remSize < pack->length) ? 0 : pack->offset));
       data_len = (remSize < pack->length) ? remSize : pack->length;
     } else {
       continue; // Skip empty packs
     }
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) ||                        \
-    defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
+    defined(PLATFORM_T30)
     data_ptr = reinterpret_cast<void *>(stream->pack[i].virAddr);
     data_len = stream->pack[i].length;
 #endif
@@ -52,12 +48,10 @@ int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream) {
       return -1; // Return error on write failure
     }
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
-    defined(PLATFORM_C100)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
     // Check the condition only under T31 platform, as remSize is used here
     if (remSize && pack->length > remSize) {
-      ret =
-          write(fd, (void *)((char *)stream->virAddr), pack->length - remSize);
+      ret = write(fd, (void *)((char *)stream->virAddr), pack->length - remSize);
       if (ret != static_cast<int>(pack->length - remSize)) {
         printf("Stream write error (remaining part): %s\n", strerror(errno));
         return -1;
@@ -71,8 +65,7 @@ int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream) {
 
 // Main processing loop, adapted from Worker::jpeg_grabber
 void JPEGWorker::run() {
-  LOG_DEBUG("Start JPEG processing run loop for index "
-            << jpgChn << " (IMP Encoder Channel " << impEncChn << ")");
+  LOG_DEBUG("Start JPEG processing run loop for index " << jpgChn << " (IMP Encoder Channel " << impEncChn << ")");
 
   // Initial target FPS based on idle setting
   int targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
@@ -105,14 +98,11 @@ void JPEGWorker::run() {
     lck.unlock();
 
     if (request_or_overrun || targetFps) {
-      auto diff_last_image =
-          duration_cast<milliseconds>(now - global_jpeg[jpgChn]->last_image)
-              .count();
+      auto diff_last_image = duration_cast<milliseconds>(now - global_jpeg[jpgChn]->last_image).count();
 
       // we remove targetFps/10 milliseconds as image creation time
       // by this we get besser FPS results
-      if (targetFps &&
-          diff_last_image >= ((1000 / targetFps) - targetFps / 10)) {
+      if (targetFps && diff_last_image >= ((1000 / targetFps) - targetFps / 10)) {
         // check if current jpeg channal is running if not start it
         if (!global_video[global_jpeg[jpgChn]->streamChn]->active) {
           /* required video channel was not running, we need to start it
@@ -120,8 +110,7 @@ void JPEGWorker::run() {
            */
           std::unique_lock<std::mutex> lock_stream{mutex_main};
           global_video[global_jpeg[jpgChn]->streamChn]->run_for_jpeg = true;
-          global_video[global_jpeg[jpgChn]->streamChn]
-              ->should_grab_frames.notify_one();
+          global_video[global_jpeg[jpgChn]->streamChn]->should_grab_frames.notify_one();
           lock_stream.unlock();
           global_video[global_jpeg[jpgChn]->streamChn]->is_activated.acquire();
         }
@@ -137,19 +126,15 @@ void JPEGWorker::run() {
             targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
         }
 
-        if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn,
-                                      cfg->general.imp_polling_timeout) == 0) {
+        if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn, cfg->general.imp_polling_timeout) == 0) {
           IMPEncoderStream stream;
-          if (IMP_Encoder_GetStream(global_jpeg[jpgChn]->encChn, &stream,
-                                    GET_STREAM_BLOCKING) == 0) {
+          if (IMP_Encoder_GetStream(global_jpeg[jpgChn]->encChn, &stream, GET_STREAM_BLOCKING) == 0) {
             fps++;
             bps += stream.pack->length;
 
             //  Check for success
-            const char *tempPath = "/tmp/snapshot.tmp"; // Temporary path
-            const char *finalPath =
-                global_jpeg[jpgChn]
-                    ->stream->jpeg_path; // Final path for the JPEG snapshot
+            const char *tempPath = "/tmp/snapshot.tmp";                     // Temporary path
+            const char *finalPath = global_jpeg[jpgChn]->stream->jpeg_path; // Final path for the JPEG snapshot
 
             // Open and create temporary file with read and write permissions
             int snap_fd = open(tempPath, O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -162,16 +147,14 @@ void JPEGWorker::run() {
 
               // Atomically move the temporary file to the final destination
               if (rename(tempPath, finalPath) != 0) {
-                LOG_ERROR("Failed to move JPEG snapshot from "
-                          << tempPath << " to " << finalPath);
+                LOG_ERROR("Failed to move JPEG snapshot from " << tempPath << " to " << finalPath);
                 std::remove(tempPath); // Attempt to remove the temporary file
                                        // if rename fails
               } else {
                 // LOG_DEBUG("JPEG snapshot successfully updated");
               }
             } else {
-              LOG_ERROR(
-                  "Failed to open JPEG snapshot for writing: " << tempPath);
+              LOG_ERROR("Failed to open JPEG snapshot for writing: " << tempPath);
             }
 
             IMP_Encoder_ReleaseStream(global_jpeg[jpgChn]->encChn,
@@ -186,13 +169,10 @@ void JPEGWorker::run() {
             bps = 0;
             gettimeofday(&global_jpeg[jpgChn]->stream->stats.ts, NULL);
 
-            LOG_DDEBUG("JPG "
-                       << jpgChn
-                       << " fps: " << global_jpeg[jpgChn]->stream->stats.fps
-                       << " bps: " << global_jpeg[jpgChn]->stream->stats.bps
-                       << " diff_last_image: " << diff_last_image
-                       << " request_or_overrun: " << request_or_overrun
-                       << " targetFps: " << targetFps << " ms: " << ms);
+            LOG_DDEBUG("JPG " << jpgChn << " fps: " << global_jpeg[jpgChn]->stream->stats.fps << " bps: "
+                              << global_jpeg[jpgChn]->stream->stats.bps << " diff_last_image: " << diff_last_image
+                              << " request_or_overrun: " << request_or_overrun << " targetFps: " << targetFps
+                              << " ms: " << ms);
           }
         }
 
@@ -210,8 +190,7 @@ void JPEGWorker::run() {
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_jpeg[jpgChn]->active = false;
       global_video[global_jpeg[jpgChn]->streamChn]->run_for_jpeg = false;
-      while (!global_jpeg[jpgChn]->request_or_overrun() &&
-             !global_restart_video)
+      while (!global_jpeg[jpgChn]->request_or_overrun() && !global_restart_video)
         global_jpeg[jpgChn]->should_grab_frames.wait(lock_stream);
 
       targetFps = global_jpeg[jpgChn]->stream->fps;
@@ -247,8 +226,7 @@ void *JPEGWorker::thread_entry(void *arg) {
   }
 
   global_jpeg[jpgChn]->imp_encoder =
-      IMPEncoder::createNew(global_jpeg[jpgChn]->stream, sh->encChn,
-                            global_jpeg[jpgChn]->streamChn, "stream2");
+      IMPEncoder::createNew(global_jpeg[jpgChn]->stream, sh->encChn, global_jpeg[jpgChn]->streamChn, "stream2");
 
   if (!global_jpeg[jpgChn]->imp_encoder) {
     LOG_ERROR("Failed to create JPEG encoder for channel " << jpgChn);
@@ -260,8 +238,7 @@ void *JPEGWorker::thread_entry(void *arg) {
   sh->has_started.release();
 
   ret = IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StartRecvPic("
-                              << global_jpeg[jpgChn]->encChn << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StartRecvPic(" << global_jpeg[jpgChn]->encChn << ")");
   if (ret != 0)
     return 0;
 

@@ -44,9 +44,7 @@ void Motion::detect() {
       ignoreInitialPeriod = false;
     }
 
-    if (isInCooldown &&
-        duration_cast<seconds>(currentTime - cooldownEndTime).count() <
-            cfg->motion.cooldown_time) {
+    if (isInCooldown && duration_cast<seconds>(currentTime - cooldownEndTime).count() < cfg->motion.cooldown_time) {
       continue;
     } else {
       isInCooldown = false;
@@ -79,10 +77,8 @@ void Motion::detect() {
 
     if (!motionDetected) {
       debounce = 0;
-      auto duration =
-          duration_cast<seconds>(currentTime - motionEndTime).count();
-      if (moving && duration >= cfg->motion.min_time &&
-          duration >= cfg->motion.post_time) {
+      auto duration = duration_cast<seconds>(currentTime - motionEndTime).count();
+      if (moving && duration >= cfg->motion.min_time && duration >= cfg->motion.post_time) {
         LOG_INFO("End of Motion");
         char cmd[128];
         memset(cmd, 0, sizeof(cmd));
@@ -127,20 +123,16 @@ int Motion::init() {
   ret = IMP_Encoder_GetChnAttr(cfg->motion.monitor_stream, &channelAttributes);
   if (ret == 0) {
     if (cfg->motion.frame_width == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("frame_width"),
-                    channelAttributes.encAttr.picWidth, true);
+      cfg->set<int>(getConfigPath("frame_width"), channelAttributes.encAttr.picWidth, true);
     }
     if (cfg->motion.frame_height == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("frame_height"),
-                    channelAttributes.encAttr.picHeight, true);
+      cfg->set<int>(getConfigPath("frame_height"), channelAttributes.encAttr.picHeight, true);
     }
     if (cfg->motion.roi_1_x == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("roi_1_x"),
-                    channelAttributes.encAttr.picWidth - 1, true);
+      cfg->set<int>(getConfigPath("roi_1_x"), channelAttributes.encAttr.picWidth - 1, true);
     }
     if (cfg->motion.roi_1_y == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("roi_1_y"),
-                    channelAttributes.encAttr.picHeight - 1, true);
+      cfg->set<int>(getConfigPath("roi_1_y"), channelAttributes.encAttr.picHeight - 1, true);
     }
   }
 
@@ -157,8 +149,7 @@ int Motion::init() {
   move_param.frameInfo.width = motion_width;
   move_param.frameInfo.height = motion_height;
 
-  LOG_INFO("Motion detection:" << " sensibility: " << move_param.sense[0]
-                               << ", skipCnt:" << move_param.skipFrameCnt
+  LOG_INFO("Motion detection:" << " sensibility: " << move_param.sense[0] << ", skipCnt:" << move_param.skipFrameCnt
                                << ", width:" << move_param.frameInfo.width
                                << ", height:" << move_param.frameInfo.height);
 
@@ -168,20 +159,16 @@ int Motion::init() {
   move_param.roiRect[0].p1.y = cfg->motion.roi_1_y - 1;
   move_param.roiRectCnt = cfg->motion.roi_count;
 
-  LOG_INFO("Motion detection roi[0]:" << " roi_0_x: " << cfg->motion.roi_0_x
-                                      << ", roi_0_y:" << cfg->motion.roi_0_y
-                                      << ", roi_1_x: " << cfg->motion.roi_1_x
-                                      << ", roi_1_y:" << cfg->motion.roi_1_y);
+  LOG_INFO("Motion detection roi[0]:" << " roi_0_x: " << cfg->motion.roi_0_x << ", roi_0_y:" << cfg->motion.roi_0_y
+                                      << ", roi_1_x: " << cfg->motion.roi_1_x << ", roi_1_y:" << cfg->motion.roi_1_y);
 
   move_intf = IMP_IVS_CreateMoveInterface(&move_param);
 
   ret = IMP_IVS_CreateChn(ivsChn, move_intf);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                              "IMP_IVS_CreateChn(" << ivsChn << ", move_intf)");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateChn(" << ivsChn << ", move_intf)");
 
   ret = IMP_IVS_RegisterChn(ivsGrp, ivsChn);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_RegisterChn(" << ivsGrp << ", "
-                                                          << ivsChn << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_RegisterChn(" << ivsGrp << ", " << ivsChn << ")");
 
   ret = IMP_IVS_StartRecvPic(ivsChn);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_StartRecvPic(" << ivsChn << ")")

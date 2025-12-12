@@ -7,11 +7,9 @@
 #include <mutex>
 #include <queue>
 
-template <typename FrameType, typename Stream>
-class IMPDeviceSource : public FramedSource {
+template <typename FrameType, typename Stream> class IMPDeviceSource : public FramedSource {
 public:
-  static IMPDeviceSource *createNew(UsageEnvironment &env, int encChn,
-                                    std::shared_ptr<Stream> stream,
+  static IMPDeviceSource *createNew(UsageEnvironment &env, int encChn, std::shared_ptr<Stream> stream,
                                     const char *name);
 
   void on_data_available() {
@@ -19,8 +17,7 @@ public:
       envir().taskScheduler().triggerEvent(eventTriggerId, this);
     }
   }
-  IMPDeviceSource(UsageEnvironment &env, int encChn,
-                  std::shared_ptr<Stream> stream, const char *name);
+  IMPDeviceSource(UsageEnvironment &env, int encChn, std::shared_ptr<Stream> stream, const char *name);
   virtual ~IMPDeviceSource();
 
 private:

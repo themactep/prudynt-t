@@ -7,8 +7,7 @@ AACEncoder *AACEncoder::createNew(int sampleRate, int numChn) {
   return new AACEncoder(sampleRate, numChn);
 }
 
-AACEncoder::AACEncoder(int sampleRate, int numChn)
-    : sampleRate(sampleRate), numChn(numChn) {
+AACEncoder::AACEncoder(int sampleRate, int numChn) : sampleRate(sampleRate), numChn(numChn) {
 }
 
 AACEncoder::~AACEncoder() {
@@ -53,8 +52,7 @@ int AACEncoder::close() {
   return 0;
 }
 
-int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf,
-                       int *outLen) {
+int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
   if (!handle) {
     LOG_ERROR("FAAC encoder not available");
     return -1;
@@ -62,12 +60,10 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf,
 
   const auto frameSamples = (data->len / sizeof(int16_t)) / numChn;
   if (frameSamples != inputSamples) {
-    LOG_WARN("FAAC was provided with " << frameSamples
-                                       << " samples per frame.");
+    LOG_WARN("FAAC was provided with " << frameSamples << " samples per frame.");
   }
-  const int frameLen = faacEncEncode(
-      handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
-      reinterpret_cast<unsigned char *>(outbuf), 1024);
+  const int frameLen = faacEncEncode(handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
+                                     reinterpret_cast<unsigned char *>(outbuf), 1024);
   *outLen = frameLen;
   if (frameLen == 0) {
     LOG_INFO("FAAC buffered frame: " << data->seq);

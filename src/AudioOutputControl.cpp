@@ -102,16 +102,14 @@ std::string trim(const std::string &value) {
 }
 
 std::string toLower(std::string value) {
-  std::transform(
-      value.begin(), value.end(), value.begin(),
-      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return value;
 }
 
 std::string toUpper(std::string value) {
-  std::transform(
-      value.begin(), value.end(), value.begin(),
-      [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
   return value;
 }
 
@@ -190,15 +188,13 @@ int clampLoopDelay(int value) {
 
 bool ensureFifo(const char *path) {
   if (mkdir(kFifoDir, 0775) < 0 && errno != EEXIST) {
-    LOG_ERROR("AudioOutputControl: mkdir failed for " << kFifoDir << ": "
-                                                      << strerror(errno));
+    LOG_ERROR("AudioOutputControl: mkdir failed for " << kFifoDir << ": " << strerror(errno));
     return false;
   }
 
   ::unlink(path);
   if (mkfifo(path, 0666) < 0) {
-    LOG_ERROR("AudioOutputControl: mkfifo failed for " << path << ": "
-                                                       << strerror(errno));
+    LOG_ERROR("AudioOutputControl: mkfifo failed for " << path << ": " << strerror(errno));
     return false;
   }
   return true;
@@ -229,18 +225,16 @@ bool readEntirePcm(const std::string &path, std::vector<int16_t> &samples) {
   file.seekg(0, std::ios::beg);
 
   samples.resize(totalBytes / sizeof(int16_t));
-  file.read(reinterpret_cast<char *>(samples.data()),
-            static_cast<std::streamsize>(samples.size() * sizeof(int16_t)));
+  file.read(reinterpret_cast<char *>(samples.data()), static_cast<std::streamsize>(samples.size() * sizeof(int16_t)));
   if (!file) {
     auto bytesRead = static_cast<size_t>(file.gcount());
     samples.resize(bytesRead / sizeof(int16_t));
-    LOG_WARN("AudioOutputControl: partial read for PCM file '"
-             << path << "', truncating to " << samples.size() << " samples");
+    LOG_WARN("AudioOutputControl: partial read for PCM file '" << path << "', truncating to " << samples.size()
+                                                               << " samples");
   }
 
   if (totalBytes % sizeof(int16_t) != 0) {
-    LOG_WARN("AudioOutputControl: PCM file '"
-             << path << "' has trailing bytes; ignoring remainder");
+    LOG_WARN("AudioOutputControl: PCM file '" << path << "' has trailing bytes; ignoring remainder");
   }
 
   return !samples.empty();
@@ -260,9 +254,7 @@ bool readWavFile(const std::string &path, WavPayload &payload) {
     return false;
   }
 
-  auto readChunkId = [&](char(&buffer)[4]) -> bool {
-    return static_cast<bool>(file.read(buffer, 4));
-  };
+  auto readChunkId = [&](char(&buffer)[4]) -> bool { return static_cast<bool>(file.read(buffer, 4)); };
 
   char chunkId[4];
   if (!readChunkId(chunkId) || std::strncmp(chunkId, "RIFF", 4) != 0) {
@@ -323,15 +315,12 @@ bool readWavFile(const std::string &path, WavPayload &payload) {
   }
 
   if (!fmtFound || !dataFound) {
-    LOG_ERROR("AudioOutputControl: WAV file '" << path
-                                               << "' missing required chunks");
+    LOG_ERROR("AudioOutputControl: WAV file '" << path << "' missing required chunks");
     return false;
   }
 
-  if (audioFormat != 1 || payload.bitsPerSample != 16 ||
-      payload.channels != 1) {
-    LOG_ERROR("AudioOutputControl: WAV file '" << path
-                                               << "' must be 16-bit mono PCM");
+  if (audioFormat != 1 || payload.bitsPerSample != 16 || payload.channels != 1) {
+    LOG_ERROR("AudioOutputControl: WAV file '" << path << "' must be 16-bit mono PCM");
     return false;
   }
 
@@ -369,12 +358,10 @@ bool parseAdtsHeader(const uint8_t *data, size_t size, AdtsHeader &header) {
   bool protectionAbsent = (data[1] & 0x01) != 0;
   header.profile = ((data[2] & 0xC0) >> 6) + 1; // 1=Main, 2=LC, etc
 
-  static constexpr int kSamplingRates[] = {96000, 88200, 64000, 48000, 44100,
-                                           32000, 24000, 22050, 16000, 12000,
-                                           11025, 8000,  7350};
+  static constexpr int kSamplingRates[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000,
+                                           22050, 16000, 12000, 11025, 8000,  7350};
   int sampleRateIndex = (data[2] & 0x3C) >> 2;
-  if (sampleRateIndex < 0 ||
-      sampleRateIndex >= static_cast<int>(std::size(kSamplingRates))) {
+  if (sampleRateIndex < 0 || sampleRateIndex >= static_cast<int>(std::size(kSamplingRates))) {
     return false;
   }
   header.sampleRate = kSamplingRates[sampleRateIndex];
@@ -383,8 +370,7 @@ bool parseAdtsHeader(const uint8_t *data, size_t size, AdtsHeader &header) {
   header.hasCrc = !protectionAbsent;
   header.headerSize = header.hasCrc ? 9 : 7;
 
-  header.frameLength =
-      ((data[3] & 0x03) << 11) | (data[4] << 3) | ((data[5] & 0xE0) >> 5);
+  header.frameLength = ((data[3] & 0x03) << 11) | (data[4] << 3) | ((data[5] & 0xE0) >> 5);
 
   if (header.frameLength < header.headerSize) {
     return false;
@@ -411,16 +397,14 @@ bool configureDecoderForHeader(HAACDecoder decoder, const AdtsHeader &header) {
   return true;
 }
 
-bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
-                   int &sampleRate) {
+bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {
     LOG_ERROR("AudioOutputControl: failed to open AAC file '" << path << "'");
     return false;
   }
 
-  std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
-                              std::istreambuf_iterator<char>());
+  std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   if (buffer.empty()) {
     LOG_WARN("AudioOutputControl: AAC file '" << path << "' is empty");
     return false;
@@ -450,15 +434,13 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
 
   while (offset + 7 <= buffer.size()) {
     AdtsHeader header;
-    if (!parseAdtsHeader(buffer.data() + offset, buffer.size() - offset,
-                         header)) {
+    if (!parseAdtsHeader(buffer.data() + offset, buffer.size() - offset, header)) {
       ++offset; // attempt to resync on next byte
       continue;
     }
 
     if (offset + static_cast<size_t>(header.frameLength) > buffer.size()) {
-      LOG_WARN("AudioOutputControl: truncated AAC frame near offset "
-               << offset);
+      LOG_WARN("AudioOutputControl: truncated AAC frame near offset " << offset);
       break;
     }
 
@@ -475,14 +457,12 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
       continue;
     }
 
-    unsigned char *framePtr =
-        const_cast<unsigned char *>(buffer.data() + offset + header.headerSize);
+    unsigned char *framePtr = const_cast<unsigned char *>(buffer.data() + offset + header.headerSize);
     int bytesLeft = payloadSize;
 
     int ret = AACDecode(decoder, &framePtr, &bytesLeft, decodeBuffer.data());
     if (ret != 0 && ret != ERR_AAC_INDATA_UNDERFLOW) {
-      LOG_ERROR("AudioOutputControl: AACDecode failed with "
-                << ret << " at offset " << offset);
+      LOG_ERROR("AudioOutputControl: AACDecode failed with " << ret << " at offset " << offset);
       return false;
     }
 
@@ -495,8 +475,7 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
     }
 
     if (frameInfo.outputSamps > static_cast<int>(kMaxDecodeSamples)) {
-      LOG_ERROR(
-          "AudioOutputControl: decoded AAC frame exceeds buffer capacity");
+      LOG_ERROR("AudioOutputControl: decoded AAC frame exceeds buffer capacity");
       return false;
     }
 
@@ -516,8 +495,7 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
 
     const int channels = frameInfo.nChans;
     if (channels == 1) {
-      samples.insert(samples.end(), decodeBuffer.begin(),
-                     decodeBuffer.begin() + frameInfo.outputSamps);
+      samples.insert(samples.end(), decodeBuffer.begin(), decodeBuffer.begin() + frameInfo.outputSamps);
     } else {
       const int frames = frameInfo.outputSamps / channels;
       for (int i = 0; i < frames; ++i) {
@@ -534,8 +512,7 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
   }
 
   if (!decodedAny) {
-    LOG_WARN("AudioOutputControl: no decodable AAC frames found in '" << path
-                                                                      << "'");
+    LOG_WARN("AudioOutputControl: no decodable AAC frames found in '" << path << "'");
     return false;
   }
 
@@ -546,16 +523,14 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
   return true;
 }
 
-bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples,
-                   int &sampleRate) {
+bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples, int &sampleRate) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {
     LOG_ERROR("AudioOutputControl: failed to open MP3 file '" << path << "'");
     return false;
   }
 
-  std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
-                              std::istreambuf_iterator<char>());
+  std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   if (buffer.empty()) {
     LOG_WARN("AudioOutputControl: MP3 file '" << path << "' is empty");
     return false;
@@ -595,14 +570,12 @@ bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples,
 
     unsigned char *framePtr = readPtr;
     int frameBytesLeft = bytesLeft;
-    int err =
-        MP3Decode(decoder, &framePtr, &frameBytesLeft, decodeBuffer.data(), 0);
+    int err = MP3Decode(decoder, &framePtr, &frameBytesLeft, decodeBuffer.data(), 0);
     if (err == ERR_MP3_INDATA_UNDERFLOW) {
       break;
     }
     if (err != ERR_MP3_NONE) {
-      LOG_WARN("AudioOutputControl: MP3Decode error "
-               << err << " for '" << path << "', attempting resync");
+      LOG_WARN("AudioOutputControl: MP3Decode error " << err << " for '" << path << "', attempting resync");
       if (bytesLeft <= 1) {
         break;
       }
@@ -618,8 +591,7 @@ bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples,
     }
 
     int channels = std::max(frameInfo.nChans, 1);
-    size_t outputSamples =
-        static_cast<size_t>(std::max(frameInfo.outputSamps, 0));
+    size_t outputSamples = static_cast<size_t>(std::max(frameInfo.outputSamps, 0));
     if (outputSamples == 0) {
       readPtr = framePtr;
       bytesLeft = frameBytesLeft;
@@ -627,8 +599,7 @@ bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples,
     }
 
     size_t limitedSamples = std::min(outputSamples, decodeBuffer.size());
-    size_t frames =
-        (channels > 0) ? (limitedSamples / static_cast<size_t>(channels)) : 0;
+    size_t frames = (channels > 0) ? (limitedSamples / static_cast<size_t>(channels)) : 0;
     if (frames == 0) {
       readPtr = framePtr;
       bytesLeft = frameBytesLeft;
@@ -637,14 +608,12 @@ bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples,
 
     samples.reserve(samples.size() + frames);
     if (channels == 1) {
-      samples.insert(samples.end(), decodeBuffer.begin(),
-                     decodeBuffer.begin() + limitedSamples);
+      samples.insert(samples.end(), decodeBuffer.begin(), decodeBuffer.begin() + limitedSamples);
     } else {
       for (size_t i = 0; i < frames; ++i) {
         int32_t sum = 0;
         for (int ch = 0; ch < channels; ++ch) {
-          size_t idx =
-              i * static_cast<size_t>(channels) + static_cast<size_t>(ch);
+          size_t idx = i * static_cast<size_t>(channels) + static_cast<size_t>(ch);
           sum += decodeBuffer[idx];
         }
         sum /= channels;
@@ -663,8 +632,7 @@ bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples,
   }
 
   if (!decodedAny) {
-    LOG_WARN("AudioOutputControl: no decodable MP3 frames found in '" << path
-                                                                      << "'");
+    LOG_WARN("AudioOutputControl: no decodable MP3 frames found in '" << path << "'");
     return false;
   }
 
@@ -724,14 +692,12 @@ bool fileLooksLikeWav(std::ifstream &file) {
   if (file.gcount() < static_cast<std::streamsize>(header.size())) {
     return false;
   }
-  return std::memcmp(header.data(), "RIFF", 4) == 0 &&
-         std::memcmp(header.data() + 8, "WAVE", 4) == 0;
+  return std::memcmp(header.data(), "RIFF", 4) == 0 && std::memcmp(header.data() + 8, "WAVE", 4) == 0;
 }
 
 bool fileLooksLikeAac(std::ifstream &file) {
   std::array<uint8_t, 7> header{};
-  file.read(reinterpret_cast<char *>(header.data()),
-            static_cast<std::streamsize>(header.size()));
+  file.read(reinterpret_cast<char *>(header.data()), static_cast<std::streamsize>(header.size()));
   if (file.gcount() < static_cast<std::streamsize>(header.size())) {
     return false;
   }
@@ -749,8 +715,7 @@ bool fileLooksLikeOpus(std::ifstream &file) {
   }
 
   std::array<unsigned char, 23> header{};
-  if (!file.read(reinterpret_cast<char *>(header.data()),
-                 static_cast<std::streamsize>(header.size()))) {
+  if (!file.read(reinterpret_cast<char *>(header.data()), static_cast<std::streamsize>(header.size()))) {
     return false;
   }
 
@@ -767,8 +732,7 @@ bool fileLooksLikeOpus(std::ifstream &file) {
   uint8_t pageSegments = header[22];
   std::vector<uint8_t> lacing(pageSegments);
   if (pageSegments > 0 &&
-      !file.read(reinterpret_cast<char *>(lacing.data()),
-                 static_cast<std::streamsize>(pageSegments))) {
+      !file.read(reinterpret_cast<char *>(lacing.data()), static_cast<std::streamsize>(pageSegments))) {
     return false;
   }
 
@@ -779,8 +743,7 @@ bool fileLooksLikeOpus(std::ifstream &file) {
 
   std::vector<uint8_t> payload(payloadSize);
   if (payloadSize > 0 &&
-      !file.read(reinterpret_cast<char *>(payload.data()),
-                 static_cast<std::streamsize>(payload.size()))) {
+      !file.read(reinterpret_cast<char *>(payload.data()), static_cast<std::streamsize>(payload.size()))) {
     return false;
   }
 
@@ -791,10 +754,8 @@ bool fileLooksLikeOpus(std::ifstream &file) {
     if (payloadOffset + segLen > payload.size()) {
       return false;
     }
-    packet.insert(packet.end(),
-                  payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
-                  payload.begin() +
-                      static_cast<std::ptrdiff_t>(payloadOffset + segLen));
+    packet.insert(packet.end(), payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
+                  payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset + segLen));
     payloadOffset += segLen;
     if (segLen < 255) {
       break;
@@ -817,8 +778,7 @@ bool fileLooksLikeMp3(std::ifstream &file) {
   file.clear();
   file.seekg(0, std::ios::beg);
   std::array<unsigned char, 2048> buffer{};
-  file.read(reinterpret_cast<char *>(buffer.data()),
-            static_cast<std::streamsize>(buffer.size()));
+  file.read(reinterpret_cast<char *>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
   std::streamsize readBytes = file.gcount();
   if (readBytes <= 0) {
     return false;
@@ -923,13 +883,11 @@ bool bufferLooksLikeMp3(const std::vector<uint8_t> &buffer) {
     return false;
   }
   const unsigned char *ptr = buffer.data();
-  int sync = MP3FindSyncWord(const_cast<unsigned char *>(ptr),
-                             static_cast<int>(buffer.size()));
+  int sync = MP3FindSyncWord(const_cast<unsigned char *>(ptr), static_cast<int>(buffer.size()));
   return sync >= 0;
 }
 
-std::optional<AudioFileFormat>
-detectFormatFromBuffer(const std::vector<uint8_t> &buffer) {
+std::optional<AudioFileFormat> detectFormatFromBuffer(const std::vector<uint8_t> &buffer) {
   if (bufferLooksLikeAac(buffer)) {
     return AudioFileFormat::AAC;
   }
@@ -957,10 +915,8 @@ uint16_t readLe16(const unsigned char *data) {
 }
 
 uint32_t readLe32(const unsigned char *data) {
-  return static_cast<uint32_t>(data[0]) |
-         (static_cast<uint32_t>(data[1]) << 8) |
-         (static_cast<uint32_t>(data[2]) << 16) |
-         (static_cast<uint32_t>(data[3]) << 24);
+  return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
 }
 
 const char *flacInitStatusName(FLAC__StreamDecoderInitStatus status) {
@@ -1004,10 +960,8 @@ struct FlacDecodeContext {
   std::ifstream *file{nullptr};
 };
 
-FLAC__StreamDecoderWriteStatus
-flacWriteCallback(const FLAC__StreamDecoder * /*decoder*/,
-                  const FLAC__Frame *frame, const FLAC__int32 *const buffer[],
-                  void *clientData) {
+FLAC__StreamDecoderWriteStatus flacWriteCallback(const FLAC__StreamDecoder * /*decoder*/, const FLAC__Frame *frame,
+                                                 const FLAC__int32 *const buffer[], void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !ctx->samples || !frame || !buffer) {
     return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
@@ -1038,29 +992,25 @@ flacWriteCallback(const FLAC__StreamDecoder * /*decoder*/,
   return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
 }
 
-void flacMetadataCallback(const FLAC__StreamDecoder * /*decoder*/,
-                          const FLAC__StreamMetadata *metadata,
+void flacMetadataCallback(const FLAC__StreamDecoder * /*decoder*/, const FLAC__StreamMetadata *metadata,
                           void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !metadata) {
     return;
   }
-  if (metadata->type == FLAC__METADATA_TYPE_STREAMINFO &&
-      ctx->sampleRate == 0 && metadata->data.stream_info.sample_rate > 0) {
+  if (metadata->type == FLAC__METADATA_TYPE_STREAMINFO && ctx->sampleRate == 0 &&
+      metadata->data.stream_info.sample_rate > 0) {
     ctx->sampleRate = static_cast<int>(metadata->data.stream_info.sample_rate);
   }
 }
 
-void flacErrorCallback(const FLAC__StreamDecoder * /*decoder*/,
-                       FLAC__StreamDecoderErrorStatus status,
+void flacErrorCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__StreamDecoderErrorStatus status,
                        void * /*clientData*/) {
-  LOG_WARN("AudioOutputControl: FLAC decoder error: "
-           << flacErrorStatusName(status));
+  LOG_WARN("AudioOutputControl: FLAC decoder error: " << flacErrorStatusName(status));
 }
 
-FLAC__StreamDecoderReadStatus
-flacReadCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__byte buffer[],
-                 size_t *bytes, void *clientData) {
+FLAC__StreamDecoderReadStatus flacReadCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__byte buffer[],
+                                               size_t *bytes, void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !ctx->file || !bytes) {
     return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
@@ -1069,8 +1019,7 @@ flacReadCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__byte buffer[],
     return FLAC__STREAM_DECODER_READ_STATUS_CONTINUE;
   }
 
-  ctx->file->read(reinterpret_cast<char *>(buffer),
-                  static_cast<std::streamsize>(*bytes));
+  ctx->file->read(reinterpret_cast<char *>(buffer), static_cast<std::streamsize>(*bytes));
   std::streamsize readBytes = ctx->file->gcount();
   if (readBytes <= 0) {
     if (ctx->file->eof()) {
@@ -1085,17 +1034,15 @@ flacReadCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__byte buffer[],
   return FLAC__STREAM_DECODER_READ_STATUS_CONTINUE;
 }
 
-FLAC__StreamDecoderSeekStatus
-flacSeekCallback(const FLAC__StreamDecoder * /*decoder*/,
-                 FLAC__uint64 absoluteByteOffset, void *clientData) {
+FLAC__StreamDecoderSeekStatus flacSeekCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__uint64 absoluteByteOffset,
+                                               void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !ctx->file) {
     return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
   }
 
   ctx->file->clear();
-  ctx->file->seekg(static_cast<std::streamoff>(absoluteByteOffset),
-                   std::ios::beg);
+  ctx->file->seekg(static_cast<std::streamoff>(absoluteByteOffset), std::ios::beg);
   if (!(*ctx->file)) {
     ctx->file->clear();
     return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
@@ -1103,9 +1050,8 @@ flacSeekCallback(const FLAC__StreamDecoder * /*decoder*/,
   return FLAC__STREAM_DECODER_SEEK_STATUS_OK;
 }
 
-FLAC__StreamDecoderTellStatus
-flacTellCallback(const FLAC__StreamDecoder * /*decoder*/,
-                 FLAC__uint64 *absoluteByteOffset, void *clientData) {
+FLAC__StreamDecoderTellStatus flacTellCallback(const FLAC__StreamDecoder * /*decoder*/,
+                                               FLAC__uint64 *absoluteByteOffset, void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !ctx->file || !absoluteByteOffset) {
     return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
@@ -1118,9 +1064,8 @@ flacTellCallback(const FLAC__StreamDecoder * /*decoder*/,
   return FLAC__STREAM_DECODER_TELL_STATUS_OK;
 }
 
-FLAC__StreamDecoderLengthStatus
-flacLengthCallback(const FLAC__StreamDecoder * /*decoder*/,
-                   FLAC__uint64 *streamLength, void *clientData) {
+FLAC__StreamDecoderLengthStatus flacLengthCallback(const FLAC__StreamDecoder * /*decoder*/, FLAC__uint64 *streamLength,
+                                                   void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !ctx->file || !streamLength) {
     return FLAC__STREAM_DECODER_LENGTH_STATUS_ERROR;
@@ -1139,8 +1084,7 @@ flacLengthCallback(const FLAC__StreamDecoder * /*decoder*/,
   return FLAC__STREAM_DECODER_LENGTH_STATUS_OK;
 }
 
-FLAC__bool flacEofCallback(const FLAC__StreamDecoder * /*decoder*/,
-                           void *clientData) {
+FLAC__bool flacEofCallback(const FLAC__StreamDecoder * /*decoder*/, void *clientData) {
   auto *ctx = static_cast<FlacDecodeContext *>(clientData);
   if (!ctx || !ctx->file) {
     return true;
@@ -1148,8 +1092,7 @@ FLAC__bool flacEofCallback(const FLAC__StreamDecoder * /*decoder*/,
   return ctx->file->eof();
 }
 
-bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples,
-                    int &sampleRate) {
+bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate) {
   FLAC__StreamDecoder *decoder = FLAC__stream_decoder_new();
   if (!decoder) {
     LOG_ERROR("AudioOutputControl: failed to create FLAC decoder");
@@ -1178,13 +1121,11 @@ bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples,
 
   FlacDecodeContext ctx{&samples};
   ctx.file = &file;
-  auto initStatus = FLAC__stream_decoder_init_stream(
-      decoder, flacReadCallback, flacSeekCallback, flacTellCallback,
-      flacLengthCallback, flacEofCallback, flacWriteCallback,
-      flacMetadataCallback, flacErrorCallback, &ctx);
+  auto initStatus = FLAC__stream_decoder_init_stream(decoder, flacReadCallback, flacSeekCallback, flacTellCallback,
+                                                     flacLengthCallback, flacEofCallback, flacWriteCallback,
+                                                     flacMetadataCallback, flacErrorCallback, &ctx);
   if (initStatus != FLAC__STREAM_DECODER_INIT_STATUS_OK) {
-    LOG_ERROR("AudioOutputControl: FLAC init failed for '"
-              << path << "': " << flacInitStatusName(initStatus));
+    LOG_ERROR("AudioOutputControl: FLAC init failed for '" << path << "': " << flacInitStatusName(initStatus));
     return false;
   }
   decoderGuard.initialized = true;
@@ -1195,8 +1136,7 @@ bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples,
   }
 
   if (!ctx.decodedAny) {
-    LOG_WARN("AudioOutputControl: no FLAC audio frames decoded from '" << path
-                                                                       << "'");
+    LOG_WARN("AudioOutputControl: no FLAC audio frames decoded from '" << path << "'");
     return false;
   }
 
@@ -1209,8 +1149,7 @@ bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples,
   return true;
 }
 
-bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
-                    int &sampleRate) {
+bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate) {
   constexpr int kOpusSampleRate = 48000;
   constexpr int kMaxOpusChannels = 2;
   constexpr int kMaxFrameSize = 5760; // 120 ms at 48 kHz
@@ -1244,16 +1183,13 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
     }
 
     if (packetIndex == 0) {
-      if (packet.size() < 19 ||
-          std::memcmp(packet.data(), "OpusHead", 8) != 0) {
-        LOG_ERROR("AudioOutputControl: invalid Opus ID header in '" << path
-                                                                    << "'");
+      if (packet.size() < 19 || std::memcmp(packet.data(), "OpusHead", 8) != 0) {
+        LOG_ERROR("AudioOutputControl: invalid Opus ID header in '" << path << "'");
         return false;
       }
       opusChannels = packet[9];
       if (opusChannels <= 0 || opusChannels > kMaxOpusChannels) {
-        LOG_ERROR("AudioOutputControl: unsupported Opus channel count "
-                  << opusChannels << " in '" << path << "'");
+        LOG_ERROR("AudioOutputControl: unsupported Opus channel count " << opusChannels << " in '" << path << "'");
         return false;
       }
 
@@ -1263,16 +1199,14 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
       int opusError = 0;
       decoder = opus_decoder_create(kOpusSampleRate, opusChannels, &opusError);
       if (opusError != OPUS_OK || !decoder) {
-        LOG_ERROR("AudioOutputControl: failed to create Opus decoder: "
-                  << opus_strerror(opusError));
+        LOG_ERROR("AudioOutputControl: failed to create Opus decoder: " << opus_strerror(opusError));
         return false;
       }
 
       sampleRate = kOpusSampleRate;
     } else if (packetIndex == 1) {
       if (packet.size() < 8 || std::memcmp(packet.data(), "OpusTags", 8) != 0) {
-        LOG_WARN("AudioOutputControl: unexpected Opus comment packet in '"
-                 << path << "'");
+        LOG_WARN("AudioOutputControl: unexpected Opus comment packet in '" << path << "'");
       }
     } else {
       if (!decoder) {
@@ -1282,12 +1216,10 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
         return false;
       }
 
-      int decodedSamples = opus_decode(decoder, packet.data(),
-                                       static_cast<opus_int32>(packet.size()),
+      int decodedSamples = opus_decode(decoder, packet.data(), static_cast<opus_int32>(packet.size()),
                                        decodeBuffer.data(), kMaxFrameSize, 0);
       if (decodedSamples < 0) {
-        LOG_ERROR("AudioOutputControl: opus_decode failed: "
-                  << opus_strerror(decodedSamples));
+        LOG_ERROR("AudioOutputControl: opus_decode failed: " << opus_strerror(decodedSamples));
         return false;
       }
 
@@ -1321,24 +1253,21 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
       break;
     }
     if (std::strncmp(capture, "OggS", 4) != 0) {
-      LOG_ERROR("AudioOutputControl: invalid Ogg capture pattern in '" << path
-                                                                       << "'");
+      LOG_ERROR("AudioOutputControl: invalid Ogg capture pattern in '" << path << "'");
       destroyDecoder();
       return false;
     }
 
     std::array<unsigned char, 23> header{};
     if (!file.read(reinterpret_cast<char *>(header.data()), header.size())) {
-      LOG_ERROR("AudioOutputControl: truncated Ogg page header in '" << path
-                                                                     << "'");
+      LOG_ERROR("AudioOutputControl: truncated Ogg page header in '" << path << "'");
       destroyDecoder();
       return false;
     }
 
     uint8_t version = header[0];
     if (version != 0) {
-      LOG_ERROR("AudioOutputControl: unsupported Ogg version in '" << path
-                                                                   << "'");
+      LOG_ERROR("AudioOutputControl: unsupported Ogg version in '" << path << "'");
       destroyDecoder();
       return false;
     }
@@ -1350,26 +1279,21 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
 
     if (!haveStreamSerial) {
       if ((headerType & 0x02) == 0) {
-        LOG_ERROR("AudioOutputControl: first Ogg page missing BOS flag in '"
-                  << path << "'");
+        LOG_ERROR("AudioOutputControl: first Ogg page missing BOS flag in '" << path << "'");
         destroyDecoder();
         return false;
       }
       streamSerial = serial;
       haveStreamSerial = true;
     } else if (serial != streamSerial) {
-      LOG_ERROR(
-          "AudioOutputControl: multiple logical streams not supported in '"
-          << path << "'");
+      LOG_ERROR("AudioOutputControl: multiple logical streams not supported in '" << path << "'");
       destroyDecoder();
       return false;
     }
 
     std::vector<uint8_t> lacing(pageSegments);
-    if (pageSegments > 0 &&
-        !file.read(reinterpret_cast<char *>(lacing.data()), pageSegments)) {
-      LOG_ERROR("AudioOutputControl: truncated lacing table in '" << path
-                                                                  << "'");
+    if (pageSegments > 0 && !file.read(reinterpret_cast<char *>(lacing.data()), pageSegments)) {
+      LOG_ERROR("AudioOutputControl: truncated lacing table in '" << path << "'");
       destroyDecoder();
       return false;
     }
@@ -1380,10 +1304,8 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
     }
 
     std::vector<uint8_t> payload(payloadSize);
-    if (payloadSize > 0 &&
-        !file.read(reinterpret_cast<char *>(payload.data()), payloadSize)) {
-      LOG_ERROR("AudioOutputControl: truncated page payload in '" << path
-                                                                  << "'");
+    if (payloadSize > 0 && !file.read(reinterpret_cast<char *>(payload.data()), payloadSize)) {
+      LOG_ERROR("AudioOutputControl: truncated page payload in '" << path << "'");
       destroyDecoder();
       return false;
     }
@@ -1391,17 +1313,13 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
     size_t payloadOffset = 0;
     for (uint8_t segLen : lacing) {
       if (payloadOffset + segLen > payload.size()) {
-        LOG_ERROR("AudioOutputControl: invalid segment length in '" << path
-                                                                    << "'");
+        LOG_ERROR("AudioOutputControl: invalid segment length in '" << path << "'");
         destroyDecoder();
         return false;
       }
 
-      currentPacket.insert(
-          currentPacket.end(),
-          payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
-          payload.begin() +
-              static_cast<std::ptrdiff_t>(payloadOffset + segLen));
+      currentPacket.insert(currentPacket.end(), payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset),
+                           payload.begin() + static_cast<std::ptrdiff_t>(payloadOffset + segLen));
       payloadOffset += segLen;
 
       if (segLen < 255) {
@@ -1415,15 +1333,13 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
   }
 
   if (!currentPacket.empty()) {
-    LOG_WARN("AudioOutputControl: leftover partial Opus packet ignored for '"
-             << path << "'");
+    LOG_WARN("AudioOutputControl: leftover partial Opus packet ignored for '" << path << "'");
   }
 
   destroyDecoder();
 
   if (!decodedAny) {
-    LOG_WARN("AudioOutputControl: no audio payload decoded from Opus file '"
-             << path << "'");
+    LOG_WARN("AudioOutputControl: no audio payload decoded from Opus file '" << path << "'");
     return false;
   }
 
@@ -1434,16 +1350,13 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples,
   return true;
 }
 
-std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input,
-                                    int inputRate, int outputRate) {
+std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input, int inputRate, int outputRate) {
   if (inputRate == outputRate || input.empty()) {
     return input;
   }
 
-  double ratio =
-      static_cast<double>(outputRate) / static_cast<double>(inputRate);
-  size_t outputSize = static_cast<size_t>(
-      std::max(1.0, std::round(static_cast<double>(input.size()) * ratio)));
+  double ratio = static_cast<double>(outputRate) / static_cast<double>(inputRate);
+  size_t outputSize = static_cast<size_t>(std::max(1.0, std::round(static_cast<double>(input.size()) * ratio)));
   std::vector<int16_t> output(outputSize);
   for (size_t i = 0; i < outputSize; ++i) {
     double inputPos = static_cast<double>(i) / ratio;
@@ -1454,8 +1367,7 @@ std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input,
     size_t nextIndex = std::min(baseIndex + 1, input.size() - 1);
     double factor = inputPos - static_cast<double>(baseIndex);
     double interpolated =
-        static_cast<double>(input[baseIndex]) * (1.0 - factor) +
-        static_cast<double>(input[nextIndex]) * factor;
+        static_cast<double>(input[baseIndex]) * (1.0 - factor) + static_cast<double>(input[nextIndex]) * factor;
     if (interpolated > INT16_MAX) {
       interpolated = INT16_MAX;
     } else if (interpolated < INT16_MIN) {
@@ -1481,8 +1393,7 @@ public:
     if (inputRate_ <= 0 || outputRate_ <= 0) {
       increment_ = 1.0;
     } else {
-      increment_ =
-          static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
+      increment_ = static_cast<double>(inputRate_) / static_cast<double>(outputRate_);
     }
     nextOutputTime_ = 0.0;
     processedSamples_ = 0;
@@ -1490,8 +1401,7 @@ public:
     lastSample_ = 0;
   }
 
-  void process(const int16_t *samples, size_t count,
-               std::vector<int16_t> &output) {
+  void process(const int16_t *samples, size_t count, std::vector<int16_t> &output) {
     if (!samples || count == 0 || inputRate_ <= 0 || outputRate_ <= 0) {
       return;
     }
@@ -1522,13 +1432,9 @@ public:
       double segmentEnd = static_cast<double>(processedSamples_);
       while (nextOutputTime_ <= segmentEnd) {
         double frac =
-            (segmentEnd - segmentStart) > 0.0
-                ? (nextOutputTime_ - segmentStart) / (segmentEnd - segmentStart)
-                : 0.0;
+            (segmentEnd - segmentStart) > 0.0 ? (nextOutputTime_ - segmentStart) / (segmentEnd - segmentStart) : 0.0;
         double interpolated =
-            static_cast<double>(lastSample_) +
-            (static_cast<double>(current) - static_cast<double>(lastSample_)) *
-                frac;
+            static_cast<double>(lastSample_) + (static_cast<double>(current) - static_cast<double>(lastSample_)) * frac;
         if (interpolated > INT16_MAX) {
           interpolated = INT16_MAX;
         } else if (interpolated < INT16_MIN) {
@@ -1571,10 +1477,8 @@ private:
 
 class AudioStreamSink {
 public:
-  AudioStreamSink(const PlayCommandOptions &options,
-                  std::atomic<bool> &stopFlag)
-      : options_(options), stopRequested_(stopFlag),
-        targetRate_(defaultSampleRate()) {
+  AudioStreamSink(const PlayCommandOptions &options, std::atomic<bool> &stopFlag)
+      : options_(options), stopRequested_(stopFlag), targetRate_(defaultSampleRate()) {
   }
 
   bool prepare() {
@@ -1597,8 +1501,7 @@ public:
     }
 
     if ((pendingVolume_ || pendingGain_) &&
-        AudioOutputWorker::applyVolumeGain(pendingVolume_, options_.volume,
-                                           pendingGain_, options_.gain)) {
+        AudioOutputWorker::applyVolumeGain(pendingVolume_, options_.volume, pendingGain_, options_.gain)) {
       pendingVolume_ = false;
       pendingGain_ = false;
     }
@@ -1619,8 +1522,7 @@ public:
 
     if (actualSourceRate != targetRate_) {
       if (!resampler_ || currentSourceRate_ != actualSourceRate) {
-        resampler_ = std::make_unique<StreamingLinearResampler>(
-            actualSourceRate, targetRate_);
+        resampler_ = std::make_unique<StreamingLinearResampler>(actualSourceRate, targetRate_);
         currentSourceRate_ = actualSourceRate;
       }
       resampler_->process(samples, count, convertBuffer_);
@@ -1658,24 +1560,21 @@ public:
     }
 
     if (pendingVolume_ || pendingGain_) {
-      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, pendingVolume_,
-                                    options_.volume, pendingGain_,
+      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, pendingVolume_, options_.volume, pendingGain_,
                                     options_.gain);
       pendingVolume_ = false;
       pendingGain_ = false;
     }
 
     if (!options_.append) {
-      AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(0),
-                                                   true, kStreamingTailSilence);
+      AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(0), true, kStreamingTailSilence);
     }
 
     return true;
   }
 
   bool shouldStop() const {
-    return stopRequested_.load(std::memory_order_relaxed) ||
-           global_shutdown_requested.load(std::memory_order_relaxed);
+    return stopRequested_.load(std::memory_order_relaxed) || global_shutdown_requested.load(std::memory_order_relaxed);
   }
 
 private:
@@ -1686,8 +1585,7 @@ private:
     if (shouldStop()) {
       return false;
     }
-    if (!AudioOutputWorker::enqueuePcmBlocking(std::move(chunk), pendingVolume_,
-                                               options_.volume, pendingGain_,
+    if (!AudioOutputWorker::enqueuePcmBlocking(std::move(chunk), pendingVolume_, options_.volume, pendingGain_,
                                                options_.gain)) {
       return false;
     }
@@ -1721,8 +1619,7 @@ protected:
 
 class StreamingPcmDecoder : public StreamingDecoder {
 public:
-  StreamingPcmDecoder(AudioStreamSink &sink, int sampleRate)
-      : StreamingDecoder(sink) {
+  StreamingPcmDecoder(AudioStreamSink &sink, int sampleRate) : StreamingDecoder(sink) {
     sampleRate_ = (sampleRate > 0) ? sampleRate : defaultSampleRate();
   }
 
@@ -1765,8 +1662,7 @@ private:
       decode_.resize(emitSamples);
       const uint8_t *ptr = buffer_.data() + readOffset_;
       for (size_t i = 0; i < emitSamples; ++i) {
-        int16_t sample =
-            static_cast<int16_t>(ptr[0] | (static_cast<int16_t>(ptr[1]) << 8));
+        int16_t sample = static_cast<int16_t>(ptr[0] | (static_cast<int16_t>(ptr[1]) << 8));
         decode_[i] = sample;
         ptr += kSampleBytes;
       }
@@ -1775,8 +1671,7 @@ private:
     }
 
     if (readOffset_ > 0) {
-      buffer_.erase(buffer_.begin(),
-                    buffer_.begin() + static_cast<std::ptrdiff_t>(readOffset_));
+      buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(readOffset_));
       readOffset_ = 0;
     }
     return ok;
@@ -1867,11 +1762,9 @@ private:
 
       unsigned char *framePtr = buffer_.data() + payloadOffset;
       int bytesLeft = header.frameLength - header.headerSize;
-      int decodeStatus =
-          AACDecode(decoder_, &framePtr, &bytesLeft, decodeBuffer_.data());
+      int decodeStatus = AACDecode(decoder_, &framePtr, &bytesLeft, decodeBuffer_.data());
       if (decodeStatus != 0 && decodeStatus != ERR_AAC_INDATA_UNDERFLOW) {
-        LOG_WARN("AudioOutputControl: AACDecode error " << decodeStatus
-                                                        << ", resyncing");
+        LOG_WARN("AudioOutputControl: AACDecode error " << decodeStatus << ", resyncing");
         buffer_.erase(buffer_.begin());
         continue;
       }
@@ -1884,8 +1777,7 @@ private:
       }
 
       if (sampleRate_ == 0) {
-        sampleRate_ =
-            (info.sampRateOut > 0) ? info.sampRateOut : header.sampleRate;
+        sampleRate_ = (info.sampRateOut > 0) ? info.sampRateOut : header.sampleRate;
         if (sampleRate_ <= 0) {
           sampleRate_ = defaultSampleRate();
         }
@@ -1894,8 +1786,7 @@ private:
       decoded_.clear();
       const int channels = std::max(info.nChans, 1);
       if (channels == 1) {
-        decoded_.insert(decoded_.end(), decodeBuffer_.begin(),
-                        decodeBuffer_.begin() + info.outputSamps);
+        decoded_.insert(decoded_.end(), decodeBuffer_.begin(), decodeBuffer_.begin() + info.outputSamps);
       } else {
         const int frames = info.outputSamps / channels;
         decoded_.reserve(frames);
@@ -1929,8 +1820,7 @@ private:
 
 class StreamingMp3Decoder : public StreamingDecoder {
 public:
-  explicit StreamingMp3Decoder(AudioStreamSink &sink)
-      : StreamingDecoder(sink), decoder_(MP3InitDecoder()) {
+  explicit StreamingMp3Decoder(AudioStreamSink &sink) : StreamingDecoder(sink), decoder_(MP3InitDecoder()) {
     if (!decoder_) {
       LOG_ERROR("AudioOutputControl: failed to initialize MP3 decoder");
     }
@@ -1972,14 +1862,12 @@ public:
 
       unsigned char *framePtr = buffer_.data() + readOffset_;
       int frameBytesLeft = static_cast<int>(buffer_.size() - readOffset_);
-      int err = MP3Decode(decoder_, &framePtr, &frameBytesLeft,
-                          frameBuffer_.data(), 0);
+      int err = MP3Decode(decoder_, &framePtr, &frameBytesLeft, frameBuffer_.data(), 0);
       if (err == ERR_MP3_INDATA_UNDERFLOW) {
         break;
       }
       if (err != ERR_MP3_NONE) {
-        LOG_WARN("AudioOutputControl: MP3Decode error " << err
-                                                        << ", resyncing");
+        LOG_WARN("AudioOutputControl: MP3Decode error " << err << ", resyncing");
         ++readOffset_;
         continue;
       }
@@ -1997,16 +1885,13 @@ public:
       }
 
       int channels = std::max(frameInfo.nChans, 1);
-      size_t totalSamples =
-          static_cast<size_t>(std::max(frameInfo.outputSamps, 0));
+      size_t totalSamples = static_cast<size_t>(std::max(frameInfo.outputSamps, 0));
       decoded_.clear();
       if (channels == 1) {
-        decoded_.insert(decoded_.end(), frameBuffer_.begin(),
-                        frameBuffer_.begin() + totalSamples);
+        decoded_.insert(decoded_.end(), frameBuffer_.begin(), frameBuffer_.begin() + totalSamples);
       } else {
         decoded_.reserve(totalSamples / channels);
-        for (size_t i = 0; i + static_cast<size_t>(channels) <= totalSamples;
-             i += static_cast<size_t>(channels)) {
+        for (size_t i = 0; i + static_cast<size_t>(channels) <= totalSamples; i += static_cast<size_t>(channels)) {
           int32_t sum = 0;
           for (int ch = 0; ch < channels; ++ch) {
             sum += frameBuffer_[i + static_cast<size_t>(ch)];
@@ -2027,8 +1912,7 @@ public:
     }
 
     if (readOffset_ > 0 && readOffset_ <= buffer_.size()) {
-      buffer_.erase(buffer_.begin(),
-                    buffer_.begin() + static_cast<std::ptrdiff_t>(readOffset_));
+      buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(readOffset_));
       readOffset_ = 0;
     }
 
@@ -2055,8 +1939,7 @@ private:
 
 class StreamingOpusDecoder : public StreamingDecoder {
 public:
-  explicit StreamingOpusDecoder(AudioStreamSink &sink)
-      : StreamingDecoder(sink) {
+  explicit StreamingOpusDecoder(AudioStreamSink &sink) : StreamingDecoder(sink) {
   }
 
   ~StreamingOpusDecoder() override {
@@ -2140,17 +2023,14 @@ private:
       if (!haveStreamSerial_) {
         if ((headerType & 0x02) == 0) {
           LOG_WARN("AudioOutputControl: skipping Opus page without BOS flag");
-          buffer_.erase(buffer_.begin(),
-                        buffer_.begin() +
-                            static_cast<std::ptrdiff_t>(totalSize));
+          buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(totalSize));
           continue;
         }
         haveStreamSerial_ = true;
         streamSerial_ = serial;
       } else if (serial != streamSerial_) {
         LOG_WARN("AudioOutputControl: ignoring unexpected Opus stream serial");
-        buffer_.erase(buffer_.begin(),
-                      buffer_.begin() + static_cast<std::ptrdiff_t>(totalSize));
+        buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(totalSize));
         continue;
       }
 
@@ -2165,8 +2045,7 @@ private:
           break;
         }
 
-        currentPacket_.insert(currentPacket_.end(), payload + payloadOffset,
-                              payload + payloadOffset + segLen);
+        currentPacket_.insert(currentPacket_.end(), payload + payloadOffset, payload + payloadOffset + segLen);
         payloadOffset += segLen;
 
         if (segLen < 255) {
@@ -2177,8 +2056,7 @@ private:
         }
       }
 
-      buffer_.erase(buffer_.begin(),
-                    buffer_.begin() + static_cast<std::ptrdiff_t>(totalSize));
+      buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(totalSize));
       if (!pageValid) {
         currentPacket_.clear();
         continue;
@@ -2200,16 +2078,14 @@ private:
     }
 
     if (packetIndex_ == 0) {
-      if (packet.size() < 19 ||
-          std::memcmp(packet.data(), "OpusHead", 8) != 0) {
+      if (packet.size() < 19 || std::memcmp(packet.data(), "OpusHead", 8) != 0) {
         LOG_ERROR("AudioOutputControl: Opus stream missing ID header");
         return false;
       }
 
       opusChannels_ = packet[9];
       if (opusChannels_ <= 0 || opusChannels_ > kMaxOpusChannels) {
-        LOG_ERROR("AudioOutputControl: unsupported Opus channel count "
-                  << opusChannels_);
+        LOG_ERROR("AudioOutputControl: unsupported Opus channel count " << opusChannels_);
         return false;
       }
 
@@ -2217,11 +2093,9 @@ private:
       samplesToDiscard_ = preSkip;
 
       int opusError = 0;
-      decoder_ =
-          opus_decoder_create(kOpusSampleRate, opusChannels_, &opusError);
+      decoder_ = opus_decoder_create(kOpusSampleRate, opusChannels_, &opusError);
       if (!decoder_ || opusError != OPUS_OK) {
-        LOG_ERROR("AudioOutputControl: opus_decoder_create failed: "
-                  << opus_strerror(opusError));
+        LOG_ERROR("AudioOutputControl: opus_decoder_create failed: " << opus_strerror(opusError));
         decoder_ = nullptr;
         return false;
       }
@@ -2230,8 +2104,7 @@ private:
       return true;
     }
 
-    if (packetIndex_ == 1 && packet.size() >= 8 &&
-        std::memcmp(packet.data(), "OpusTags", 8) == 0) {
+    if (packetIndex_ == 1 && packet.size() >= 8 && std::memcmp(packet.data(), "OpusTags", 8) == 0) {
       ++packetIndex_;
       return true;
     }
@@ -2241,12 +2114,10 @@ private:
       return false;
     }
 
-    int decodedSamples = opus_decode(decoder_, packet.data(),
-                                     static_cast<opus_int32>(packet.size()),
+    int decodedSamples = opus_decode(decoder_, packet.data(), static_cast<opus_int32>(packet.size()),
                                      decodeBuffer_.data(), kMaxFrameSize, 0);
     if (decodedSamples < 0) {
-      LOG_WARN("AudioOutputControl: opus_decode failed: "
-               << opus_strerror(decodedSamples));
+      LOG_WARN("AudioOutputControl: opus_decode failed: " << opus_strerror(decodedSamples));
       ++packetIndex_;
       return true;
     }
@@ -2289,9 +2160,8 @@ private:
   std::vector<int16_t> downmix_;
 };
 
-std::unique_ptr<StreamingDecoder>
-createStreamingDecoder(AudioFileFormat format, AudioStreamSink &sink,
-                       const PlayCommandOptions &options) {
+std::unique_ptr<StreamingDecoder> createStreamingDecoder(AudioFileFormat format, AudioStreamSink &sink,
+                                                         const PlayCommandOptions &options) {
   switch (format) {
   case AudioFileFormat::AAC:
     return std::make_unique<StreamingAacDecoder>(sink);
@@ -2308,16 +2178,14 @@ createStreamingDecoder(AudioFileFormat format, AudioStreamSink &sink,
     return std::make_unique<StreamingPcmDecoder>(sink, streamRate);
   }
   default:
-    LOG_ERROR("AudioOutputControl: streaming for format '"
-              << formatName(format) << "' is not supported yet");
+    LOG_ERROR("AudioOutputControl: streaming for format '" << formatName(format) << "' is not supported yet");
     return nullptr;
   }
 }
 
 class StreamingSession : public std::enable_shared_from_this<StreamingSession> {
 public:
-  explicit StreamingSession(PlayCommandOptions options)
-      : options_(std::move(options)), stopRequested_(false) {
+  explicit StreamingSession(PlayCommandOptions options) : options_(std::move(options)), stopRequested_(false) {
     resolvedFormat_ = options_.format;
     if (resolvedFormat_ == AudioFileFormat::AUTO) {
       AudioFileFormat guess = inferFormatFromExtension(options_.path);
@@ -2381,18 +2249,15 @@ private:
     curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, 256L);
     curl_easy_setopt(handle, CURLOPT_LOW_SPEED_TIME, 15L);
     curl_easy_setopt(handle, CURLOPT_USERAGENT, "prudynt-audio/1.0");
-    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION,
-                     &StreamingSession::writeCallback);
+    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, &StreamingSession::writeCallback);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, this);
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION,
-                     &StreamingSession::progressCallback);
+    curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, &StreamingSession::progressCallback);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, this);
 
     CURLcode res = curl_easy_perform(handle);
     if (res != CURLE_OK && res != CURLE_ABORTED_BY_CALLBACK) {
-      LOG_ERROR("AudioOutputControl: stream download failed: "
-                << curl_easy_strerror(res));
+      LOG_ERROR("AudioOutputControl: stream download failed: " << curl_easy_strerror(res));
     }
     curl_easy_cleanup(handle);
 
@@ -2419,8 +2284,7 @@ private:
       auto detected = detectFormatFromBuffer(sniffBuffer_);
       if (detected.has_value()) {
         resolvedFormat_ = *detected;
-        LOG_INFO("AudioOutputControl: detected streaming format '"
-                 << formatName(resolvedFormat_) << "'");
+        LOG_INFO("AudioOutputControl: detected streaming format '" << formatName(resolvedFormat_) << "'");
       } else if (sniffBuffer_.size() >= kMaxStreamingSniffBytes) {
         LOG_ERROR("AudioOutputControl: unable to detect stream format");
         return false;
@@ -2446,8 +2310,7 @@ private:
     return true;
   }
 
-  static size_t writeCallback(char *ptr, size_t size, size_t nmemb,
-                              void *userdata) {
+  static size_t writeCallback(char *ptr, size_t size, size_t nmemb, void *userdata) {
     auto *session = static_cast<StreamingSession *>(userdata);
     if (!session) {
       return 0;
@@ -2456,16 +2319,14 @@ private:
     if (total == 0) {
       return 0;
     }
-    if (!session->handleData(reinterpret_cast<const uint8_t *>(ptr), total,
-                             false)) {
+    if (!session->handleData(reinterpret_cast<const uint8_t *>(ptr), total, false)) {
       session->requestStop();
       return 0;
     }
     return total;
   }
 
-  static int progressCallback(void *clientp, curl_off_t, curl_off_t, curl_off_t,
-                              curl_off_t) {
+  static int progressCallback(void *clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
     auto *session = static_cast<StreamingSession *>(clientp);
     if (!session) {
       return 0;
@@ -2492,8 +2353,7 @@ bool ensureCurlInitialized() {
     CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
     gCurlReady.store(res == CURLE_OK, std::memory_order_relaxed);
     if (res != CURLE_OK) {
-      LOG_ERROR("AudioOutputControl: curl_global_init failed: "
-                << curl_easy_strerror(res));
+      LOG_ERROR("AudioOutputControl: curl_global_init failed: " << curl_easy_strerror(res));
     }
   });
   return gCurlReady.load(std::memory_order_relaxed);
@@ -2512,8 +2372,7 @@ bool startStreamingPlayback(const PlayCommandOptions &options) {
     gActiveStream = session;
   }
   session->start();
-  LOG_INFO("AudioOutputControl: started streaming from '" << options.path
-                                                          << "'");
+  LOG_INFO("AudioOutputControl: started streaming from '" << options.path << "'");
   return true;
 }
 
@@ -2536,11 +2395,9 @@ void stopActiveStream(bool waitForStop, const char *reason) {
   }
 }
 
-void enqueueSamples(const std::vector<int16_t> &samples, bool setVolume,
-                    int volume, bool setGain, int gain) {
+void enqueueSamples(const std::vector<int16_t> &samples, bool setVolume, int volume, bool setGain, int gain) {
   if (samples.empty()) {
-    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, setVolume, volume,
-                                  setGain, gain);
+    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, setVolume, volume, setGain, gain);
     return;
   }
 
@@ -2550,12 +2407,10 @@ void enqueueSamples(const std::vector<int16_t> &samples, bool setVolume,
   for (size_t offset = 0; offset < samples.size(); offset += chunk) {
     size_t remaining = std::min(chunk, samples.size() - offset);
     auto beginIt = samples.begin() + static_cast<std::ptrdiff_t>(offset);
-    auto endIt =
-        samples.begin() + static_cast<std::ptrdiff_t>(offset + remaining);
+    auto endIt = samples.begin() + static_cast<std::ptrdiff_t>(offset + remaining);
     std::vector<int16_t> block(beginIt, endIt);
-    if (!AudioOutputWorker::enqueuePcmBlocking(std::move(block),
-                                               firstChunk && setVolume, volume,
-                                               firstChunk && setGain, gain)) {
+    if (!AudioOutputWorker::enqueuePcmBlocking(std::move(block), firstChunk && setVolume, volume, firstChunk && setGain,
+                                               gain)) {
       LOG_ERROR("AudioOutputControl: failed to enqueue PCM chunk");
       break;
     }
@@ -2563,15 +2418,13 @@ void enqueueSamples(const std::vector<int16_t> &samples, bool setVolume,
   }
 
   if (firstChunk && (setVolume || setGain)) {
-    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, setVolume, volume,
-                                  setGain, gain);
+    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, setVolume, volume, setGain, gain);
   }
 }
 
 void handlePlay(const PlayCommandOptions &options) {
   if (!cfg || !cfg->audio.output_enabled) {
-    LOG_WARN(
-        "AudioOutputControl: PLAY ignored because audio output is disabled");
+    LOG_WARN("AudioOutputControl: PLAY ignored because audio output is disabled");
     return;
   }
   if (!global_audio_output) {
@@ -2586,9 +2439,8 @@ void handlePlay(const PlayCommandOptions &options) {
     if (format == AudioFileFormat::PCM) {
       AudioFileFormat detected = detectFormatFromContent(options.path);
       if (detected != AudioFileFormat::PCM) {
-        LOG_DEBUG("AudioOutputControl: inferred format '"
-                  << formatName(detected) << "' for '" << options.path
-                  << "' by inspecting content");
+        LOG_DEBUG("AudioOutputControl: inferred format '" << formatName(detected) << "' for '" << options.path
+                                                          << "' by inspecting content");
         format = detected;
       }
     }
@@ -2598,8 +2450,7 @@ void handlePlay(const PlayCommandOptions &options) {
     PlayCommandOptions streamingOptions = options;
     streamingOptions.format = format;
     if (!startStreamingPlayback(streamingOptions)) {
-      LOG_ERROR("AudioOutputControl: failed to start streaming playback for '"
-                << options.path << "'");
+      LOG_ERROR("AudioOutputControl: failed to start streaming playback for '" << options.path << "'");
     }
     return;
   }
@@ -2609,22 +2460,16 @@ void handlePlay(const PlayCommandOptions &options) {
   std::vector<int16_t> samples;
   int sourceRate = options.hasSampleRate ? options.sampleRate : 0;
 
-  std::string rateStr = options.hasSampleRate
-                            ? std::to_string(options.sampleRate)
-                            : std::string("(default)");
-  std::string volStr = options.setVolume ? std::to_string(options.volume)
-                                         : std::string("(unchanged)");
-  std::string gainStr = options.setGain ? std::to_string(options.gain)
-                                        : std::string("(unchanged)");
+  std::string rateStr = options.hasSampleRate ? std::to_string(options.sampleRate) : std::string("(default)");
+  std::string volStr = options.setVolume ? std::to_string(options.volume) : std::string("(unchanged)");
+  std::string gainStr = options.setGain ? std::to_string(options.gain) : std::string("(unchanged)");
   int loopCount = clampLoopCount(options.loopCount);
   int loopDelayMs = clampLoopDelay(options.loopDelayMs);
 
   LOG_DEBUG("AudioOutputControl: PLAY requested (path='"
-            << options.path << "', format=" << formatName(format)
-            << ", append=" << (options.append ? 1 : 0) << ", loop=" << loopCount
-            << ", delay=" << loopDelayMs << "ms"
-            << ", rate=" << rateStr << ", vol=" << volStr
-            << ", gain=" << gainStr << ")");
+            << options.path << "', format=" << formatName(format) << ", append=" << (options.append ? 1 : 0)
+            << ", loop=" << loopCount << ", delay=" << loopDelayMs << "ms"
+            << ", rate=" << rateStr << ", vol=" << volStr << ", gain=" << gainStr << ")");
 
   if (format == AudioFileFormat::AAC) {
     if (!decodeAacFile(options.path, samples, sourceRate)) {
@@ -2679,19 +2524,16 @@ void handlePlay(const PlayCommandOptions &options) {
   bool pendingVolume = options.setVolume;
   bool pendingGain = options.setGain;
   if ((pendingVolume || pendingGain) &&
-      AudioOutputWorker::applyVolumeGain(pendingVolume, options.volume,
-                                         pendingGain, options.gain)) {
+      AudioOutputWorker::applyVolumeGain(pendingVolume, options.volume, pendingGain, options.gain)) {
     pendingVolume = false;
     pendingGain = false;
   }
 
-  LOG_DEBUG("AudioOutputControl: queuing "
-            << totalSamples << " samples (" << loopCount << " loop(s), src="
-            << sourceRate << " Hz -> dst=" << targetRate << " Hz)");
+  LOG_DEBUG("AudioOutputControl: queuing " << totalSamples << " samples (" << loopCount
+                                           << " loop(s), src=" << sourceRate << " Hz -> dst=" << targetRate << " Hz)");
 
   for (int loopIdx = 0; loopIdx < loopCount; ++loopIdx) {
-    enqueueSamples(samples, pendingVolume, options.volume, pendingGain,
-                   options.gain);
+    enqueueSamples(samples, pendingVolume, options.volume, pendingGain, options.gain);
 
     pendingVolume = false;
     pendingGain = false;
@@ -2702,12 +2544,10 @@ void handlePlay(const PlayCommandOptions &options) {
   }
 
   if (!options.append) {
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - enqueueStart);
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - enqueueStart);
     double expectedMsExact =
-        (targetRate > 0) ? (static_cast<double>(totalSamples) * 1000.0) /
-                               static_cast<double>(targetRate)
-                         : 0.0;
+        (targetRate > 0) ? (static_cast<double>(totalSamples) * 1000.0) / static_cast<double>(targetRate) : 0.0;
     int expectedMs = static_cast<int>(std::ceil(expectedMsExact));
     int remainingMs = expectedMs - static_cast<int>(elapsed.count());
     if (remainingMs < 0) {
@@ -2716,8 +2556,7 @@ void handlePlay(const PlayCommandOptions &options) {
     remainingMs += 20; // small guard so flush happens after the tail
 
     constexpr auto kTailSilence = std::chrono::milliseconds(40);
-    if (!AudioOutputWorker::waitForPlaybackCompletion(
-            std::chrono::milliseconds(remainingMs), true, kTailSilence)) {
+    if (!AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(remainingMs), true, kTailSilence)) {
       LOG_WARN("AudioOutputControl: failed to wait for playback completion; "
                "audio queue may still be busy");
     }
@@ -2727,16 +2566,14 @@ void handlePlay(const PlayCommandOptions &options) {
 void applyVolumeChange(int volume) {
   int clamped = clampVolume(volume);
   if (!AudioOutputWorker::applyVolumeGain(true, clamped, false, 0)) {
-    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, true, clamped, false,
-                                  0);
+    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, true, clamped, false, 0);
   }
 }
 
 void applyGainChange(int gain) {
   int clamped = clampGain(gain);
   if (!AudioOutputWorker::applyVolumeGain(false, 0, true, clamped)) {
-    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, true,
-                                  clamped);
+    AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, true, clamped);
   }
 }
 
@@ -2774,8 +2611,7 @@ void handleSetCommand(std::istringstream &iss) {
 
   if (volumeSet || gainSet) {
     if (!AudioOutputWorker::applyVolumeGain(volumeSet, volume, gainSet, gain)) {
-      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, volumeSet, volume,
-                                    gainSet, gain);
+      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, volumeSet, volume, gainSet, gain);
     }
   } else {
     LOG_WARN("AudioOutputControl: SET command missing assignments");
@@ -2803,8 +2639,7 @@ void handleCommand(const std::string &line, bool allowPlayback) {
     while (iss >> token) {
       auto eq = token.find('=');
       if (eq == std::string::npos) {
-        LOG_WARN("AudioOutputControl: ignoring PLAY argument without key '"
-                 << token << "'. Use key=value syntax.");
+        LOG_WARN("AudioOutputControl: ignoring PLAY argument without key '" << token << "'. Use key=value syntax.");
         continue;
       }
 
@@ -2812,14 +2647,12 @@ void handleCommand(const std::string &line, bool allowPlayback) {
       std::string value = token.substr(eq + 1);
 
       if (key.empty()) {
-        LOG_WARN("AudioOutputControl: ignoring PLAY argument with empty key '"
-                 << token << "'");
+        LOG_WARN("AudioOutputControl: ignoring PLAY argument with empty key '" << token << "'");
         continue;
       }
 
       if (value.empty()) {
-        LOG_WARN("AudioOutputControl: ignoring PLAY argument '"
-                 << token << "' with empty value");
+        LOG_WARN("AudioOutputControl: ignoring PLAY argument '" << token << "' with empty value");
         continue;
       }
 
@@ -2853,9 +2686,8 @@ void handleCommand(const std::string &line, bool allowPlayback) {
         if (parseInt(value, parsed)) {
           int clamped = clampLoopCount(parsed);
           if (clamped != parsed) {
-            LOG_WARN("AudioOutputControl: loop count "
-                     << parsed << " adjusted to " << clamped
-                     << " (max=" << kMaxLoopCount << ")");
+            LOG_WARN("AudioOutputControl: loop count " << parsed << " adjusted to " << clamped
+                                                       << " (max=" << kMaxLoopCount << ")");
           }
           options.loopCount = clamped;
         }
@@ -2864,9 +2696,8 @@ void handleCommand(const std::string &line, bool allowPlayback) {
         if (parseInt(value, parsed)) {
           int clamped = clampLoopDelay(parsed);
           if (clamped != parsed) {
-            LOG_WARN("AudioOutputControl: loop delay "
-                     << parsed << " adjusted to " << clamped
-                     << " ms (max=" << kMaxLoopDelayMs << ")");
+            LOG_WARN("AudioOutputControl: loop delay " << parsed << " adjusted to " << clamped
+                                                       << " ms (max=" << kMaxLoopDelayMs << ")");
           }
           options.loopDelayMs = clamped;
         }
@@ -2876,8 +2707,7 @@ void handleCommand(const std::string &line, bool allowPlayback) {
           options.format = AudioFileFormat::AAC;
         } else if (lowerValue == "flac") {
           options.format = AudioFileFormat::FLAC;
-        } else if (lowerValue == "mp3" || lowerValue == "mpeg" ||
-                   lowerValue == "mp2") {
+        } else if (lowerValue == "mp3" || lowerValue == "mpeg" || lowerValue == "mp2") {
           options.format = AudioFileFormat::MP3;
         } else if (lowerValue == "opus") {
           options.format = AudioFileFormat::OPUS;
@@ -2910,8 +2740,7 @@ void handleCommand(const std::string &line, bool allowPlayback) {
       return;
     }
     auto eq = token.find('=');
-    std::string value =
-        (eq == std::string::npos) ? token : token.substr(eq + 1);
+    std::string value = (eq == std::string::npos) ? token : token.substr(eq + 1);
     bool mute = false;
     if (!parseBool(value, mute)) {
       LOG_WARN("AudioOutputControl: invalid MUTE value '" << value << "'");
@@ -2919,8 +2748,7 @@ void handleCommand(const std::string &line, bool allowPlayback) {
     }
     LOG_DEBUG("AudioOutputControl: MUTE=" << (mute ? 1 : 0));
     if (!AudioOutputWorker::applyMute(mute)) {
-      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0,
-                                    true, mute);
+      AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0, true, mute);
     }
   } else if (op == "VOLUME") {
     std::string value;
@@ -2957,8 +2785,7 @@ void handleCommand(const std::string &line, bool allowPlayback) {
 }
 
 void fifoListenerLoop(const FifoListenerConfig &config) {
-  LOG_INFO("AudioOutputControl: listening on " << config.label << " FIFO "
-                                               << config.path);
+  LOG_INFO("AudioOutputControl: listening on " << config.label << " FIFO " << config.path);
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     int fd = ::open(config.path, O_RDONLY);
     if (fd < 0) {
@@ -2969,8 +2796,7 @@ void fifoListenerLoop(const FifoListenerConfig &config) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         continue;
       }
-      LOG_ERROR("AudioOutputControl: open() failed for FIFO '"
-                << config.path << "': " << strerror(errno));
+      LOG_ERROR("AudioOutputControl: open() failed for FIFO '" << config.path << "': " << strerror(errno));
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
       continue;
     }

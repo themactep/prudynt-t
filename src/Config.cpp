@@ -88,8 +88,7 @@ bool isValidHexColor(const char *str) {
 
   for (int i = 1; i < 9; i++) {
     char c = str[i];
-    if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') ||
-          (c >= 'a' && c <= 'f'))) {
+    if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
       return false;
     }
   }
@@ -115,9 +114,8 @@ unsigned int hexColorToUint(const char *str) {
   unsigned int b = strtoul(bStr, nullptr, 16);
   unsigned int a = strtoul(aStr, nullptr, 16);
 
-  // Pack into ARGB format for internal use (A in bits 24-31, R in 16-23, G in
-  // 8-15, B in 0-7) This matches the bit extraction logic used in
-  // OSD::drawText()
+  // Pack into ARGB format for internal use (A in bits 24-31, R in 16-23, G in 8-15, B in 0-7)
+  // This matches the bit extraction logic used in OSD::drawText()
   return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
@@ -143,6 +141,10 @@ bool validateSampleRate(const int &v) {
   return allowed_rates.count(v) == 1;
 }
 
+// Forward declarations for nested JSON helpers used in templates below
+JsonValue *getNestedValue(JsonValue *root, const std::string &path);
+bool setNestedValue(JsonValue *root, const std::string &path, const std::string &value);
+
 std::vector<ConfigItem<bool>> CFG::getBoolItems() {
   return {
       {"audio.input_enabled", audio.input_enabled, true, validateBool},
@@ -153,10 +155,8 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"audio.tap_enabled", audio.tap_enabled, false, validateBool},
       {"audio.mic_is_digital", audio.mic_is_digital, false, validateBool},
 #if defined(LIB_AUDIO_PROCESSING)
-      {"audio.input_high_pass_filter", audio.input_high_pass_filter, false,
-       validateBool},
-      {"audio.mic_high_pass_filter", audio.input_high_pass_filter, false,
-       validateBool},
+      {"audio.input_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
+      {"audio.mic_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
       {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
@@ -169,34 +169,22 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
       {"stream0.osd.enabled", stream0.osd.enabled, true, validateBool},
-      {"stream0.osd.logo.enabled", stream0.osd.logo_enabled, true,
-       validateBool},
-      {"stream0.osd.brightness.enabled", stream0.osd.brightness_enabled, false,
-       validateBool},
-      {"stream0.osd.time.enabled", stream0.osd.time_enabled, true,
-       validateBool},
-      {"stream0.osd.uptime.enabled", stream0.osd.uptime_enabled, true,
-       validateBool},
-      {"stream0.osd.usertext.enabled", stream0.osd.usertext_enabled, true,
-       validateBool},
-      {"stream0.osd.privacy.enabled", stream0.osd.privacy.enabled, true,
-       validateBool},
+      {"stream0.osd.logo.enabled", stream0.osd.logo_enabled, true, validateBool},
+      {"stream0.osd.brightness.enabled", stream0.osd.brightness_enabled, false, validateBool},
+      {"stream0.osd.time.enabled", stream0.osd.time_enabled, true, validateBool},
+      {"stream0.osd.uptime.enabled", stream0.osd.uptime_enabled, true, validateBool},
+      {"stream0.osd.usertext.enabled", stream0.osd.usertext_enabled, true, validateBool},
+      {"stream0.osd.privacy.enabled", stream0.osd.privacy.enabled, true, validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
       {"stream1.osd.enabled", stream1.osd.enabled, true, validateBool},
-      {"stream1.osd.logo.enabled", stream1.osd.logo_enabled, true,
-       validateBool},
-      {"stream1.osd.brightness.enabled", stream1.osd.brightness_enabled, false,
-       validateBool},
-      {"stream1.osd.time.enabled", stream1.osd.time_enabled, true,
-       validateBool},
-      {"stream1.osd.uptime.enabled", stream1.osd.uptime_enabled, true,
-       validateBool},
-      {"stream1.osd.usertext.enabled", stream1.osd.usertext_enabled, true,
-       validateBool},
-      {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true,
-       validateBool},
+      {"stream1.osd.logo.enabled", stream1.osd.logo_enabled, true, validateBool},
+      {"stream1.osd.brightness.enabled", stream1.osd.brightness_enabled, false, validateBool},
+      {"stream1.osd.time.enabled", stream1.osd.time_enabled, true, validateBool},
+      {"stream1.osd.uptime.enabled", stream1.osd.uptime_enabled, true, validateBool},
+      {"stream1.osd.usertext.enabled", stream1.osd.usertext_enabled, true, validateBool},
+      {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true, validateBool},
       {"stream2.enabled", stream2.enabled, true, validateBool},
       {"websocket.enabled", websocket.enabled, true, validateBool},
       {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
@@ -209,215 +197,142 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
   return {
       {"audio.input_format", audio.input_format, "OPUS",
        [](const char *v) {
-         std::set<std::string> a = {"OPUS",  "AAC",   "PCM",
-                                    "G711A", "G711U", "G726"};
+         std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"};
          return a.count(std::string(v)) == 1;
        }},
       {"audio.mic_format", audio.input_format, "OPUS",
        [](const char *v) {
-         std::set<std::string> a = {"OPUS",  "AAC",   "PCM",
-                                    "G711A", "G711U", "G726"};
+         std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"};
          return a.count(std::string(v)) == 1;
        }},
-      {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm",
-       validateCharNotEmpty},
+      {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
       {"general.loglevel", general.loglevel, "INFO",
        [](const char *v) {
-         std::set<std::string> a = {"EMERGENCY", "ALERT",  "CRITICAL", "ERROR",
-                                    "WARN",      "NOTICE", "INFO",     "DEBUG"};
+         std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"};
          return a.count(std::string(v)) == 1;
        }},
-      {"motion.script_path", motion.script_path, "/usr/sbin/motion",
-       validateCharNotEmpty},
+      {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
       {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
       {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},
       {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
-      {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false,
-       "/proc/jz/sensor/name"},
-      {"sensor.chip_id", sensor.chip_id, "unknown", validateCharNotEmpty, false,
-       "/proc/jz/sensor/chip_id"},
-      {"sensor.version", sensor.version, "unknown", validateCharNotEmpty, false,
-       "/proc/jz/sensor/version"},
+      {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/name"},
+      {"sensor.chip_id", sensor.chip_id, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/chip_id"},
+      {"sensor.version", sensor.version, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/version"},
       {"stream0.format", stream0.format, "H264",
-       [](const char *v) {
-         return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0;
-       }},
-      {"stream0.osd.font_path", stream0.osd.font_path,
-       "/usr/share/fonts/default.ttf", validateCharNotEmpty},
-      {"stream0.osd.logo.path", stream0.osd.logo_path,
-       "/usr/share/images/thingino_logo_210x64.bgra", validateCharNotEmpty},
-      {"stream0.osd.time.format", stream0.osd.time_format, "%F %T",
+       [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
+      {"stream0.osd.font_path", stream0.osd.font_path, "/usr/share/fonts/default.ttf", validateCharNotEmpty},
+      {"stream0.osd.logo.path", stream0.osd.logo_path, "/usr/share/images/thingino_logo_210x64.bgra",
        validateCharNotEmpty},
-      {"stream0.osd.uptime.format", stream0.osd.uptime_format,
-       "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
-      {"stream0.osd.usertext.format", stream0.osd.usertext_format, "%hostname",
-       validateCharNotEmpty},
-      {"stream0.osd.time.position", stream0.osd.time_position, "10,10",
-       validateCharNotEmpty},
-      {"stream0.osd.uptime.position", stream0.osd.uptime_position, "1600,5",
-       validateCharNotEmpty},
-      {"stream0.osd.usertext.position", stream0.osd.usertext_position, "900,5",
-       validateCharNotEmpty},
-      {"stream0.osd.logo.position", stream0.osd.logo_position, "1800,1030",
-       validateCharNotEmpty},
-      {"stream0.osd.brightness.position", stream0.osd.brightness_position,
-       "10,70", validateCharNotEmpty},
-      {"stream0.osd.brightness.format", stream0.osd.brightness_format,
-       "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
-      {"stream0.osd.privacy.text", stream0.osd.privacy.text,
-       "PRIVACY ENABLED", validateCharNotEmpty},
-      {"stream0.osd.privacy.position", stream0.osd.privacy.position,
-       "0,-120", validateCharNotEmpty},
-      {"stream0.osd.privacy.image_path", stream0.osd.privacy.image_path, "",
-       validateCharDummy},
+      {"stream0.osd.time.format", stream0.osd.time_format, "%F %T", validateCharNotEmpty},
+      {"stream0.osd.uptime.format", stream0.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
+      {"stream0.osd.usertext.format", stream0.osd.usertext_format, "%hostname", validateCharNotEmpty},
+      {"stream0.osd.time.position", stream0.osd.time_position, "10,10", validateCharNotEmpty},
+      {"stream0.osd.uptime.position", stream0.osd.uptime_position, "1600,5", validateCharNotEmpty},
+      {"stream0.osd.usertext.position", stream0.osd.usertext_position, "900,5", validateCharNotEmpty},
+      {"stream0.osd.logo.position", stream0.osd.logo_position, "1800,1030", validateCharNotEmpty},
+      {"stream0.osd.brightness.position", stream0.osd.brightness_position, "10,70", validateCharNotEmpty},
+      {"stream0.osd.brightness.format", stream0.osd.brightness_format, "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
+      {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
+      {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120", validateCharNotEmpty},
+      {"stream0.osd.privacy.image_path", stream0.osd.privacy.image_path, "", validateCharDummy},
       {"stream0.mode", stream0.mode, DEFAULT_ENC_MODE_0,
        [](const char *v) {
-         std::set<std::string> a = {"CBR",   "VBR",        "SMART",
-                                    "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
+         std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
          return a.count(std::string(v)) == 1;
        }},
-      {"stream0.rtsp_endpoint", stream0.rtsp_endpoint, "ch0",
-       validateCharNotEmpty},
+      {"stream0.rtsp_endpoint", stream0.rtsp_endpoint, "ch0", validateCharNotEmpty},
       {"stream0.rtsp_info", stream0.rtsp_info, "stream0", validateCharNotEmpty},
       {"stream1.format", stream1.format, "H264",
-       [](const char *v) {
-         return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0;
-       }},
-      {"stream1.osd.font_path", stream1.osd.font_path,
-       "/usr/share/fonts/default.ttf", validateCharNotEmpty},
-      {"stream1.osd.logo.path", stream1.osd.logo_path,
-       "/usr/share/images/thingino_logo_100x30.bgra", validateCharNotEmpty},
-      {"stream1.osd.time.format", stream1.osd.time_format, "%F %T",
+       [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
+      {"stream1.osd.font_path", stream1.osd.font_path, "/usr/share/fonts/default.ttf", validateCharNotEmpty},
+      {"stream1.osd.logo.path", stream1.osd.logo_path, "/usr/share/images/thingino_logo_100x30.bgra",
        validateCharNotEmpty},
-      {"stream1.osd.uptime.format", stream1.osd.uptime_format,
-       "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
-      {"stream1.osd.usertext.format", stream1.osd.usertext_format, "%hostname",
-       validateCharNotEmpty},
-      {"stream1.osd.time.position", stream1.osd.time_position, "10,10",
-       validateCharNotEmpty},
-      {"stream1.osd.uptime.position", stream1.osd.uptime_position, "500,5",
-       validateCharNotEmpty},
-      {"stream1.osd.usertext.position", stream1.osd.usertext_position, "250,5",
-       validateCharNotEmpty},
-      {"stream1.osd.logo.position", stream1.osd.logo_position, "530,320",
-       validateCharNotEmpty},
-      {"stream1.osd.brightness.position", stream1.osd.brightness_position,
-       "10,70", validateCharNotEmpty},
-      {"stream1.osd.brightness.format", stream1.osd.brightness_format,
-       "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
-      {"stream1.osd.privacy.text", stream1.osd.privacy.text,
-       "PRIVACY ENABLED", validateCharNotEmpty},
-      {"stream1.osd.privacy.position", stream1.osd.privacy.position,
-       "0,-120", validateCharNotEmpty},
-      {"stream1.osd.privacy.image_path", stream1.osd.privacy.image_path, "",
-       validateCharDummy},
+      {"stream1.osd.time.format", stream1.osd.time_format, "%F %T", validateCharNotEmpty},
+      {"stream1.osd.uptime.format", stream1.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
+      {"stream1.osd.usertext.format", stream1.osd.usertext_format, "%hostname", validateCharNotEmpty},
+      {"stream1.osd.time.position", stream1.osd.time_position, "10,10", validateCharNotEmpty},
+      {"stream1.osd.uptime.position", stream1.osd.uptime_position, "500,5", validateCharNotEmpty},
+      {"stream1.osd.usertext.position", stream1.osd.usertext_position, "250,5", validateCharNotEmpty},
+      {"stream1.osd.logo.position", stream1.osd.logo_position, "530,320", validateCharNotEmpty},
+      {"stream1.osd.brightness.position", stream1.osd.brightness_position, "10,70", validateCharNotEmpty},
+      {"stream1.osd.brightness.format", stream1.osd.brightness_format, "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
+      {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
+      {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120", validateCharNotEmpty},
+      {"stream1.osd.privacy.image_path", stream1.osd.privacy.image_path, "", validateCharDummy},
       {"stream1.mode", stream1.mode, DEFAULT_ENC_MODE_1,
        [](const char *v) {
-         std::set<std::string> a = {"CBR",   "VBR",        "SMART",
-                                    "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
+         std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
          return a.count(std::string(v)) == 1;
        }},
-      {"stream1.rtsp_endpoint", stream1.rtsp_endpoint, "ch1",
-       validateCharNotEmpty},
+      {"stream1.rtsp_endpoint", stream1.rtsp_endpoint, "ch1", validateCharNotEmpty},
       {"stream1.rtsp_info", stream1.rtsp_info, "stream1", validateCharNotEmpty},
-      {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg",
-       validateCharNotEmpty},
+      {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
       {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
       {"websocket.token", websocket.token, "auto",
        [](const char *v) {
          std::string token(v);
-         return token == "auto" || token.empty() ||
-                token.length() == WEBSOCKET_TOKEN_LENGTH;
+         return token == "auto" || token.empty() || token.length() == WEBSOCKET_TOKEN_LENGTH;
        }},
       {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
-      {"recorder.device_path", recorder.device_path, "%hostname",
-       validateCharDummy},
-      {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S",
-       validateCharNotEmpty},
+      {"recorder.device_path", recorder.device_path, "%hostname", validateCharDummy},
+      {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S", validateCharNotEmpty},
   };
 };
 
 std::vector<ConfigItem<int>> CFG::getIntItems() {
   return {
-      {"audio.input_bitrate", audio.input_bitrate, 40,
-       [](const int &v) { return v >= 6 && v <= 256; }},
-      {"audio.mic_bitrate", audio.input_bitrate, 40,
-       [](const int &v) { return v >= 6 && v <= 256; }},
-      {"audio.input_sample_rate", audio.input_sample_rate, 16000,
-       validateSampleRate},
-      {"audio.mic_sample_rate", audio.input_sample_rate, 16000,
-       validateSampleRate},
-      {"audio.output_sample_rate", audio.output_sample_rate, 16000,
-       validateSampleRate},
-      {"audio.spk_sample_rate", audio.output_sample_rate, 16000,
-       validateSampleRate},
-      {"audio.input_vol", audio.input_vol, 80,
-       [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.mic_vol", audio.input_vol, 80,
-       [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.input_gain", audio.input_gain, 25,
-       [](const int &v) { return v >= -1 && v <= 31; }},
-      {"audio.mic_gain", audio.input_gain, 25,
-       [](const int &v) { return v >= -1 && v <= 31; }},
+      {"audio.input_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
+      {"audio.mic_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
+      {"audio.input_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
+      {"audio.mic_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
+      {"audio.output_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
+      {"audio.spk_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
+      {"audio.input_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
+      {"audio.mic_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
+      {"audio.input_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
+      {"audio.mic_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
 #if defined(LIB_AUDIO_PROCESSING)
-      {"audio.output_vol", audio.output_vol, 60,
-       [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.output_gain", audio.output_gain, 20,
+      {"audio.output_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
+      {"audio.output_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
+      {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
+      {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
+      {"audio.input_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
+      {"audio.mic_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
+      {"audio.input_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10,
        [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.spk_vol", audio.output_vol, 60,
-       [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.spk_gain", audio.output_gain, 20,
-       [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.input_alc_gain", audio.input_alc_gain, 0,
-       [](const int &v) { return v >= -1 && v <= 7; }},
-      {"audio.mic_alc_gain", audio.input_alc_gain, 0,
-       [](const int &v) { return v >= -1 && v <= 7; }},
-      {"audio.input_agc_target_level_dbfs", audio.input_agc_target_level_dbfs,
-       10, [](const int &v) { return v >= 0 && v <= 31; }},
       {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10,
        [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.input_agc_compression_gain_db",
-       audio.input_agc_compression_gain_db, 0,
+      {"audio.input_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0,
        [](const int &v) { return v >= 0 && v <= 90; }},
-      {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db,
-       0, [](const int &v) { return v >= 0 && v <= 90; }},
+      {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0,
+       [](const int &v) { return v >= 0 && v <= 90; }},
       {"audio.input_noise_suppression", audio.input_noise_suppression, 0,
        [](const int &v) { return v >= 0 && v <= 3; }},
-      {"audio.mic_noise_suppression", audio.input_noise_suppression, 0,
-       [](const int &v) { return v >= 0 && v <= 3; }},
+      {"audio.mic_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
 #endif
       {"general.imp_polling_timeout", general.imp_polling_timeout, 500,
        [](const int &v) { return v >= 1 && v <= 5000; }},
-      {"general.osd_pool_size", general.osd_pool_size, 1024,
-       [](const int &v) { return v >= 0 && v <= 65535; }},
+      {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
       {"image.anti_flicker", image.anti_flicker, 2, validateInt2},
-      {"image.backlight_compensation", image.backlight_compensation, 0,
-       [](const int &v) { return v >= 0 && v <= 10; }},
+      {"image.backlight_compensation", image.backlight_compensation, 0, [](const int &v) { return v >= 0 && v <= 10; }},
       {"image.brightness", image.brightness, 128, validateInt255},
       {"image.contrast", image.contrast, 128, validateInt255},
-      {"image.core_wb_mode", image.core_wb_mode, 0,
-       [](const int &v) { return v >= 0 && v <= 9; }},
+      {"image.core_wb_mode", image.core_wb_mode, 0, [](const int &v) { return v >= 0 && v <= 9; }},
       {"image.defog_strength", image.defog_strength, 128, validateInt255},
       {"image.dpc_strength", image.dpc_strength, 128, validateInt255},
       {"image.drc_strength", image.drc_strength, 128, validateInt255},
       {"image.highlight_depress", image.highlight_depress, 0, validateInt255},
       {"image.hue", image.hue, 128, validateInt255},
-      {"image.max_again", image.max_again, 160,
-       [](const int &v) { return v >= 0 && v <= 160; }},
-      {"image.max_dgain", image.max_dgain, 80,
-       [](const int &v) { return v >= 0 && v <= 160; }},
+      {"image.max_again", image.max_again, 160, [](const int &v) { return v >= 0 && v <= 160; }},
+      {"image.max_dgain", image.max_dgain, 80, [](const int &v) { return v >= 0 && v <= 160; }},
       {"image.running_mode", image.running_mode, 0, validateInt1},
       {"image.saturation", image.saturation, 128, validateInt255},
       {"image.sharpness", image.sharpness, 128, validateInt255},
-      {"image.sinter_strength", image.sinter_strength, DEFAULT_SINTER,
-       DEFAULT_SINTER_VALIDATE},
-      {"image.temper_strength", image.temper_strength, DEFAULT_TEMPER,
-       DEFAULT_TEMPER_VALIDATE},
-      {"image.wb_bgain", image.wb_bgain, 0,
-       [](const int &v) { return v >= 0 && v <= 34464; }},
-      {"image.wb_rgain", image.wb_rgain, 0,
-       [](const int &v) { return v >= 0 && v <= 34464; }},
+      {"image.sinter_strength", image.sinter_strength, DEFAULT_SINTER, DEFAULT_SINTER_VALIDATE},
+      {"image.temper_strength", image.temper_strength, DEFAULT_TEMPER, DEFAULT_TEMPER_VALIDATE},
+      {"image.wb_bgain", image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
+      {"image.wb_rgain", image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
       {"motion.debounce_time", motion.debounce_time, 0, validateIntGe0},
       {"motion.post_time", motion.post_time, 0, validateIntGe0},
       {"motion.ivs_polling_timeout", motion.ivs_polling_timeout, 1000,
@@ -427,195 +342,120 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.min_time", motion.min_time, 1, validateIntGe0},
       {"motion.sensitivity", motion.sensitivity, 1, validateIntGe0},
       {"motion.skip_frame_count", motion.skip_frame_count, 5, validateIntGe0},
-      {"motion.frame_width", motion.frame_width, IVS_AUTO_VALUE,
-       validateIntGe0},
-      {"motion.frame_height", motion.frame_height, IVS_AUTO_VALUE,
-       validateIntGe0},
+      {"motion.frame_width", motion.frame_width, IVS_AUTO_VALUE, validateIntGe0},
+      {"motion.frame_height", motion.frame_height, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.monitor_stream", motion.monitor_stream, 1, validateInt1},
       {"motion.roi_0_x", motion.roi_0_x, 0, validateIntGe0},
       {"motion.roi_0_y", motion.roi_0_y, 0, validateIntGe0},
       {"motion.roi_1_x", motion.roi_1_x, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_1_y", motion.roi_1_y, IVS_AUTO_VALUE, validateIntGe0},
-      {"motion.roi_count", motion.roi_count, 1,
-       [](const int &v) { return v >= 1 && v <= 52; }},
+      {"motion.roi_count", motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }},
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
       {"rtsp.out_buffer_size", rtsp.out_buffer_size, 500000, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},
       {"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, validateIntGe0},
       {"rtsp.session_reclaim", rtsp.session_reclaim, 65, validateIntGe0},
-      {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false,
-       "/proc/jz/sensor/i2c_bus"},
-      {"sensor.fps", sensor.fps, 25, validateInt120, false,
-       "/proc/jz/sensor/max_fps"},
-      {"sensor.min_fps", sensor.min_fps, 5, validateInt120, false,
-       "/proc/jz/sensor/min_fps"},
-      {"sensor.height", sensor.height, 1080, validateIntGe0, false,
-       "/proc/jz/sensor/height"},
-      {"sensor.width", sensor.width, 1920, validateIntGe0, false,
-       "/proc/jz/sensor/width"},
-      {"sensor.boot", sensor.boot, 0, validateIntGe0, false,
-       "/proc/jz/sensor/boot"},
-      {"sensor.mclk", sensor.mclk, 1, validateIntGe0, false,
-       "/proc/jz/sensor/mclk"},
-      {"sensor.video_interface", sensor.video_interface, 0, validateIntGe0,
-       false, "/proc/jz/sensor/video_interface"},
-      {"sensor.gpio_reset", sensor.gpio_reset, -1,
-       [](const int &v) { return v >= -1; }, false,
+      {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false, "/proc/jz/sensor/i2c_bus"},
+      {"sensor.fps", sensor.fps, 25, validateInt120, false, "/proc/jz/sensor/max_fps"},
+      {"sensor.min_fps", sensor.min_fps, 5, validateInt120, false, "/proc/jz/sensor/min_fps"},
+      {"sensor.height", sensor.height, 1080, validateIntGe0, false, "/proc/jz/sensor/height"},
+      {"sensor.width", sensor.width, 1920, validateIntGe0, false, "/proc/jz/sensor/width"},
+      {"sensor.boot", sensor.boot, 0, validateIntGe0, false, "/proc/jz/sensor/boot"},
+      {"sensor.mclk", sensor.mclk, 1, validateIntGe0, false, "/proc/jz/sensor/mclk"},
+      {"sensor.video_interface", sensor.video_interface, 0, validateIntGe0, false, "/proc/jz/sensor/video_interface"},
+      {"sensor.gpio_reset", sensor.gpio_reset, -1, [](const int &v) { return v >= -1; }, false,
        "/proc/jz/sensor/reset_gpio"},
       {"stream0.bitrate", stream0.bitrate, 3000, validateIntGe0},
-      {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0,
-       [](const int &v) { return v >= 1 && v <= 8; }},
+      {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0, [](const int &v) { return v >= 1 && v <= 8; }},
       {"stream0.fps", stream0.fps, 25, validateInt120},
       {"stream0.gop", stream0.gop, 20, validateIntGe0},
       {"stream0.height", stream0.height, 1080, validateIntGe0},
       {"stream0.max_gop", stream0.max_gop, 60, validateIntGe0},
-      {"stream0.osd.font_size", stream0.osd.font_size, OSD_AUTO_VALUE,
-       validateIntGe0},
-      {"stream0.osd.font_stroke_size", stream0.osd.font_stroke_size, 1,
-       validateIntGe0},
-      {"stream0.osd.logo.height", stream0.osd.logo_height, 30,
-       validateIntGe0},
-      {"stream0.osd.logo.rotation", stream0.osd.logo_rotation, 0,
-       validateInt360},
-      {"stream0.osd.logo.transparency", stream0.osd.logo_transparency, 255,
-       validateInt255},
+      {"stream0.osd.font_size", stream0.osd.font_size, OSD_AUTO_VALUE, validateIntGe0},
+      {"stream0.osd.stroke_size", stream0.osd.stroke_size, 1, validateIntGe0},
+      {"stream0.osd.logo.height", stream0.osd.logo_height, 30, validateIntGe0},
+      {"stream0.osd.logo.rotation", stream0.osd.logo_rotation, 0, validateInt360},
+      {"stream0.osd.logo.transparency", stream0.osd.logo_transparency, 255, validateInt255},
       {"stream0.osd.logo.width", stream0.osd.logo_width, 100, validateIntGe0},
-      {"stream0.osd.start_delay", stream0.osd.start_delay, 0,
-       [](const int &v) { return v >= 0 && v <= 5000; }},
-      {"stream0.osd.time.rotation", stream0.osd.time_rotation, 0,
-       validateInt360},
-      {"stream0.osd.uptime.rotation", stream0.osd.uptime_rotation, 0,
-       validateInt360},
-      {"stream0.osd.usertext.rotation", stream0.osd.usertext_rotation, 0,
-       validateInt360},
-      {"stream0.osd.brightness.rotation", stream0.osd.brightness_rotation, 0,
-       validateInt360},
-      {"stream0.osd.privacy.font_size", stream0.osd.privacy.font_size,
-       OSD_AUTO_VALUE, validateIntGe0},
-      {"stream0.osd.privacy.font_stroke_size",
-       stream0.osd.privacy.font_stroke_size, 2, validateIntGe0},
-      {"stream0.osd.privacy.rotation", stream0.osd.privacy.rotation, 0,
-       validateInt360},
-      {"stream0.osd.privacy.image_width", stream0.osd.privacy.image_width, 0,
-       validateIntGe0},
-      {"stream0.osd.privacy.image_height", stream0.osd.privacy.image_height, 0,
-       validateIntGe0},
-      {"stream0.osd.privacy.layer", stream0.osd.privacy.layer, 16,
-       [](const int &v) { return v >= 0 && v <= 16; }},
-      {"stream0.osd.privacy.opacity", stream0.osd.privacy.opacity, 255,
-       validateInt255},
+      {"stream0.osd.start_delay", stream0.osd.start_delay, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
+      {"stream0.osd.time.rotation", stream0.osd.time_rotation, 0, validateInt360},
+      {"stream0.osd.uptime.rotation", stream0.osd.uptime_rotation, 0, validateInt360},
+      {"stream0.osd.usertext.rotation", stream0.osd.usertext_rotation, 0, validateInt360},
+      {"stream0.osd.brightness.rotation", stream0.osd.brightness_rotation, 0, validateInt360},
+      {"stream0.osd.privacy.font_size", stream0.osd.privacy.font_size, OSD_AUTO_VALUE, validateIntGe0},
+      {"stream0.osd.privacy.stroke_size", stream0.osd.privacy.stroke_size, 2, validateIntGe0},
+      {"stream0.osd.privacy.rotation", stream0.osd.privacy.rotation, 0, validateInt360},
+      {"stream0.osd.privacy.image_width", stream0.osd.privacy.image_width, 0, validateIntGe0},
+      {"stream0.osd.privacy.image_height", stream0.osd.privacy.image_height, 0, validateIntGe0},
+      {"stream0.osd.privacy.layer", stream0.osd.privacy.layer, 16, [](const int &v) { return v >= 0 && v <= 16; }},
+      {"stream0.osd.privacy.opacity", stream0.osd.privacy.opacity, 255, validateInt255},
       {"stream0.rotation", stream0.rotation, 0, validateInt2},
       {"stream0.width", stream0.width, 1920, validateIntGe0},
       {"stream0.profile", stream0.profile, 2, validateInt2},
       {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
-      {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1,
-       [](const int &v) { return v >= 1 && v <= 8; }},
+      {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1, [](const int &v) { return v >= 1 && v <= 8; }},
       {"stream1.fps", stream1.fps, 25, validateInt120},
       {"stream1.gop", stream1.gop, 20, validateIntGe0},
       {"stream1.height", stream1.height, 360, validateIntGe0},
       {"stream1.max_gop", stream1.max_gop, 60, validateIntGe0},
-      {"stream1.osd.font_size", stream1.osd.font_size, OSD_AUTO_VALUE,
-       validateIntGe0},
-      {"stream1.osd.font_stroke_size", stream1.osd.font_stroke_size, 1,
-       validateIntGe0},
-      {"stream1.osd.logo.height", stream1.osd.logo_height, 30,
-       validateIntGe0},
-      {"stream1.osd.logo.rotation", stream1.osd.logo_rotation, 0,
-       validateInt360},
-      {"stream1.osd.logo.transparency", stream1.osd.logo_transparency, 255,
-       validateInt255},
+      {"stream1.osd.font_size", stream1.osd.font_size, OSD_AUTO_VALUE, validateIntGe0},
+      {"stream1.osd.stroke_size", stream1.osd.stroke_size, 1, validateIntGe0},
+      {"stream1.osd.logo.height", stream1.osd.logo_height, 30, validateIntGe0},
+      {"stream1.osd.logo.rotation", stream1.osd.logo_rotation, 0, validateInt360},
+      {"stream1.osd.logo.transparency", stream1.osd.logo_transparency, 255, validateInt255},
       {"stream1.osd.logo.width", stream1.osd.logo_width, 100, validateIntGe0},
-      {"stream1.osd.start_delay", stream1.osd.start_delay, 0,
-       [](const int &v) { return v >= 0 && v <= 5000; }},
-      {"stream1.osd.time.rotation", stream1.osd.time_rotation, 0,
-       validateInt360},
-      {"stream1.osd.uptime.rotation", stream1.osd.uptime_rotation, 0,
-       validateInt360},
-      {"stream1.osd.usertext.rotation", stream1.osd.usertext_rotation, 0,
-       validateInt360},
-      {"stream1.osd.brightness.rotation", stream1.osd.brightness_rotation, 0,
-       validateInt360},
-      {"stream1.osd.privacy.font_size", stream1.osd.privacy.font_size,
-       OSD_AUTO_VALUE, validateIntGe0},
-      {"stream1.osd.privacy.font_stroke_size",
-       stream1.osd.privacy.font_stroke_size, 2, validateIntGe0},
-      {"stream1.osd.privacy.rotation", stream1.osd.privacy.rotation, 0,
-       validateInt360},
-      {"stream1.osd.privacy.image_width", stream1.osd.privacy.image_width, 0,
-       validateIntGe0},
-      {"stream1.osd.privacy.image_height", stream1.osd.privacy.image_height, 0,
-       validateIntGe0},
-      {"stream1.osd.privacy.layer", stream1.osd.privacy.layer, 16,
-       [](const int &v) { return v >= 0 && v <= 16; }},
-      {"stream1.osd.privacy.opacity", stream1.osd.privacy.opacity, 255,
-       validateInt255},
+      {"stream1.osd.start_delay", stream1.osd.start_delay, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
+      {"stream1.osd.time.rotation", stream1.osd.time_rotation, 0, validateInt360},
+      {"stream1.osd.uptime.rotation", stream1.osd.uptime_rotation, 0, validateInt360},
+      {"stream1.osd.usertext.rotation", stream1.osd.usertext_rotation, 0, validateInt360},
+      {"stream1.osd.brightness.rotation", stream1.osd.brightness_rotation, 0, validateInt360},
+      {"stream1.osd.privacy.font_size", stream1.osd.privacy.font_size, OSD_AUTO_VALUE, validateIntGe0},
+      {"stream1.osd.privacy.stroke_size", stream1.osd.privacy.stroke_size, 2, validateIntGe0},
+      {"stream1.osd.privacy.rotation", stream1.osd.privacy.rotation, 0, validateInt360},
+      {"stream1.osd.privacy.image_width", stream1.osd.privacy.image_width, 0, validateIntGe0},
+      {"stream1.osd.privacy.image_height", stream1.osd.privacy.image_height, 0, validateIntGe0},
+      {"stream1.osd.privacy.layer", stream1.osd.privacy.layer, 16, [](const int &v) { return v >= 0 && v <= 16; }},
+      {"stream1.osd.privacy.opacity", stream1.osd.privacy.opacity, 255, validateInt255},
       {"stream1.rotation", stream1.rotation, 0, validateInt2},
       {"stream1.width", stream1.width, 640, validateIntGe0},
       {"stream1.profile", stream1.profile, 2, validateInt2},
       {"stream2.jpeg_channel", stream2.jpeg_channel, 0, validateIntGe0},
-      {"stream2.jpeg_quality", stream2.jpeg_quality, 75,
-       [](const int &v) { return v > 0 && v <= 100; }},
-      {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1,
-       [](const int &v) { return v >= 0 && v <= 30; }},
-      {"stream2.fps", stream2.fps, 25,
-       [](const int &v) { return v > 1 && v <= 30; }},
+      {"stream2.jpeg_quality", stream2.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
+      {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
+      {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
       {"websocket.port", websocket.port, 8089, validateInt65535},
-      {"websocket.first_image_delay", websocket.first_image_delay, 100,
-       validateInt65535},
-      {"recorder.duration", recorder.duration, 60,
-       [](const int &v) { return v > 0 && v <= 3600; }},
-      {"recorder.channel", recorder.channel, 0,
-       [](const int &v) { return v == 0 || v == 1; }},
+      {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
+      {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
+      {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
   };
 };
 
 std::vector<ConfigItem<unsigned int>> CFG::getUintItems() {
   return {
-      {"sensor.i2c_address", sensor.i2c_address, 0x37,
-       [](const unsigned int &v) { return v <= 0x7F; }, false,
+      {"sensor.i2c_address", sensor.i2c_address, 0x37, [](const unsigned int &v) { return v <= 0x7F; }, false,
        "/proc/jz/sensor/i2c_addr"},
       // Individual color settings for stream0 text elements
-      {"stream0.osd.time.font_color", stream0.osd.time_font_color, 0xFFFFFFFF,
-       validateOSDColor},
-      {"stream0.osd.time.font_stroke_color",
-       stream0.osd.time_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.uptime.font_color", stream0.osd.uptime_font_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.uptime.font_stroke_color",
-       stream0.osd.uptime_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.usertext.font_color", stream0.osd.usertext_font_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.usertext.font_stroke_color",
-       stream0.osd.usertext_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.brightness.font_color", stream0.osd.brightness_font_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.brightness.font_stroke_color",
-       stream0.osd.brightness_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.privacy.font_color", stream0.osd.privacy.font_color,
-       0xFFFF4C4C, validateOSDColor},
-      {"stream0.osd.privacy.font_stroke_color",
-       stream0.osd.privacy.font_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream0.osd.time.fill_color", stream0.osd.time_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream0.osd.time.stroke_color", stream0.osd.time_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream0.osd.uptime.fill_color", stream0.osd.uptime_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream0.osd.uptime.stroke_color", stream0.osd.uptime_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream0.osd.usertext.fill_color", stream0.osd.usertext_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream0.osd.usertext.stroke_color", stream0.osd.usertext_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream0.osd.brightness.fill_color", stream0.osd.brightness_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream0.osd.brightness.stroke_color", stream0.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream0.osd.privacy.fill_color", stream0.osd.privacy.fill_color, 0xFFFF4C4C, validateOSDColor},
+      {"stream0.osd.privacy.stroke_color", stream0.osd.privacy.stroke_color, 0xFF000000, validateOSDColor},
       // Individual color settings for stream1 text elements
-      {"stream1.osd.time.font_color", stream1.osd.time_font_color, 0xFFFFFFFF,
-       validateOSDColor},
-      {"stream1.osd.time.font_stroke_color",
-       stream1.osd.time_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.uptime.font_color", stream1.osd.uptime_font_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.uptime.font_stroke_color",
-       stream1.osd.uptime_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.usertext.font_color", stream1.osd.usertext_font_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.usertext.font_stroke_color",
-       stream1.osd.usertext_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.brightness.font_color",
-       stream1.osd.brightness_font_color, 0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.brightness.font_stroke_color",
-       stream1.osd.brightness_font_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.privacy.font_color", stream1.osd.privacy.font_color,
-       0xFFFF4C4C, validateOSDColor},
-      {"stream1.osd.privacy.font_stroke_color",
-       stream1.osd.privacy.font_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream1.osd.time.fill_color", stream1.osd.time_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream1.osd.time.stroke_color", stream1.osd.time_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream1.osd.uptime.fill_color", stream1.osd.uptime_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream1.osd.uptime.stroke_color", stream1.osd.uptime_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream1.osd.usertext.fill_color", stream1.osd.usertext_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream1.osd.usertext.stroke_color", stream1.osd.usertext_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream1.osd.brightness.fill_color", stream1.osd.brightness_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream1.osd.brightness.stroke_color", stream1.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream1.osd.privacy.fill_color", stream1.osd.privacy.fill_color, 0xFFFF4C4C, validateOSDColor},
+      {"stream1.osd.privacy.stroke_color", stream1.osd.privacy.stroke_color, 0xFF000000, validateOSDColor},
   };
 };
 
@@ -626,8 +466,7 @@ bool CFG::readConfig() {
     jsonConfig = nullptr;
   }
 
-  // Construct the path to the configuration file in the same directory as the
-  // program binary
+  // Construct the path to the configuration file in the same directory as the program binary
   fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
   fs::path cfgFilePath = binaryPath / "prudynt.json";
   filePath = cfgFilePath;
@@ -648,8 +487,7 @@ bool CFG::readConfig() {
       configPath = etcPath.string();
       LOG_INFO("Loaded configuration from " + configPath);
     } else {
-      LOG_WARN(
-          "Failed to load prudynt configuration file from both locations.");
+      LOG_WARN("Failed to load prudynt configuration file from both locations.");
       return false; // Exit if configuration file is missing
     }
   }
@@ -692,8 +530,7 @@ template <typename T> bool isSensorProcParameter(const ConfigItem<T> &item) {
          std::string(item.procPath).find("/proc/jz/sensor/") == 0;
 }
 
-template <typename T>
-void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
+template <typename T> void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
   bool readFromProc = false;
   bool readFromConfig = false;
 
@@ -720,8 +557,7 @@ void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
     }
   }
 
-  // Only read from JSON if proc file failed or this is not a sensor proc
-  // parameter
+  // Only read from JSON if proc file failed or this is not a sensor proc parameter
   if (!readFromProc) {
     auto getValueForPath = [&](const char *path) -> JsonValue * {
       if (!path)
@@ -750,8 +586,7 @@ void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
         } else if (valueObj->type == JSON_STRING && valueObj->value.string) {
           // Check if this is an OSD color field that might be in hex format
           std::string path = item.path;
-          if (path.find("font_color") != std::string::npos ||
-              path.find("font_stroke_color") != std::string::npos) {
+          if (path.find("fill_color") != std::string::npos || path.find("stroke_color") != std::string::npos) {
             if (isValidHexColor(valueObj->value.string)) {
               item.value = hexColorToUint(valueObj->value.string);
               readFromConfig = true;
@@ -766,8 +601,8 @@ void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
   }
 
   // For non-sensor parameters, try proc file as fallback if JSON failed
-  if (!readFromConfig && !readFromProc && !isSensorProcParameter(item) &&
-      item.procPath != nullptr && item.procPath[0] != '\0') {
+  if (!readFromConfig && !readFromProc && !isSensorProcParameter(item) && item.procPath != nullptr &&
+      item.procPath[0] != '\0') {
     // Attempt to read from the proc filesystem
     std::ifstream procFile(item.procPath);
     if (procFile) {
@@ -787,8 +622,7 @@ void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
   }
 
   if (!readFromConfig && !readFromProc) {
-    item.value =
-        item.defaultValue; // Assign default value if not found anywhere
+    item.value = item.defaultValue; // Assign default value if not found anywhere
   } else if (!item.validate(item.value)) {
     LOG_ERROR("invalid config value. " << item.path << " = " << item.value);
     item.value = item.defaultValue; // Revert to default if validation fails
@@ -804,8 +638,7 @@ void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T> &item) {
   }
 }
 
-template <typename T>
-void handleConfigItem2(JsonValue *jsonConfig, ConfigItem<T> &item) {
+template <typename T> void handleConfigItem2(JsonValue *jsonConfig, ConfigItem<T> &item) {
   if (!jsonConfig)
     return;
 
@@ -821,8 +654,8 @@ void handleConfigItem2(JsonValue *jsonConfig, ConfigItem<T> &item) {
   } else if constexpr (std::is_same_v<T, unsigned int>) {
     // Check if this is a color field that should be formatted as hex string
     std::string path = item.path;
-    bool isColorField = (path.find("font_color") != std::string::npos ||
-                         path.find("font_stroke_color") != std::string::npos);
+    bool isColorField =
+        (path.find("fill_color") != std::string::npos || path.find("stroke_color") != std::string::npos);
 
     if (isColorField) {
       // Format as hex string: #RRGGBBAA
@@ -843,13 +676,11 @@ void handleConfigItem2(JsonValue *jsonConfig, ConfigItem<T> &item) {
     // Clean up floating-point precision issues for common decimal values
     double clean_value = static_cast<double>(item.value);
 
-    // Round to 6 decimal places to eliminate floating-point representation
-    // errors This handles cases like 1.2000000476837158 -> 1.2 and
-    // 0.05000000074505806 -> 0.05
+    // Round to 6 decimal places to eliminate floating-point representation errors
+    // This handles cases like 1.2000000476837158 -> 1.2 and 0.05000000074505806 -> 0.05
     clean_value = std::round(clean_value * 1000000.0) / 1000000.0;
 
-    // Further clean up: if the value is very close to a simple decimal, use
-    // that
+    // Further clean up: if the value is very close to a simple decimal, use that
     double rounded_2dp = std::round(clean_value * 100.0) / 100.0;
     if (std::abs(clean_value - rounded_2dp) < 1e-10) {
       clean_value = rounded_2dp;
@@ -858,8 +689,7 @@ void handleConfigItem2(JsonValue *jsonConfig, ConfigItem<T> &item) {
     valueStr = std::to_string(clean_value);
   }
 
-  // Set the value using JCT - it automatically creates nested structure and
-  // sorts keys
+  // Set the value using JCT - it automatically creates nested structure and sorts keys
   if (item.path) {
     setNestedValue(jsonConfig, item.path, valueStr);
   }
@@ -875,8 +705,7 @@ JsonValue *getNestedValue(JsonValue *root, const std::string &path) {
 }
 
 // Helper function to set a nested JSON value using dot notation
-bool setNestedValue(JsonValue *root, const std::string &path,
-                    const std::string &value) {
+bool setNestedValue(JsonValue *root, const std::string &path, const std::string &value) {
   if (!root)
     return false;
   return set_nested_item(root, path.c_str(), value.c_str()) != 0;
@@ -963,18 +792,15 @@ bool CFG::updateConfig() {
     std::string roiPath = "rois.roi_" + std::to_string(i);
 
     // Create array string: [p0_x, p0_y, p1_x, p1_y]
-    std::string roiValue = "[" + std::to_string(motion.rois[i].p0_x) + "," +
-                           std::to_string(motion.rois[i].p0_y) + "," +
-                           std::to_string(motion.rois[i].p1_x) + "," +
-                           std::to_string(motion.rois[i].p1_y) + "]";
+    std::string roiValue = "[" + std::to_string(motion.rois[i].p0_x) + "," + std::to_string(motion.rois[i].p0_y) + "," +
+                           std::to_string(motion.rois[i].p1_x) + "," + std::to_string(motion.rois[i].p1_y) + "]";
 
     setNestedValue(jsonConfig, roiPath, roiValue);
   }
 
   // Save config using JCT - it automatically sorts keys and formats nicely
   LOG_DEBUG("CFG::updateConfig() - About to save config to " << filePath);
-  LOG_DEBUG(
-      "CFG::updateConfig() - jsonConfig pointer: " << (uintptr_t)jsonConfig);
+  LOG_DEBUG("CFG::updateConfig() - jsonConfig pointer: " << (uintptr_t)jsonConfig);
 
   if (!jsonConfig) {
     LOG_ERROR("CFG::updateConfig() - jsonConfig is null!");
@@ -997,8 +823,7 @@ std::vector<ConfigItem<float>> CFG::getFloatItems() {
   return {
       {"rtsp.packet_loss_threshold", rtsp.packet_loss_threshold, 0.05f,
        [](const float &v) { return v >= 0.0f && v <= 1.0f; }},
-      {"rtsp.bandwidth_margin", rtsp.bandwidth_margin, 1.2f,
-       [](const float &v) { return v >= 1.0f && v <= 3.0f; }},
+      {"rtsp.bandwidth_margin", rtsp.bandwidth_margin, 1.2f, [](const float &v) { return v >= 1.0f && v <= 3.0f; }},
   };
 };
 
@@ -1025,23 +850,19 @@ void CFG::load() {
 
   if (jsonConfig) {
     LOG_DEBUG("CFG::load() - Processing config items");
-    LOG_DEBUG("CFG::load() - Processing bool items (" << boolItems.size()
-                                                      << ")");
+    LOG_DEBUG("CFG::load() - Processing bool items (" << boolItems.size() << ")");
     for (auto &item : boolItems)
       handleConfigItem(jsonConfig, item);
-    LOG_DEBUG("CFG::load() - Processing char items (" << charItems.size()
-                                                      << ")");
+    LOG_DEBUG("CFG::load() - Processing char items (" << charItems.size() << ")");
     for (auto &item : charItems)
       handleConfigItem(jsonConfig, item);
     LOG_DEBUG("CFG::load() - Processing int items (" << intItems.size() << ")");
     for (auto &item : intItems)
       handleConfigItem(jsonConfig, item);
-    LOG_DEBUG("CFG::load() - Processing uint items (" << uintItems.size()
-                                                      << ")");
+    LOG_DEBUG("CFG::load() - Processing uint items (" << uintItems.size() << ")");
     for (auto &item : uintItems)
       handleConfigItem(jsonConfig, item);
-    LOG_DEBUG("CFG::load() - Processing float items (" << floatItems.size()
-                                                       << ")");
+    LOG_DEBUG("CFG::load() - Processing float items (" << floatItems.size() << ")");
     for (auto &item : floatItems)
       handleConfigItem(jsonConfig, item);
     LOG_DEBUG("CFG::load() - Finished processing config items");
@@ -1063,8 +884,7 @@ void CFG::load() {
   */
 }
 
-bool CFG::saveIntValues(
-    const std::vector<std::pair<std::string, int>> &values) {
+bool CFG::saveIntValues(const std::vector<std::pair<std::string, int>> &values) {
   if (values.empty())
     return true;
 

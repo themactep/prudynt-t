@@ -60,8 +60,7 @@ void *shutdown_signal_thread(void *arg) {
   sigset_t local_set = *static_cast<sigset_t *>(arg);
   int received_signal = 0;
   while (sigwait(&local_set, &received_signal) == 0) {
-    LOG_INFO("main: received signal " << received_signal
-                                      << ", initiating shutdown");
+    LOG_INFO("main: received signal " << received_signal << ", initiating shutdown");
     global_shutdown_requested.store(true, std::memory_order_relaxed);
     {
       std::lock_guard<std::mutex> lock(mutex_main);
@@ -95,8 +94,7 @@ bool timesync_wait() {
 
 void start_video(int encChn) {
   StartHelper sh{encChn};
-  int ret = pthread_create(&global_video[encChn]->thread, nullptr,
-                           VideoWorker::thread_entry, static_cast<void *>(&sh));
+  int ret = pthread_create(&global_video[encChn]->thread, nullptr, VideoWorker::thread_entry, static_cast<void *>(&sh));
   LOG_DEBUG_OR_ERROR(ret, "create video[" << encChn << "] thread");
 
   // wait for initialization done
@@ -128,13 +126,11 @@ int main(int argc, const char *argv[]) {
   sigaddset(&shutdown_signal_set, SIGTERM);
   int sigmask_ret = pthread_sigmask(SIG_BLOCK, &shutdown_signal_set, nullptr);
   if (sigmask_ret != 0) {
-    LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned "
-              << sigmask_ret);
+    LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned " << sigmask_ret);
     return 1;
   }
 
-  if (pthread_create(&signal_thread, nullptr, shutdown_signal_thread,
-                     &shutdown_signal_set) != 0) {
+  if (pthread_create(&signal_thread, nullptr, shutdown_signal_thread, &shutdown_signal_set) != 0) {
     LOG_ERROR("Failed to create shutdown signal watcher thread");
     return 1;
   }
@@ -169,13 +165,10 @@ int main(int argc, const char *argv[]) {
 
   bool mic_is_digital = cfg && cfg->audio.mic_is_digital;
   int audio_input_device_id = mic_is_digital ? 0 : 1;
-  const char *cpu_info = (cfg->sysinfo.cpu && cfg->sysinfo.cpu[0] != '\0')
-                             ? cfg->sysinfo.cpu
-                             : "unknown";
-  LOG_INFO("Audio input: selected AI device "
-           << audio_input_device_id << " ("
-           << (mic_is_digital ? "digital" : "analog") << " mic, CPU "
-           << cpu_info << ")");
+  const char *cpu_info = (cfg->sysinfo.cpu && cfg->sysinfo.cpu[0] != '\0') ? cfg->sysinfo.cpu : "unknown";
+  LOG_INFO("Audio input: selected AI device " << audio_input_device_id << " ("
+                                              << (mic_is_digital ? "digital" : "analog") << " mic, CPU " << cpu_info
+                                              << ")");
 
   // Start Unix domain socket control server for MP4 recording
   std::thread(MP4ControlSocket::run).detach();
@@ -197,22 +190,18 @@ int main(int argc, const char *argv[]) {
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     global_restart = true;
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
-      int ret = pthread_create(&audio_output_thread, nullptr,
-                               AudioOutputWorker::thread_entry, nullptr);
+      int ret = pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, nullptr);
       LOG_DEBUG_OR_ERROR(ret, "create audio output thread");
     }
 
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
-      int ret = pthread_create(&backchannel_thread, nullptr,
-                               BackchannelWorker::thread_entry, NULL);
+      int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
       LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
     }
 
     if (cfg->audio.input_enabled && (global_restart_audio || startup)) {
       StartHelper sh{0};
-      int ret =
-          pthread_create(&global_audio[0]->thread, nullptr,
-                         AudioWorker::thread_entry, static_cast<void *>(&sh));
+      int ret = pthread_create(&global_audio[0]->thread, nullptr, AudioWorker::thread_entry, static_cast<void *>(&sh));
       LOG_DEBUG_OR_ERROR(ret, "create audio thread");
       // wait for initialization done
       sh.has_started.acquire();
@@ -228,9 +217,7 @@ int main(int argc, const char *argv[]) {
 
       if (cfg->stream2.enabled) {
         StartHelper sh{2};
-        int ret =
-            pthread_create(&global_jpeg[0]->thread, nullptr,
-                           JPEGWorker::thread_entry, static_cast<void *>(&sh));
+        int ret = pthread_create(&global_jpeg[0]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
         LOG_DEBUG_OR_ERROR(ret, "create jpeg thread");
         // wait for initialization done
         sh.has_started.acquire();
@@ -257,8 +244,7 @@ int main(int argc, const char *argv[]) {
      * and running, additionally we add the timespan which is configured as
      * OSD startup delay.
      */
-    usleep(250000 + (cfg->stream0.osd.start_delay * 1000) +
-           cfg->stream1.osd.start_delay * 1000);
+    usleep(250000 + (cfg->stream0.osd.start_delay * 1000) + cfg->stream1.osd.start_delay * 1000);
 
     LOG_DEBUG("main thread is going to sleep");
     std::unique_lock lck(mutex_main);
@@ -269,13 +255,11 @@ int main(int argc, const char *argv[]) {
     global_restart_audio = false;
     global_restart_rtsp = false;
 
-    while (!global_restart_rtsp && !global_restart_video &&
-           !global_restart_audio &&
+    while (!global_restart_rtsp && !global_restart_video && !global_restart_audio &&
            !global_shutdown_requested.load(std::memory_order_relaxed))
       global_cv_worker_restart.wait(lck);
 
-    bool shutting_down =
-        global_shutdown_requested.load(std::memory_order_relaxed);
+    bool shutting_down = global_shutdown_requested.load(std::memory_order_relaxed);
     if (shutting_down) {
       global_restart_rtsp = true;
       global_restart_video = true;
@@ -302,8 +286,7 @@ int main(int argc, const char *argv[]) {
       LOG_DEBUG_OR_ERROR(ret, "join audio thread");
     }
 
-    if (global_audio_output && global_audio_output->running &&
-        global_restart_audio) {
+    if (global_audio_output && global_audio_output->running && global_restart_audio) {
       AudioOutputWorker::signalShutdown();
       int ret = pthread_join(audio_output_thread, NULL);
       LOG_DEBUG_OR_ERROR(ret, "join audio output thread");

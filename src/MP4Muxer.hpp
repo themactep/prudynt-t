@@ -26,13 +26,11 @@ public:
 
   // Feed one video sample (raw NALs for H.264) and return any generated
   // fragment bytes pts is in milliseconds.
-  virtual std::vector<uint8_t> muxVideo(const uint8_t *data, size_t size,
-                                        int64_t pts_ms, bool isKey) = 0;
+  virtual std::vector<uint8_t> muxVideo(const uint8_t *data, size_t size, int64_t pts_ms, bool isKey) = 0;
 
   // Feed one audio sample (raw AAC frame payload) and return any generated
   // fragment bytes
-  virtual std::vector<uint8_t> muxAudio(const uint8_t *data, size_t size,
-                                        int64_t pts_ms) = 0;
+  virtual std::vector<uint8_t> muxAudio(const uint8_t *data, size_t size, int64_t pts_ms) = 0;
 
   virtual void close() = 0;
 

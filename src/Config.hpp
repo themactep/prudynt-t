@@ -37,8 +37,7 @@
 #define THREAD_SLEEP 100000
 #define GET_STREAM_BLOCKING false
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define DEFAULT_ENC_MODE_0 "FIXQP"
 #define DEFAULT_ENC_MODE_1 "CAPPED_QUALITY"
 #define DEFAULT_BUFFERS_0 4
@@ -102,9 +101,9 @@ struct _osd_privacy {
   const char *position;
   int rotation;
   int font_size;
-  int font_stroke_size;
-  unsigned int font_color;
-  unsigned int font_stroke_color;
+  int stroke_size;
+  unsigned int fill_color;
+  unsigned int stroke_color;
   const char *image_path;
   int image_width;
   int image_height;
@@ -201,7 +200,7 @@ struct _audio {
 };
 struct _osd {
   int font_size;
-  int font_stroke_size;
+  int stroke_size;
   int logo_height;
   int logo_width;
   const char *time_position;
@@ -229,14 +228,14 @@ struct _osd {
   const char *brightness_format;
   const char *logo_path;
   // Individual color settings for each text element
-  unsigned int time_font_color;
-  unsigned int time_font_stroke_color;
-  unsigned int uptime_font_color;
-  unsigned int uptime_font_stroke_color;
-  unsigned int usertext_font_color;
-  unsigned int usertext_font_stroke_color;
-  unsigned int brightness_font_color;
-  unsigned int brightness_font_stroke_color;
+  unsigned int time_fill_color;
+  unsigned int time_stroke_color;
+  unsigned int uptime_fill_color;
+  unsigned int uptime_stroke_color;
+  unsigned int usertext_fill_color;
+  unsigned int usertext_stroke_color;
+  unsigned int brightness_fill_color;
+  unsigned int brightness_stroke_color;
   _regions regions;
   _stream_stats stats;
   std::atomic<int> thread_signal;
@@ -373,8 +372,7 @@ public:
     return result;
   }
 
-  template <typename T>
-  bool set(const std::string &name, T value, bool noSave = false) {
+  template <typename T> bool set(const std::string &name, T value, bool noSave = false) {
     // std::cout << name << "=" << value << std::endl;
     std::vector<ConfigItem<T>> *items = nullptr;
     if constexpr (std::is_same_v<T, bool>) {

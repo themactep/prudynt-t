@@ -25,8 +25,7 @@ private:
   struct lws_context_creation_info info;
   struct lws_context *context{};
 
-  static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
-                         void *user, void *in, size_t len);
+  static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
 
   static signed char root_callback(struct lejp_ctx *ctx, char reason);
   static signed char general_callback(struct lejp_ctx *ctx, char reason);

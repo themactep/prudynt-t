@@ -7,8 +7,7 @@
 
 class AudioReframer {
 public:
-  AudioReframer(unsigned int inputSampleRate, unsigned int inputSamplesPerFrame,
-                unsigned int outputSamplesPerFrame);
+  AudioReframer(unsigned int inputSampleRate, unsigned int inputSamplesPerFrame, unsigned int outputSamplesPerFrame);
 
   void addFrame(const uint8_t *frameData, int64_t timestamp);
 

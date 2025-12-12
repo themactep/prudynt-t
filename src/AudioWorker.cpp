@@ -24,8 +24,7 @@ public:
     shutdown();
   }
 
-  void configure(bool enabled, const std::string &path, int sampleRate,
-                 int bitwidth, int channels) {
+  void configure(bool enabled, const std::string &path, int sampleRate, int bitwidth, int channels) {
     if (fifoPath != path) {
       closeWriter();
       fifoReady = false;
@@ -48,8 +47,7 @@ public:
       return;
     }
 
-    LOG_INFO("AudioTap: ready at " << fifoPath << " (" << bitwidthBits
-                                   << "-bit " << sampleRateHz << " Hz, "
+    LOG_INFO("AudioTap: ready at " << fifoPath << " (" << bitwidthBits << "-bit " << sampleRateHz << " Hz, "
                                    << channelCount << " ch)");
   }
 
@@ -126,21 +124,18 @@ private:
       std::string dir = fifoPath.substr(0, slash);
       if (!dir.empty()) {
         if (::mkdir(dir.c_str(), 0775) < 0 && errno != EEXIST) {
-          LOG_ERROR("AudioTap: mkdir failed for " << dir << ": "
-                                                  << strerror(errno));
+          LOG_ERROR("AudioTap: mkdir failed for " << dir << ": " << strerror(errno));
           return false;
         }
       }
     }
 
     if (::unlink(fifoPath.c_str()) < 0 && errno != ENOENT) {
-      LOG_WARN("AudioTap: unlink failed for " << fifoPath << ": "
-                                              << strerror(errno));
+      LOG_WARN("AudioTap: unlink failed for " << fifoPath << ": " << strerror(errno));
     }
     if (::mkfifo(fifoPath.c_str(), 0660) < 0) {
       if (errno != EEXIST) {
-        LOG_ERROR("AudioTap: mkfifo failed for " << fifoPath << ": "
-                                                 << strerror(errno));
+        LOG_ERROR("AudioTap: mkfifo failed for " << fifoPath << ": " << strerror(errno));
         return false;
       }
     }
@@ -153,8 +148,7 @@ private:
     fd = ::open(fifoPath.c_str(), O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
       if (errno != ENXIO) {
-        LOG_WARN("AudioTap: open failed for " << fifoPath << ": "
-                                              << strerror(errno));
+        LOG_WARN("AudioTap: open failed for " << fifoPath << ": " << strerror(errno));
       }
       return false;
     }
@@ -179,8 +173,8 @@ private:
 };
 
 AudioWorker::AudioWorker(int chn)
-    : encChn(chn), mp4_audio_samples(NUM_VIDEO_CHANNELS, 0),
-      mp4_audio_sample_rate(0), tap(std::make_unique<AudioTap>()) {
+    : encChn(chn), mp4_audio_samples(NUM_VIDEO_CHANNELS, 0), mp4_audio_sample_rate(0),
+      tap(std::make_unique<AudioTap>()) {
   LOG_DEBUG("AudioWorker created for channel " << encChn);
 }
 
@@ -202,9 +196,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   int sample_size_bytes = frame.bitwidth / 8;
   int channels = (frame.soundmode == AUDIO_SOUND_MODE_MONO) ? 1 : 2;
   if (channels <= 0) {
-    channels = global_audio[encChn]->imp_audio
-                   ? global_audio[encChn]->imp_audio->outChnCnt
-                   : 1;
+    channels = global_audio[encChn]->imp_audio ? global_audio[encChn]->imp_audio->outChnCnt : 1;
   }
   if (channels <= 0) {
     channels = 1;
@@ -217,18 +209,13 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   IMPAudioStream stream;
   if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM) {
     if (IMP_AENC_SendFrame(global_audio[encChn]->aeChn, &frame) != 0) {
-      LOG_ERROR("IMP_AENC_SendFrame(" << global_audio[encChn]->devId << ", "
-                                      << global_audio[encChn]->aeChn
+      LOG_ERROR("IMP_AENC_SendFrame(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                       << ") failed");
-    } else if (IMP_AENC_PollingStream(global_audio[encChn]->aeChn,
-                                      cfg->general.imp_polling_timeout) != 0) {
-      LOG_ERROR("IMP_AENC_PollingStream(" << global_audio[encChn]->devId << ", "
-                                          << global_audio[encChn]->aeChn
+    } else if (IMP_AENC_PollingStream(global_audio[encChn]->aeChn, cfg->general.imp_polling_timeout) != 0) {
+      LOG_ERROR("IMP_AENC_PollingStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                           << ") failed");
-    } else if (IMP_AENC_GetStream(global_audio[encChn]->aeChn, &stream,
-                                  IMPBlock::BLOCK) != 0) {
-      LOG_ERROR("IMP_AENC_GetStream(" << global_audio[encChn]->devId << ", "
-                                      << global_audio[encChn]->aeChn
+    } else if (IMP_AENC_GetStream(global_audio[encChn]->aeChn, &stream, IMPBlock::BLOCK) != 0) {
+      LOG_ERROR("IMP_AENC_GetStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                       << ") failed");
     } else {
       start = (uint8_t *)stream.stream;
@@ -287,8 +274,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       (global_video[0]->hasDataCallback || global_video[1]->hasDataCallback)) {
     bool delivered = global_audio[encChn]->msgChannel->write(af);
     if (delivered) {
-      std::unique_lock<std::mutex> lock_stream{
-          global_audio[encChn]->onDataCallbackLock};
+      std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
       if (global_audio[encChn]->onDataCallback)
         global_audio[encChn]->onDataCallback();
     }
@@ -307,19 +293,16 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     }
     if (!delivered) {
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
-      LOG_DDEBUG("audio encChn:" << encChn << ", size:" << af.data.size()
-                                 << " clogged!");
+      LOG_DDEBUG("audio encChn:" << encChn << ", size:" << af.data.size() << " clogged!");
 #else
-      LOG_ERROR("audio encChn:" << encChn << ", size:" << af.data.size()
-                                << " clogged!");
+      LOG_ERROR("audio encChn:" << encChn << ", size:" << af.data.size() << " clogged!");
 #endif
     }
   }
 
   if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM &&
       IMP_AENC_ReleaseStream(global_audio[encChn]->aeChn, &stream) < 0) {
-    LOG_ERROR("IMP_AENC_ReleaseStream(" << global_audio[encChn]->devId << ", "
-                                        << global_audio[encChn]->aeChn
+    LOG_ERROR("IMP_AENC_ReleaseStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                         << ", &stream) failed");
   }
 }
@@ -329,13 +312,11 @@ void AudioWorker::publishTapFrame(const IMPAudioFrame &frame) {
     return;
   }
 
-  tap->publish(reinterpret_cast<uint8_t *>(frame.virAddr),
-               static_cast<size_t>(frame.len));
+  tap->publish(reinterpret_cast<uint8_t *>(frame.virAddr), static_cast<size_t>(frame.len));
 }
 
 void AudioWorker::process_frame(IMPAudioFrame &frame) {
-  if (global_audio[encChn]->imp_audio->outChnCnt == 2 &&
-      frame.soundmode == AUDIO_SOUND_MODE_MONO) {
+  if (global_audio[encChn]->imp_audio->outChnCnt == 2 && frame.soundmode == AUDIO_SOUND_MODE_MONO) {
     size_t sample_size = frame.bitwidth / 8;
     size_t num_samples = frame.len / sample_size;
     size_t stereo_size = frame.len * 2;
@@ -379,83 +360,65 @@ void AudioWorker::run() {
         channels = global_audio[encChn]->imp_audio->outChnCnt;
       }
     }
-    tap->configure(cfg->audio.tap_enabled && cfg->audio.input_enabled, path,
-                   sampleRate, bitwidth, channels);
+    tap->configure(cfg->audio.tap_enabled && cfg->audio.input_enabled, path, sampleRate, bitwidth, channels);
   }
 
   // Initialize AudioReframer only if needed, store in member variable
   if (global_audio[encChn]->imp_audio->format == IMPAudioFormat::AAC) {
-    reframer = std::make_unique<AudioReframer>(
-        global_audio[encChn]->imp_audio->sample_rate,
-        /* inputSamplesPerFrame */
-        global_audio[encChn]->imp_audio->sample_rate * 0.040,
-        /* outputSamplesPerFrame */ 1024);
+    reframer = std::make_unique<AudioReframer>(global_audio[encChn]->imp_audio->sample_rate,
+                                               /* inputSamplesPerFrame */
+                                               global_audio[encChn]->imp_audio->sample_rate * 0.040,
+                                               /* outputSamplesPerFrame */ 1024);
     LOG_DEBUG("AudioReframer created for channel " << encChn);
   } else {
-    LOG_DEBUG("AudioReframer not needed or imp_audio not ready for channel "
-              << encChn);
+    LOG_DEBUG("AudioReframer not needed or imp_audio not ready for channel " << encChn);
   }
 
   while (global_audio[encChn]->running) {
-    bool recorder_needs_audio =
-        (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
-    bool video_clients_active =
-        global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
-        global_force_video_active.load(std::memory_order_relaxed) ||
-        recorder_needs_audio;
+    bool recorder_needs_audio = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+    bool video_clients_active = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
+                                global_force_video_active.load(std::memory_order_relaxed) || recorder_needs_audio;
     bool tap_requests_audio = tap && tap->wantsCapture();
-    bool should_capture_audio =
-        cfg->audio.input_enabled &&
-        (global_audio[encChn]->hasDataCallback || recorder_needs_audio ||
-         tap_requests_audio) &&
-        (video_clients_active || recorder_needs_audio || tap_requests_audio);
+    bool should_capture_audio = cfg->audio.input_enabled &&
+                                (global_audio[encChn]->hasDataCallback || recorder_needs_audio || tap_requests_audio) &&
+                                (video_clients_active || recorder_needs_audio || tap_requests_audio);
 
     if (should_capture_audio) {
-      if (IMP_AI_PollingFrame(global_audio[encChn]->devId,
-                              global_audio[encChn]->aiChn,
+      if (IMP_AI_PollingFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn,
                               cfg->general.imp_polling_timeout) == 0) {
         IMPAudioFrame frame;
-        if (IMP_AI_GetFrame(global_audio[encChn]->devId,
-                            global_audio[encChn]->aiChn, &frame,
-                            IMPBlock::BLOCK) != 0) {
-          LOG_ERROR("IMP_AI_GetFrame(" << global_audio[encChn]->devId << ", "
-                                       << global_audio[encChn]->aiChn
+        if (IMP_AI_GetFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn, &frame, IMPBlock::BLOCK) != 0) {
+          LOG_ERROR("IMP_AI_GetFrame(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aiChn
                                        << ") failed");
           continue; // avoid using an uninitialized frame
         }
 
         if (reframer) {
-          reframer->addFrame(reinterpret_cast<uint8_t *>(frame.virAddr),
-                             frame.timeStamp);
+          reframer->addFrame(reinterpret_cast<uint8_t *>(frame.virAddr), frame.timeStamp);
           while (reframer->hasMoreFrames()) {
-            size_t frameLen = 1024 * sizeof(uint16_t) *
-                              global_audio[encChn]->imp_audio->outChnCnt;
+            size_t frameLen = 1024 * sizeof(uint16_t) * global_audio[encChn]->imp_audio->outChnCnt;
             std::vector<uint8_t> frameData(frameLen, 0);
             int64_t audio_ts;
             reframer->getReframedFrame(frameData.data(), audio_ts);
-            IMPAudioFrame reframed = {
-                .bitwidth = frame.bitwidth,
-                .soundmode = frame.soundmode,
-                .virAddr = reinterpret_cast<uint32_t *>(frameData.data()),
-                .phyAddr = frame.phyAddr,
-                .timeStamp = audio_ts,
-                .seq = frame.seq,
-                .len = static_cast<int>(frameLen)};
+            IMPAudioFrame reframed = {.bitwidth = frame.bitwidth,
+                                      .soundmode = frame.soundmode,
+                                      .virAddr = reinterpret_cast<uint32_t *>(frameData.data()),
+                                      .phyAddr = frame.phyAddr,
+                                      .timeStamp = audio_ts,
+                                      .seq = frame.seq,
+                                      .len = static_cast<int>(frameLen)};
             process_frame(reframed);
           }
         } else {
           process_frame(frame);
         }
 
-        if (IMP_AI_ReleaseFrame(global_audio[encChn]->devId,
-                                global_audio[encChn]->aiChn, &frame) < 0) {
-          LOG_ERROR("IMP_AI_ReleaseFrame("
-                    << global_audio[encChn]->devId << ", "
-                    << global_audio[encChn]->aiChn << ", &frame) failed");
+        if (IMP_AI_ReleaseFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn, &frame) < 0) {
+          LOG_ERROR("IMP_AI_ReleaseFrame(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aiChn
+                                           << ", &frame) failed");
         }
       } else {
-        LOG_DEBUG(global_audio[encChn]->devId
-                  << ", " << global_audio[encChn]->aiChn << " POLLING TIMEOUT");
+        LOG_DEBUG(global_audio[encChn]->devId << ", " << global_audio[encChn]->aiChn << " POLLING TIMEOUT");
       }
     } else if (cfg->audio.input_enabled && !global_restart) {
       std::unique_lock<std::mutex> lock_stream{mutex_main};
@@ -467,15 +430,11 @@ void AudioWorker::run() {
        * requested.
        */
       while (!global_restart_audio) {
-        bool recorder_needed_now =
-            (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
-        bool video_clients_active_now =
-            global_video[0]->hasDataCallback ||
-            global_video[1]->hasDataCallback ||
-            global_force_video_active.load(std::memory_order_relaxed) ||
-            recorder_needed_now;
-        if (global_audio[encChn]->onDataCallback != nullptr &&
-            (video_clients_active_now || recorder_needed_now)) {
+        bool recorder_needed_now = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+        bool video_clients_active_now = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
+                                        global_force_video_active.load(std::memory_order_relaxed) ||
+                                        recorder_needed_now;
+        if (global_audio[encChn]->onDataCallback != nullptr && (video_clients_active_now || recorder_needed_now)) {
           break;
         }
         if (recorder_needed_now) {
@@ -498,14 +457,12 @@ void *AudioWorker::thread_entry(void *arg) {
   StartHelper *sh = static_cast<StartHelper *>(arg);
   int encChn = sh->encChn;
 
-  LOG_DEBUG("Start audio_grabber thread for device "
-            << global_audio[encChn]->devId << " and channel "
-            << global_audio[encChn]->aiChn << " and encoder "
-            << global_audio[encChn]->aeChn);
+  LOG_DEBUG("Start audio_grabber thread for device " << global_audio[encChn]->devId << " and channel "
+                                                     << global_audio[encChn]->aiChn << " and encoder "
+                                                     << global_audio[encChn]->aeChn);
 
-  global_audio[encChn]->imp_audio = IMPAudio::createNew(
-      global_audio[encChn]->devId, global_audio[encChn]->aiChn,
-      global_audio[encChn]->aeChn);
+  global_audio[encChn]->imp_audio =
+      IMPAudio::createNew(global_audio[encChn]->devId, global_audio[encChn]->aiChn, global_audio[encChn]->aeChn);
 
   // inform main that initialization is complete
   sh->has_started.release();

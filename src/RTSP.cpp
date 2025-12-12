@@ -7,8 +7,8 @@
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
   LOG_DEBUG("identify stream " << chnNr);
-  auto deviceSource = IMPDeviceSource<H264NALUnit, video_stream>::createNew(
-      *env, chnNr, global_video[chnNr], "video/pps/sps/vps");
+  auto deviceSource =
+      IMPDeviceSource<H264NALUnit, video_stream>::createNew(*env, chnNr, global_video[chnNr], "video/pps/sps/vps");
   H264NALUnit sps;
   H264NALUnit pps;
   H264NALUnit *vps = nullptr;
@@ -21,9 +21,8 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
   while (!have_pps || !have_sps || (is_h265 && !have_vps)) {
     H264NALUnit unit = global_video[chnNr]->msgChannel->wait_read();
     if (is_h265) {
-      uint8_t nalType =
-          (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
-      if (nalType == 33) {            // SPS for H265
+      uint8_t nalType = (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
+      if (nalType == 33) {                          // SPS for H265
         LOG_DEBUG("Got SPS (H265)");
         sps = unit;
         have_sps = true;
@@ -55,30 +54,26 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
   delete deviceSource;
   LOG_DEBUG("Got necessary NAL Units.");
 
-  ServerMediaSession *sms = ServerMediaSession::createNew(
-      *env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
-  IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
-      *env, (is_h265 ? vps : nullptr), sps, pps, chnNr // Conditional VPS
-  );
+  ServerMediaSession *sms = ServerMediaSession::createNew(*env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
+  IMPServerMediaSubsession *sub =
+      IMPServerMediaSubsession::createNew(*env, (is_h265 ? vps : nullptr), sps, pps, chnNr // Conditional VPS
+      );
 
   sms->addSubsession(sub);
 
   if (cfg->audio.input_enabled && stream.audio_enabled) {
-    IMPAudioServerMediaSubsession *audioSub =
-        IMPAudioServerMediaSubsession::createNew(*env, 0);
+    IMPAudioServerMediaSubsession *audioSub = IMPAudioServerMediaSubsession::createNew(*env, 0);
     sms->addSubsession(audioSub);
     LOG_INFO("Audio stream " << chnNr << " added to session");
   }
 
   if (cfg->audio.output_enabled && stream.audio_enabled) {
-#define ADD_BACKCHANNEL_SUBSESSION(EnumName, NameString, PayloadType,          \
-                                   Frequency, MimeType)                        \
-  {                                                                            \
-    BackchannelServerMediaSubsession *backchannelSub =                         \
-        BackchannelServerMediaSubsession::createNew(                           \
-            *env, IMPBackchannelFormat::EnumName);                             \
-    sms->addSubsession(backchannelSub);                                        \
-    LOG_INFO("Backchannel stream " << NameString << " added to session");      \
+#define ADD_BACKCHANNEL_SUBSESSION(EnumName, NameString, PayloadType, Frequency, MimeType)                             \
+  {                                                                                                                    \
+    BackchannelServerMediaSubsession *backchannelSub =                                                                 \
+        BackchannelServerMediaSubsession::createNew(*env, IMPBackchannelFormat::EnumName);                             \
+    sms->addSubsession(backchannelSub);                                                                                \
+    LOG_INFO("Backchannel stream " << NameString << " added to session");                                              \
   }
 
     X_FOREACH_BACKCHANNEL_FORMAT(ADD_BACKCHANNEL_SUBSESSION)
@@ -98,11 +93,9 @@ void RTSP::start() {
   if (cfg->rtsp.auth_required) {
     UserAuthenticationDatabase *auth = new UserAuthenticationDatabase;
     auth->addUserRecord(cfg->rtsp.username, cfg->rtsp.password);
-    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, auth,
-                                       cfg->rtsp.session_reclaim);
+    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, auth, cfg->rtsp.session_reclaim);
   } else {
-    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, nullptr,
-                                       cfg->rtsp.session_reclaim);
+    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, nullptr, cfg->rtsp.session_reclaim);
   }
   if (rtspServer == NULL) {
     LOG_ERROR("Failed to create RTSP server: " << env->getResultMsg() << "\n");
@@ -112,21 +105,16 @@ void RTSP::start() {
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
   if (cfg->audio.input_enabled) {
-    audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(
-        *env, 0, global_audio[audioChn], "audio");
+    audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(*env, 0, global_audio[audioChn], "audio");
 
     if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
-      audioSource =
-          (IMPDeviceSource<AudioFrame, audio_stream> *)EndianSwap16::createNew(
-              *env, audioSource);
+      audioSource = (IMPDeviceSource<AudioFrame, audio_stream> *)EndianSwap16::createNew(*env, audioSource);
 
-    global_audio[audioChn]->streamReplicator =
-        StreamReplicator::createNew(*env, audioSource, false);
+    global_audio[audioChn]->streamReplicator = StreamReplicator::createNew(*env, audioSource, false);
 
     // The replicator stays alive even when no RTSP clients are connected, so
     // clear the consumer tracking state until a real subscriber appears.
-    global_audio[audioChn]->rtsp_client_count.store(0,
-                                                    std::memory_order_relaxed);
+    global_audio[audioChn]->rtsp_client_count.store(0, std::memory_order_relaxed);
     global_audio[audioChn]->hasDataCallback = false;
   }
 #endif

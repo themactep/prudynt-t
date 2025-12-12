@@ -45,8 +45,7 @@ void ConfigWatcher::watch_using_notify() {
     return;
   }
 
-  int watchDescriptor = inotify_add_watch(inotifyFd, cfg->filePath.c_str(),
-                                          IN_MODIFY | IN_ALL_EVENTS);
+  int watchDescriptor = inotify_add_watch(inotifyFd, cfg->filePath.c_str(), IN_MODIFY | IN_ALL_EVENTS);
   if (watchDescriptor == -1) {
     LOG_ERROR("inotify_add_watch() failed");
     close(inotifyFd);
@@ -70,8 +69,7 @@ void ConfigWatcher::watch_using_notify() {
 
       if (event->mask & IN_MODIFY) {
         cfg->load();
-        LOG_INFO("Config file changed, the config is reloaded from: "
-                 << cfg->filePath);
+        LOG_INFO("Config file changed, the config is reloaded from: " << cfg->filePath);
       }
 
       i += EVENT_SIZE + event->len;
@@ -94,8 +92,7 @@ void ConfigWatcher::watch_using_poll() {
       } else if (fileInfo.st_mtime != lastModifiedTime) {
         lastModifiedTime = fileInfo.st_mtime;
         cfg->load();
-        LOG_INFO("Config file changed, the config is reloaded from: "
-                 << cfg->filePath);
+        LOG_INFO("Config file changed, the config is reloaded from: " << cfg->filePath);
       }
     }
 

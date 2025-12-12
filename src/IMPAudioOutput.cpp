@@ -30,17 +30,15 @@ auto toImpSampleRate(int sampleRate) {
   case 48000:
     return AUDIO_SAMPLE_RATE_48000;
   default:
-    LOG_WARN("Unsupported AO sample rate " << sampleRate
-                                           << ", falling back to 16000Hz");
+    LOG_WARN("Unsupported AO sample rate " << sampleRate << ", falling back to 16000Hz");
     return AUDIO_SAMPLE_RATE_16000;
   }
 }
 } // namespace
 
 IMPAudioOutput::IMPAudioOutput(int devId_, int channelId_)
-    : initialized(false), devId(devId_), channelId(channelId_),
-      maxFrameBytes(0), currentVolume(0), currentGain(0), currentMute(false),
-      configuredSampleRate(0) {
+    : initialized(false), devId(devId_), channelId(channelId_), maxFrameBytes(0), currentVolume(0), currentGain(0),
+      currentMute(false), configuredSampleRate(0) {
 }
 
 IMPAudioOutput::~IMPAudioOutput() {
@@ -163,12 +161,9 @@ bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount) {
 
   while (remainingBytes > 0) {
     const size_t chunk =
-        (maxFrameBytes > 0)
-            ? std::min(static_cast<size_t>(maxFrameBytes), remainingBytes)
-            : remainingBytes;
+        (maxFrameBytes > 0) ? std::min(static_cast<size_t>(maxFrameBytes), remainingBytes) : remainingBytes;
     IMPAudioFrame frame{};
-    frame.virAddr =
-        reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
+    frame.virAddr = reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
     frame.len = static_cast<unsigned int>(chunk);
 
     if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0) {
@@ -189,8 +184,7 @@ bool IMPAudioOutput::flush() {
   }
 
   if (IMP_AO_FlushChnBuf(devId, channelId) != 0) {
-    LOG_WARN("IMP_AO_FlushChnBuf failed during flush request for channel "
-             << channelId);
+    LOG_WARN("IMP_AO_FlushChnBuf failed during flush request for channel " << channelId);
     return false;
   }
   return true;
@@ -221,8 +215,7 @@ bool IMPAudioOutput::playSilence(int durationMs) {
     return false;
   }
 
-  size_t samples =
-      static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
+  size_t samples = static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
   if (samples == 0) {
     samples = std::max(rate / 50, 1); // default to ~20ms of silence
   }

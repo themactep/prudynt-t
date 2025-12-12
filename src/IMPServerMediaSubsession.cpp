@@ -10,21 +10,18 @@
 #include <memory>
 
 // Modify method to accept pointers for the NAL units
-IMPServerMediaSubsession *IMPServerMediaSubsession::createNew(
-    UsageEnvironment &env,
-    H264NALUnit *vps, // Change to pointer to make optional
-    H264NALUnit sps, H264NALUnit pps, int encChn) {
+IMPServerMediaSubsession *IMPServerMediaSubsession::createNew(UsageEnvironment &env,
+                                                              H264NALUnit *vps, // Change to pointer to make optional
+                                                              H264NALUnit sps, H264NALUnit pps, int encChn) {
   // Pass along the pointers; they may be nullptr
   return new IMPServerMediaSubsession(env, vps, sps, pps, encChn);
 }
 
 // Modify the constructor accordingly
-IMPServerMediaSubsession::IMPServerMediaSubsession(
-    UsageEnvironment &env,
-    H264NALUnit *vps, // Change to pointer to make optional
-    H264NALUnit sps, H264NALUnit pps, int encChn)
-    : OnDemandServerMediaSubsession(env, true),
-      vps(vps ? new H264NALUnit(*vps) : nullptr), // Copy if not nullptr
+IMPServerMediaSubsession::IMPServerMediaSubsession(UsageEnvironment &env,
+                                                   H264NALUnit *vps, // Change to pointer to make optional
+                                                   H264NALUnit sps, H264NALUnit pps, int encChn)
+    : OnDemandServerMediaSubsession(env, true), vps(vps ? new H264NALUnit(*vps) : nullptr), // Copy if not nullptr
       sps(sps), pps(pps), encChn(encChn) {
 }
 
@@ -33,14 +30,11 @@ IMPServerMediaSubsession::~IMPServerMediaSubsession() {
   delete vps; // Safe to delete nullptr if vps is not set
 }
 
-FramedSource *
-IMPServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
-                                                unsigned &estBitrate) {
+FramedSource *IMPServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
   LOG_DEBUG("Create Stream Source. ");
   estBitrate = cfg->rtsp.est_bitrate; // The expected bitrate?
 
-  auto imp = IMPDeviceSource<H264NALUnit, video_stream>::createNew(
-      envir(), encChn, global_video[encChn], "video");
+  auto imp = IMPDeviceSource<H264NALUnit, video_stream>::createNew(envir(), encChn, global_video[encChn], "video");
   // Here we need to decide based on the format whether to use H264 or H265
   // framer
   if (vps) {
@@ -51,22 +45,18 @@ IMPServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
 }
 
 // Modify RTP Sink creation to conditionally include VPS
-RTPSink *IMPServerMediaSubsession::createNewRTPSink(
-    Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
-    FramedSource *fs) {
-  increaseSendBufferTo(envir(), rtpGroupsock->socketNum(),
-                       cfg->rtsp.send_buffer_size);
+RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
+                                                    FramedSource *fs) {
+  increaseSendBufferTo(envir(), rtpGroupsock->socketNum(), cfg->rtsp.send_buffer_size);
   // Use VPS only if it's available (non-nullptr, and we are in H265 mode)
   if (vps) {
-    return H265VideoRTPSink::createNew(
-        envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &vps->data[0],
-        vps->data.size(), // Now using pointer, check and dereference
-        &sps.data[0], sps.data.size(), &pps.data[0], pps.data.size());
+    return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &vps->data[0],
+                                       vps->data.size(), // Now using pointer, check and dereference
+                                       &sps.data[0], sps.data.size(), &pps.data[0], pps.data.size());
   } else {
     // For H264 or other formats, VPS is not used
-    return H264VideoRTPSink::createNew(
-        envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &sps.data[0],
-        sps.data.size(), &pps.data[0], pps.data.size());
+    return H264VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &sps.data[0], sps.data.size(),
+                                       &pps.data[0], pps.data.size());
   }
 
   // enabling this allows stream resolution changes

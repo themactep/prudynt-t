@@ -13,8 +13,7 @@
 
 #include "Logger.hpp"
 
-const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN",
-                             "NOTICE",    "INFO",  "DEBUG",    "TRACE"};
+const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"};
 
 Logger::Level stringToLogLevel(const std::string &levelStr) {
   if (levelStr == "EMERGENCY")
@@ -96,13 +95,11 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
       syslogPriority = 7;
       break; // Default case for undefined levels
     }
-    syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(),
-           msg.log_str.c_str());
+    syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(), msg.log_str.c_str());
 
     // Log to console
     std::stringstream fmt;
-    fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str
-        << std::endl;
+    fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str << std::endl;
     std::cout << fmt.str();
   }
 }

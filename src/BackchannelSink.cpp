@@ -13,28 +13,21 @@ constexpr double EMA_ALPHA = 0.2;            // Weight for latest interval
 constexpr double TIMEOUT_MULTIPLIER = 3.0;   // Wait ~3× observed interval
 } // namespace
 
-BackchannelSink *BackchannelSink::createNew(UsageEnvironment &env,
-                                            unsigned clientSessionId,
+BackchannelSink *BackchannelSink::createNew(UsageEnvironment &env, unsigned clientSessionId,
                                             IMPBackchannelFormat format) {
   return new BackchannelSink(env, clientSessionId, format);
 }
 
-BackchannelSink::BackchannelSink(UsageEnvironment &env,
-                                 unsigned clientSessionId,
-                                 IMPBackchannelFormat format)
-    : MediaSink(env), fRTPSource(nullptr),
-      fReceiveBufferSize((format == IMPBackchannelFormat::AAC) ? 2048 : 1024),
-      fIsActive(false), fAfterFunc(nullptr), fAfterClientData(nullptr),
-      fClientSessionId(clientSessionId), fTimeoutTask(nullptr),
-      fIsSending(false), fFormat(format), fCurrentTimeoutUs(BASE_TIMEOUT_US),
-      fAvgInterFrameIntervalUs(static_cast<double>(BASE_TIMEOUT_US)),
-      fHasLastPresentationTime(false) {
+BackchannelSink::BackchannelSink(UsageEnvironment &env, unsigned clientSessionId, IMPBackchannelFormat format)
+    : MediaSink(env), fRTPSource(nullptr), fReceiveBufferSize((format == IMPBackchannelFormat::AAC) ? 2048 : 1024),
+      fIsActive(false), fAfterFunc(nullptr), fAfterClientData(nullptr), fClientSessionId(clientSessionId),
+      fTimeoutTask(nullptr), fIsSending(false), fFormat(format), fCurrentTimeoutUs(BASE_TIMEOUT_US),
+      fAvgInterFrameIntervalUs(static_cast<double>(BASE_TIMEOUT_US)), fHasLastPresentationTime(false) {
   fLastPresentationTime.tv_sec = 0;
   fLastPresentationTime.tv_usec = 0;
   fReceiveBuffer = new u_int8_t[fReceiveBufferSize];
   if (fReceiveBuffer == nullptr) {
-    LOG_ERROR("Failed to allocate receive buffer (Session: "
-              << static_cast<unsigned>(fClientSessionId) << ")");
+    LOG_ERROR("Failed to allocate receive buffer (Session: " << static_cast<unsigned>(fClientSessionId) << ")");
   }
   resetAdaptiveTimeout();
 }
@@ -44,12 +37,10 @@ BackchannelSink::~BackchannelSink() {
   delete[] fReceiveBuffer;
 }
 
-Boolean BackchannelSink::startPlaying(FramedSource &source,
-                                      MediaSink::afterPlayingFunc *afterFunc,
+Boolean BackchannelSink::startPlaying(FramedSource &source, MediaSink::afterPlayingFunc *afterFunc,
                                       void *afterClientData) {
   if (fIsActive) {
-    LOG_WARN("startPlaying called while already active for session "
-             << fClientSessionId);
+    LOG_WARN("startPlaying called while already active for session " << fClientSessionId);
     return False;
   }
 
@@ -99,16 +90,13 @@ Boolean BackchannelSink::continuePlaying() {
     return False;
   }
 
-  fRTPSource->getNextFrame(fReceiveBuffer, fReceiveBufferSize,
-                           afterGettingFrame, this, nullptr, this);
+  fRTPSource->getNextFrame(fReceiveBuffer, fReceiveBufferSize, afterGettingFrame, this, nullptr, this);
 
   return True;
 }
 
-void BackchannelSink::afterGettingFrame(void *clientData, unsigned frameSize,
-                                        unsigned numTruncatedBytes,
-                                        struct timeval presentationTime,
-                                        unsigned /*durationInMicroseconds*/) {
+void BackchannelSink::afterGettingFrame(void *clientData, unsigned frameSize, unsigned numTruncatedBytes,
+                                        struct timeval presentationTime, unsigned /*durationInMicroseconds*/) {
   BackchannelSink *sink = static_cast<BackchannelSink *>(clientData);
   if (sink != nullptr) {
     sink->afterGettingFrame1(frameSize, numTruncatedBytes, presentationTime);
@@ -117,18 +105,15 @@ void BackchannelSink::afterGettingFrame(void *clientData, unsigned frameSize,
   }
 }
 
-void BackchannelSink::afterGettingFrame1(unsigned frameSize,
-                                         unsigned numTruncatedBytes,
+void BackchannelSink::afterGettingFrame1(unsigned frameSize, unsigned numTruncatedBytes,
                                          struct timeval presentationTime) {
   if (!fIsActive) {
     return;
   }
 
   if (numTruncatedBytes > 0) {
-    LOG_WARN("Received truncated frame ("
-             << frameSize << " bytes, " << numTruncatedBytes
-             << " truncated) for session " << fClientSessionId
-             << ". Discarding.");
+    LOG_WARN("Received truncated frame (" << frameSize << " bytes, " << numTruncatedBytes << " truncated) for session "
+                                          << fClientSessionId << ". Discarding.");
   } else if (frameSize > 0) {
     sendBackchannelFrame(fReceiveBuffer, frameSize);
     updateAdaptiveTimeout(presentationTime);
@@ -146,8 +131,7 @@ void BackchannelSink::afterGettingFrame1(unsigned frameSize,
 }
 
 void BackchannelSink::scheduleTimeoutCheck() {
-  fTimeoutTask = envir().taskScheduler().scheduleDelayedTask(
-      fCurrentTimeoutUs, (TaskFunc *)timeoutCheck, this);
+  fTimeoutTask = envir().taskScheduler().scheduleDelayedTask(fCurrentTimeoutUs, (TaskFunc *)timeoutCheck, this);
 }
 
 void BackchannelSink::timeoutCheck(void *clientData) {
@@ -164,18 +148,15 @@ void BackchannelSink::timeoutCheck1() {
     return;
   }
 
-  LOG_INFO("Audio data timeout detected for session "
-           << fClientSessionId << ". Sending stop frame.");
+  LOG_INFO("Audio data timeout detected for session " << fClientSessionId << ". Sending stop frame.");
   sendBackchannelStopFrame();
   resetAdaptiveTimeout();
 }
 
-void BackchannelSink::sendBackchannelFrame(const uint8_t *payload,
-                                           unsigned payloadSize) {
+void BackchannelSink::sendBackchannelFrame(const uint8_t *payload, unsigned payloadSize) {
   if (!global_backchannel) {
-    LOG_ERROR(
-        "global_backchannel is null, cannot queue BackchannelFrame! (Session: "
-        << static_cast<unsigned>(fClientSessionId) << ")");
+    LOG_ERROR("global_backchannel is null, cannot queue BackchannelFrame! (Session: "
+              << static_cast<unsigned>(fClientSessionId) << ")");
     return;
   }
 
@@ -191,9 +172,8 @@ void BackchannelSink::sendBackchannelFrame(const uint8_t *payload,
 
   bool enqueued = global_backchannel->inputQueue->write(std::move(bcFrame));
   if (!enqueued) {
-    LOG_WARN("Input queue full for session "
-             << static_cast<unsigned>(fClientSessionId)
-             << ". Dropped oldest frame to make room.");
+    LOG_WARN("Input queue full for session " << static_cast<unsigned>(fClientSessionId)
+                                             << ". Dropped oldest frame to make room.");
   }
   global_backchannel->should_grab_frames.notify_one();
 }
@@ -213,15 +193,13 @@ void BackchannelSink::sendBackchannelStopFrame() {
       LOG_WARN("Input queue full when trying to send stop frame for session "
                << static_cast<unsigned>(fClientSessionId));
     } else {
-      LOG_INFO("Sent stop frame (zero-payload frame) for session "
-               << static_cast<unsigned>(fClientSessionId));
+      LOG_INFO("Sent stop frame (zero-payload frame) for session " << static_cast<unsigned>(fClientSessionId));
     }
     global_backchannel->should_grab_frames.notify_one();
     fIsSending = false;
     global_backchannel->is_sending.fetch_sub(1, std::memory_order_relaxed);
   } else {
-    LOG_ERROR("global_backchannel is null, cannot send stop frame for session "
-              << fClientSessionId);
+    LOG_ERROR("global_backchannel is null, cannot send stop frame for session " << fClientSessionId);
   }
 }
 
@@ -234,12 +212,10 @@ void BackchannelSink::resetAdaptiveTimeout() {
 }
 
 uint64_t BackchannelSink::toMicroseconds(const struct timeval &tv) {
-  return static_cast<uint64_t>(tv.tv_sec) * 1000000ULL +
-         static_cast<uint64_t>(tv.tv_usec);
+  return static_cast<uint64_t>(tv.tv_sec) * 1000000ULL + static_cast<uint64_t>(tv.tv_usec);
 }
 
-void BackchannelSink::updateAdaptiveTimeout(
-    const struct timeval &presentationTime) {
+void BackchannelSink::updateAdaptiveTimeout(const struct timeval &presentationTime) {
   if (presentationTime.tv_sec == 0 && presentationTime.tv_usec == 0) {
     return;
   }
@@ -250,8 +226,7 @@ void BackchannelSink::updateAdaptiveTimeout(
     if (currentUs > previousUs) {
       double interval = static_cast<double>(currentUs - previousUs);
       // Exponential moving average of observed inter-frame interval
-      fAvgInterFrameIntervalUs =
-          (1.0 - EMA_ALPHA) * fAvgInterFrameIntervalUs + EMA_ALPHA * interval;
+      fAvgInterFrameIntervalUs = (1.0 - EMA_ALPHA) * fAvgInterFrameIntervalUs + EMA_ALPHA * interval;
       double desiredTimeout = fAvgInterFrameIntervalUs * TIMEOUT_MULTIPLIER;
       if (desiredTimeout < static_cast<double>(MIN_TIMEOUT_US)) {
         desiredTimeout = static_cast<double>(MIN_TIMEOUT_US);

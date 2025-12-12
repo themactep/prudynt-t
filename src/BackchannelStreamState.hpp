@@ -37,22 +37,18 @@ class BackchannelStreamState {
 
 public:
   // Constructor takes UsageEnvironment and CNAME instead of master reference
-  BackchannelStreamState(UsageEnvironment &env, char const *cname,
-                         RTPSource *_rtpSource, BackchannelSink *_mediaSink,
-                         Groupsock *_rtpGS, Groupsock *_rtcpGS,
-                         unsigned _clientSessionId,
-                         struct sockaddr_storage const &_destAddr,
-                         Port const &_rtpDestPort, Port const &_rtcpDestPort,
-                         int _tcpSocketNum, unsigned char _rtpChannelId,
-                         unsigned char _rtcpChannelId, TLSState *_tlsState);
+  BackchannelStreamState(UsageEnvironment &env, char const *cname, RTPSource *_rtpSource, BackchannelSink *_mediaSink,
+                         Groupsock *_rtpGS, Groupsock *_rtcpGS, unsigned _clientSessionId,
+                         struct sockaddr_storage const &_destAddr, Port const &_rtpDestPort, Port const &_rtcpDestPort,
+                         int _tcpSocketNum, unsigned char _rtpChannelId, unsigned char _rtcpChannelId,
+                         TLSState *_tlsState);
 
   ~BackchannelStreamState();
 
   // Configures transport and starts the sink playing
-  void startPlaying(
-      TaskFunc *rtcpRRHandler, void *rtcpRRHandlerClientData,
-      ServerRequestAlternativeByteHandler *serverRequestAlternativeByteHandler,
-      void *serverRequestAlternativeByteHandlerClientData);
+  void startPlaying(TaskFunc *rtcpRRHandler, void *rtcpRRHandlerClientData,
+                    ServerRequestAlternativeByteHandler *serverRequestAlternativeByteHandler,
+                    void *serverRequestAlternativeByteHandlerClientData);
 
 private:
   UsageEnvironment &fEnv;
@@ -64,9 +60,8 @@ private:
   RTCPInstance *rtcpInstance; // RTCP instance associated with the stream
   unsigned clientSessionId;   // ID of the client for this stream
 
-  Boolean fIsTCP; // Flag indicating TCP or UDP transport
-  TransportSpecificDetails
-      fTransport; // Union holding transport-specific details
+  Boolean fIsTCP;                      // Flag indicating TCP or UDP transport
+  TransportSpecificDetails fTransport; // Union holding transport-specific details
 };
 
 #endif // BACKCHANNEL_STREAM_STATE_HPP

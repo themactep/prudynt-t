@@ -13,7 +13,7 @@ Each stream inherits the following options under `streamX.osd` (see `res/prudynt
 - `brightness_enabled`: turns the overlay on/off (disabled by default).
 - `brightness_position`: `"x,y"` anchor (same syntax as other OSD elements; use negative values to offset from the right/bottom edge).
 - `brightness_rotation`: optional rotation in degrees.
-- `brightness_font_color` / `brightness_font_stroke_color`: RGBA colors encoded as `#RRGGBBAA`.
+- `brightness_fill_color` / `brightness_stroke_color`: RGBA colors encoded as `#RRGGBBAA`.
 - `brightness_format`: text template. Supported tokens:
   - `%b` — instantaneous brightness percentage.
   - `%a` — smoothed average brightness.
@@ -27,8 +27,8 @@ Each stream inherits the following options under `streamX.osd` (see `res/prudynt
   "brightness_enabled": true,
   "brightness_format": "Brightness:%b%% Avg:%a%% %m",
   "brightness_position": "10,70",
-  "brightness_font_color": "#FFFFFFFF",
-  "brightness_font_stroke_color": "#000000FF"
+  "brightness_fill_color": "#FFFFFFFF",
+  "brightness_stroke_color": "#000000FF"
 }
 ```
 

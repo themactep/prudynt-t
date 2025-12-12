@@ -4,8 +4,7 @@
 
 #define MODULE "IMPENCODER"
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
 #define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
@@ -23,8 +22,7 @@ inline uint32_t align_up(uint32_t value, uint32_t alignment) {
 }
 } // namespace
 
-IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp,
-                                  const char *name) {
+IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, const char *name) {
   IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, name);
   if (!encoder) {
     return nullptr;
@@ -32,8 +30,7 @@ IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp,
 
   int ret = encoder->init();
   if (ret != 0) {
-    LOG_ERROR("Failed to initialize encoder channel "
-              << encChn << " (grp " << encGrp << ") ret=" << ret);
+    LOG_ERROR("Failed to initialize encoder channel " << encChn << " (grp " << encGrp << ") ret=" << ret);
     delete encoder;
     return nullptr;
   }
@@ -74,8 +71,7 @@ void IMPEncoder::initProfile() {
   memset(&chnAttr, 0, sizeof(IMPEncoderCHNAttr));
   rcAttr = &chnAttr.rcAttr;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   IMPEncoderRcMode rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
   IMPEncoderProfile encoderProfile = IMP_ENC_PROFILE_AVC_HIGH;
 
@@ -83,15 +79,12 @@ void IMPEncoder::initProfile() {
     encoderProfile = IMP_ENC_PROFILE_HEVC_MAIN;
   } else if (strcmp(stream->format, "JPEG") == 0) {
     encoderProfile = IMP_ENC_PROFILE_JPEG;
-    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP,
-                                stream->width, stream->height, 24, 1, 0, 0,
-                                stream->jpeg_quality, 0);
+    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP, stream->width, stream->height, 24, 1,
+                                0, 0, stream->jpeg_quality, 0);
     // 1000 / stream->jpeg_refresh
-    LOG_DEBUG("STREAM PROFILE "
-              << encChn << ", " << encGrp << ", " << stream->format << ", "
-              << chnAttr.rcAttr.outFrmRate.frmRateNum
-              << "fps, profile:" << stream->profile << ", " << stream->width
-              << "x" << stream->height);
+    LOG_DEBUG("STREAM PROFILE " << encChn << ", " << encGrp << ", " << stream->format << ", "
+                                << chnAttr.rcAttr.outFrmRate.frmRateNum << "fps, profile:" << stream->profile << ", "
+                                << stream->width << "x" << stream->height);
     return;
   }
 
@@ -106,15 +99,13 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->mode, "CAPPED_QUALITY") == 0) {
     rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
   } else {
-    LOG_ERROR("unsupported stream->mode ("
-              << stream->mode
-              << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and "
-                 "CAPPED_QUALITY on T31");
+    LOG_ERROR("unsupported stream->mode (" << stream->mode
+                                           << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and "
+                                              "CAPPED_QUALITY on T31");
   }
 
-  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width,
-                              stream->height, stream->fps, 1, stream->gop, 2,
-                              -1, stream->bitrate);
+  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width, stream->height, stream->fps, 1,
+                              stream->gop, 2, -1, stream->bitrate);
 
   switch (rcMode) {
   case IMP_ENC_RC_MODE_FIXQP:
@@ -172,8 +163,8 @@ void IMPEncoder::initProfile() {
   case IMP_ENC_RC_MODE_INVALID:
     break;
   }
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) ||                        \
-    defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30)
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
+    defined(PLATFORM_T30)
   if (strcmp(stream->format, "JPEG") == 0) {
     IMPEncoderAttr *encAttr;
     encAttr = &chnAttr.encAttr;
@@ -203,9 +194,7 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->mode, "SMART") == 0) {
     rcMode = ENC_RC_MODE_SMART;
   } else {
-    LOG_ERROR("unsupported stream->mode ("
-              << stream->mode
-              << "). we only support FIXQP, CBR, VBR and SMART");
+    LOG_ERROR("unsupported stream->mode (" << stream->mode << "). we only support FIXQP, CBR, VBR and SMART");
   }
 
   // 0 = Baseline
@@ -294,8 +283,7 @@ void IMPEncoder::initProfile() {
        // defined(PLATFORM_T21) || defined(PLATFORM_T23) ||
        // defined(PLATFORM_T30)
   LOG_DEBUG("STREAM PROFILE " << stream->rtsp_endpoint << ", "
-                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum
-                              << ", "
+                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum << ", "
                               << "bps:" << stream->bitrate << ", "
                               << "gop:" << stream->gop << ", "
                               << "profile:" << stream->profile << ", " <<
@@ -313,19 +301,15 @@ int IMPEncoder::init() {
   initProfile();
 
   if (!is_jpeg && chnAttr.encAttr.bufSize == 0) {
-    uint32_t yuv_size = static_cast<uint32_t>(stream->width) *
-                        static_cast<uint32_t>(stream->height) * 3 / 2;
+    uint32_t yuv_size = static_cast<uint32_t>(stream->width) * static_cast<uint32_t>(stream->height) * 3 / 2;
     chnAttr.encAttr.bufSize = static_cast<int>(align_up(yuv_size, 1024));
     LOG_DEBUG("Encoder bufSize auto-set to " << chnAttr.encAttr.bufSize);
   }
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn &&
-      stream->allow_shared) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  if (cfg->stream2.enabled && cfg->stream2.jpeg_channel == encChn && stream->allow_shared) {
     ret = IMP_Encoder_SetbufshareChn(2, encChn);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn
-                                                                      << ")");
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_SetbufshareChn(2, " << encChn << ")");
   }
 #endif
 
@@ -340,10 +324,8 @@ int IMPEncoder::init() {
 
   ret = IMP_Encoder_CreateChn(encChn, &chnAttr);
   if (ret != 0) {
-    LOG_ERROR("IMP_Encoder_CreateChn(" << encChn << ") failed ret=" << ret
-                                       << " payload=" << chnAttr.encAttr.enType
-                                       << " bufSize=" << chnAttr.encAttr.bufSize
-                                       << " res=" << stream->width << "x"
+    LOG_ERROR("IMP_Encoder_CreateChn(" << encChn << ") failed ret=" << ret << " payload=" << chnAttr.encAttr.enType
+                                       << " bufSize=" << chnAttr.encAttr.bufSize << " res=" << stream->width << "x"
                                        << stream->height);
     return ret;
   }
@@ -351,8 +333,7 @@ int IMPEncoder::init() {
 
   ret = IMP_Encoder_RegisterChn(encGrp, encChn);
   if (ret != 0) {
-    LOG_ERROR("IMP_Encoder_RegisterChn(" << encGrp << ", " << encChn
-                                         << ") failed ret=" << ret);
+    LOG_ERROR("IMP_Encoder_RegisterChn(" << encGrp << ", " << encChn << ") failed ret=" << ret);
     return ret;
   }
   chn_registered = true;
@@ -373,8 +354,7 @@ int IMPEncoder::init() {
         }
       }
       int destroy_ret = IMP_OSD_DestroyGroup(encGrp);
-      LOG_DEBUG_OR_ERROR(destroy_ret,
-                        "IMP_OSD_DestroyGroup(" << encGrp << ")");
+      LOG_DEBUG_OR_ERROR(destroy_ret, "IMP_OSD_DestroyGroup(" << encGrp << ")");
       if (destroy_ret == 0) {
         osd_group_manual = false;
       }
@@ -415,8 +395,7 @@ int IMPEncoder::init() {
     }
     osd_to_enc_bound = true;
   }
-#if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) ||                      \
-      !defined(PLATFORM_T40) || !defined(PLATFORM_T41))
+#if !(defined(PLATFORM_T31) || !defined(PLATFORM_C100) || !defined(PLATFORM_T40) || !defined(PLATFORM_T41))
   else {
     IMPEncoderJpegeQl pstJpegeQl;
     // fix for bad jpeg image quality on T10 based cameras
@@ -424,8 +403,7 @@ int IMPEncoder::init() {
       pstJpegeQl.user_ql_en = 0;
       LOG_DEBUG("JPEG use default quantization table");
     } else {
-      MakeTables(stream->jpeg_quality, &(pstJpegeQl.qmem_table[0]),
-                 &(pstJpegeQl.qmem_table[64]));
+      MakeTables(stream->jpeg_quality, &(pstJpegeQl.qmem_table[0]), &(pstJpegeQl.qmem_table[64]));
       pstJpegeQl.user_ql_en = 1;
       LOG_DEBUG("JPEG use custom user quantization table");
     }
@@ -480,15 +458,13 @@ int IMPEncoder::deinit() {
 
   if (chn_registered) {
     ret = IMP_Encoder_UnRegisterChn(encChn);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                                "IMP_Encoder_UnRegisterChn(" << encChn << ")");
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_UnRegisterChn(" << encChn << ")");
     chn_registered = false;
   }
 
   if (chn_created) {
     ret = IMP_Encoder_DestroyChn(encChn);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
-                                "IMP_Encoder_DestroyChn(" << encChn << ")");
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_DestroyChn(" << encChn << ")");
     chn_created = false;
   }
 
@@ -516,8 +492,7 @@ int IMPEncoder::destroy() {
       }
     }
     int destroy_ret = IMP_OSD_DestroyGroup(encGrp);
-    LOG_DEBUG_OR_ERROR(destroy_ret,
-                      "IMP_OSD_DestroyGroup(" << encGrp << ")");
+    LOG_DEBUG_OR_ERROR(destroy_ret, "IMP_OSD_DestroyGroup(" << encGrp << ")");
     if (destroy_ret == 0) {
       osd_group_manual = false;
     }

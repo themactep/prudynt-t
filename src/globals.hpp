@@ -1,7 +1,15 @@
 #ifndef GLOBALS_HPP
 #define GLOBALS_HPP
 
+#include "IMPAudio.hpp"
+#include "IMPAudioOutput.hpp"
+#include "IMPBackchannel.hpp"
+#include "IMPEncoder.hpp"
+#include "IMPFramesource.hpp"
+#include "MP4Recorder.hpp"
+#include "MsgChannel.hpp"
 #include "liveMedia.hh"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -11,14 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <vector>
-
-#include "IMPAudio.hpp"
-#include "IMPAudioOutput.hpp"
-#include "IMPBackchannel.hpp"
-#include "IMPEncoder.hpp"
-#include "IMPFramesource.hpp"
-#include "MP4Recorder.hpp"
-#include "MsgChannel.hpp"
 
 #define MSG_CHANNEL_SIZE 20
 #define BACKCHANNEL_QUEUE_SIZE 200
@@ -55,8 +55,7 @@ private:
   int count;
 };
 
-extern std::mutex
-    mutex_main; // protects global_restart_rtsp and global_restart_video
+extern std::mutex mutex_main; // protects global_restart_rtsp and global_restart_video
 
 struct AudioFrame {
   std::vector<uint8_t> data;
@@ -132,12 +131,10 @@ struct jpeg_stream {
   }
 
   bool request_or_overrun() {
-    return duration_cast<milliseconds>(steady_clock::now() - last_subscriber)
-               .count() < 1000;
+    return duration_cast<milliseconds>(steady_clock::now() - last_subscriber).count() < 1000;
   }
 
-  jpeg_stream(int encChn, _stream *stream)
-      : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {
+  jpeg_stream(int encChn, _stream *stream) : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {
   }
 };
 
@@ -167,10 +164,8 @@ struct audio_stream {
   std::vector<AudioTapEntry> audio_taps;
 
   audio_stream(int devId, int aiChn, int aeChn)
-      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false),
-        imp_audio(nullptr),
-        msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)),
-        onDataCallback{nullptr}, hasDataCallback{false} {
+      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
+        msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)), onDataCallback{nullptr}, hasDataCallback{false} {
   }
 };
 
@@ -193,7 +188,7 @@ struct video_stream {
   std::atomic<int64_t> mp4_required_idr_ts;
   std::atomic<int64_t> mp4_last_idr_ts;
   std::atomic<uint64_t> mp4_last_idr_request_ms;
-  std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
+  std::mutex onDataCallbackLock;     // protects onDataCallback from deallocation
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
   std::mutex codec_config_mutex;
@@ -208,13 +203,10 @@ struct video_stream {
   std::atomic<bool> privacy_requested{false};
 
   video_stream(int encChn, _stream *stream, const char *name)
-      : encChn(encChn), stream(stream), name(name), running(false), idr(false),
-        idr_fix(0), imp_encoder(nullptr), imp_framesource(nullptr),
-        msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
-        onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
-        mp4_waiting_for_idr{false}, mp4_required_idr_ts{-1},
-        mp4_last_idr_ts{-1}, mp4_last_idr_request_ms{0}, have_sps(false),
-        have_pps(false) {
+      : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0), imp_encoder(nullptr),
+        imp_framesource(nullptr), msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
+        onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
+        mp4_required_idr_ts{-1}, mp4_last_idr_ts{-1}, mp4_last_idr_request_ms{0}, have_sps(false), have_pps(false) {
   }
 };
 
@@ -228,9 +220,8 @@ struct backchannel_stream {
   std::atomic<unsigned int> is_sending{0};
 
   backchannel_stream()
-      : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(
-            BACKCHANNEL_QUEUE_SIZE)),
-        imp_backchannel(nullptr), running(false) {
+      : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(BACKCHANNEL_QUEUE_SIZE)), imp_backchannel(nullptr),
+        running(false) {
   }
 };
 
@@ -244,9 +235,7 @@ struct audio_output_stream {
   int current_gain{0};
   bool current_mute{false};
 
-  audio_output_stream()
-      : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(
-            AUDIO_OUTPUT_QUEUE_SIZE)) {
+  audio_output_stream() : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(AUDIO_OUTPUT_QUEUE_SIZE)) {
   }
 };
 
@@ -278,9 +267,8 @@ extern std::atomic<bool> global_shutdown_requested;
 // external streaming client.
 extern std::atomic<bool> global_force_video_active;
 
-inline VideoTapEntry
-register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
-                   std::function<void(void)> notify = {}) {
+inline VideoTapEntry register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
+                                        std::function<void(void)> notify = {}) {
   static std::atomic<uint64_t> video_tap_seq{0};
   VideoTapEntry entry;
   entry.id = ++video_tap_seq;
@@ -299,15 +287,12 @@ inline void unregister_video_tap(int encChn, uint64_t tap_id) {
   }
   std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
   auto &taps = global_video[encChn]->video_taps;
-  taps.erase(
-      std::remove_if(taps.begin(), taps.end(),
-                     [&](const VideoTapEntry &v) { return v.id == tap_id; }),
-      taps.end());
+  taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const VideoTapEntry &v) { return v.id == tap_id; }),
+             taps.end());
 }
 
-inline AudioTapEntry
-register_audio_tap(int encChn, std::shared_ptr<MsgChannel<AudioFrame>> queue,
-                   std::function<void(void)> notify = {}) {
+inline AudioTapEntry register_audio_tap(int encChn, std::shared_ptr<MsgChannel<AudioFrame>> queue,
+                                        std::function<void(void)> notify = {}) {
   static std::atomic<uint64_t> audio_tap_seq{0};
   AudioTapEntry entry;
   entry.id = ++audio_tap_seq;
@@ -326,10 +311,8 @@ inline void unregister_audio_tap(int encChn, uint64_t tap_id) {
   }
   std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
   auto &taps = global_audio[encChn]->audio_taps;
-  taps.erase(
-      std::remove_if(taps.begin(), taps.end(),
-                     [&](const AudioTapEntry &v) { return v.id == tap_id; }),
-      taps.end());
+  taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const AudioTapEntry &v) { return v.id == tap_id; }),
+             taps.end());
 }
 
 #endif // GLOBALS_HPP

@@ -18,8 +18,7 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
 #define IMPEncoderCHNStat IMPEncoderChnStat
 #endif
@@ -57,13 +56,10 @@ public:
   void updateDisplayEverySecond();
   static void *thread_entry(void *arg);
 
-  void rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height,
-                       int angle, bool del);
-  static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
-                      uint16_t height, const uint16_t max_width,
+  void rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height, int angle, bool del);
+  static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t height, const uint16_t max_width,
                       const uint16_t max_height);
-  static uint16_t get_abs_pos(const uint16_t max, const uint16_t size,
-                              const int pos);
+  static uint16_t get_abs_pos(const uint16_t max, const uint16_t size, const int pos);
   int startup_delay{0};
   bool is_started = false;
 
@@ -75,14 +71,10 @@ private:
   int load_font();
   int libschrift_init();
   int renderGlyph(const char *characters);
-  void drawOutline(uint8_t *image, const Glyph &g, int x, int y,
-                   int outlineSize, int WIDTH, int HEIGHT,
-                   const uint8_t *strokeColor);
-  int calculateTextSize(const char *text, uint16_t &width, uint16_t &height,
-                        int outlineSize);
-  int drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT,
-               int outlineSize, unsigned int font_color,
-               unsigned int font_stroke_color);
+  void drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineSize, int WIDTH, int HEIGHT, const uint8_t *strokeColor);
+  int calculateTextSize(const char *text, uint16_t &width, uint16_t &height, int outlineSize);
+  int drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT, int outlineSize, unsigned int fill_color,
+               unsigned int stroke_color);
 
   _osd &osd;
   int last_updated_second;
@@ -93,9 +85,8 @@ private:
   OSDItem osdLogo{};
   OSDItem osdBrightness{};
 
-  void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text,
-                const char *position, int angle, unsigned int font_color,
-                unsigned int font_stroke_color);
+  void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text, const char *position, int angle,
+                unsigned int fill_color, unsigned int stroke_color);
   std::string getConfigPath(const char *itemName);
   struct BrightnessSample {
     float current{-1.0f};
