@@ -9,14 +9,28 @@ CXX                     = ${CROSS_COMPILE}g++
 
 # Compiler Flags
 # --------------
-CFLAGS                 ?= -Wall -Wextra -Wno-unused-parameter -O2 -DNO_OPENSSL=1
+DEFAULT_WARN_CFLAGS    := -Wall -Wextra -Wno-unused-parameter
+DEFAULT_OPTFLAG        ?= -O2
+
+override CFLAGS        += $(DEFAULT_WARN_CFLAGS)
+ifeq ($(findstring -O,$(CFLAGS)),)
+override CFLAGS        += $(DEFAULT_OPTFLAG)
+endif
+override CFLAGS        += -DNO_OPENSSL=1
+
 CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
 LDFLAGS                += -lrt -lpthread
 
+# Allow legacy build systems to keep exporting WEBSOCKET_ENABLED=0/1
+ifeq ($(origin USE_WEBSOCKETS), undefined)
+ifneq ($(strip $(WEBSOCKET_ENABLED)),)
+USE_WEBSOCKETS         := $(WEBSOCKET_ENABLED)
+endif
+endif
 USE_WEBSOCKETS         ?= 1
 
 ifeq ($(USE_WEBSOCKETS),1)
-CFLAGS                 += -DWEBSOCKET_ENABLED
+override CFLAGS        += -DWEBSOCKET_ENABLED
 endif
 
 ifeq ($(USE_WEBSOCKETS),1)
@@ -32,7 +46,7 @@ endif
 # Kernel Version Support
 # ----------------------
 ifeq ($(KERNEL_VERSION_4),y)
-CFLAGS                 += -DKERNEL_VERSION_4
+override CFLAGS        += -DKERNEL_VERSION_4
 endif
 
 # Binary Type Configuration
