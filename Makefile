@@ -13,13 +13,13 @@ CFLAGS                 ?= -Wall -Wextra -Wno-unused-parameter -O2 -DNO_OPENSSL=1
 CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
 LDFLAGS                += -lrt -lpthread
 
-WEBSOCKET_ENABLED     ?= 1
+USE_WEBSOCKETS         ?= 1
 
-ifeq ($(WEBSOCKET_ENABLED),1)
+ifeq ($(USE_WEBSOCKETS),1)
 CFLAGS                 += -DWEBSOCKET_ENABLED
 endif
 
-ifeq ($(WEBSOCKET_ENABLED),1)
+ifeq ($(USE_WEBSOCKETS),1)
 WEBSOCKET_LIB_STATIC_LINE = -l:libwebsockets.a
 WEBSOCKET_LIB_HYBRID_LINE = -l:libwebsockets.so
 WEBSOCKET_LIB_DYNAMIC_LINE = -lwebsockets
