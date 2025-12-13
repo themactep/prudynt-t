@@ -222,6 +222,13 @@ int main(int argc, const char *argv[]) {
   }
 
   LOG_INFO("Starting Prudynt Video Server.");
+#if defined(WEBSOCKET_ENABLED)
+  LOG_INFO("WebSocket module compiled; runtime state: " << (cfg->websocket.enabled ? "enabled" : "disabled"));
+#else
+  LOG_INFO("WebSocket module not compiled into this build.");
+#endif
+  LOG_INFO("HTTP MJPEG module is " << (cfg->http_mjpeg.enabled ? "enabled" : "disabled"));
+  LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   if (!instance_lock.acquire()) {
     LOG_ERROR("Prudynt is already running. Exiting.");
