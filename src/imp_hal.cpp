@@ -407,7 +407,7 @@ int set_sinter_strength(unsigned char val) {
   IMPISPSinterDenoiseAttr attr;
   memset(&attr, 0, sizeof(attr));
   attr.enable = IMPISP_TUNING_OPS_MODE_ENABLE;
-  attr.type = IMPISP_TUNING_OPS_MODE_MANUAL;
+  attr.type = IMPISP_TUNING_OPS_TYPE_MANUAL;
   attr.sinter_strength = val;
   return IMP_ISP_Tuning_SetSinterDnsAttr(&attr);
 #else
@@ -428,8 +428,8 @@ int set_temper_strength(unsigned char val) {
   IMPISPTemperDenoiseAttr attr;
   memset(&attr, 0, sizeof(attr));
   attr.type = IMPISP_TEMPER_MANUAL;
-  attr.val = val;
-  return IMP_ISP_Tuning_SetTemperDnsCtl(&attr);
+  attr.temper_strength = val;
+  return IMP_ISP_Tuning_SetTemperDnsAttr(&attr);
 #else
   return 0;
 #endif
@@ -550,7 +550,7 @@ int set_ae_compensation(int val) {
     LOG_DEBUG("set_ae_compensation not supported on this platform");
     return 0;
   }
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
   return IMP_ISP_Tuning_SetAeComp(val);
 #else
   return 0;
@@ -767,6 +767,31 @@ int get_h265_nal_type(const IMPEncoderPack &pack) {
 }
 
 } // namespace encoder
+
+namespace audio {
+
+void init_ai_channel_param(IMPAudioIChnParam &param) {
+  param.usrFrmDepth = 30;
+#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  param.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
+#endif
+  param.Rev = 0;
+}
+
+} // namespace audio
+
+namespace osd {
+
+uint32_t black_cover_color() {
+#if defined(OSD_IPU_BLACK)
+  return OSD_IPU_BLACK;
+#else
+  return OSD_BLACK;
+#endif
+}
+
+} // namespace osd
+
 } // namespace hal
 
 void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height) {

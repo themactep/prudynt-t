@@ -62,9 +62,9 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
   }
   std::unique_lock<std::mutex> lck(log_mtx);
 
+  // Log to syslog
   // Filter based on the configured log level
   if (Logger::level >= lvl) {
-    // Log to syslog
     int syslogPriority;
     switch (lvl) {
     case EMERGENCY:
@@ -96,12 +96,12 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
       break; // Default case for undefined levels
     }
     syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(), msg.log_str.c_str());
-
-    // Log to console
-    std::stringstream fmt;
-    fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str << std::endl;
-    std::cout << fmt.str();
   }
+
+  // Log to console
+  std::stringstream fmt;
+  fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str << std::endl;
+  std::cout << fmt.str();
 }
 
 // Remember to close the syslog

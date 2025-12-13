@@ -2,9 +2,11 @@
 
 #include <cstdint>
 
+#include <imp/imp_audio.h>
 #include <imp/imp_common.h>
 #include <imp/imp_encoder.h>
 #include <imp/imp_isp.h>
+#include <imp/imp_osd.h>
 
 // Normalize IMP type names across SDKs
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -186,6 +188,62 @@ int get_encoder_profile_high(const char *format);
 int get_encoder_type(const char *format);
 bool supports_jpeg_quality_table();
 
+// Attribute compatibility helpers (fields missing on newer SDKs)
+inline bool supports_attr_bufsize() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return false;
+#else
+  return true;
+#endif
+}
+
+inline uint32_t get_attr_bufsize(const IMPEncoderCHNAttr &chnAttr) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  (void)chnAttr;
+  return 0;
+#else
+  return static_cast<uint32_t>(chnAttr.encAttr.bufSize);
+#endif
+}
+
+inline void set_attr_bufsize(IMPEncoderCHNAttr &chnAttr, uint32_t value) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  (void)chnAttr;
+  (void)value;
+#else
+  chnAttr.encAttr.bufSize = static_cast<int>(value);
+#endif
+}
+
+inline bool supports_attr_payload() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return false;
+#else
+  return true;
+#endif
+}
+
+inline int get_attr_payload(const IMPEncoderCHNAttr &chnAttr) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  (void)chnAttr;
+  return -1;
+#else
+  return chnAttr.encAttr.enType;
+#endif
+}
+
 } // namespace encoder
+
+namespace audio {
+
+void init_ai_channel_param(IMPAudioIChnParam &param);
+
+} // namespace audio
+
+namespace osd {
+
+uint32_t black_cover_color();
+
+} // namespace osd
 
 } // namespace hal

@@ -1,6 +1,7 @@
 #include "VideoPrivacyMask.hpp"
 
 #include "Logger.hpp"
+#include "imp_hal.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -290,7 +291,7 @@ VideoPrivacyMask::VideoPrivacyMask(int channel, _stream *stream)
   rgnAttr.rect.p1.x = width_;
   rgnAttr.rect.p1.y = height_;
   rgnAttr.fmt = PIX_FMT_BGRA;
-  rgnAttr.data.coverData.color = OSD_IPU_BLACK;
+  rgnAttr.data.coverData.color = hal::osd::black_cover_color();
 
   int ret = IMP_OSD_SetRgnAttr(region_, &rgnAttr);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetRgnAttr(" << region_ << ")");

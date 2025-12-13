@@ -88,8 +88,11 @@ void JPEGWorker::run() {
       auto diff_last_image = duration_cast<milliseconds>(now - global_jpeg[jpgChn]->last_image).count();
 
       // we remove targetFps/10 milliseconds as image creation time
-      // by this we get besser FPS results
-      if (targetFps && diff_last_image >= ((1000 / targetFps) - targetFps / 10)) {
+      // guard against division by zero if targetFps is 0
+      int next_interval_ms = (targetFps > 0) ? ((1000 / targetFps) - (targetFps / 10)) : 0;
+
+      // throttle capture cadence toward requested fps while accounting for encode time
+      if ((targetFps > 0 && diff_last_image >= next_interval_ms) || (targetFps == 0 && request_or_overrun)) {
         // check if current jpeg channal is running if not start it
         if (!global_video[global_jpeg[jpgChn]->streamChn]->active) {
           /* required video channel was not running, we need to start it
@@ -113,11 +116,105 @@ void JPEGWorker::run() {
             targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
         }
 
+        int q_override = global_jpeg[jpgChn]->quality_override.exchange(-1);
+        if (q_override > 0 && q_override <= 100) {
+          hal::set_jpeg_quality_qtable(global_jpeg[jpgChn]->encChn, q_override, cfg->sysinfo.cpu);
+        }
+
+        // Apply dynamic reconfiguration if requested
+        if (global_jpeg[jpgChn]->reconfig.load()) {
+          int new_w = global_jpeg[jpgChn]->req_width.load();
+          int new_h = global_jpeg[jpgChn]->req_height.load();
+          int new_fps = global_jpeg[jpgChn]->req_fps.load();
+
+          // Stop encoder and re-init if any param is requested
+          if ((new_w > 0 && new_h > 0) || (new_fps > 0)) {
+            // Stop receiving, destroy and re-create channel with new params
+            if (global_jpeg[jpgChn]->imp_encoder) {
+              global_jpeg[jpgChn]->imp_encoder->deinit();
+            }
+            if (new_w > 0 && new_h > 0) {
+              global_jpeg[jpgChn]->stream->width = new_w;
+              global_jpeg[jpgChn]->stream->height = new_h;
+            }
+            if (new_fps > 0) {
+              global_jpeg[jpgChn]->stream->fps = new_fps;
+            }
+            if (global_jpeg[jpgChn]->imp_encoder) {
+              global_jpeg[jpgChn]->imp_encoder->init();
+            }
+            IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
+          }
+
+          // Reset request parameters to -1 to prevent accidental re-triggering
+          global_jpeg[jpgChn]->req_width.store(-1);
+          global_jpeg[jpgChn]->req_height.store(-1);
+          global_jpeg[jpgChn]->req_fps.store(-1);
+          global_jpeg[jpgChn]->reconfig.store(false);
+        }
+
         if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn, cfg->general.imp_polling_timeout) == 0) {
           IMPEncoderStream stream;
           if (IMP_Encoder_GetStream(global_jpeg[jpgChn]->encChn, &stream, GET_STREAM_BLOCKING) == 0) {
             fps++;
             bps += stream.pack->length;
+
+            // Build in-memory JPEG snapshot buffer for HTTP/IPC consumers
+            size_t total_size = 0;
+            // First pass: compute total size across packs (including wrap)
+            for (uint32_t i = 0; i < stream.packCount; i++) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+              IMPEncoderPack *pack = &stream.pack[i];
+              if (!pack->length)
+                continue;
+              uint32_t remSize = stream.streamSize - pack->offset;
+              size_t part = (remSize < pack->length) ? remSize : pack->length;
+              size_t wrap = (remSize && pack->length > remSize) ? (pack->length - remSize) : 0;
+              total_size += part + wrap;
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||            \
+    defined(PLATFORM_T30)
+              total_size += stream.pack[i].length;
+#endif
+            }
+
+            if (total_size) {
+              std::unique_lock buf_lock(mutex_main);
+              auto &buf = global_jpeg[jpgChn]->snapshot_buf;
+              buf.resize(total_size);
+              unsigned char *dst = buf.data();
+              // Second pass: copy data into buffer
+              for (uint32_t i = 0; i < stream.packCount; i++) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+                IMPEncoderPack *pack = &stream.pack[i];
+                if (!pack->length)
+                  continue;
+                uint32_t remSize = stream.streamSize - pack->offset;
+                void *data_ptr = (void *)((char *)stream.virAddr + pack->offset);
+                size_t part = (remSize < pack->length) ? remSize : pack->length;
+                if (part) {
+                  std::memcpy(dst, data_ptr, part);
+                  dst += part;
+                }
+                if (remSize && pack->length > remSize) {
+                  size_t wrap = pack->length - remSize;
+                  std::memcpy(dst, (void *)((char *)stream.virAddr), wrap);
+                  dst += wrap;
+                }
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||            \
+    defined(PLATFORM_T30)
+                void *data_ptr = reinterpret_cast<void *>(stream.pack[i].virAddr);
+                size_t data_len = stream.pack[i].length;
+                if (data_len) {
+                  std::memcpy(dst, data_ptr, data_len);
+                  dst += data_len;
+                }
+#endif
+              }
+            }
+
+            uint32_t seq = ++global_jpeg[jpgChn]->frame_seq;
+            LOG_TRACE("JPG " << jpgChn << " seq=" << seq << " dt=" << diff_last_image << "ms size="
+                              << (total_size ? total_size : stream.pack->length));
 
             //  Check for success
             const char *tempPath = "/tmp/snapshot.tmp";                     // Temporary path

@@ -13,6 +13,22 @@ CFLAGS                 ?= -Wall -Wextra -Wno-unused-parameter -O2 -DNO_OPENSSL=1
 CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
 LDFLAGS                += -lrt -lpthread
 
+WEBSOCKET_ENABLED     ?= 1
+
+ifeq ($(WEBSOCKET_ENABLED),1)
+CFLAGS                 += -DWEBSOCKET_ENABLED
+endif
+
+ifeq ($(WEBSOCKET_ENABLED),1)
+WEBSOCKET_LIB_STATIC_LINE = -l:libwebsockets.a
+WEBSOCKET_LIB_HYBRID_LINE = -l:libwebsockets.so
+WEBSOCKET_LIB_DYNAMIC_LINE = -lwebsockets
+else
+WEBSOCKET_LIB_STATIC_LINE =
+WEBSOCKET_LIB_HYBRID_LINE =
+WEBSOCKET_LIB_DYNAMIC_LINE =
+endif
+
 # Kernel Version Support
 # ----------------------
 ifeq ($(KERNEL_VERSION_4),y)
@@ -46,7 +62,7 @@ override LDFLAGS       += -static -static-libgcc -static-libstdc++
                           -l:libgroupsock.a \
                           -l:libBasicUsageEnvironment.a \
                           -l:libUsageEnvironment.a \
-                          -l:libwebsockets.a \
+                          $(WEBSOCKET_LIB_STATIC_LINE) \
                           -l:libschrift.a \
                           -l:libopus.a \
                           -l:libfaac.a \
@@ -72,7 +88,7 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libsysutils.so \
                           -l:libaudioProcess.so \
                           -l:libaudioshim.so \
-                          -l:libwebsockets.so \
+                          $(WEBSOCKET_LIB_HYBRID_LINE) \
                           -Wl,-Bstatic \
                           -l:libliveMedia.a \
                           -l:libgroupsock.a \
@@ -109,7 +125,7 @@ LIBS                    = -limp \
                           -lgroupsock \
                           -lUsageEnvironment \
                           -lBasicUsageEnvironment \
-                          -lwebsockets \
+                          $(WEBSOCKET_LIB_DYNAMIC_LINE) \
                           -lschrift \
                           -lopus \
                           -lfaac \
@@ -197,19 +213,23 @@ BIN_DIR                 = ./bin
 
 # Source and Object Files
 # =======================
-SOURCES_CPP             = $(wildcard $(SRC_DIR)/*.cpp)
+PRUDYNTCTL_SOURCE       = $(SRC_DIR)/prudyntctl.cpp
+MAIN_SOURCES_CPP        = $(filter-out $(PRUDYNTCTL_SOURCE),$(wildcard $(SRC_DIR)/*.cpp))
 SOURCES_C               = $(wildcard $(SRC_DIR)/*.c)
 
-SOURCES                 = $(SOURCES_CPP) $(SOURCES_C)
+SOURCES                 = $(MAIN_SOURCES_CPP) $(SOURCES_C)
 
-OBJECTS                 = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SOURCES_CPP)) \
+OBJECTS                 = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(MAIN_SOURCES_CPP)) \
                           $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SOURCES_C))
+
+PRUDYNTCTL_OBJECTS      = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(PRUDYNTCTL_SOURCE))
 
 $(info Building objects: $(OBJECTS))
 
 # Target Configuration
 # ====================
 TARGET                  = $(BIN_DIR)/prudynt
+PRUDYNTCTL_TARGET       = $(BIN_DIR)/prudyntctl
 
 # Version Management
 # ==================
@@ -268,6 +288,10 @@ $(TARGET): $(OBJECTS) $(VERSION_FILE)
 	@mkdir -p $(@D)
 	$(CCACHE) $(CXX) -o $@ $(OBJECTS) $(LDFLAGS) $(LIBS) $(STRIP_FLAG)
 
+$(PRUDYNTCTL_TARGET): $(PRUDYNTCTL_OBJECTS)
+	@mkdir -p $(@D)
+	$(CCACHE) $(CXX) -o $@ $(PRUDYNTCTL_OBJECTS) $(LDFLAGS) $(STRIP_FLAG)
+
 # =============================================================================
 # Phony Targets
 # =============================================================================
@@ -276,7 +300,7 @@ $(TARGET): $(OBJECTS) $(VERSION_FILE)
 
 # Default Target
 # --------------
-all: $(TARGET)
+all: $(TARGET) $(PRUDYNTCTL_TARGET)
 
 # Clean Build Artifacts
 # ---------------------

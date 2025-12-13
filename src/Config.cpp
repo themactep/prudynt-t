@@ -11,7 +11,9 @@
 #include <json_config.h>
 #include <vector>
 
+#if defined(WEBSOCKET_ENABLED)
 #define WEBSOCKET_TOKEN_LENGTH 32
+#endif
 
 #define MODULE "CONFIG"
 
@@ -147,24 +149,22 @@ bool setNestedValue(JsonValue *root, const std::string &path, const std::string 
 
 std::vector<ConfigItem<bool>> CFG::getBoolItems() {
   return {
-      {"audio.input_enabled", audio.input_enabled, true, validateBool},
       {"audio.mic_enabled", audio.input_enabled, true, validateBool},
-      {"audio.output_enabled", audio.output_enabled, true, validateBool},
       {"audio.spk_enabled", audio.output_enabled, true, validateBool},
       {"audio.force_stereo", audio.force_stereo, false, validateBool},
       {"audio.tap_enabled", audio.tap_enabled, false, validateBool},
       {"audio.mic_is_digital", audio.mic_is_digital, false, validateBool},
 #if defined(LIB_AUDIO_PROCESSING)
-      {"audio.input_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
       {"audio.mic_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
-      {"audio.input_agc_enabled", audio.input_agc_enabled, false, validateBool},
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
       {"daynight.enabled", daynight.enabled, true, validateBool},
+      {"http_mjpeg.enabled", http_mjpeg.enabled, true, validateBool},
       {"image.isp_bypass", image.isp_bypass, true, validateBool},
       {"image.vflip", image.vflip, false, validateBool},
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
+      {"recorder.enabled", recorder.enabled, false, validateBool},
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
       {"stream0.enabled", stream0.enabled, true, validateBool},
@@ -187,44 +187,33 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"stream1.osd.usertext.enabled", stream1.osd.usertext_enabled, true, validateBool},
       {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true, validateBool},
       {"stream2.enabled", stream2.enabled, true, validateBool},
+#if defined(WEBSOCKET_ENABLED)
       {"websocket.enabled", websocket.enabled, true, validateBool},
       {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
       {"websocket.http_secured", websocket.http_secured, true, validateBool},
-      {"recorder.enabled", recorder.enabled, false, validateBool},
+#endif
   };
 };
 
 std::vector<ConfigItem<const char *>> CFG::getCharItems() {
   return {
-      {"audio.input_format", audio.input_format, "OPUS",
-       [](const char *v) {
-         std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"};
-         return a.count(std::string(v)) == 1;
-       }},
-      {"audio.mic_format", audio.input_format, "OPUS",
-       [](const char *v) {
-         std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"};
-         return a.count(std::string(v)) == 1;
-       }},
+      {"audio.mic_format", audio.input_format, "OPUS", [](const char *v) { std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"}; return a.count(std::string(v)) == 1; }},
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
       {"daynight.script_path", daynight.script_path, "/sbin/daynight", validateCharNotEmpty},
-      {"general.loglevel", general.loglevel, "INFO",
-       [](const char *v) {
-         std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG"};
-         return a.count(std::string(v)) == 1;
-       }},
+      {"general.loglevel", general.loglevel, "INFO", [](const char *v) { std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"}; return a.count(std::string(v)) == 1; }},
       {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
+      {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
+      {"recorder.device_path", recorder.device_path, "%hostname", validateCharDummy},
+      {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S", validateCharNotEmpty},
       {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
       {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},
       {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
       {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/name"},
       {"sensor.chip_id", sensor.chip_id, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/chip_id"},
       {"sensor.version", sensor.version, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/version"},
-      {"stream0.format", stream0.format, "H264",
-       [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
+      {"stream0.format", stream0.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
       {"stream0.osd.font_path", stream0.osd.font_path, "/usr/share/fonts/default.ttf", validateCharNotEmpty},
-      {"stream0.osd.logo.path", stream0.osd.logo_path, "/usr/share/images/thingino_logo_210x64.bgra",
-       validateCharNotEmpty},
+      {"stream0.osd.logo.path", stream0.osd.logo_path, "/usr/share/images/thingino_logo_210x64.bgra", validateCharNotEmpty},
       {"stream0.osd.time.format", stream0.osd.time_format, "%F %T", validateCharNotEmpty},
       {"stream0.osd.uptime.format", stream0.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
       {"stream0.osd.usertext.format", stream0.osd.usertext_format, "%hostname", validateCharNotEmpty},
@@ -237,18 +226,12 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
       {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120", validateCharNotEmpty},
       {"stream0.osd.privacy.image_path", stream0.osd.privacy.image_path, "", validateCharDummy},
-      {"stream0.mode", stream0.mode, DEFAULT_ENC_MODE_0,
-       [](const char *v) {
-         std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
-         return a.count(std::string(v)) == 1;
-       }},
+      {"stream0.mode", stream0.mode, DEFAULT_ENC_MODE_0, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
       {"stream0.rtsp_endpoint", stream0.rtsp_endpoint, "ch0", validateCharNotEmpty},
       {"stream0.rtsp_info", stream0.rtsp_info, "stream0", validateCharNotEmpty},
-      {"stream1.format", stream1.format, "H264",
-       [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
+      {"stream1.format", stream1.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
       {"stream1.osd.font_path", stream1.osd.font_path, "/usr/share/fonts/default.ttf", validateCharNotEmpty},
-      {"stream1.osd.logo.path", stream1.osd.logo_path, "/usr/share/images/thingino_logo_100x30.bgra",
-       validateCharNotEmpty},
+      {"stream1.osd.logo.path", stream1.osd.logo_path, "/usr/share/images/thingino_logo_100x30.bgra", validateCharNotEmpty},
       {"stream1.osd.time.format", stream1.osd.time_format, "%F %T", validateCharNotEmpty},
       {"stream1.osd.uptime.format", stream1.osd.uptime_format, "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
       {"stream1.osd.usertext.format", stream1.osd.usertext_format, "%hostname", validateCharNotEmpty},
@@ -261,66 +244,37 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
       {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120", validateCharNotEmpty},
       {"stream1.osd.privacy.image_path", stream1.osd.privacy.image_path, "", validateCharDummy},
-      {"stream1.mode", stream1.mode, DEFAULT_ENC_MODE_1,
-       [](const char *v) {
-         std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"};
-         return a.count(std::string(v)) == 1;
-       }},
+      {"stream1.mode", stream1.mode, DEFAULT_ENC_MODE_1, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
       {"stream1.rtsp_endpoint", stream1.rtsp_endpoint, "ch1", validateCharNotEmpty},
       {"stream1.rtsp_info", stream1.rtsp_info, "stream1", validateCharNotEmpty},
       {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
+#if defined(WEBSOCKET_ENABLED)
       {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
-      {"websocket.token", websocket.token, "auto",
-       [](const char *v) {
-         std::string token(v);
-         return token == "auto" || token.empty() || token.length() == WEBSOCKET_TOKEN_LENGTH;
-       }},
-      {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
-      {"recorder.device_path", recorder.device_path, "%hostname", validateCharDummy},
-      {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S", validateCharNotEmpty},
+      {"websocket.token", websocket.token, "auto", [](const char *v) { std::string token(v); return token == "auto" || token.empty() || token.length() == WEBSOCKET_TOKEN_LENGTH; }},
+#endif
   };
 };
 
 std::vector<ConfigItem<int>> CFG::getIntItems() {
   return {
-      {"audio.input_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
       {"audio.mic_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
-      {"audio.input_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
       {"audio.mic_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
-      {"audio.output_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
       {"audio.spk_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
-      {"audio.input_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.mic_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.input_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
       {"audio.mic_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
-      {"daynight.switch_below_percent", daynight.switch_below_percent, 15,
-      [](const int &v) { return v >= 0 && v <= 100; }},
-      {"daynight.switch_above_percent", daynight.switch_above_percent, 80,
-      [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.switch_below_percent", daynight.switch_below_percent, 15, [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.switch_above_percent", daynight.switch_above_percent, 80, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.tolerance_percent", daynight.tolerance_percent, 50, [](const int &v) { return v >= 0 && v <= 100; }},
-      {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000,
-      [](const int &v) { return v >= 100 && v <= 60000; }},
+      {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000, [](const int &v) { return v >= 100 && v <= 60000; }},
 #if defined(LIB_AUDIO_PROCESSING)
-      {"audio.output_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.output_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
       {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.input_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
       {"audio.mic_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
-      {"audio.input_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10,
-       [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10,
-       [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.input_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0,
-       [](const int &v) { return v >= 0 && v <= 90; }},
-      {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0,
-       [](const int &v) { return v >= 0 && v <= 90; }},
-      {"audio.input_noise_suppression", audio.input_noise_suppression, 0,
-       [](const int &v) { return v >= 0 && v <= 3; }},
+      {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10, [](const int &v) { return v >= 0 && v <= 31; }},
+      {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0, [](const int &v) { return v >= 0 && v <= 90; }},
       {"audio.mic_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
 #endif
-      {"general.imp_polling_timeout", general.imp_polling_timeout, 500,
-       [](const int &v) { return v >= 1 && v <= 5000; }},
+      {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
       /* Expert overrides preserved for backward compatibility */
@@ -329,12 +283,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"daynight.ev_day_low_secondary", daynight.ev_day_low_secondary, 361880, [](const int &v) { return v >= 0; }},
       {"daynight.gb_gain_delta", daynight.gb_gain_delta, 15, [](const int &v) { return v >= 0 && v <= 1000; }},
       {"daynight.gb_gain_absolute", daynight.gb_gain_absolute, 145, [](const int &v) { return v >= 0 && v <= 1000; }},
-      {"daynight.night_count_threshold", daynight.night_count_threshold, 6,
-       [](const int &v) { return v >= 1 && v <= 100; }},
-      {"daynight.day_count_threshold", daynight.day_count_threshold, 4,
-       [](const int &v) { return v >= 1 && v <= 100; }},
-      {"daynight.settle_samples_for_gb_record", daynight.settle_samples_for_gb_record, 20,
-       [](const int &v) { return v >= 0 && v <= 200; }},
+      {"daynight.night_count_threshold", daynight.night_count_threshold, 6, [](const int &v) { return v >= 1 && v <= 100; }},
+      {"daynight.day_count_threshold", daynight.day_count_threshold, 4, [](const int &v) { return v >= 1 && v <= 100; }},
+      {"daynight.settle_samples_for_gb_record", daynight.settle_samples_for_gb_record, 20, [](const int &v) { return v >= 0 && v <= 200; }},
+      {"http_mjpeg.port", http_mjpeg.port, 8081, validateInt65535},
       {"image.anti_flicker", image.anti_flicker, 2, validateInt2},
       {"image.backlight_compensation", image.backlight_compensation, 0, [](const int &v) { return v >= 0 && v <= 10; }},
       {"image.brightness", image.brightness, 128, validateInt255},
@@ -356,8 +308,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"image.wb_rgain", image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
       {"motion.debounce_time", motion.debounce_time, 0, validateIntGe0},
       {"motion.post_time", motion.post_time, 0, validateIntGe0},
-      {"motion.ivs_polling_timeout", motion.ivs_polling_timeout, 1000,
-       [](const int &v) { return v >= 100 && v <= 10000; }},
+      {"motion.ivs_polling_timeout", motion.ivs_polling_timeout, 1000, [](const int &v) { return v >= 100 && v <= 10000; }},
       {"motion.cooldown_time", motion.cooldown_time, 5, validateIntGe0},
       {"motion.init_time", motion.init_time, 5, validateIntGe0},
       {"motion.min_time", motion.min_time, 1, validateIntGe0},
@@ -371,6 +322,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.roi_1_x", motion.roi_1_x, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_1_y", motion.roi_1_y, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_count", motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }},
+      {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
+      {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
       {"rtsp.out_buffer_size", rtsp.out_buffer_size, 500000, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},
@@ -384,8 +337,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"sensor.boot", sensor.boot, 0, validateIntGe0, false, "/proc/jz/sensor/boot"},
       {"sensor.mclk", sensor.mclk, 1, validateIntGe0, false, "/proc/jz/sensor/mclk"},
       {"sensor.video_interface", sensor.video_interface, 0, validateIntGe0, false, "/proc/jz/sensor/video_interface"},
-      {"sensor.gpio_reset", sensor.gpio_reset, -1, [](const int &v) { return v >= -1; }, false,
-       "/proc/jz/sensor/reset_gpio"},
+      {"sensor.gpio_reset", sensor.gpio_reset, -1, [](const int &v) { return v >= -1; }, false, "/proc/jz/sensor/reset_gpio"},
       {"stream0.bitrate", stream0.bitrate, 3000, validateIntGe0},
       // Rate control advanced (defaults -1/0 mean use encoder defaults)
       {"stream0.qp_init", stream0.qp_init, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
@@ -393,8 +345,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.qp_max", stream0.qp_max, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
       {"stream0.ip_delta", stream0.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.pb_delta", stream0.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
-      {"stream0.max_bitrate", stream0.max_bitrate, 0,
-       [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
+      {"stream0.max_bitrate", stream0.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
       {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0, [](const int &v) { return v >= 1 && v <= 8; }},
       {"stream0.fps", stream0.fps, 25, validateInt120},
       {"stream0.gop", stream0.gop, 20, validateIntGe0},
@@ -428,8 +379,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.qp_max", stream1.qp_max, -1, [](const int &v) { return (v >= -1 && v <= 51); }},
       {"stream1.ip_delta", stream1.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.pb_delta", stream1.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
-      {"stream1.max_bitrate", stream1.max_bitrate, 0,
-       [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
+      {"stream1.max_bitrate", stream1.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
       {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1, [](const int &v) { return v >= 1 && v <= 8; }},
       {"stream1.fps", stream1.fps, 25, validateInt120},
       {"stream1.gop", stream1.gop, 20, validateIntGe0},
@@ -460,17 +410,16 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream2.jpeg_quality", stream2.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
       {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
       {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
+#if defined(WEBSOCKET_ENABLED)
       {"websocket.port", websocket.port, 8089, validateInt65535},
       {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
-      {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
-      {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
+#endif
   };
 };
 
 std::vector<ConfigItem<unsigned int>> CFG::getUintItems() {
   return {
-      {"sensor.i2c_address", sensor.i2c_address, 0x37, [](const unsigned int &v) { return v <= 0x7F; }, false,
-       "/proc/jz/sensor/i2c_addr"},
+      {"sensor.i2c_address", sensor.i2c_address, 0x37, [](const unsigned int &v) { return v <= 0x7F; }, false, "/proc/jz/sensor/i2c_addr"},
       // Individual color settings for stream0 text elements
       {"stream0.osd.time.fill_color", stream0.osd.time_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream0.osd.time.stroke_color", stream0.osd.time_stroke_color, 0xFF000000, validateOSDColor},

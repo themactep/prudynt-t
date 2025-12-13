@@ -132,14 +132,16 @@ void *thread_entry(void *arg) {
     params.ev_day_low_primary = ev_day_low_primary_cfg;
     params.ev_day_low_secondary =
         (ev_day_low_secondary_cfg > 0) ? ev_day_low_secondary_cfg : ev_day_low_primary_cfg;
+    // derive counters from tolerance percent if provided
     params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25;
     params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
   } else {
+    // Percent-based mapping fallback
     params.ev_night_high = ev_from_percent(pr, below_pct);
     params.ev_day_low_primary = ev_from_percent(pr, above_pct);
     int secondary_pct = clampi(above_pct + pr.sec_margin_percent, 0, 100);
     params.ev_day_low_secondary = ev_from_percent(pr, secondary_pct);
-    params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25;
+    params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25; // +1 per 25%
     params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
   }
 
@@ -165,6 +167,7 @@ void *thread_entry(void *arg) {
     DayNightAlgo::update_minima_window(state, sig);
     auto dec = DayNightAlgo::decide(params, state, sig);
 
+    // Live status update for metrics
     int bright_pct = percent_from_ev(pr, ev);
     cfg->daynight.live_brightness_percent.store(bright_pct, std::memory_order_relaxed);
     cfg->daynight.live_ev.store(ev, std::memory_order_relaxed);
@@ -175,7 +178,8 @@ void *thread_entry(void *arg) {
                                : (current == DayNightAlgo::Mode::Night ? "night" : "unknown");
     cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
 
-    LOG_DEBUG("DayNight: brightness%=" << bright_pct << " EV=" << ev << " GB=" << gb << " GR=" << gr
+    LOG_DEBUG("DayNight: brightness%=" << bright_pct
+                      << " EV=" << ev << " GB=" << gb << " GR=" << gr
                       << " recGB=" << state.gb_gain_record << " nCnt=" << state.night_count
                       << " dCnt=" << state.day_count
                       << " ircut=" << (state.ircut_engaged ? "1" : "0") << " -> "
@@ -189,6 +193,7 @@ void *thread_entry(void *arg) {
         DayNightAlgo::on_enter_night(params, state);
       else if (current == DayNightAlgo::Mode::Day)
         DayNightAlgo::on_enter_day(state);
+      // reflect new mode in metrics
       cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
                                     std::memory_order_relaxed);
     }

@@ -82,20 +82,7 @@ template <typename T> struct ConfigItem {
   const char *procPath = nullptr;
 };
 
-struct _stream_stats {
-  uint32_t bps;
-  uint8_t fps;
-  struct timeval ts;
-};
-
-struct _regions {
-  int time;
-  int user;
-  int uptime;
-  int logo;
-  int brightness;
-};
-struct _osd_privacy {
+struct _osd_privacy { // has to be before _osd
   bool enabled;
   const char *text;
   const char *position;
@@ -110,67 +97,21 @@ struct _osd_privacy {
   int layer;
   int opacity;
 };
-struct _general {
-  const char *loglevel;
-  int osd_pool_size;
-  int imp_polling_timeout;
-  bool timestamp_validation_enabled;
-  bool audio_debug_verbose;
-};
-struct _rtsp {
-  int port;
-  int est_bitrate;
-  int out_buffer_size;
-  int send_buffer_size;
-  int session_reclaim;
-  ;
-  bool auth_required;
-  const char *username;
-  const char *password;
-  const char *name;
-  float packet_loss_threshold;
-  float bandwidth_margin;
-};
-struct _sensor {
-  int fps;
-  int width;
-  int height;
-  const char *model;
-  unsigned int i2c_address;
-  int boot;
-  int mclk;
-  int i2c_bus;
-  int video_interface;
-  int gpio_reset;
-  const char *chip_id;
-  const char *version;
-  int min_fps;
-};
-struct _image {
-  int contrast;
-  int sharpness;
-  int saturation;
+
+struct _regions { // has to be before _osd
+  int time;
+  int user;
+  int uptime;
+  int logo;
   int brightness;
-  int hue;
-  int sinter_strength;
-  int temper_strength;
-  bool isp_bypass;
-  bool vflip;
-  bool hflip;
-  int running_mode;
-  int anti_flicker;
-  int ae_compensation;
-  int dpc_strength;
-  int defog_strength;
-  int drc_strength;
-  int highlight_depress;
-  int backlight_compensation;
-  int max_again;
-  int max_dgain;
-  int core_wb_mode;
-  int wb_rgain;
-  int wb_bgain;
 };
+
+struct _stream_stats { // has to be before _osd
+  uint32_t bps;
+  uint8_t fps;
+  struct timeval ts;
+};
+
 struct _audio {
   bool input_enabled;
   const char *input_format;
@@ -197,6 +138,89 @@ struct _audio {
   // Buffer tuning (in 20 ms frames per channel)
   int buffer_warn_frames;
   int buffer_cap_frames;
+};
+struct _daynight {
+  // User-configurable knobs
+  bool enabled{true};
+  int switch_below_percent{15};
+  int switch_above_percent{80};
+  int tolerance_percent{50};
+
+  // Optional expert overrides
+  int sample_interval_ms{1000};
+  int ev_night_high{1900000};
+  int ev_day_low_primary{479832};
+  int ev_day_low_secondary{361880};
+  int gb_gain_delta{15};
+  int gb_gain_absolute{145};
+  int night_count_threshold{6};
+  int day_count_threshold{4};
+  int settle_samples_for_gb_record{20};
+  const char *script_path{nullptr};
+
+  // Live telemetry populated by the worker
+  std::atomic<int> live_brightness_percent{-1};
+  std::atomic<int> live_ev{-1};
+  std::atomic<int> live_gb{-1};
+  std::atomic<int> live_gr{-1};
+  std::atomic<const char *> live_mode{"unknown"};
+};
+struct _general {
+  const char *loglevel;
+  int osd_pool_size;
+  int imp_polling_timeout;
+  bool timestamp_validation_enabled;
+  bool audio_debug_verbose;
+};
+struct _http_mjpeg {
+  bool enabled;
+  int port;
+};
+struct _image {
+  int contrast;
+  int sharpness;
+  int saturation;
+  int brightness;
+  int hue;
+  int sinter_strength;
+  int temper_strength;
+  bool isp_bypass;
+  bool vflip;
+  bool hflip;
+  int running_mode;
+  int anti_flicker;
+  int ae_compensation;
+  int dpc_strength;
+  int defog_strength;
+  int drc_strength;
+  int highlight_depress;
+  int backlight_compensation;
+  int max_again;
+  int max_dgain;
+  int core_wb_mode;
+  int wb_rgain;
+  int wb_bgain;
+};
+struct _motion {
+  int monitor_stream;
+  int debounce_time;
+  int post_time;
+  int cooldown_time;
+  int init_time;
+  int min_time;
+  int ivs_polling_timeout;
+  int sensitivity;
+  int skip_frame_count;
+  int frame_width;
+  int frame_height;
+  int roi_0_x;
+  int roi_0_y;
+  int roi_1_x;
+  int roi_1_y;
+  int roi_count;
+  bool enabled;
+  const char *script_path;
+  std::array<roi, 52> rois;
 };
 struct _osd {
   int font_size;
@@ -241,6 +265,43 @@ struct _osd {
   std::atomic<int> thread_signal;
   _osd_privacy privacy;
 };
+struct _recorder {
+  bool enabled;
+  const char *mount;
+  const char *device_path;
+  const char *filename;
+  int duration;
+  int channel;
+};
+struct _rtsp {
+  int port;
+  int est_bitrate;
+  int out_buffer_size;
+  int send_buffer_size;
+  int session_reclaim;
+  ;
+  bool auth_required;
+  const char *username;
+  const char *password;
+  const char *name;
+  float packet_loss_threshold;
+  float bandwidth_margin;
+};
+struct _sensor {
+  int fps;
+  int width;
+  int height;
+  const char *model;
+  unsigned int i2c_address;
+  int boot;
+  int mclk;
+  int i2c_bus;
+  int video_interface;
+  int gpio_reset;
+  const char *chip_id;
+  const char *version;
+  int min_fps;
+};
 struct _stream {
   int gop;
   int max_gop;
@@ -278,53 +339,10 @@ struct _stream {
   _stream_stats stats;
   bool audio_enabled;
 };
-struct _daynight {
-  // User-configurable knobs
-  bool enabled{true};
-  int switch_below_percent{15};
-  int switch_above_percent{80};
-  int tolerance_percent{50};
-
-  // Optional expert overrides
-  int sample_interval_ms{1000};
-  int ev_night_high{1900000};
-  int ev_day_low_primary{479832};
-  int ev_day_low_secondary{361880};
-  int gb_gain_delta{15};
-  int gb_gain_absolute{145};
-  int night_count_threshold{6};
-  int day_count_threshold{4};
-  int settle_samples_for_gb_record{20};
-  const char *script_path{nullptr};
-
-  // Live telemetry populated by the worker
-  std::atomic<int> live_brightness_percent{-1};
-  std::atomic<int> live_ev{-1};
-  std::atomic<int> live_gb{-1};
-  std::atomic<int> live_gr{-1};
-  std::atomic<const char *> live_mode{"unknown"};
+struct _sysinfo {
+  const char *cpu = nullptr;
 };
-struct _motion {
-  int monitor_stream;
-  int debounce_time;
-  int post_time;
-  int cooldown_time;
-  int init_time;
-  int min_time;
-  int ivs_polling_timeout;
-  int sensitivity;
-  int skip_frame_count;
-  int frame_width;
-  int frame_height;
-  int roi_0_x;
-  int roi_0_y;
-  int roi_1_x;
-  int roi_1_y;
-  int roi_count;
-  bool enabled;
-  const char *script_path;
-  std::array<roi, 52> rois;
-};
+#if defined(WEBSOCKET_ENABLED)
 struct _websocket {
   bool enabled;
   bool ws_secured;
@@ -334,17 +352,7 @@ struct _websocket {
   const char *name;
   const char *token{"auto"};
 };
-struct _sysinfo {
-  const char *cpu = nullptr;
-};
-struct _recorder {
-  bool enabled;
-  const char *mount;
-  const char *device_path;
-  const char *filename;
-  int duration;
-  int channel;
-};
+#endif
 
 class CFG {
 public:
@@ -378,7 +386,10 @@ public:
   _stream stream2{};
   _daynight daynight{};
   _motion motion{};
+#if defined(WEBSOCKET_ENABLED)
   _websocket websocket{};
+#endif
+  _http_mjpeg http_mjpeg{};
   _sysinfo sysinfo{};
   _recorder recorder{};
 

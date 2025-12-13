@@ -118,6 +118,13 @@ struct jpeg_stream {
   IMPEncoder *imp_encoder;
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
+  std::vector<unsigned char> snapshot_buf;
+  std::atomic<int> quality_override{-1};
+  std::atomic<uint32_t> frame_seq{0};
+  std::atomic<int> req_width{-1};
+  std::atomic<int> req_height{-1};
+  std::atomic<int> req_fps{-1};
+  std::atomic<bool> reconfig{false};
 
   steady_clock::time_point last_image;
   steady_clock::time_point last_subscriber;
@@ -128,6 +135,7 @@ struct jpeg_stream {
       std::unique_lock lck(mutex_main);
       last_subscriber = now;
     }
+    should_grab_frames.notify_one();
   }
 
   bool request_or_overrun() {

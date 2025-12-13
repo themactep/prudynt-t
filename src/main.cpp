@@ -15,16 +15,29 @@
 #include "RTSP.hpp"
 #include "VideoPrivacyControl.hpp"
 #include "VideoWorker.hpp"
+#if defined(WEBSOCKET_ENABLED)
 #include "WS.hpp"
+#endif
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
+#include "HTTPMJPEG.hpp"
 #include "version.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
+#include <csignal>
+#include <cstring>
+#include <cerrno>
+#include <filesystem>
+#include <fcntl.h>
 #include <signal.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <thread>
+#include <unistd.h>
 
 using namespace std::chrono;
 
@@ -49,10 +62,90 @@ std::shared_ptr<audio_output_stream> global_audio_output = nullptr;
 
 std::shared_ptr<CFG> cfg = std::make_shared<CFG>();
 
+#if defined(WEBSOCKET_ENABLED)
 WS ws;
+#endif
+HTTPMJPEG http_mjpeg;
 RTSP rtsp;
 Motion motion;
 IMPSystem *imp_system = nullptr;
+
+constexpr const char *kPrudyntRunDir = "/run/prudynt";
+constexpr const char *kPrudyntLockPath = "/run/prudynt/prudynt.lock";
+int instance_lock_fd = -1;
+
+bool acquire_instance_lock() {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  fs::create_directories(kPrudyntRunDir, ec);
+  if (ec) {
+    LOG_WARN("Failed to create run directory " << kPrudyntRunDir << ": " << ec.message());
+  }
+
+  instance_lock_fd = ::open(kPrudyntLockPath, O_RDWR | O_CREAT, 0644);
+  if (instance_lock_fd < 0) {
+    LOG_ERROR("Unable to open instance lock file " << kPrudyntLockPath << ": " << strerror(errno));
+    instance_lock_fd = -1;
+    return false;
+  }
+
+  if (::flock(instance_lock_fd, LOCK_EX | LOCK_NB) != 0) {
+    if (errno == EWOULDBLOCK) {
+      char buf[64] = {0};
+      ssize_t n = ::pread(instance_lock_fd, buf, sizeof(buf) - 1, 0);
+      std::string pid_info;
+      if (n > 0) {
+        pid_info.assign(buf, buf + n);
+        pid_info.erase(std::remove(pid_info.begin(), pid_info.end(), '\n'), pid_info.end());
+      }
+      if (!pid_info.empty()) {
+        LOG_ERROR("Another Prudynt instance appears to be running (pid " << pid_info << "). Exiting.");
+      } else {
+        LOG_ERROR("Another Prudynt instance appears to be running. Exiting.");
+      }
+    } else {
+      LOG_ERROR("Unable to lock instance file: " << strerror(errno));
+    }
+    ::close(instance_lock_fd);
+    instance_lock_fd = -1;
+    return false;
+  }
+
+  if (ftruncate(instance_lock_fd, 0) != 0) {
+    LOG_WARN("Failed to truncate instance lock file: " << strerror(errno));
+  }
+  char pid_buf[32];
+  int len = snprintf(pid_buf, sizeof(pid_buf), "%d\n", static_cast<int>(getpid()));
+  if (len > 0) {
+    if (::write(instance_lock_fd, pid_buf, len) < 0) {
+      LOG_WARN("Failed to write pid to instance lock file: " << strerror(errno));
+    } else {
+      ::fsync(instance_lock_fd);
+    }
+  }
+  return true;
+}
+
+void release_instance_lock() {
+  if (instance_lock_fd >= 0) {
+    ::flock(instance_lock_fd, LOCK_UN);
+    ::close(instance_lock_fd);
+    instance_lock_fd = -1;
+  }
+}
+
+struct InstanceLockGuard {
+  bool held = false;
+  bool acquire() {
+    held = acquire_instance_lock();
+    return held;
+  }
+  ~InstanceLockGuard() {
+    if (held) {
+      release_instance_lock();
+    }
+  }
+};
 
 namespace {
 sigset_t shutdown_signal_set;
@@ -105,8 +198,12 @@ void start_video(int encChn) {
 int main(int argc, const char *argv[]) {
   LOG_INFO("PRUDYNT-T Video Daemon: " << FULL_VERSION_STRING);
 
+  InstanceLockGuard instance_lock;
+
   pthread_t cw_thread;
+#if defined(WEBSOCKET_ENABLED)
   pthread_t ws_thread;
+#endif
   pthread_t osd_thread;
   pthread_t rtsp_thread;
   pthread_t motion_thread;
@@ -117,12 +214,19 @@ int main(int argc, const char *argv[]) {
   bool daynight_thread_started = false;
   bool signal_thread_started = false;
 
+  bool http_mjpeg_started = false;
+
   if (Logger::init(cfg->general.loglevel)) {
     LOG_ERROR("Logger initialization failed.");
     return 1;
   }
 
   LOG_INFO("Starting Prudynt Video Server.");
+
+  if (!instance_lock.acquire()) {
+    LOG_ERROR("Prudynt is already running. Exiting.");
+    return 1;
+  }
 
   sigemptyset(&shutdown_signal_set);
   sigaddset(&shutdown_signal_set, SIGINT);
@@ -187,8 +291,17 @@ int main(int argc, const char *argv[]) {
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 
+#if defined(WEBSOCKET_ENABLED)
   pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
   pthread_create(&ws_thread, nullptr, WS::run, &ws);
+#else
+  pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
+#endif
+
+  if (cfg->http_mjpeg.enabled) {
+    http_mjpeg.start(cfg->http_mjpeg.port);
+    http_mjpeg_started = true;
+  }
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     global_restart = true;
@@ -362,6 +475,10 @@ int main(int argc, const char *argv[]) {
   if (daynight_thread_started) {
     int ret = pthread_join(daynight_thread, nullptr);
     LOG_DEBUG_OR_ERROR(ret, "join daynight thread");
+  }
+
+  if (http_mjpeg_started) {
+    http_mjpeg.stop();
   }
 
   ImagingControl::stop();

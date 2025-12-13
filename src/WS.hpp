@@ -1,6 +1,8 @@
 #ifndef WS_hpp
 #define WS_hpp
 
+#if defined(WEBSOCKET_ENABLED)
+
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "libwebsockets.h"
@@ -41,4 +43,14 @@ private:
   static signed char info_callback(struct lejp_ctx *ctx, char reason);
   static signed char action_callback(struct lejp_ctx *ctx, char reason);
 };
+#else
+class WS {
+public:
+  void start() {
+  }
+  static void *run(void *) {
+    return nullptr;
+  }
+};
+#endif
 #endif

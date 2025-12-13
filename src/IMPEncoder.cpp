@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include "imp_hal.hpp"
 #include <cstdint>
+#include <sstream>
 
 #define MODULE "IMPENCODER"
 
@@ -161,6 +162,7 @@ void IMPEncoder::initProfile() {
     break;
   }
 
+  // Apply optional overrides from stream{0,1} via HAL
   hal::apply_rc_overrides(chnAttr, rcMode, *stream);
 
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
@@ -272,6 +274,7 @@ void IMPEncoder::initProfile() {
     rcAttr->attrRcMode.attrH265Smart.flucLvl = 2;
 #endif // defined(PLATFORM_T30)
   }
+  // Optional overrides via HAL (legacy platforms)
   hal::apply_rc_overrides(chnAttr, rcMode, *stream);
 
   rcAttr->attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
@@ -302,10 +305,10 @@ int IMPEncoder::init() {
 
   initProfile();
 
-  if (!is_jpeg && chnAttr.encAttr.bufSize == 0) {
+  if (!is_jpeg && hal::encoder::supports_attr_bufsize() && hal::encoder::get_attr_bufsize(chnAttr) == 0) {
     uint32_t yuv_size = static_cast<uint32_t>(stream->width) * static_cast<uint32_t>(stream->height) * 3 / 2;
-    chnAttr.encAttr.bufSize = static_cast<int>(align_up(yuv_size, 1024));
-    LOG_DEBUG("Encoder bufSize auto-set to " << chnAttr.encAttr.bufSize);
+    hal::encoder::set_attr_bufsize(chnAttr, align_up(yuv_size, 1024));
+    LOG_DEBUG("Encoder bufSize auto-set to " << hal::encoder::get_attr_bufsize(chnAttr));
   }
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -326,9 +329,18 @@ int IMPEncoder::init() {
 
   ret = IMP_Encoder_CreateChn(encChn, &chnAttr);
   if (ret != 0) {
-    LOG_ERROR("IMP_Encoder_CreateChn(" << encChn << ") failed ret=" << ret << " payload=" << chnAttr.encAttr.enType
-                                       << " bufSize=" << chnAttr.encAttr.bufSize << " res=" << stream->width << "x"
-                                       << stream->height);
+    std::ostringstream oss;
+    oss << "IMP_Encoder_CreateChn(" << encChn << ") failed ret=" << ret;
+    if (hal::encoder::supports_attr_payload()) {
+      oss << " payload=" << hal::encoder::get_attr_payload(chnAttr);
+    } else {
+      oss << " codec=" << stream->format;
+    }
+    if (hal::encoder::supports_attr_bufsize()) {
+      oss << " bufSize=" << hal::encoder::get_attr_bufsize(chnAttr);
+    }
+    oss << " res=" << stream->width << "x" << stream->height;
+    LOG_ERROR(oss.str());
     return ret;
   }
   chn_created = true;

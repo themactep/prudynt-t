@@ -23,12 +23,6 @@ static int closeEncoder(void *enc) {
   return encoder ? encoder->close() : -1;
 }
 
-#include <cctype>
-
-namespace {
-constexpr IMPAudioAecChn kDefaultAecChannel = AUDIO_AEC_CHANNEL_FIRST_LEFT;
-} // namespace
-
 IMPAudio *IMPAudio::createNew(int devId, int inChn, int aeChn) {
   return new IMPAudio(devId, inChn, aeChn);
 }
@@ -127,9 +121,7 @@ int IMPAudio::init() {
   LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");
 
   IMPAudioIChnParam chnParam{};
-  chnParam.usrFrmDepth = 30; // frame buffer depth
-  chnParam.aecChn = kDefaultAecChannel;
-  chnParam.Rev = 0;
+  hal::audio::init_ai_channel_param(chnParam);
 
   ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
   if (ret != 0) {

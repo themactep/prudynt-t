@@ -1,3 +1,4 @@
+#if defined(WEBSOCKET_ENABLED)
 #include "WS.hpp"
 #include "Config.hpp"
 #include "ImagingControl.hpp"
@@ -2542,3 +2543,5 @@ void *WS::run(void *arg) {
   ((WS *)arg)->start();
   return nullptr;
 }
+
+#endif // WEBSOCKET_ENABLED

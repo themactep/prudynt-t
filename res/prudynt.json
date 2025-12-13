@@ -304,6 +304,10 @@
     "jpeg_quality": 75,
     "jpeg_refresh": 1000
   },
+  "http_mjpeg": {
+    "enabled": true,
+    "port": 8081
+  },
   "websocket": {
     "enabled": true,
     "port": 8089,
