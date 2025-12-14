@@ -182,7 +182,7 @@ int OSD::calculateTextSize(const char *text, uint16_t &width, uint16_t &height, 
     if (it != glyphs.end()) {
       const Glyph &g = it->second;
 
-      width += g.advance + (outlineSize * 2);
+      width += g.advance;
       if (g.height > height) {
         height = g.height;
       }
@@ -192,7 +192,7 @@ int OSD::calculateTextSize(const char *text, uint16_t &width, uint16_t &height, 
   }
 
   height += sft->yScale;
-  width += 1 + outlineSize;
+   width += 1 + outlineSize * 2;
 
   return 0;
 }
