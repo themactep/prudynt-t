@@ -147,7 +147,11 @@ int Motion::init() {
   memset(&move_param, 0, sizeof(IMP_IVS_MoveParam));
   // OSD is affecting motion for some reason.
   // Sensitivity range is 0-4
-  move_param.sense[0] = cfg->motion.sensitivity;
+  // Map web UI range (1-8) to hardware range (0-4)
+  int mapped_sensitivity = cfg->motion.sensitivity - 1;
+  if (mapped_sensitivity < 0) mapped_sensitivity = 0;
+  if (mapped_sensitivity > 4) mapped_sensitivity = 4;
+  move_param.sense[0] = mapped_sensitivity;
   move_param.skipFrameCnt = cfg->motion.skip_frame_count;
   move_param.frameInfo.width = cfg->motion.frame_width;
   move_param.frameInfo.height = cfg->motion.frame_height;
