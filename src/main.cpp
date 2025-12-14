@@ -21,6 +21,7 @@
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 #include "HTTPMJPEG.hpp"
+#include "IPCServer.hpp"
 #include "version.hpp"
 
 #include <algorithm>
@@ -53,8 +54,9 @@ bool global_restart_audio = false;
 bool global_main_thread_signal = false;
 bool global_motion_thread_signal = false;
 std::atomic<char> global_rtsp_thread_signal{1};
+std::atomic<int> global_rtsp_clients{0};
 
-std::shared_ptr<jpeg_stream> global_jpeg[NUM_VIDEO_CHANNELS] = {nullptr};
+std::shared_ptr<jpeg_stream> global_jpeg[NUM_JPEG_CHANNELS] = {nullptr};
 std::shared_ptr<video_stream> global_video[NUM_VIDEO_CHANNELS] = {nullptr};
 std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS] = {nullptr};
 std::shared_ptr<backchannel_stream> global_backchannel = nullptr;
@@ -66,6 +68,7 @@ std::shared_ptr<CFG> cfg = std::make_shared<CFG>();
 WS ws;
 #endif
 HTTPMJPEG http_mjpeg;
+IPCServer ipc_server;
 RTSP rtsp;
 Motion motion;
 IMPSystem *imp_system = nullptr;
@@ -293,22 +296,24 @@ int main(int argc, const char *argv[]) {
   global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
   global_video[1] = std::make_shared<video_stream>(1, &cfg->stream1, "stream1");
   global_jpeg[0] = std::make_shared<jpeg_stream>(2, &cfg->stream2);
+  global_jpeg[1] = std::make_shared<jpeg_stream>(3, &cfg->stream3);
 
   global_audio[0] = std::make_shared<audio_stream>(audio_input_device_id, 0, 0);
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 
+  pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
+
 #if defined(WEBSOCKET_ENABLED)
-  pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
   pthread_create(&ws_thread, nullptr, WS::run, &ws);
-#else
-  pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
 #endif
 
   if (cfg->http_mjpeg.enabled) {
     http_mjpeg.start(cfg->http_mjpeg.port);
     http_mjpeg_started = true;
   }
+
+  ipc_server.start();
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     global_restart = true;
@@ -343,6 +348,13 @@ int main(int argc, const char *argv[]) {
         int ret = pthread_create(&global_jpeg[0]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
         LOG_DEBUG_OR_ERROR(ret, "create jpeg thread");
         // wait for initialization done
+        sh.has_started.acquire();
+      }
+
+      if (cfg->stream3.enabled) {
+        StartHelper sh{3};
+        int ret = pthread_create(&global_jpeg[1]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
+        LOG_DEBUG_OR_ERROR(ret, "create jpeg thread 2");
         sh.has_started.acquire();
       }
 
@@ -455,6 +467,13 @@ int main(int argc, const char *argv[]) {
         LOG_DEBUG_OR_ERROR(ret, "join jpeg thread");
       }
 
+      if (global_jpeg[1]->imp_encoder) {
+        global_jpeg[1]->running = false;
+        global_jpeg[1]->should_grab_frames.notify_one();
+        int ret = pthread_join(global_jpeg[1]->thread, NULL);
+        LOG_DEBUG_OR_ERROR(ret, "join jpeg thread 2");
+      }
+
       // stop stream1
       if (global_video[1]->imp_encoder) {
         global_video[1]->running = false;
@@ -487,6 +506,8 @@ int main(int argc, const char *argv[]) {
   if (http_mjpeg_started) {
     http_mjpeg.stop();
   }
+
+  ipc_server.stop();
 
   ImagingControl::stop();
   return 0;

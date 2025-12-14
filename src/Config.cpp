@@ -34,6 +34,10 @@ bool validateInt2(const int &v) {
   return v >= 0 && v <= 2;
 }
 
+bool validateRotation(const int &v) {
+  return v == 0 || v == 90 || v == 270;
+}
+
 bool validateInt32(const int &v) {
   return v >= 0 && v <= 32;
 }
@@ -149,11 +153,11 @@ bool setNestedValue(JsonValue *root, const std::string &path, const std::string 
 
 std::vector<ConfigItem<bool>> CFG::getBoolItems() {
   return {
-      {"audio.mic_enabled", audio.input_enabled, true, validateBool},
-      {"audio.spk_enabled", audio.output_enabled, true, validateBool},
       {"audio.force_stereo", audio.force_stereo, false, validateBool},
-      {"audio.tap_enabled", audio.tap_enabled, false, validateBool},
+      {"audio.mic_enabled", audio.input_enabled, true, validateBool},
       {"audio.mic_is_digital", audio.mic_is_digital, false, validateBool},
+      {"audio.spk_enabled", audio.output_enabled, true, validateBool},
+      {"audio.tap_enabled", audio.tap_enabled, false, validateBool},
 #if defined(LIB_AUDIO_PROCESSING)
       {"audio.mic_high_pass_filter", audio.input_high_pass_filter, false, validateBool},
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
@@ -169,24 +173,25 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
+      {"stream0.osd.brightness.enabled", stream0.osd.brightness_enabled, false, validateBool},
       {"stream0.osd.enabled", stream0.osd.enabled, true, validateBool},
       {"stream0.osd.logo.enabled", stream0.osd.logo_enabled, true, validateBool},
-      {"stream0.osd.brightness.enabled", stream0.osd.brightness_enabled, false, validateBool},
+      {"stream0.osd.privacy.enabled", stream0.osd.privacy.enabled, true, validateBool},
       {"stream0.osd.time.enabled", stream0.osd.time_enabled, true, validateBool},
       {"stream0.osd.uptime.enabled", stream0.osd.uptime_enabled, true, validateBool},
       {"stream0.osd.usertext.enabled", stream0.osd.usertext_enabled, true, validateBool},
-      {"stream0.osd.privacy.enabled", stream0.osd.privacy.enabled, true, validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
+      {"stream1.osd.brightness.enabled", stream1.osd.brightness_enabled, false, validateBool},
       {"stream1.osd.enabled", stream1.osd.enabled, true, validateBool},
       {"stream1.osd.logo.enabled", stream1.osd.logo_enabled, true, validateBool},
-      {"stream1.osd.brightness.enabled", stream1.osd.brightness_enabled, false, validateBool},
+      {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true, validateBool},
       {"stream1.osd.time.enabled", stream1.osd.time_enabled, true, validateBool},
       {"stream1.osd.uptime.enabled", stream1.osd.uptime_enabled, true, validateBool},
       {"stream1.osd.usertext.enabled", stream1.osd.usertext_enabled, true, validateBool},
-      {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true, validateBool},
       {"stream2.enabled", stream2.enabled, true, validateBool},
+      {"stream3.enabled", stream3.enabled, false, validateBool},
 #if defined(WEBSOCKET_ENABLED)
       {"websocket.enabled", websocket.enabled, true, validateBool},
       {"websocket.ws_secured", websocket.ws_secured, true, validateBool},
@@ -202,9 +207,9 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"daynight.script_path", daynight.script_path, "/sbin/daynight", validateCharNotEmpty},
       {"general.loglevel", general.loglevel, "INFO", [](const char *v) { std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"}; return a.count(std::string(v)) == 1; }},
       {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
-      {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
       {"recorder.device_path", recorder.device_path, "%hostname", validateCharDummy},
       {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S", validateCharNotEmpty},
+      {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
       {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
       {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},
       {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
@@ -221,11 +226,11 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"stream0.osd.uptime.position", stream0.osd.uptime_position, "1600,5", validateCharNotEmpty},
       {"stream0.osd.usertext.position", stream0.osd.usertext_position, "900,5", validateCharNotEmpty},
       {"stream0.osd.logo.position", stream0.osd.logo_position, "1800,1030", validateCharNotEmpty},
-      {"stream0.osd.brightness.position", stream0.osd.brightness_position, "10,70", validateCharNotEmpty},
       {"stream0.osd.brightness.format", stream0.osd.brightness_format, "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
-      {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
-      {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120", validateCharNotEmpty},
+      {"stream0.osd.brightness.position", stream0.osd.brightness_position, "10,70", validateCharNotEmpty},
       {"stream0.osd.privacy.image_path", stream0.osd.privacy.image_path, "", validateCharDummy},
+      {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120", validateCharNotEmpty},
+      {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
       {"stream0.mode", stream0.mode, DEFAULT_ENC_MODE_0, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
       {"stream0.rtsp_endpoint", stream0.rtsp_endpoint, "ch0", validateCharNotEmpty},
       {"stream0.rtsp_info", stream0.rtsp_info, "stream0", validateCharNotEmpty},
@@ -239,15 +244,16 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"stream1.osd.uptime.position", stream1.osd.uptime_position, "500,5", validateCharNotEmpty},
       {"stream1.osd.usertext.position", stream1.osd.usertext_position, "250,5", validateCharNotEmpty},
       {"stream1.osd.logo.position", stream1.osd.logo_position, "530,320", validateCharNotEmpty},
-      {"stream1.osd.brightness.position", stream1.osd.brightness_position, "10,70", validateCharNotEmpty},
       {"stream1.osd.brightness.format", stream1.osd.brightness_format, "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
-      {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
-      {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120", validateCharNotEmpty},
+      {"stream1.osd.brightness.position", stream1.osd.brightness_position, "10,70", validateCharNotEmpty},
       {"stream1.osd.privacy.image_path", stream1.osd.privacy.image_path, "", validateCharDummy},
+      {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120", validateCharNotEmpty},
+      {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
       {"stream1.mode", stream1.mode, DEFAULT_ENC_MODE_1, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
       {"stream1.rtsp_endpoint", stream1.rtsp_endpoint, "ch1", validateCharNotEmpty},
       {"stream1.rtsp_info", stream1.rtsp_info, "stream1", validateCharNotEmpty},
       {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
+      {"stream3.jpeg_path", stream3.jpeg_path, "/tmp/snapshot_ch1.jpg", validateCharNotEmpty},
 #if defined(WEBSOCKET_ENABLED)
       {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
       {"websocket.token", websocket.token, "auto", [](const char *v) { std::string token(v); return token == "auto" || token.empty() || token.length() == WEBSOCKET_TOKEN_LENGTH; }},
@@ -258,22 +264,22 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
 std::vector<ConfigItem<int>> CFG::getIntItems() {
   return {
       {"audio.mic_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
-      {"audio.mic_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
-      {"audio.spk_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
-      {"audio.mic_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.mic_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
+      {"audio.mic_sample_rate", audio.input_sample_rate, 16000, validateSampleRate},
+      {"audio.mic_vol", audio.input_vol, 80, [](const int &v) { return v >= -30 && v <= 120; }},
+      {"audio.spk_sample_rate", audio.output_sample_rate, 16000, validateSampleRate},
+#if defined(LIB_AUDIO_PROCESSING)
+      {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10, [](const int &v) { return v >= 0 && v <= 31; }},
+      {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0, [](const int &v) { return v >= 0 && v <= 90; }},
+      {"audio.mic_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
+      {"audio.mic_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
+      {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
+      {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
+#endif
       {"daynight.switch_below_percent", daynight.switch_below_percent, 15, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.switch_above_percent", daynight.switch_above_percent, 80, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.tolerance_percent", daynight.tolerance_percent, 50, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000, [](const int &v) { return v >= 100 && v <= 60000; }},
-#if defined(LIB_AUDIO_PROCESSING)
-      {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.mic_alc_gain", audio.input_alc_gain, 0, [](const int &v) { return v >= -1 && v <= 7; }},
-      {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10, [](const int &v) { return v >= 0 && v <= 31; }},
-      {"audio.mic_agc_compression_gain_db", audio.input_agc_compression_gain_db, 0, [](const int &v) { return v >= 0 && v <= 90; }},
-      {"audio.mic_noise_suppression", audio.input_noise_suppression, 0, [](const int &v) { return v >= 0 && v <= 3; }},
-#endif
       {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
@@ -316,14 +322,14 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.skip_frame_count", motion.skip_frame_count, 5, validateIntGe0},
       {"motion.frame_width", motion.frame_width, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.frame_height", motion.frame_height, IVS_AUTO_VALUE, validateIntGe0},
-      {"motion.monitor_stream", motion.monitor_stream, 1, validateInt1},
+      {"motion.monitor_stream", motion.monitor_stream, 1, [](const int &v) { return v >= 0 && v <= 3; }},
       {"motion.roi_0_x", motion.roi_0_x, 0, validateIntGe0},
       {"motion.roi_0_y", motion.roi_0_y, 0, validateIntGe0},
       {"motion.roi_1_x", motion.roi_1_x, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_1_y", motion.roi_1_y, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_count", motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }},
-      {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
       {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
+      {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
       {"rtsp.out_buffer_size", rtsp.out_buffer_size, 500000, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},
@@ -369,7 +375,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.osd.privacy.image_height", stream0.osd.privacy.image_height, 0, validateIntGe0},
       {"stream0.osd.privacy.layer", stream0.osd.privacy.layer, 16, [](const int &v) { return v >= 0 && v <= 16; }},
       {"stream0.osd.privacy.opacity", stream0.osd.privacy.opacity, 255, validateInt255},
-      {"stream0.rotation", stream0.rotation, 0, validateInt2},
+      {"stream0.rotation", stream0.rotation, 0, validateRotation},
       {"stream0.width", stream0.width, 1920, validateIntGe0},
       {"stream0.profile", stream0.profile, 2, validateInt2},
       {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
@@ -403,13 +409,17 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.osd.privacy.image_height", stream1.osd.privacy.image_height, 0, validateIntGe0},
       {"stream1.osd.privacy.layer", stream1.osd.privacy.layer, 16, [](const int &v) { return v >= 0 && v <= 16; }},
       {"stream1.osd.privacy.opacity", stream1.osd.privacy.opacity, 255, validateInt255},
-      {"stream1.rotation", stream1.rotation, 0, validateInt2},
+      {"stream1.rotation", stream1.rotation, 0, validateRotation},
       {"stream1.width", stream1.width, 640, validateIntGe0},
       {"stream1.profile", stream1.profile, 2, validateInt2},
+      {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
       {"stream2.jpeg_channel", stream2.jpeg_channel, 0, validateIntGe0},
       {"stream2.jpeg_quality", stream2.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
       {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
-      {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
+      {"stream3.fps", stream3.fps, 15, [](const int &v) { return v > 1 && v <= 30; }},
+      {"stream3.jpeg_channel", stream3.jpeg_channel, 1, validateIntGe0},
+      {"stream3.jpeg_quality", stream3.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
+      {"stream3.jpeg_idle_fps", stream3.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
 #if defined(WEBSOCKET_ENABLED)
       {"websocket.port", websocket.port, 8089, validateInt65535},
       {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
@@ -421,27 +431,27 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems() {
   return {
       {"sensor.i2c_address", sensor.i2c_address, 0x37, [](const unsigned int &v) { return v <= 0x7F; }, false, "/proc/jz/sensor/i2c_addr"},
       // Individual color settings for stream0 text elements
+      {"stream0.osd.brightness.fill_color", stream0.osd.brightness_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream0.osd.brightness.stroke_color", stream0.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream0.osd.privacy.fill_color", stream0.osd.privacy.fill_color, 0xFFFF4C4C, validateOSDColor},
+      {"stream0.osd.privacy.stroke_color", stream0.osd.privacy.stroke_color, 0xFF000000, validateOSDColor},
       {"stream0.osd.time.fill_color", stream0.osd.time_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream0.osd.time.stroke_color", stream0.osd.time_stroke_color, 0xFF000000, validateOSDColor},
       {"stream0.osd.uptime.fill_color", stream0.osd.uptime_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream0.osd.uptime.stroke_color", stream0.osd.uptime_stroke_color, 0xFF000000, validateOSDColor},
       {"stream0.osd.usertext.fill_color", stream0.osd.usertext_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream0.osd.usertext.stroke_color", stream0.osd.usertext_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.brightness.fill_color", stream0.osd.brightness_fill_color, 0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.brightness.stroke_color", stream0.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.privacy.fill_color", stream0.osd.privacy.fill_color, 0xFFFF4C4C, validateOSDColor},
-      {"stream0.osd.privacy.stroke_color", stream0.osd.privacy.stroke_color, 0xFF000000, validateOSDColor},
       // Individual color settings for stream1 text elements
+      {"stream1.osd.brightness.fill_color", stream1.osd.brightness_fill_color, 0xFFFFFFFF, validateOSDColor},
+      {"stream1.osd.brightness.stroke_color", stream1.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
+      {"stream1.osd.privacy.fill_color", stream1.osd.privacy.fill_color, 0xFFFF4C4C, validateOSDColor},
+      {"stream1.osd.privacy.stroke_color", stream1.osd.privacy.stroke_color, 0xFF000000, validateOSDColor},
       {"stream1.osd.time.fill_color", stream1.osd.time_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream1.osd.time.stroke_color", stream1.osd.time_stroke_color, 0xFF000000, validateOSDColor},
       {"stream1.osd.uptime.fill_color", stream1.osd.uptime_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream1.osd.uptime.stroke_color", stream1.osd.uptime_stroke_color, 0xFF000000, validateOSDColor},
       {"stream1.osd.usertext.fill_color", stream1.osd.usertext_fill_color, 0xFFFFFFFF, validateOSDColor},
       {"stream1.osd.usertext.stroke_color", stream1.osd.usertext_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.brightness.fill_color", stream1.osd.brightness_fill_color, 0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.brightness.stroke_color", stream1.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.privacy.fill_color", stream1.osd.privacy.fill_color, 0xFFFF4C4C, validateOSDColor},
-      {"stream1.osd.privacy.stroke_color", stream1.osd.privacy.stroke_color, 0xFF000000, validateOSDColor},
   };
 };
 
@@ -860,6 +870,14 @@ void CFG::load() {
   } else {
     stream2.width = stream1.width;
     stream2.height = stream1.height;
+  }
+
+  if (stream3.jpeg_channel == 0) {
+    stream3.width = stream0.width;
+    stream3.height = stream0.height;
+  } else {
+    stream3.width = stream1.width;
+    stream3.height = stream1.height;
   }
 
   // TODO: Implement ROI handling with JCT

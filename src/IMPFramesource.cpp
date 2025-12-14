@@ -1,5 +1,6 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
+#include <dlfcn.h>
 
 #define MODULE "IMP_FRAMESOURCE"
 
@@ -66,17 +67,51 @@ int IMPFramesource::init() {
 #if !defined(KERNEL_VERSION_4)
 #if defined(PLATFORM_T31) && !defined(PLATFORM_C100)
 
-  int rot_rotation = stream->rotation;
-  int rot_height = stream->height;
-  int rot_width = stream->width;
-
-  // Set rotate before FS creation
-  // IMP_Encoder_SetFisheyeEnableStatus(0, 1);
-  // IMP_Encoder_SetFisheyeEnableStatus(1, 1);
-
+  // Handle video rotation (0, 90, 270 degrees)
   if (stream->rotation != 0) {
-    ret = IMP_FrameSource_SetChnRotate(chnNr, rot_rotation, rot_height, rot_width);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate(0, rotation, rot_height, rot_width)");
+    // Validate 64-bit alignment requirement
+    if (stream->width % 64 != 0 || stream->height % 64 != 0) {
+      LOG_ERROR("Rotation requires 64-bit aligned resolution. "
+                "Current: " << stream->width << "x" << stream->height << ". "
+                "Please use multiples of 64 (e.g., 1920x1080, 1280x720, 640x480)");
+      return -1;
+    }
+
+    // Check for soft zoom conflict
+    if (stream->scale_enabled) {
+      LOG_ERROR("Cannot enable rotation while soft zoom is active. Disable scale_enabled or set rotation to 0");
+      return -1;
+    }
+
+    // Warn about performance constraints
+    if (stream->width > 1280 || stream->height > 704) {
+      LOG_WARN("Rotation above 1280x704 may impact performance. Recommended <=1280x704 @ <=15fps");
+    }
+
+    // Convert degree values to IMP rotation values
+    // 0 degrees = 0 (no rotation)
+    // 90 degrees = 1 (90° counterclockwise)
+    // 270 degrees = 2 (90° clockwise, equivalent to 270° counterclockwise)
+    int imp_rotation = 0;
+    if (stream->rotation == 90) {
+      imp_rotation = 1;
+    } else if (stream->rotation == 270) {
+      imp_rotation = 2;
+    }
+
+    LOG_DEBUG("Setting video rotation " << stream->rotation << " degrees (IMP value " << imp_rotation << ")");
+
+    typedef int (*pfn_fs_rotate)(int, int, int, int);
+    void *handle = dlopen(nullptr, RTLD_LAZY);
+    pfn_fs_rotate rotate_fn = handle ? reinterpret_cast<pfn_fs_rotate>(dlsym(handle, "IMP_FrameSource_SetChnRotate")) : nullptr;
+    if (rotate_fn) {
+      ret = rotate_fn(chnNr, imp_rotation, stream->height, stream->width);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate(" << chnNr << ", " << imp_rotation << ", "
+                                                              << stream->height << ", " << stream->width << ")");
+    } else {
+      LOG_DEBUG("IMP_FrameSource_SetChnRotate not available; skipping rotation");
+      ret = 0;
+    }
   }
 
 #endif

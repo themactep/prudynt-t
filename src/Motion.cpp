@@ -155,6 +155,8 @@ int Motion::init() {
     monitor_stream_cfg = &cfg->stream1;
   } else if (cfg->motion.monitor_stream == 2) {
     monitor_stream_cfg = &cfg->stream2;
+  } else if (cfg->motion.monitor_stream == 3) {
+    monitor_stream_cfg = &cfg->stream3;
   }
 
   // Swap dimensions if video is rotated

@@ -115,6 +115,7 @@ void *thread_entry(void *arg) {
   DayNightAlgo::State state{};
   DayNightAlgo::init(state);
 
+  // SoC profile mapping
   Profile pr = get_profile();
 
   // Load config thresholds. Prefer explicit EV thresholds if configured;
@@ -130,6 +131,7 @@ void *thread_entry(void *arg) {
   if (ev_night_high_cfg > 0 && ev_day_low_primary_cfg > 0) {
     params.ev_night_high = ev_night_high_cfg;
     params.ev_day_low_primary = ev_day_low_primary_cfg;
+    // default to primary if secondary not set
     params.ev_day_low_secondary =
         (ev_day_low_secondary_cfg > 0) ? ev_day_low_secondary_cfg : ev_day_low_primary_cfg;
     // derive counters from tolerance percent if provided
@@ -183,8 +185,7 @@ void *thread_entry(void *arg) {
                       << " recGB=" << state.gb_gain_record << " nCnt=" << state.night_count
                       << " dCnt=" << state.day_count
                       << " ircut=" << (state.ircut_engaged ? "1" : "0") << " -> "
-                      << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
-                               : "HOLD"));
+                      << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT") : "HOLD"));
 
     if (dec.toggled && dec.target != current) {
       apply_mode(dec.target);

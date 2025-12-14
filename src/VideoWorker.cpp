@@ -124,7 +124,15 @@ void VideoWorker::run() {
     /* bool helper to check if this is the active jpeg channel and a jpeg is
      * requested while the channel is inactive
      */
-    run_for_jpeg = (encChn == global_jpeg[0]->streamChn && global_video[encChn]->run_for_jpeg);
+    bool jpeg_wants_frames = false;
+    for (int j = 0; j < NUM_JPEG_CHANNELS; ++j) {
+      auto jpeg_stream_state = global_jpeg[j];
+      if (jpeg_stream_state && encChn == jpeg_stream_state->streamChn) {
+        jpeg_wants_frames = true;
+        break;
+      }
+    }
+    run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
 
     /* now we need to verify that
      * 1. a client is connected (hasDataCallback)

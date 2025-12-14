@@ -116,6 +116,7 @@ void JPEGWorker::run() {
             targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
         }
 
+        // Apply per-request JPEG quality override if present
         int q_override = global_jpeg[jpgChn]->quality_override.exchange(-1);
         if (q_override > 0 && q_override <= 100) {
           hal::set_jpeg_quality_qtable(global_jpeg[jpgChn]->encChn, q_override, cfg->sysinfo.cpu);
@@ -299,18 +300,21 @@ void *JPEGWorker::thread_entry(void *arg) {
 
   /* do not use the live config variable
    */
-  global_jpeg[jpgChn]->streamChn = global_jpeg[jpgChn]->stream->jpeg_channel;
+  auto *stream_cfg = global_jpeg[jpgChn]->stream;
+  global_jpeg[jpgChn]->streamChn = stream_cfg->jpeg_channel;
 
   if (global_jpeg[jpgChn]->streamChn == 0) {
-    cfg->stream2.width = cfg->stream0.width;
-    cfg->stream2.height = cfg->stream0.height;
+    stream_cfg->width = cfg->stream0.width;
+    stream_cfg->height = cfg->stream0.height;
   } else {
-    cfg->stream2.width = cfg->stream1.width;
-    cfg->stream2.height = cfg->stream1.height;
+    stream_cfg->width = cfg->stream1.width;
+    stream_cfg->height = cfg->stream1.height;
   }
 
+  const char *stream_name = (stream_cfg == &cfg->stream2) ? "stream2" : "stream3";
+
   global_jpeg[jpgChn]->imp_encoder =
-      IMPEncoder::createNew(global_jpeg[jpgChn]->stream, sh->encChn, global_jpeg[jpgChn]->streamChn, "stream2");
+      IMPEncoder::createNew(stream_cfg, sh->encChn, global_jpeg[jpgChn]->streamChn, stream_name);
 
   if (!global_jpeg[jpgChn]->imp_encoder) {
     LOG_ERROR("Failed to create JPEG encoder for channel " << jpgChn);

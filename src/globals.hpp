@@ -25,6 +25,7 @@
 #define AUDIO_OUTPUT_QUEUE_SIZE 64
 #define NUM_AUDIO_CHANNELS 1
 #define NUM_VIDEO_CHANNELS 2
+#define NUM_JPEG_CHANNELS 2
 
 using namespace std::chrono;
 
@@ -118,8 +119,14 @@ struct jpeg_stream {
   IMPEncoder *imp_encoder;
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
+
+  // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when updated
   std::vector<unsigned char> snapshot_buf;
+  // Per-request JPEG quality override (1..100, -1 = none)
   std::atomic<int> quality_override{-1};
+
+  // Dynamic reconfiguration requests (applied by JPEGWorker)
+  // Sequential frame counter for TRACE diagnostics (32-bit to avoid 64-bit atomics)
   std::atomic<uint32_t> frame_seq{0};
   std::atomic<int> req_width{-1};
   std::atomic<int> req_height{-1};
@@ -135,6 +142,7 @@ struct jpeg_stream {
       std::unique_lock lck(mutex_main);
       last_subscriber = now;
     }
+    // Wake JPEG worker if it's sleeping
     should_grab_frames.notify_one();
   }
 
@@ -258,8 +266,9 @@ extern bool global_osd_thread_signal;
 extern bool global_main_thread_signal;
 extern bool global_motion_thread_signal;
 extern std::atomic<char> global_rtsp_thread_signal;
+extern std::atomic<int> global_rtsp_clients;
 
-extern std::shared_ptr<jpeg_stream> global_jpeg[NUM_VIDEO_CHANNELS];
+extern std::shared_ptr<jpeg_stream> global_jpeg[NUM_JPEG_CHANNELS];
 extern std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS];
 extern std::shared_ptr<video_stream> global_video[NUM_VIDEO_CHANNELS];
 extern std::shared_ptr<backchannel_stream> global_backchannel;

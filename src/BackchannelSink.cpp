@@ -119,9 +119,8 @@ void BackchannelSink::afterGettingFrame1(unsigned frameSize, unsigned numTruncat
     updateAdaptiveTimeout(presentationTime);
   }
 
-  // Reschedule the timeout check after receiving any frame (even size 0 or
-  // truncated) This resets the timer as long as *something* is coming from the
-  // source.
+  // Reschedule the timeout check after receiving any frame (even size 0 or truncated)
+  // This resets the timer as long as *something* is coming from the source.
   envir().taskScheduler().unscheduleDelayedTask(fTimeoutTask);
   scheduleTimeoutCheck();
 
@@ -172,10 +171,10 @@ void BackchannelSink::sendBackchannelFrame(const uint8_t *payload, unsigned payl
 
   bool enqueued = global_backchannel->inputQueue->write(std::move(bcFrame));
   if (!enqueued) {
-    LOG_WARN("Input queue full for session " << static_cast<unsigned>(fClientSessionId)
-                                             << ". Frame dropped.");
+    LOG_WARN("Input queue full for session " << static_cast<unsigned>(fClientSessionId) << ". Frame dropped.");
+  } else {
+    global_backchannel->should_grab_frames.notify_one();
   }
-  global_backchannel->should_grab_frames.notify_one();
 }
 
 void BackchannelSink::sendBackchannelStopFrame() {
@@ -193,11 +192,11 @@ void BackchannelSink::sendBackchannelStopFrame() {
       LOG_WARN("Input queue full when trying to send stop frame for session "
                << static_cast<unsigned>(fClientSessionId));
     } else {
+      global_backchannel->should_grab_frames.notify_one();
+      fIsSending = false;
+      global_backchannel->is_sending.fetch_sub(1, std::memory_order_relaxed);
       LOG_INFO("Sent stop frame (zero-payload frame) for session " << static_cast<unsigned>(fClientSessionId));
     }
-    global_backchannel->should_grab_frames.notify_one();
-    fIsSending = false;
-    global_backchannel->is_sending.fetch_sub(1, std::memory_order_relaxed);
   } else {
     LOG_ERROR("global_backchannel is null, cannot send stop frame for session " << fClientSessionId);
   }

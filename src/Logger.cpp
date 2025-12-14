@@ -91,6 +91,9 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
     case DEBUG:
       syslogPriority = 7;
       break;
+    case TRACE:
+      syslogPriority = 7;
+      break;
     default:
       syslogPriority = 7;
       break; // Default case for undefined levels

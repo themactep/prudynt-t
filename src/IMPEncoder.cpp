@@ -3,6 +3,7 @@
 #include "imp_hal.hpp"
 #include <cstdint>
 #include <sstream>
+#include <utility>
 
 #define MODULE "IMPENCODER"
 
@@ -207,8 +208,20 @@ void IMPEncoder::initProfile() {
   // For this reason, Main or High are recommended.
   chnAttr.encAttr.profile = stream->profile;
   chnAttr.encAttr.bufSize = 0;
-  chnAttr.encAttr.picWidth = stream->width;
-  chnAttr.encAttr.picHeight = stream->height;
+
+  // Handle video rotation: swap width/height if rotation is applied
+  // NOTE: Only swap for H.264/H.265 video streams, NOT for JPEG
+  // JPEG is a snapshot format where rotation is already applied at FrameSource level
+  int enc_width = stream->width;
+  int enc_height = stream->height;
+  if (stream->rotation != 0 && strcmp(stream->format, "JPEG") != 0) {
+    std::swap(enc_width, enc_height);
+    LOG_DEBUG("Encoder dimensions swapped for rotation: " << enc_width << "x" << enc_height << " (original: "
+                                                          << stream->width << "x" << stream->height << ")");
+  }
+
+  chnAttr.encAttr.picWidth = enc_width;
+  chnAttr.encAttr.picHeight = enc_height;
   chnAttr.rcAttr.outFrmRate.frmRateNum = stream->fps;
   chnAttr.rcAttr.outFrmRate.frmRateDen = 1;
   rcAttr->maxGop = stream->max_gop;
@@ -312,6 +325,8 @@ int IMPEncoder::init() {
   }
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // On T31-family SoCs, JPEG channels (2/3) must share buffers with a video channel (0/1)
+  // Call bufshare BEFORE creating the JPEG channel. Use (jpegEncChn=encChn, shareChn=encGrp).
   if (is_jpeg && stream->allow_shared) {
     ret = hal::maybe_enable_bufshare(encChn, encGrp, stream->allow_shared);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare(" << encChn << ", " << encGrp << ")");

@@ -34,9 +34,19 @@ protected:
                                                rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler,
                                                serverRequestAlternativeByteHandlerClientData);
 
+    global_rtsp_clients.fetch_add(1, std::memory_order_relaxed);
     // request idr frame every second for the next x seconds
     global_video[encChn]->idr_fix = 5;
     IMPEncoder::flush(encChn);
+  }
+
+  virtual void deleteStream(unsigned clientSessionId, void *&streamToken) override {
+    OnDemandServerMediaSubsession::deleteStream(clientSessionId, streamToken);
+    int prev = global_rtsp_clients.load(std::memory_order_relaxed);
+    while (prev > 0 &&
+           !global_rtsp_clients.compare_exchange_weak(prev, prev - 1, std::memory_order_relaxed)) {
+      ;
+    }
   }
 
 private:

@@ -97,7 +97,6 @@ struct _osd_privacy { // has to be before _osd
   int layer;
   int opacity;
 };
-
 struct _regions { // has to be before _osd
   int time;
   int user;
@@ -105,13 +104,11 @@ struct _regions { // has to be before _osd
   int logo;
   int brightness;
 };
-
 struct _stream_stats { // has to be before _osd
   uint32_t bps;
   uint8_t fps;
   struct timeval ts;
 };
-
 struct _audio {
   bool input_enabled;
   const char *input_format;
@@ -279,7 +276,6 @@ struct _rtsp {
   int out_buffer_size;
   int send_buffer_size;
   int session_reclaim;
-  ;
   bool auth_required;
   const char *username;
   const char *password;
@@ -384,6 +380,7 @@ public:
   _stream stream0{};
   _stream stream1{};
   _stream stream2{};
+  _stream stream3{};
   _daynight daynight{};
   _motion motion{};
 #if defined(WEBSOCKET_ENABLED)

@@ -138,6 +138,7 @@ void clamp_streams_to_sensor_limits() {
   clamp_stream_to_sensor_limits("stream0", cfg->stream0);
   clamp_stream_to_sensor_limits("stream1", cfg->stream1);
   clamp_stream_to_sensor_limits("stream2", cfg->stream2);
+  clamp_stream_to_sensor_limits("stream3", cfg->stream3);
 }
 
 } // namespace

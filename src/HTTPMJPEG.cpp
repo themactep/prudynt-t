@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -75,9 +76,9 @@ bool write_chunked_paced(int fd, const unsigned char *data, size_t len, size_t c
 }
 
 // Local snapshot helper: copy the latest JPEG frame (already clean)
-bool get_snapshot_ch_local(int ch, std::vector<unsigned char> &image) {
+bool get_snapshot_ch_local_http(int ch, std::vector<unsigned char> &image) {
   std::unique_lock lck(mutex_main);
-  if (ch < 0 || ch >= NUM_VIDEO_CHANNELS)
+  if (ch < 0 || ch >= NUM_JPEG_CHANNELS)
     return false;
   auto s = global_jpeg[ch];
   if (!s)
@@ -164,7 +165,8 @@ void HTTPMJPEG::server_loop(int port) {
     running_.store(false);
     return;
   }
-  LOG_INFO("HTTPMJPEG: listening on port " << port << " (/mjpg?ch=0|1&f=&q=&w=&h=)");
+  LOG_INFO("HTTPMJPEG: listening on port " << port << " (/mjpg?ch=0.." << (NUM_JPEG_CHANNELS - 1)
+                                           << "&f=&q=&w=&h=)");
 
   while (running_.load()) {
     sockaddr_in cli{};
@@ -239,7 +241,7 @@ void HTTPMJPEG::handle_client(int cfd) {
   // Extract params
   auto p = get_param(qs, "ch");
   if (!p.empty())
-    ch = std::max(0, std::min(1, atoi(p.c_str())));
+    ch = std::clamp(atoi(p.c_str()), 0, NUM_JPEG_CHANNELS - 1);
   p = get_param(qs, "f");
   if (!p.empty())
     fps = std::max(1, std::min(30, atoi(p.c_str())));
@@ -256,7 +258,7 @@ void HTTPMJPEG::handle_client(int cfd) {
   if (!p.empty())
     boundary = p;
 
-  if (ch < 0 || ch >= NUM_VIDEO_CHANNELS || !global_jpeg[ch]) {
+  if (ch < 0 || ch >= NUM_JPEG_CHANNELS || !global_jpeg[ch]) {
     const char *resp = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nbad channel\n";
     (void)write_full(cfd, resp, strlen(resp));
     ::close(cfd);
@@ -335,6 +337,9 @@ void HTTPMJPEG::handle_client(int cfd) {
   hdr += boundary;
   hdr += "\r\nCache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n";
   hdr += "Pragma: no-cache\r\n";
+  hdr += "X-Chunk-Size: ";
+  hdr += std::to_string(chunk_sz);
+  hdr += "\r\n";
   hdr += "Connection: close\r\n\r\n";
   if (!write_full(cfd, hdr.data(), hdr.size())) {
     ::close(cfd);
@@ -342,7 +347,7 @@ void HTTPMJPEG::handle_client(int cfd) {
   }
 
   // Stream loop: send only on new frames to keep cadence steady
-  std::vector<unsigned char> img;
+  std::vector<unsigned char> img, last_img;
   uint32_t last_seq = global_jpeg[ch]->frame_seq.load();
   // Determine pacing from requested/original fps (fallback to 10)
   int target_fps = (fps > 0 ? fps : (orig_fps > 0 ? orig_fps : 10));
@@ -380,34 +385,43 @@ void HTTPMJPEG::handle_client(int cfd) {
       std::this_thread::sleep_for(milliseconds(5));
     }
 
-    if (!have_new) {
-      global_jpeg[ch]->request();
+    img.clear();
+    if (have_new) {
+      if (!get_snapshot_ch_local_http(ch, img) || img.empty()) {
+        // reuse previous frame if capture failed
+        img = last_img;
+      }
+    } else {
+      // keep cadence with last successfully sent frame
+      img = last_img;
     }
 
-    if (!get_snapshot_ch_local(ch, img) || img.empty()) {
+    if (img.empty()) {
       std::this_thread::sleep_for(milliseconds(5));
       continue;
     }
 
-    std::string part;
-    part.reserve(128);
-    part += "--";
-    part += boundary;
-    part += "\r\nContent-Type: image/jpeg\r\nContent-Length: ";
-    part += std::to_string(img.size());
-    part += "\r\n\r\n";
+    last_img = img;
 
-    if (!write_full(cfd, part.data(), part.size()))
+    char part_hdr[256];
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    int header_len = snprintf(part_hdr, sizeof(part_hdr),
+                              "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %zu\r\nX-Timestamp: %ld.%06ld\r\n\r\n",
+                              boundary.c_str(), img.size(), static_cast<long>(tv.tv_sec),
+                              static_cast<long>(tv.tv_usec));
+
+    if (header_len < 0 || header_len >= static_cast<int>(sizeof(part_hdr)) ||
+        !write_full(cfd, part_hdr, static_cast<size_t>(header_len))) {
       break;
-
-    auto remaining = std::chrono::duration_cast<milliseconds>(t_next - steady_clock::now());
-    milliseconds send_budget = remaining.count() > 0 ? remaining : milliseconds(0);
-    milliseconds pacing = std::max(send_budget, milliseconds(10));
-
-    if (!write_chunked_paced(cfd, img.data(), img.size(), static_cast<size_t>(chunk_sz), pacing))
+    }
+    if (!write_chunked_paced(cfd, img.data(), img.size(), static_cast<size_t>(chunk_sz), tick))
       break;
     if (!write_full(cfd, "\r\n", 2))
       break;
+
+    // Inform producer we're still subscribed
+    global_jpeg[ch]->request();
   }
 
   // Restore original settings
