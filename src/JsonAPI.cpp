@@ -478,8 +478,8 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   add_boolk_a("output_enabled", "audio.spk_enabled", /*rest_rtsp*/ true,
               /*rest_audio*/ true);
   add_int("output_sample_rate", "audio.spk_sample_rate", true);
-  add_int("output_gain", "audio.mic_gain", true);
-  add_int("output_vol", "audio.mic_vol", true);
+  add_int("output_gain", "audio.spk_gain", true);
+  add_int("output_vol", "audio.spk_vol", true);
 #endif
   add_int("buffer_warn_frames", "audio.buffer_warn_frames", false);
   add_int("buffer_cap_frames", "audio.buffer_cap_frames", false);
