@@ -459,25 +459,27 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   };
 
   // Input
-  add_boolk_a("input_enabled", "audio.input_enabled", /*rest_rtsp*/ false,
+  add_boolk_a("input_enabled", "audio.mic_enabled", /*rest_rtsp*/ false,
               /*rest_audio*/ true);
-  add_strk_a("input_format", "audio.input_format", true);
-  add_int("input_vol", "audio.input_vol", false);
-  add_int("input_gain", "audio.input_gain", true);
-  add_int("input_bitrate", "audio.input_bitrate", true);
-  add_int("input_sample_rate", "audio.input_sample_rate", true);
+  add_strk_a("input_format", "audio.mic_format", true);
+  add_int("input_vol", "audio.mic_vol", false);
+  add_int("input_gain", "audio.mic_gain", true);
+  add_int("input_bitrate", "audio.mic_bitrate", true);
+  add_int("input_sample_rate", "audio.mic_sample_rate", true);
 #if defined(LIB_AUDIO_PROCESSING)
-  add_int("input_alc_gain", "audio.input_alc_gain", false);
-  add_int("input_noise_suppression", "audio.input_noise_suppression", true);
-  add_boolk_a("input_high_pass_filter", "audio.input_high_pass_filter", false, true);
-  add_boolk_a("input_agc_enabled", "audio.input_agc_enabled", false, true);
-  add_int("input_agc_target_level_dbfs", "audio.input_agc_target_level_dbfs", true);
-  add_int("input_agc_compression_gain_db", "audio.input_agc_compression_gain_db", true);
+  add_int("input_alc_gain", "audio.mic_alc_gain", false);
+  add_int("input_noise_suppression", "audio.mic_noise_suppression", true);
+  add_boolk_a("input_high_pass_filter", "audio.mic_high_pass_filter", false, true);
+  add_boolk_a("input_agc_enabled", "audio.mic_agc_enabled", false, true);
+  add_int("input_agc_target_level_dbfs", "audio.mic_agc_target_level_dbfs", true);
+  add_int("input_agc_compression_gain_db", "audio.mic_agc_compression_gain_db", true);
   add_boolk_a("force_stereo", "audio.force_stereo", false, true);
   // Output
-  add_boolk_a("output_enabled", "audio.output_enabled", /*rest_rtsp*/ true,
+  add_boolk_a("output_enabled", "audio.spk_enabled", /*rest_rtsp*/ true,
               /*rest_audio*/ true);
-  add_int("output_sample_rate", "audio.output_sample_rate", true);
+  add_int("output_sample_rate", "audio.spk_sample_rate", true);
+  add_int("output_gain", "audio.mic_gain", true);
+  add_int("output_vol", "audio.mic_vol", true);
 #endif
   add_int("buffer_warn_frames", "audio.buffer_warn_frames", false);
   add_int("buffer_cap_frames", "audio.buffer_cap_frames", false);
