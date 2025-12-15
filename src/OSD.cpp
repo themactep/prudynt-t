@@ -79,9 +79,23 @@ int OSD::renderGlyph(const char *characters) {
   return 0;
 }
 
-void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int WIDTH, int HEIGHT) {
+void setPixel(uint8_t *image, int x, int y, const uint8_t *color, uint8_t alpha,
+              int WIDTH, int HEIGHT) {
   if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
     int index = (y * WIDTH + x) * 4;
+    uint8_t beta = 255-alpha;
+    image[index+0] = ((color[0]*alpha)/255) + ((image[index+0]*beta)/255); // B
+    image[index+1] = ((color[1]*alpha)/255) + ((image[index+1]*beta)/255); // G
+    image[index+2] = ((color[2]*alpha)/255) + ((image[index+2]*beta)/255); // R
+    image[index+3] = ((color[3]*alpha)/255) + ((image[index+3]*beta)/255); // A
+  }
+}
+
+void setPixelMaybe(uint8_t *image, int x, int y, const uint8_t *color,
+                   int WIDTH, int HEIGHT) {
+  if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+    int index = (y * WIDTH + x) * 4;
+    if(image[index+3] != 0) return;
     image[index] = color[0];     // B
     image[index + 1] = color[1]; // G
     image[index + 2] = color[2]; // R
@@ -97,12 +111,8 @@ void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineS
         for (int h = 0; h < g.height; ++h) {
           for (int w = 0; w < g.width; ++w) {
             int srcIndex = h * g.width + w;
-            uint8_t glyphAlpha = g.bitmap[srcIndex];
-            if (glyphAlpha > 0) { // Check alpha value
-              // Combine glyph alpha with stroke color alpha
-              uint8_t combinedAlpha = (uint8_t)((glyphAlpha * strokeColor[3]) / 255);
-              uint8_t pixelColor[4] = {strokeColor[0], strokeColor[1], strokeColor[2], combinedAlpha};
-              setPixel(image, x + w + i, y + h + j, pixelColor, WIDTH, HEIGHT);
+            if ((g.bitmap[srcIndex]&0x80)) { // Check alpha value
+              setPixelMaybe(image, x + w + i, y + h + j, strokeColor, WIDTH, HEIGHT);
             }
           }
         }
@@ -149,17 +159,13 @@ int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT, int o
       for (int j = 0; j < g.height; ++j) {
         for (int i = 0; i < g.width; ++i) {
           int srcIndex = j * g.width + i;
-          uint8_t glyphAlpha = g.bitmap[srcIndex];
-          if (glyphAlpha > 0) {
-            // Combine glyph alpha with text color alpha
-            uint8_t combinedAlpha = (uint8_t)((glyphAlpha * textColor[3]) / 255);
-            uint8_t pixelColor[4] = {textColor[0], textColor[1], textColor[2], combinedAlpha};
-            setPixel(image, x + i, y + j, pixelColor, WIDTH, HEIGHT);
+          if ((g.bitmap[srcIndex]&0xFF)) { // Check alpha value
+            setPixel(image, x + i, y + j, textColor, g.bitmap[srcIndex], WIDTH, HEIGHT);
           }
         }
       }
 
-      penX += g.advance + (outlineSize * 2);
+      penX += g.advance;
     }
     ++text;
   }
