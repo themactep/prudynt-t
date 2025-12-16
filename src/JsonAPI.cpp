@@ -377,41 +377,41 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
 
   // Numbers
   add_int("font_size", std::string(root) + ".font_size");
-  add_int("font_stroke_size", std::string(root) + ".font_stroke_size");
-  add_int("logo_height", std::string(root) + ".logo_height");
-  add_int("logo_width", std::string(root) + ".logo_width");
-  add_int("time_rotation", std::string(root) + ".time_rotation");
-  add_int("usertext_rotation", std::string(root) + ".usertext_rotation");
-  add_int("uptime_rotation", std::string(root) + ".uptime_rotation");
-  add_int("logo_rotation", std::string(root) + ".logo_rotation");
-  add_int("logo_transparency", std::string(root) + ".logo_transparency");
+  add_int("stroke_size", std::string(root) + ".stroke_size");
+  add_int("logo_height", std::string(root) + ".logo.height");
+  add_int("logo_width", std::string(root) + ".logo.width");
+  add_int("time_rotation", std::string(root) + ".time.rotation");
+  add_int("usertext_rotation", std::string(root) + ".usertext.rotation");
+  add_int("uptime_rotation", std::string(root) + ".uptime.rotation");
+  add_int("logo_rotation", std::string(root) + ".logo.rotation");
+  add_int("logo_transparency", std::string(root) + ".logo.transparency");
   add_int("start_delay", std::string(root) + ".start_delay");
 
   // Bools
   add_boolk2("enabled", std::string(root) + ".enabled");
-  add_boolk2("time_enabled", std::string(root) + ".time_enabled");
-  add_boolk2("usertext_enabled", std::string(root) + ".usertext_enabled");
-  add_boolk2("uptime_enabled", std::string(root) + ".uptime_enabled");
-  add_boolk2("logo_enabled", std::string(root) + ".logo_enabled");
+  add_boolk2("time_enabled", std::string(root) + ".time.enabled");
+  add_boolk2("usertext_enabled", std::string(root) + ".usertext.enabled");
+  add_boolk2("uptime_enabled", std::string(root) + ".uptime.enabled");
+  add_boolk2("logo_enabled", std::string(root) + ".logo.enabled");
 
   // Strings
   add_strs("font_path", std::string(root) + ".font_path");
-  add_strs("time_format", std::string(root) + ".time_format");
-  add_strs("uptime_format", std::string(root) + ".uptime_format");
-  add_strs("usertext_format", std::string(root) + ".usertext_format");
-  add_strs("logo_path", std::string(root) + ".logo_path");
-  add_strs("time_position", std::string(root) + ".time_position");
-  add_strs("uptime_position", std::string(root) + ".uptime_position");
-  add_strs("usertext_position", std::string(root) + ".usertext_position");
-  add_strs("logo_position", std::string(root) + ".logo_position");
+  add_strs("time_format", std::string(root) + ".time.format");
+  add_strs("uptime_format", std::string(root) + ".uptime.format");
+  add_strs("usertext_format", std::string(root) + ".usertext.format");
+  add_strs("logo_path", std::string(root) + ".logo.path");
+  add_strs("time_position", std::string(root) + ".time.position");
+  add_strs("uptime_position", std::string(root) + ".uptime.position");
+  add_strs("usertext_position", std::string(root) + ".usertext.position");
+  add_strs("logo_position", std::string(root) + ".logo.position");
 
   // Colors (accept hex string)
-  add_hex("time_font_color", std::string(root) + ".time_font_color");
-  add_hex("time_font_stroke_color", std::string(root) + ".time_font_stroke_color");
-  add_hex("uptime_font_color", std::string(root) + ".uptime_font_color");
-  add_hex("uptime_font_stroke_color", std::string(root) + ".uptime_font_stroke_color");
-  add_hex("usertext_font_color", std::string(root) + ".usertext_font_color");
-  add_hex("usertext_font_stroke_color", std::string(root) + ".usertext_font_stroke_color");
+  add_hex("time_color", std::string(root) + ".time.fill_color");
+  add_hex("time_stroke_color", std::string(root) + ".time.stroke_color");
+  add_hex("uptime_color", std::string(root) + ".uptime.fill_color");
+  add_hex("uptime_stroke_color", std::string(root) + ".uptime.stroke_color");
+  add_hex("usertext_color", std::string(root) + ".usertext.fill_color");
+  add_hex("usertext_stroke_color", std::string(root) + ".usertext.stroke_color");
 }
 
 #if defined(AUDIO_SUPPORT)
