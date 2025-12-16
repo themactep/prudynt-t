@@ -671,13 +671,14 @@ void OSD::rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &heigh
 }
 
 uint16_t OSD::get_abs_pos(const uint16_t max, const uint16_t size, const int pos) {
+  int boundary = static_cast<int>(max) - static_cast<int>(size);
   if (pos == 0) {
-    return max / 2 - size / 2;
+    return static_cast<uint16_t>(std::max(boundary / 2, 0));
   }
   if (pos < 0) {
-    return max - size - 1 + pos;
+    return static_cast<uint16_t>(std::max(boundary + pos, 0));
   }
-  return pos;
+  return static_cast<uint16_t>(pos);
 }
 
 void OSD::set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t height, const uint16_t max_width,
