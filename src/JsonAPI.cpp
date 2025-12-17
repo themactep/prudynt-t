@@ -622,12 +622,27 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
+  auto add_strk = [&](const char *key, const char *path, bool upper = false) {
+    if (JsonValue *v = obj_get(obj, key)) {
+      if (v->type == JSON_STRING && v->value.string) {
+        std::string val = v->value.string;
+        if (upper) {
+          std::transform(val.begin(), val.end(), val.begin(), ::toupper);
+        }
+        cfg->set<const char *>(path, strdup(val.c_str()));
+      }
+      add_key(out, s2, key);
+      add_str(out, cfg->get<const char *>(path));
+      wrote = true;
+    }
+  };
 
   // Settings
   add_boolk("enabled", "daynight.enabled");
   add_int("switch_below_percent", "daynight.switch_below_percent");
   add_int("switch_above_percent", "daynight.switch_above_percent");
   add_int("tolerance_percent", "daynight.tolerance_percent");
+  add_strk("loglevel", "daynight.loglevel", true);
 
   // Live status
   if (obj_get(obj, "status")) {

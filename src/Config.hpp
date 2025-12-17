@@ -143,6 +143,8 @@ struct _daynight {
   int switch_above_percent{80};
   int tolerance_percent{50};
 
+  const char *loglevel{nullptr};
+
   // Optional expert overrides
   int sample_interval_ms{1000};
   int ev_night_high{1900000};

@@ -185,6 +185,16 @@ bool validateCharNotEmpty(const char *v) {
   return std::strlen(v) > 0;
 }
 
+bool validateLogLevelString(const char *v) {
+  if (!v || v[0] == '\0') {
+    return true;
+  }
+  static const std::set<std::string> allowed = {"EMERGENCY", "ALERT",   "CRITICAL", "ERROR",
+                                                "WARN",      "NOTICE",  "INFO",     "DEBUG",
+                                                "TRACE"};
+  return allowed.count(std::string(v)) == 1;
+}
+
 bool validateBool(const bool &v) {
   return true;
 }
@@ -316,6 +326,7 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"audio.mic_format", audio.input_format, "OPUS", [](const char *v) { std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"}; return a.count(std::string(v)) == 1; }},
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
       {"daynight.script_path", daynight.script_path, "/sbin/daynight", validateCharNotEmpty},
+      {"daynight.loglevel", daynight.loglevel, "", validateLogLevelString},
       {"general.loglevel", general.loglevel, "INFO", [](const char *v) { std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"}; return a.count(std::string(v)) == 1; }},
       {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
       {"recorder.device_path", recorder.device_path, "%hostname", validateCharDummy},
@@ -986,6 +997,10 @@ void CFG::load() {
     for (auto &item : floatItems)
       handleConfigItem(jsonConfig, item);
     LOG_DEBUG("CFG::load() - Finished processing config items");
+  }
+
+  if (!daynight.loglevel || daynight.loglevel[0] == '\0') {
+    daynight.loglevel = (general.loglevel && general.loglevel[0] != '\0') ? general.loglevel : "INFO";
   }
 
   apply_stream_sensor_defaults(*this);

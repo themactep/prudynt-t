@@ -122,6 +122,7 @@ public:
   static void log(Level level, std::string module, LogMsg msg);
 
   static void setLevel(std::string lvl);
+  static Level parseLevel(const std::string &lvl);
   static Level level;
 
 private:

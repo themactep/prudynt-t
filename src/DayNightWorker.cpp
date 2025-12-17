@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <thread>
 
 using namespace std::chrono;
@@ -26,6 +27,34 @@ struct Profile {
   int settle;
   int sec_margin_percent; // adds to day_above for secondary EV gate
 };
+
+static Logger::Level daynight_log_level = Logger::INFO;
+static std::string daynight_log_level_label = "INFO";
+
+static const char *select_daynight_log_level_string() {
+  if (cfg && cfg->daynight.loglevel && cfg->daynight.loglevel[0] != '\0') {
+    return cfg->daynight.loglevel;
+  }
+  if (cfg && cfg->general.loglevel && cfg->general.loglevel[0] != '\0') {
+    return cfg->general.loglevel;
+  }
+  return "INFO";
+}
+
+static void refresh_daynight_log_level() {
+  const char *selected = select_daynight_log_level_string();
+  if (!selected || selected[0] == '\0') {
+    selected = "INFO";
+  }
+  if (daynight_log_level_label != selected) {
+    daynight_log_level_label = selected;
+    daynight_log_level = Logger::parseLevel(daynight_log_level_label);
+  }
+}
+
+static bool daynight_should_log(Logger::Level lvl) {
+  return daynight_log_level >= lvl;
+}
 
 static Profile get_profile() {
   Profile p{};
@@ -93,14 +122,18 @@ static void apply_mode(DayNightAlgo::Mode m) {
   if (m == DayNightAlgo::Mode::Day) {
     int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
     if (ret != 0) {
-      LOG_WARN("SetISPRunningMode(DAY) failed: " << ret);
+      if (daynight_should_log(Logger::WARN)) {
+        LOG_WARN("SetISPRunningMode(DAY) failed: " << ret);
+      }
     }
     std::string cmd = std::string(script) + " day";
     (void)std::system(cmd.c_str());
   } else if (m == DayNightAlgo::Mode::Night) {
     int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Night);
     if (ret != 0) {
-      LOG_WARN("SetISPRunningMode(NIGHT) failed: " << ret);
+      if (daynight_should_log(Logger::WARN)) {
+        LOG_WARN("SetISPRunningMode(NIGHT) failed: " << ret);
+      }
     }
     std::string cmd = std::string(script) + " night";
     (void)std::system(cmd.c_str());
@@ -109,7 +142,10 @@ static void apply_mode(DayNightAlgo::Mode m) {
 
 void *thread_entry(void *arg) {
   (void)arg;
-  LOG_INFO("DayNightWorker: starting (percent-based algo)");
+  refresh_daynight_log_level();
+  if (daynight_should_log(Logger::INFO)) {
+    LOG_INFO("DayNightWorker: starting (percent-based algo, loglevel=" << daynight_log_level_label << ")");
+  }
 
   DayNightAlgo::Params params{};
   DayNightAlgo::State state{};
@@ -161,6 +197,7 @@ void *thread_entry(void *arg) {
   DayNightAlgo::Mode current = DayNightAlgo::Mode::Unknown;
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
+    refresh_daynight_log_level();
     int ev = -1, gr = -1, gb = -1;
     (void)read_ev(ev);
     (void)read_awb(gr, gb);
@@ -180,12 +217,14 @@ void *thread_entry(void *arg) {
                                : (current == DayNightAlgo::Mode::Night ? "night" : "unknown");
     cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
 
-    LOG_DEBUG("DayNight: brightness%=" << bright_pct
-                      << " EV=" << ev << " GB=" << gb << " GR=" << gr
-                      << " recGB=" << state.gb_gain_record << " nCnt=" << state.night_count
-                      << " dCnt=" << state.day_count
-                      << " ircut=" << (state.ircut_engaged ? "1" : "0") << " -> "
-                      << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT") : "HOLD"));
+    if (daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: brightness%=" << bright_pct << " EV=" << ev << " GB=" << gb << " GR=" << gr
+                                          << " recGB=" << state.gb_gain_record << " nCnt=" << state.night_count
+                                          << " dCnt=" << state.day_count
+                                          << " ircut=" << (state.ircut_engaged ? "1" : "0") << " -> "
+                                          << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
+                                                         : "HOLD"));
+    }
 
     if (dec.toggled && dec.target != current) {
       apply_mode(dec.target);
@@ -202,7 +241,10 @@ void *thread_entry(void *arg) {
     std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
   }
 
-  LOG_INFO("DayNightWorker: shutting down");
+  refresh_daynight_log_level();
+  if (daynight_should_log(Logger::INFO)) {
+    LOG_INFO("DayNightWorker: shutting down");
+  }
   return nullptr;
 }
 

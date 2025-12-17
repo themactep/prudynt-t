@@ -15,7 +15,7 @@
 
 const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"};
 
-Logger::Level stringToLogLevel(const std::string &levelStr) {
+Logger::Level Logger::parseLevel(const std::string &levelStr) {
   if (levelStr == "EMERGENCY")
     return Logger::EMERGENCY;
   if (levelStr == "ALERT")
@@ -45,14 +45,14 @@ std::mutex Logger::log_mtx;
 bool Logger::init(std::string logLevel) {
   // Initialize the syslog
   openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
-  Logger::level = stringToLogLevel(logLevel);
+  Logger::level = Logger::parseLevel(logLevel);
   LOG_INFO("Logger init. level=" << logLevel);
   return false;
 }
 
 void Logger::setLevel(std::string lvl) {
   LOG_DEBUG("set loglevel to " << lvl);
-  Logger::level = stringToLogLevel(lvl);
+  Logger::level = Logger::parseLevel(lvl);
 }
 
 void Logger::log(Level lvl, std::string module, LogMsg msg) {
