@@ -1,5 +1,6 @@
 #include "Config.hpp"
 #include "Logger.hpp"
+#include "imp_hal.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -322,6 +323,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
 };
 
 std::vector<ConfigItem<const char *>> CFG::getCharItems() {
+  const auto &encDefaults = hal::defaults::encoder();
   return {
       {"audio.mic_format", audio.input_format, "OPUS", [](const char *v) { std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"}; return a.count(std::string(v)) == 1; }},
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
@@ -353,7 +355,7 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"stream0.osd.privacy.image_path", stream0.osd.privacy.image_path, "", validateCharDummy},
       {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120", validateCharNotEmpty},
       {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
-      {"stream0.mode", stream0.mode, DEFAULT_ENC_MODE_0, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
+      {"stream0.mode", stream0.mode, encDefaults.stream0_mode, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
       {"stream0.rtsp_endpoint", stream0.rtsp_endpoint, "ch0", validateCharNotEmpty},
       {"stream0.rtsp_info", stream0.rtsp_info, "stream0", validateCharNotEmpty},
       {"stream1.format", stream1.format, "H264", [](const char *v) { return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0; }},
@@ -371,7 +373,7 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"stream1.osd.privacy.image_path", stream1.osd.privacy.image_path, "", validateCharDummy},
       {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120", validateCharNotEmpty},
       {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED", validateCharNotEmpty},
-      {"stream1.mode", stream1.mode, DEFAULT_ENC_MODE_1, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
+      {"stream1.mode", stream1.mode, encDefaults.stream1_mode, [](const char *v) { std::set<std::string> a = {"CBR", "VBR", "SMART", "FIXQP", "CAPPED_VBR", "CAPPED_QUALITY"}; return a.count(std::string(v)) == 1; }},
       {"stream1.rtsp_endpoint", stream1.rtsp_endpoint, "ch1", validateCharNotEmpty},
       {"stream1.rtsp_info", stream1.rtsp_info, "stream1", validateCharNotEmpty},
       {"stream2.jpeg_path", stream2.jpeg_path, "/tmp/snapshot.jpg", validateCharNotEmpty},
@@ -384,6 +386,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
 };
 
 std::vector<ConfigItem<int>> CFG::getIntItems() {
+  const auto &encDefaults = hal::defaults::encoder();
+  const auto &denoiseDefaults = hal::defaults::denoise();
   return {
       {"audio.mic_bitrate", audio.input_bitrate, 40, [](const int &v) { return v >= 6 && v <= 256; }},
       {"audio.mic_gain", audio.input_gain, 25, [](const int &v) { return v >= -1 && v <= 31; }},
@@ -430,8 +434,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"image.running_mode", image.running_mode, 0, validateInt1},
       {"image.saturation", image.saturation, 128, validateInt255},
       {"image.sharpness", image.sharpness, 128, validateInt255},
-      {"image.sinter_strength", image.sinter_strength, DEFAULT_SINTER, DEFAULT_SINTER_VALIDATE},
-      {"image.temper_strength", image.temper_strength, DEFAULT_TEMPER, DEFAULT_TEMPER_VALIDATE},
+      {"image.sinter_strength", image.sinter_strength, denoiseDefaults.sinter_default,
+       [min = denoiseDefaults.sinter_min, max = denoiseDefaults.sinter_max](const int &v) { return v >= min && v <= max; }},
+      {"image.temper_strength", image.temper_strength, denoiseDefaults.temper_default,
+       [min = denoiseDefaults.temper_min, max = denoiseDefaults.temper_max](const int &v) { return v >= min && v <= max; }},
       {"image.wb_bgain", image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
       {"image.wb_rgain", image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
       {"motion.debounce_time", motion.debounce_time, 0, validateIntGe0},
@@ -477,7 +483,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.ip_delta", stream0.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.pb_delta", stream0.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.max_bitrate", stream0.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
-      {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0, [](const int &v) { return v >= 1 && v <= 8; }},
+      {"stream0.buffers", stream0.buffers, encDefaults.stream0_buffers, [](const int &v) { return v >= 1 && v <= 8; }},
       // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream0.fps", stream0.fps, 25, validateInt120},
       {"stream0.gop", stream0.gop, 20, validateIntGe0},
@@ -514,7 +520,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.ip_delta", stream1.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.pb_delta", stream1.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.max_bitrate", stream1.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
-      {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1, [](const int &v) { return v >= 1 && v <= 8; }},
+      {"stream1.buffers", stream1.buffers, encDefaults.stream1_buffers, [](const int &v) { return v >= 1 && v <= 8; }},
       // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream1.fps", stream1.fps, 25, validateInt120},
       {"stream1.gop", stream1.gop, 20, validateIntGe0},

@@ -80,6 +80,29 @@ struct PlatformCaps {
 
 const PlatformCaps &caps();
 
+namespace defaults {
+
+struct EncoderDefaults {
+  const char *stream0_mode;
+  const char *stream1_mode;
+  int stream0_buffers;
+  int stream1_buffers;
+};
+
+struct DenoiseDefaults {
+  int sinter_default;
+  int temper_default;
+  int sinter_min;
+  int sinter_max;
+  int temper_min;
+  int temper_max;
+};
+
+const EncoderDefaults &encoder();
+const DenoiseDefaults &denoise();
+
+} // namespace defaults
+
 // Safe no-op on platforms without user qtable
 void set_jpeg_quality_qtable(int encChn, int quality /*1..100*/, const char *cpu_hint);
 

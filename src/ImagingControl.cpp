@@ -3,6 +3,7 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -55,15 +56,10 @@ constexpr int kToneDefault = 0;
 constexpr int kDefogMin = 0;
 constexpr int kDefogMax = 255;
 constexpr int kDefogDefault = 128;
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41) ||               \
-    defined(PLATFORM_T23)
-constexpr int kNoiseReductionMin = 0;
-constexpr int kNoiseReductionMax = 255;
-#else
-constexpr int kNoiseReductionMin = 50;
-constexpr int kNoiseReductionMax = 150;
-#endif
-constexpr int kNoiseReductionDefault = DEFAULT_SINTER;
+const auto &kDenoiseDefaults = hal::defaults::denoise();
+const int kNoiseReductionMin = kDenoiseDefaults.sinter_min;
+const int kNoiseReductionMax = kDenoiseDefaults.sinter_max;
+const int kNoiseReductionDefault = kDenoiseDefaults.sinter_default;
 
 #if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
     !defined(PLATFORM_T30)

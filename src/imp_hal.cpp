@@ -178,6 +178,34 @@ const PlatformCaps &caps() {
   return g_caps;
 }
 
+namespace defaults {
+
+const EncoderDefaults &encoder() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  static constexpr EncoderDefaults defaults{"FIXQP", "CAPPED_QUALITY", 4, 2};
+#elif defined(PLATFORM_T23)
+  static constexpr EncoderDefaults defaults{"SMART", "SMART", 2, 2};
+#else
+  static constexpr EncoderDefaults defaults{"SMART", "SMART", 2, 2};
+#endif
+  return defaults;
+}
+
+const DenoiseDefaults &denoise() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  static constexpr DenoiseDefaults defaults{128, 128, 0, 255, 0, 255};
+#elif defined(PLATFORM_T23)
+  static constexpr DenoiseDefaults defaults{128, 128, 0, 255, 0, 255};
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
+  static constexpr DenoiseDefaults defaults{25, 25, 0, 255, 0, 255};
+#else
+  static constexpr DenoiseDefaults defaults{50, 50, 50, 150, 50, 150};
+#endif
+  return defaults;
+}
+
+} // namespace defaults
+
 void set_jpeg_quality_qtable(int encChn, int quality, const char *cpu_hint) {
   if (quality < 1 || quality > 100)
     return;
