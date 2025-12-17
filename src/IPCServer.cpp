@@ -422,9 +422,9 @@ int IPCServer::handle_client(int fd) {
     char line[256];
     // HELP/TYPE for stream fps/bps
     write(fd, "# HELP prudynt_stream_fps Stream frames per second (instant).\n",
-          strlen("# HELP prudynt_stream_fps Stream frames per second "
-                 "(instant).\n"));
-    write(fd, "# TYPE prudynt_stream_fps gauge\n", strlen("# TYPE prudynt_stream_fps gauge\n"));
+          strlen("# HELP prudynt_stream_fps Stream frames per second (instant).\n"));
+    write(fd, "# TYPE prudynt_stream_fps gauge\n",
+          strlen("# TYPE prudynt_stream_fps gauge\n"));
     snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"0\"} %d\n", cfg->stream0.stats.fps);
     write(fd, line, strlen(line));
     snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"1\"} %d\n", cfg->stream1.stats.fps);
@@ -433,9 +433,9 @@ int IPCServer::handle_client(int fd) {
     write(fd, line, strlen(line));
 
     write(fd, "# HELP prudynt_stream_Bps Stream bytes per second (instant).\n",
-          strlen("# HELP prudynt_stream_Bps Stream bytes per second "
-                 "(instant).\n"));
-    write(fd, "# TYPE prudynt_stream_Bps gauge\n", strlen("# TYPE prudynt_stream_Bps gauge\n"));
+          strlen("# HELP prudynt_stream_Bps Stream bytes per second (instant).\n"));
+    write(fd, "# TYPE prudynt_stream_Bps gauge\n",
+          strlen("# TYPE prudynt_stream_Bps gauge\n"));
     snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"0\"} %u\n", (unsigned)cfg->stream0.stats.bps);
     write(fd, line, strlen(line));
     snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"1\"} %u\n", (unsigned)cfg->stream1.stats.bps);
@@ -448,33 +448,46 @@ int IPCServer::handle_client(int fd) {
     int live_ev_val = cfg->daynight.live_ev.load();
     int live_gb_val = cfg->daynight.live_gb.load();
     int live_gr_val = cfg->daynight.live_gr.load();
-    write(fd,
-          "# HELP prudynt_daynight_brightness_percent Day/Night brightness "
-          "percent (0..100).\n",
-          strlen("# HELP prudynt_daynight_brightness_percent Day/Night "
-                 "brightness percent (0..100).\n"));
+    write(fd, "# HELP prudynt_daynight_brightness_percent Day/Night brightness percent (0..100).\n",
+          strlen("# HELP prudynt_daynight_brightness_percent Day/Night brightness percent (0..100).\n"));
     write(fd, "# TYPE prudynt_daynight_brightness_percent gauge\n",
           strlen("# TYPE prudynt_daynight_brightness_percent gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_brightness_percent %d\n", live_brightness_percent);
     write(fd, line, strlen(line));
 
     write(fd, "# HELP prudynt_daynight_ev ISP exposure value (platform units).\n",
-          strlen("# HELP prudynt_daynight_ev ISP exposure value (platform "
-                 "units).\n"));
-    write(fd, "# TYPE prudynt_daynight_ev gauge\n", strlen("# TYPE prudynt_daynight_ev gauge\n"));
+          strlen("# HELP prudynt_daynight_ev ISP exposure value (platform units).\n"));
+    write(fd, "# TYPE prudynt_daynight_ev gauge\n",
+          strlen("# TYPE prudynt_daynight_ev gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_ev %d\n", live_ev_val);
     write(fd, line, strlen(line));
 
     write(fd, "# HELP prudynt_daynight_gb AWB blue/green gain (b/g).\n",
           strlen("# HELP prudynt_daynight_gb AWB blue/green gain (b/g).\n"));
-    write(fd, "# TYPE prudynt_daynight_gb gauge\n", strlen("# TYPE prudynt_daynight_gb gauge\n"));
+    write(fd, "# TYPE prudynt_daynight_gb gauge\n",
+          strlen("# TYPE prudynt_daynight_gb gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_gb %d\n", live_gb_val);
     write(fd, line, strlen(line));
 
     write(fd, "# HELP prudynt_daynight_gr AWB red/green gain (r/g).\n",
           strlen("# HELP prudynt_daynight_gr AWB red/green gain (r/g).\n"));
-    write(fd, "# TYPE prudynt_daynight_gr gauge\n", strlen("# TYPE prudynt_daynight_gr gauge\n"));
+    write(fd, "# TYPE prudynt_daynight_gr gauge\n",
+          strlen("# TYPE prudynt_daynight_gr gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_gr %d\n", live_gr_val);
+    write(fd, line, strlen(line));
+
+    write(fd, "# HELP prudynt_image_sinter_strength Current ISP sinter denoise strength.\n",
+          strlen("# HELP prudynt_image_sinter_strength Current ISP sinter denoise strength.\n"));
+    write(fd, "# TYPE prudynt_image_sinter_strength gauge\n",
+          strlen("# TYPE prudynt_image_sinter_strength gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_image_sinter_strength %d\n", cfg->image.sinter_strength);
+    write(fd, line, strlen(line));
+
+    write(fd, "# HELP prudynt_image_temper_strength Current ISP temper denoise strength.\n",
+          strlen("# HELP prudynt_image_temper_strength Current ISP temper denoise strength.\n"));
+    write(fd, "# TYPE prudynt_image_temper_strength gauge\n",
+          strlen("# TYPE prudynt_image_temper_strength gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_image_temper_strength %d\n", cfg->image.temper_strength);
     write(fd, line, strlen(line));
 
     // Uptime seconds
@@ -515,12 +528,10 @@ int IPCServer::handle_client(int fd) {
     const char *m = mode_ptr ? mode_ptr : "unknown";
     int is_day = (strcmp(m, "day") == 0);
     int is_night = (strcmp(m, "night") == 0);
-    write(fd,
-          "# HELP prudynt_daynight_state Day/Night state as one-hot time "
-          "series.\n",
-          strlen("# HELP prudynt_daynight_state Day/Night state as one-hot "
-                 "time series.\n"));
-    write(fd, "# TYPE prudynt_daynight_state gauge\n", strlen("# TYPE prudynt_daynight_state gauge\n"));
+    write(fd, "# HELP prudynt_daynight_state Day/Night state as one-hot time series.\n",
+          strlen("# HELP prudynt_daynight_state Day/Night state as one-hot time series.\n"));
+    write(fd, "# TYPE prudynt_daynight_state gauge\n",
+          strlen("# TYPE prudynt_daynight_state gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"day\"} %d\n", is_day);
     write(fd, line, strlen(line));
     snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"night\"} %d\n", is_night);
