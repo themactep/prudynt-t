@@ -19,6 +19,117 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+
+void log_dimension_adjustment(const char *context, const char *field, int old_value, int new_value) {
+  if (old_value == new_value) {
+    return;
+  }
+  LOG_INFO(context << ": " << field << " adjusted from " << old_value << " to " << new_value);
+}
+
+void apply_stream_sensor_defaults(CFG &config) {
+  const int sensor_w = config.sensor.width;
+  const int sensor_h = config.sensor.height;
+  if (sensor_w <= 0 || sensor_h <= 0) {
+    return;
+  }
+
+  auto adjust_dim = [&](const char *stream_name, const char *field, int sensor_max, int &value) {
+    if (sensor_max <= 0) {
+      return;
+    }
+    int original = value;
+    if (value <= 0) {
+      value = sensor_max;
+    } else if (value > sensor_max) {
+      value = sensor_max;
+    }
+    log_dimension_adjustment(stream_name, field, original, value);
+  };
+
+  auto adjust_stream = [&](const char *stream_name, _stream &stream) {
+    adjust_dim(stream_name, "width", sensor_w, stream.width);
+    adjust_dim(stream_name, "height", sensor_h, stream.height);
+  };
+
+  adjust_stream("stream0", config.stream0);
+  adjust_stream("stream1", config.stream1);
+
+  if (config.stream2.jpeg_idle_fps <= 0) {
+    const int sensor_min_fps = config.sensor.min_fps;
+    int replacement = sensor_min_fps > 0 ? sensor_min_fps : 1;
+    replacement = std::clamp(replacement, 1, 30);
+    log_dimension_adjustment("stream2", "jpeg_idle_fps", config.stream2.jpeg_idle_fps, replacement);
+    config.stream2.jpeg_idle_fps = replacement;
+  }
+}
+
+void apply_motion_sensor_defaults(CFG &config) {
+  const int sensor_w = config.sensor.width;
+  const int sensor_h = config.sensor.height;
+  if (sensor_w <= 0 || sensor_h <= 0) {
+    return;
+  }
+
+  auto adjust_frame_dim = [&](const char *field, int sensor_max, int &value) {
+    int original = value;
+    if (value == IVS_AUTO_VALUE || value <= 0) {
+      value = sensor_max;
+    } else if (value > sensor_max) {
+      value = sensor_max;
+    }
+    log_dimension_adjustment("motion", field, original, value);
+  };
+
+  adjust_frame_dim("frame_width", sensor_w, config.motion.frame_width);
+  adjust_frame_dim("frame_height", sensor_h, config.motion.frame_height);
+
+  auto clamp_roi_coord = [&](const char *field, int sensor_max, int &value) {
+    if (sensor_max <= 0) {
+      int original = value;
+      value = 0;
+      log_dimension_adjustment("motion", field, original, value);
+      return;
+    }
+    int max_coord = std::max(sensor_max - 1, 0);
+    int original = value;
+    if (value == IVS_AUTO_VALUE) {
+      value = max_coord;
+    } else {
+      value = std::clamp(value, 0, max_coord);
+    }
+    log_dimension_adjustment("motion", field, original, value);
+  };
+
+  clamp_roi_coord("roi_0_x", sensor_w, config.motion.roi_0_x);
+  clamp_roi_coord("roi_0_y", sensor_h, config.motion.roi_0_y);
+  clamp_roi_coord("roi_1_x", sensor_w, config.motion.roi_1_x);
+  clamp_roi_coord("roi_1_y", sensor_h, config.motion.roi_1_y);
+
+  auto enforce_roi_span = [&](const char *field, int sensor_max, int start, int &end) {
+    if (sensor_max <= 0) {
+      return;
+    }
+    if (end > start) {
+      return;
+    }
+    int max_coord = std::max(sensor_max - 1, 0);
+    int original = end;
+    int candidate = std::min(max_coord, start + 1);
+    if (candidate <= start) {
+      candidate = start;
+    }
+    end = candidate;
+    log_dimension_adjustment("motion", field, original, end);
+  };
+
+  enforce_roi_span("roi_1_x", sensor_w, config.motion.roi_0_x, config.motion.roi_1_x);
+  enforce_roi_span("roi_1_y", sensor_h, config.motion.roi_0_y, config.motion.roi_1_y);
+}
+
+} // namespace
+
 // Forward declaration
 std::string jsonValueToString(JsonValue *value);
 
@@ -336,10 +447,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, validateIntGe0},
       {"rtsp.session_reclaim", rtsp.session_reclaim, 65, validateIntGe0},
       {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false, "/proc/jz/sensor/i2c_bus"},
+      // TODO: set default fps to the maximum supported by the SoC via HAL
       {"sensor.fps", sensor.fps, 25, validateInt120, false, "/proc/jz/sensor/max_fps"},
       {"sensor.min_fps", sensor.min_fps, 5, validateInt120, false, "/proc/jz/sensor/min_fps"},
-      {"sensor.height", sensor.height, 1080, validateIntGe0, false, "/proc/jz/sensor/height"},
-      {"sensor.width", sensor.width, 1920, validateIntGe0, false, "/proc/jz/sensor/width"},
+      // TODO: set default height to the maximum supported by the SoC via HAL
+      {"sensor.height", sensor.height, 0, validateIntGe0, false, "/proc/jz/sensor/height"},
+      // TODO: set default width to the maximum supported by the SoC via HAL
+      {"sensor.width", sensor.width, 0, validateIntGe0, false, "/proc/jz/sensor/width"},
       {"sensor.boot", sensor.boot, 0, validateIntGe0, false, "/proc/jz/sensor/boot"},
       {"sensor.mclk", sensor.mclk, 1, validateIntGe0, false, "/proc/jz/sensor/mclk"},
       {"sensor.video_interface", sensor.video_interface, 0, validateIntGe0, false, "/proc/jz/sensor/video_interface"},
@@ -353,9 +467,11 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.pb_delta", stream0.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.max_bitrate", stream0.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
       {"stream0.buffers", stream0.buffers, DEFAULT_BUFFERS_0, [](const int &v) { return v >= 1 && v <= 8; }},
+      // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream0.fps", stream0.fps, 25, validateInt120},
       {"stream0.gop", stream0.gop, 20, validateIntGe0},
-      {"stream0.height", stream0.height, 1080, validateIntGe0},
+      // TODO: set default height to the maximum supported by the SoC via HAL
+      {"stream0.height", stream0.height, 0, validateIntGe0},
       {"stream0.max_gop", stream0.max_gop, 60, validateIntGe0},
       {"stream0.osd.font_size", stream0.osd.font_size, OSD_AUTO_VALUE, validateIntGe0},
       {"stream0.osd.stroke_size", stream0.osd.stroke_size, 1, validateIntGe0},
@@ -376,7 +492,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.osd.privacy.layer", stream0.osd.privacy.layer, 16, [](const int &v) { return v >= 0 && v <= 16; }},
       {"stream0.osd.privacy.opacity", stream0.osd.privacy.opacity, 255, validateInt255},
       {"stream0.rotation", stream0.rotation, 0, validateRotation},
-      {"stream0.width", stream0.width, 1920, validateIntGe0},
+      // TODO: set default width to the maximum supported by the SoC via HAL
+      {"stream0.width", stream0.width, 0, validateIntGe0},
       {"stream0.profile", stream0.profile, 2, validateInt2},
       {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
       // Rate control advanced (defaults -1/0 mean use encoder defaults)
@@ -387,9 +504,11 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.pb_delta", stream1.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.max_bitrate", stream1.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
       {"stream1.buffers", stream1.buffers, DEFAULT_BUFFERS_1, [](const int &v) { return v >= 1 && v <= 8; }},
+      // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream1.fps", stream1.fps, 25, validateInt120},
       {"stream1.gop", stream1.gop, 20, validateIntGe0},
-      {"stream1.height", stream1.height, 360, validateIntGe0},
+      // TODO: set default height to the maximum supported by the SoC via HAL
+      {"stream1.height", stream1.height, 0, validateIntGe0},
       {"stream1.max_gop", stream1.max_gop, 60, validateIntGe0},
       {"stream1.osd.font_size", stream1.osd.font_size, OSD_AUTO_VALUE, validateIntGe0},
       {"stream1.osd.stroke_size", stream1.osd.stroke_size, 1, validateIntGe0},
@@ -405,17 +524,22 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.osd.privacy.font_size", stream1.osd.privacy.font_size, OSD_AUTO_VALUE, validateIntGe0},
       {"stream1.osd.privacy.stroke_size", stream1.osd.privacy.stroke_size, 2, validateIntGe0},
       {"stream1.osd.privacy.rotation", stream1.osd.privacy.rotation, 0, validateInt360},
-      {"stream1.osd.privacy.image_width", stream1.osd.privacy.image_width, 0, validateIntGe0},
+      // TODO: set default image_height to the maximum supported by the SoC via HAL
       {"stream1.osd.privacy.image_height", stream1.osd.privacy.image_height, 0, validateIntGe0},
+      // TODO: set default image_width to the maximum supported by the SoC via HAL
+      {"stream1.osd.privacy.image_width", stream1.osd.privacy.image_width, 0, validateIntGe0},
       {"stream1.osd.privacy.layer", stream1.osd.privacy.layer, 16, [](const int &v) { return v >= 0 && v <= 16; }},
       {"stream1.osd.privacy.opacity", stream1.osd.privacy.opacity, 255, validateInt255},
       {"stream1.rotation", stream1.rotation, 0, validateRotation},
-      {"stream1.width", stream1.width, 640, validateIntGe0},
+      // TODO: set default width to the maximum supported by the SoC via HAL
+      {"stream1.width", stream1.width, 0, validateIntGe0},
       {"stream1.profile", stream1.profile, 2, validateInt2},
+      // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream2.fps", stream2.fps, 25, [](const int &v) { return v > 1 && v <= 30; }},
       {"stream2.jpeg_channel", stream2.jpeg_channel, 0, validateIntGe0},
       {"stream2.jpeg_quality", stream2.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
-      {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
+      {"stream2.jpeg_idle_fps", stream2.jpeg_idle_fps, 0, [](const int &v) { return v >= 0 && v <= 30; }},
+      // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream3.fps", stream3.fps, 15, [](const int &v) { return v > 1 && v <= 30; }},
       {"stream3.jpeg_channel", stream3.jpeg_channel, 1, validateIntGe0},
       {"stream3.jpeg_quality", stream3.jpeg_quality, 75, [](const int &v) { return v > 0 && v <= 100; }},
@@ -864,6 +988,8 @@ void CFG::load() {
     LOG_DEBUG("CFG::load() - Finished processing config items");
   }
 
+  apply_stream_sensor_defaults(*this);
+
   if (stream2.jpeg_channel == 0) {
     stream2.width = stream0.width;
     stream2.height = stream0.height;
@@ -879,6 +1005,8 @@ void CFG::load() {
     stream3.width = stream1.width;
     stream3.height = stream1.height;
   }
+
+  apply_motion_sensor_defaults(*this);
 
   // TODO: Implement ROI handling with JCT
   /*
