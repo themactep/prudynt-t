@@ -60,6 +60,9 @@ const auto &kDenoiseDefaults = hal::defaults::denoise();
 const int kNoiseReductionMin = kDenoiseDefaults.sinter_min;
 const int kNoiseReductionMax = kDenoiseDefaults.sinter_max;
 const int kNoiseReductionDefault = kDenoiseDefaults.sinter_default;
+const int kTemperStrengthMin = kDenoiseDefaults.temper_min;
+const int kTemperStrengthMax = kDenoiseDefaults.temper_max;
+const int kTemperStrengthDefault = kDenoiseDefaults.temper_default;
 
 #if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
     !defined(PLATFORM_T30)
@@ -173,6 +176,20 @@ static int apply_noise_reduction(int value) {
   return 0;
 #endif
 }
+
+static int apply_temper(int value) {
+#if defined(NO_TUNINGS)
+  (void)value;
+  return 0;
+#else
+  if (!hal::caps().has_isp_temper) {
+    LOG_DEBUG("ImagingControl: temper strength unsupported on this platform");
+    return 0;
+  }
+  LOG_DEBUG("ImagingControl: apply temper_strength=" << value);
+  return hal::isp::set_temper_strength(static_cast<unsigned char>(value));
+#endif
+}
 static const FieldBinding kFields[] = {
     {"brightness", "image.brightness", 0, 255, 128, &_image::brightness, &apply_brightness, true},
     {"contrast", "image.contrast", 0, 255, 128, &_image::contrast, &apply_contrast, true},
@@ -188,6 +205,8 @@ static const FieldBinding kFields[] = {
      kAdvancedHdrSupported},
     {"noise_reduction", "image.sinter_strength", kNoiseReductionMin, kNoiseReductionMax, kNoiseReductionDefault,
      &_image::sinter_strength, &apply_noise_reduction, true},
+    {"temper_strength", "image.temper_strength", kTemperStrengthMin, kTemperStrengthMax, kTemperStrengthDefault,
+     &_image::temper_strength, &apply_temper, hal::caps().has_isp_temper},
 };
 
 struct ParsedAssignment {

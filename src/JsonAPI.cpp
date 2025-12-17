@@ -42,6 +42,9 @@ inline void add_num(std::string &out, int v) {
 inline void add_bool(std::string &out, bool v) {
   out += (v ? "true" : "false");
 }
+inline void add_null(std::string &out) {
+  out += "null";
+}
 
 // Look up a child by key (convenience)
 JsonValue *obj_get(JsonValue *obj, const char *k) {
@@ -263,8 +266,14 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
     add_int("sinter_strength", "image.sinter_strength",
             [] { hal::isp::set_sinter_strength(cfg->image.sinter_strength); });
   }
-  add_int("temper_strength", "image.temper_strength",
-          [] { hal::isp::set_temper_strength(cfg->image.temper_strength); });
+  if (hal::caps().has_isp_temper) {
+    add_int("temper_strength", "image.temper_strength",
+            [] { hal::isp::set_temper_strength(cfg->image.temper_strength); });
+  } else if (obj_get(obj, "temper_strength")) {
+    add_key(out, s2, "temper_strength");
+    add_null(out);
+    wrote = true;
+  }
 
   add_boolk("vflip", "image.vflip", [] { hal::isp::set_vflip(true); }, [] { hal::isp::set_vflip(false); });
   add_boolk("hflip", "image.hflip", [] { hal::isp::set_hflip(true); }, [] { hal::isp::set_hflip(false); });
