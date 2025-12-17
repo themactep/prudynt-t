@@ -13,9 +13,7 @@ JsonValue *parse_json_string(const char *json_str);
 #include <cstring>
 #include <imp/imp_isp.h>
 #include <sstream>
-#if defined(AUDIO_SUPPORT)
 #include <imp/imp_audio.h>
-#endif
 
 namespace {
 
@@ -154,11 +152,9 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   if (idx < 2) {
     add_boolk("enabled", std::string(root) + ".enabled");
   }
-#if defined(AUDIO_SUPPORT)
   if (idx < 2) {
     add_boolk("audio_enabled", std::string(root) + ".audio_enabled");
   }
-#endif
   if (idx < 2) {
     add_boolk("scale_enabled", std::string(root) + ".scale_enabled");
   }
@@ -414,7 +410,6 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
   add_hex("usertext_font_stroke_color", std::string(root) + ".usertext_font_stroke_color");
 }
 
-#if defined(AUDIO_SUPPORT)
 void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   add_key(out, sep, "audio", "{");
   bool s2 = false;
@@ -488,7 +483,6 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   }
   out += "}";
 }
-#endif
 
 void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   add_key(out, sep, "motion", "{");
@@ -908,13 +902,9 @@ bool process_json(const std::string &in, std::string &out) {
       handle_sensor(v, out, sep);
     } else if (!strcmp(k, "stream2") && v && v->type == JSON_OBJECT) {
       handle_stream2(v, out, sep);
-    }
-#if defined(AUDIO_SUPPORT)
-    else if (!strcmp(k, "audio") && v && v->type == JSON_OBJECT) {
+    } else if (!strcmp(k, "audio") && v && v->type == JSON_OBJECT) {
       handle_audio(v, out, sep);
-    }
-#endif
-    else if (!strcmp(k, "motion") && v && v->type == JSON_OBJECT) {
+    } else if (!strcmp(k, "motion") && v && v->type == JSON_OBJECT) {
       handle_motion(v, out, sep);
     } else if (!strcmp(k, "info") && v && v->type == JSON_OBJECT) {
       handle_info(v, out, sep);
