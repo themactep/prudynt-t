@@ -1,0 +1,64 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "schemaVersion": 38,
+  "version": 1,
+  "title": "Prudynt Camera Overview",
+  "timezone": "browser",
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "RTSP Clients",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "prudynt_rtsp_clients", "refId": "A"}]
+    },
+    {
+      "type": "stat",
+      "title": "Uptime (h)",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "prudynt_uptime_seconds/3600", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Stream FPS",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [
+        {"expr": "prudynt_stream_fps{stream=\"0\"}", "legendFormat": "ch0", "refId": "A"},
+        {"expr": "prudynt_stream_fps{stream=\"1\"}", "legendFormat": "ch1", "refId": "B"},
+        {"expr": "prudynt_stream_fps{stream=\"2\"}", "legendFormat": "jpg", "refId": "C"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Stream Bandwidth (kbps)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [
+        {"expr": "prudynt_stream_Bps{stream=\"0\"}*8/1000", "legendFormat": "ch0", "refId": "A"},
+        {"expr": "prudynt_stream_Bps{stream=\"1\"}*8/1000", "legendFormat": "ch1", "refId": "B"},
+        {"expr": "prudynt_stream_Bps{stream=\"2\"}*8/1000", "legendFormat": "jpg", "refId": "C"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Day/Night EV & Brightness%",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [
+        {"expr": "prudynt_daynight_ev", "legendFormat": "EV", "refId": "A"},
+        {"expr": "prudynt_daynight_brightness_percent", "legendFormat": "brightness%", "refId": "B"}
+      ]
+    },
+    {
+      "type": "state-timeline",
+      "title": "Day/Night State",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [
+        {"expr": "prudynt_daynight_state{state=\"day\"}", "legendFormat": "day", "refId": "A"},
+        {"expr": "prudynt_daynight_state{state=\"night\"}", "legendFormat": "night", "refId": "B"},
+        {"expr": "prudynt_daynight_state{state=\"unknown\"}", "legendFormat": "unknown", "refId": "C"}
+      ]
+    }
+  ],
+  "templating": {"list": []}
+}
+
