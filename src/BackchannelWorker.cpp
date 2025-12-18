@@ -197,7 +197,6 @@ void *BackchannelWorker::thread_entry(void *arg) {
   BackchannelWorker processor;
   processor.run();
 
-  global_backchannel->imp_backchannel->deinit();
   delete global_backchannel->imp_backchannel;
   global_backchannel->imp_backchannel = nullptr;
 
