@@ -63,8 +63,6 @@
     "running_mode": 0,
     "saturation": 128,
     "sharpness": 128,
-    "sinter_strength": 128,
-    "temper_strength": 128,
     "vflip": false,
     "wb_bgain": 0,
     "wb_rgain": 0
