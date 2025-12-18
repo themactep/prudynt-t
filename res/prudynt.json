@@ -31,7 +31,14 @@
     "script_path": "/sbin/daynight",
     "switch_above_percent": 80,
     "switch_below_percent": 15,
-    "tolerance_percent": 50
+    "tolerance_percent": 50,
+    "controls": {
+      "color": true,
+      "ircut": true,
+      "ir850": true,
+      "ir940": true,
+      "white": false
+    }
   },
   "general": {
     "allocation_tracking_enabled": false,
