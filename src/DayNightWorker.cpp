@@ -209,6 +209,32 @@ static void apply_mode(DayNightAlgo::Mode m) {
   }
 }
 
+static DayNightAlgo::Mode configured_running_mode() {
+  if (!cfg)
+    return DayNightAlgo::Mode::Unknown;
+
+  int configured = cfg->image.running_mode;
+  if (configured == static_cast<int>(hal::isp::RunningMode::Day))
+    return DayNightAlgo::Mode::Day;
+  if (configured == static_cast<int>(hal::isp::RunningMode::Night))
+    return DayNightAlgo::Mode::Night;
+  return DayNightAlgo::Mode::Unknown;
+}
+
+static DayNightAlgo::Mode infer_initial_mode(const DayNightAlgo::Params &params,
+                                             const DayNightAlgo::Signals &sig) {
+  if (sig.ev >= 0) {
+    if (sig.ev > params.ev_night_high)
+      return DayNightAlgo::Mode::Night;
+    if (sig.ev < params.ev_day_low_primary)
+      return DayNightAlgo::Mode::Day;
+  }
+  DayNightAlgo::Mode cfg_mode = configured_running_mode();
+  if (cfg_mode != DayNightAlgo::Mode::Unknown)
+    return cfg_mode;
+  return DayNightAlgo::Mode::Day;
+}
+
 void *thread_entry(void *arg) {
   (void)arg;
   refresh_daynight_log_level();
@@ -264,6 +290,7 @@ void *thread_entry(void *arg) {
   state.settle_remaining = params.settle_samples_for_gb_record;
 
   DayNightAlgo::Mode current = DayNightAlgo::Mode::Unknown;
+  bool initial_mode_applied = false;
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     refresh_daynight_log_level();
@@ -294,6 +321,25 @@ void *thread_entry(void *arg) {
                                           << " ircut=" << (state.ircut_engaged ? "1" : "0") << " -> "
                                           << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
                                                          : "HOLD"));
+    }
+
+    if (!initial_mode_applied) {
+      DayNightAlgo::Mode inferred = infer_initial_mode(params, sig);
+      if (inferred != DayNightAlgo::Mode::Unknown) {
+        apply_mode(inferred);
+        current = inferred;
+        if (current == DayNightAlgo::Mode::Night)
+          DayNightAlgo::on_enter_night(params, state);
+        else if (current == DayNightAlgo::Mode::Day)
+          DayNightAlgo::on_enter_day(state);
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
+                                      std::memory_order_relaxed);
+        initial_mode_applied = true;
+        if (daynight_should_log(Logger::INFO)) {
+          LOG_INFO("DayNight: applied initial mode "
+                   << (current == DayNightAlgo::Mode::Day ? "day" : "night"));
+        }
+      }
     }
 
     if (dec.toggled && dec.target != current) {
