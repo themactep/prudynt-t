@@ -25,6 +25,7 @@ namespace DayNightWorkerNS {
 
 constexpr const char *kPrudyntRunDir = "/run/prudynt";
 constexpr const char *kBrightnessPath = "/run/prudynt/daynight_brightness";
+constexpr const char *kModePath = "/run/prudynt/daynight_mode";
 
 struct Profile {
   int EVmin;
@@ -133,9 +134,13 @@ static inline int brightness_percent_from_ev(const Profile &pr,
   return percent_from_ev(pr, ev);
 }
 
-static void export_brightness_value(int pct) {
-  static int last_written = std::numeric_limits<int>::min();
-  if (pct == last_written)
+static void export_brightness_value(int pct, const char *mode) {
+  static int last_written_pct = std::numeric_limits<int>::min();
+  static std::string last_written_mode;
+
+  const char *mode_str = (mode && mode[0] != '\0') ? mode : "unknown";
+
+  if (pct == last_written_pct && last_written_mode == mode_str)
     return;
 
   namespace fs = std::filesystem;
@@ -149,7 +154,11 @@ static void export_brightness_value(int pct) {
     if (::unlink(kBrightnessPath) != 0 && errno != ENOENT && daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG("DayNight: failed to unlink " << kBrightnessPath << ": " << strerror(errno));
     }
-    last_written = pct;
+    if (::unlink(kModePath) != 0 && errno != ENOENT && daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to unlink " << kModePath << ": " << strerror(errno));
+    }
+    last_written_pct = pct;
+    last_written_mode.clear();
     return;
   }
 
@@ -163,15 +172,33 @@ static void export_brightness_value(int pct) {
     if (daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG("DayNight: failed to open " << kBrightnessPath << ": " << strerror(errno));
     }
-    return;
+  } else {
+    ssize_t written = ::write(fd, buf, len);
+    if (written != len && daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: short write to " << kBrightnessPath << ": " << strerror(errno));
+    }
+    ::close(fd);
   }
 
-  ssize_t written = ::write(fd, buf, len);
-  if (written != len && daynight_should_log(Logger::DEBUG)) {
-    LOG_DEBUG("DayNight: short write to " << kBrightnessPath << ": " << strerror(errno));
+  int mode_fd = ::open(kModePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (mode_fd < 0) {
+    if (daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to open " << kModePath << ": " << strerror(errno));
+    }
+  } else {
+    size_t mode_len = std::strlen(mode_str);
+    if (::write(mode_fd, mode_str, mode_len) != static_cast<ssize_t>(mode_len) &&
+        daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: short write to " << kModePath << ": " << strerror(errno));
+    }
+    if (::write(mode_fd, "\n", 1) != 1 && daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to terminate " << kModePath << ": " << strerror(errno));
+    }
+    ::close(mode_fd);
   }
-  ::close(fd);
-  last_written = pct;
+
+  last_written_pct = pct;
+  last_written_mode = mode_str;
 }
 
 static int read_ev(int &out_ev) {
@@ -308,11 +335,6 @@ void *thread_entry(void *arg) {
     cfg->daynight.live_ev.store(ev, std::memory_order_relaxed);
     cfg->daynight.live_gb.store(gb, std::memory_order_relaxed);
     cfg->daynight.live_gr.store(gr, std::memory_order_relaxed);
-    export_brightness_value(bright_pct);
-    const char *mode_str = (current == DayNightAlgo::Mode::Day)
-                               ? "day"
-                               : (current == DayNightAlgo::Mode::Night ? "night" : "unknown");
-    cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
 
     if (daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG("DayNight: brightness%=" << bright_pct << " EV=" << ev << " GB=" << gb << " GR=" << gr
@@ -354,6 +376,12 @@ void *thread_entry(void *arg) {
                                     std::memory_order_relaxed);
     }
 
+    const char *mode_str = (current == DayNightAlgo::Mode::Day)
+                   ? "day"
+                   : (current == DayNightAlgo::Mode::Night ? "night" : "unknown");
+    cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
+    export_brightness_value(bright_pct, mode_str);
+
     std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
   }
 
@@ -361,7 +389,7 @@ void *thread_entry(void *arg) {
   if (daynight_should_log(Logger::INFO)) {
     LOG_INFO("DayNightWorker: shutting down");
   }
-  export_brightness_value(-1);
+  export_brightness_value(-1, "unknown");
   return nullptr;
 }
 
