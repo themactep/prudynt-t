@@ -10,12 +10,21 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <limits>
 #include <string>
 #include <thread>
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 using namespace std::chrono;
 
 namespace DayNightWorkerNS {
+
+constexpr const char *kPrudyntRunDir = "/run/prudynt";
+constexpr const char *kBrightnessPath = "/run/prudynt/daynight_brightness";
 
 struct Profile {
   int EVmin;
@@ -103,6 +112,66 @@ static inline int percent_from_ev(const Profile &pr, int ev) {
   long long num = (static_cast<long long>(pr.EVmax) - static_cast<long long>(ev)) * 100LL;
   int pct = static_cast<int>(num / range);
   return clampi(pct, 0, 100);
+}
+
+static inline int brightness_percent_from_ev(const Profile &pr,
+                                             const DayNightAlgo::Params &params,
+                                             int ev) {
+  if (ev < 0)
+    return -1;
+
+  long long dark_ev = params.ev_night_high;
+  long long bright_ev = params.ev_day_low_primary;
+
+  if (dark_ev > bright_ev) {
+    long long range = dark_ev - bright_ev;
+    long long num = (dark_ev - static_cast<long long>(ev)) * 100LL;
+    int pct = static_cast<int>(num / range);
+    return clampi(pct, 0, 100);
+  }
+
+  return percent_from_ev(pr, ev);
+}
+
+static void export_brightness_value(int pct) {
+  static int last_written = std::numeric_limits<int>::min();
+  if (pct == last_written)
+    return;
+
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  fs::create_directories(kPrudyntRunDir, ec);
+  if (ec && daynight_should_log(Logger::DEBUG)) {
+    LOG_DEBUG("DayNight: failed to create run directory " << kPrudyntRunDir << ": " << ec.message());
+  }
+
+  if (pct < 0) {
+    if (::unlink(kBrightnessPath) != 0 && errno != ENOENT && daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to unlink " << kBrightnessPath << ": " << strerror(errno));
+    }
+    last_written = pct;
+    return;
+  }
+
+  char buf[16];
+  int len = std::snprintf(buf, sizeof(buf), "%d\n", pct);
+  if (len < 0)
+    len = 0;
+
+  int fd = ::open(kBrightnessPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (fd < 0) {
+    if (daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to open " << kBrightnessPath << ": " << strerror(errno));
+    }
+    return;
+  }
+
+  ssize_t written = ::write(fd, buf, len);
+  if (written != len && daynight_should_log(Logger::DEBUG)) {
+    LOG_DEBUG("DayNight: short write to " << kBrightnessPath << ": " << strerror(errno));
+  }
+  ::close(fd);
+  last_written = pct;
 }
 
 static int read_ev(int &out_ev) {
@@ -207,11 +276,12 @@ void *thread_entry(void *arg) {
     auto dec = DayNightAlgo::decide(params, state, sig);
 
     // Live status update for metrics
-    int bright_pct = percent_from_ev(pr, ev);
+    int bright_pct = brightness_percent_from_ev(pr, params, ev);
     cfg->daynight.live_brightness_percent.store(bright_pct, std::memory_order_relaxed);
     cfg->daynight.live_ev.store(ev, std::memory_order_relaxed);
     cfg->daynight.live_gb.store(gb, std::memory_order_relaxed);
     cfg->daynight.live_gr.store(gr, std::memory_order_relaxed);
+    export_brightness_value(bright_pct);
     const char *mode_str = (current == DayNightAlgo::Mode::Day)
                                ? "day"
                                : (current == DayNightAlgo::Mode::Night ? "night" : "unknown");
@@ -245,6 +315,7 @@ void *thread_entry(void *arg) {
   if (daynight_should_log(Logger::INFO)) {
     LOG_INFO("DayNightWorker: shutting down");
   }
+  export_brightness_value(-1);
   return nullptr;
 }
 
