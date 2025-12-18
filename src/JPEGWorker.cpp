@@ -220,29 +220,22 @@ void JPEGWorker::run() {
             LOG_TRACE("JPG " << jpgChn << " seq=" << seq << " dt=" << diff_last_image << "ms size="
                               << (total_size ? total_size : stream.pack->length));
 
-            //  Check for success
-            const char *tempPath = "/tmp/snapshot.tmp";                     // Temporary path
-            const char *finalPath = global_jpeg[jpgChn]->stream->jpeg_path; // Final path for the JPEG snapshot
+            if (global_jpeg[jpgChn]->stream->jpeg_refresh > 0) {
+              const char *tempPath = "/tmp/snapshot.tmp";
+              const char *finalPath = global_jpeg[jpgChn]->stream->jpeg_path;
 
-            // Open and create temporary file with read and write permissions
-            int snap_fd = open(tempPath, O_RDWR | O_CREAT | O_TRUNC, 0666);
-            if (snap_fd >= 0) {
-              // Save the JPEG stream to the file
-              save_jpeg_stream(snap_fd, &stream);
+              int snap_fd = open(tempPath, O_RDWR | O_CREAT | O_TRUNC, 0666);
+              if (snap_fd >= 0) {
+                save_jpeg_stream(snap_fd, &stream);
+                close(snap_fd);
 
-              // Close the temporary file after writing is done
-              close(snap_fd);
-
-              // Atomically move the temporary file to the final destination
-              if (rename(tempPath, finalPath) != 0) {
-                LOG_ERROR("Failed to move JPEG snapshot from " << tempPath << " to " << finalPath);
-                std::remove(tempPath); // Attempt to remove the temporary file
-                                       // if rename fails
+                if (rename(tempPath, finalPath) != 0) {
+                  LOG_ERROR("Failed to move JPEG snapshot from " << tempPath << " to " << finalPath);
+                  std::remove(tempPath);
+                }
               } else {
-                // LOG_DEBUG("JPEG snapshot successfully updated");
+                LOG_ERROR("Failed to open JPEG snapshot for writing: " << tempPath);
               }
-            } else {
-              LOG_ERROR("Failed to open JPEG snapshot for writing: " << tempPath);
             }
 
             IMP_Encoder_ReleaseStream(global_jpeg[jpgChn]->encChn,
