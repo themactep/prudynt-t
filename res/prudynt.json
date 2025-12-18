@@ -298,11 +298,20 @@
   },
   "stream2": {
     "enabled": true,
+    "fps": 15,
     "jpeg_channel": 0,
     "jpeg_idle_fps": 1,
     "jpeg_path": "/tmp/snapshot.jpg",
     "jpeg_quality": 75,
     "jpeg_refresh": 1000
+  },
+    "stream3": {
+    "enabled": true,
+    "fps": 15,
+    "jpeg_channel": 1,
+    "jpeg_idle_fps": 1,
+    "jpeg_path": "/tmp/snapshot_ch1.jpg",
+    "jpeg_quality": 75
   },
   "http_mjpeg": {
     "enabled": true,

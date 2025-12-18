@@ -74,7 +74,7 @@ void JPEGWorker::run() {
      * if jpeg_idle_fps = 0, the thread is put into sleep until a client is
      * connected. if jpeg_idle_fps > 0, we try to reach a frame rate of
      * stream.jpeg_idle_fps. enen if no client is connected. if a client is
-     * connected via WS / HTTP we try to reach a framerate of stream.fps the thread
+     * connected via HTTP we try to reach a framerate of stream.fps the thread
      * will fallback into idle / sleep mode if no client request was made for
      * more than a second
      */
@@ -128,17 +128,20 @@ void JPEGWorker::run() {
           int new_h = global_jpeg[jpgChn]->req_height.load();
           int new_fps = global_jpeg[jpgChn]->req_fps.load();
 
-          // Stop encoder and re-init if any param is requested
-          if ((new_w > 0 && new_h > 0) || (new_fps > 0)) {
-            // Stop receiving, destroy and re-create channel with new params
+          bool size_change = (new_w > 0 && new_h > 0 &&
+                              (new_w != global_jpeg[jpgChn]->stream->width ||
+                               new_h != global_jpeg[jpgChn]->stream->height));
+          bool fps_change = (new_fps > 0 && new_fps != global_jpeg[jpgChn]->stream->fps);
+
+          if (size_change || fps_change) {
             if (global_jpeg[jpgChn]->imp_encoder) {
               global_jpeg[jpgChn]->imp_encoder->deinit();
             }
-            if (new_w > 0 && new_h > 0) {
+            if (size_change) {
               global_jpeg[jpgChn]->stream->width = new_w;
               global_jpeg[jpgChn]->stream->height = new_h;
             }
-            if (new_fps > 0) {
+            if (fps_change) {
               global_jpeg[jpgChn]->stream->fps = new_fps;
             }
             if (global_jpeg[jpgChn]->imp_encoder) {

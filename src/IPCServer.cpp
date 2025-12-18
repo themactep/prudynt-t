@@ -329,27 +329,34 @@ int IPCServer::handle_client(int fd) {
     if (q >= 1 && q <= 100)
       global_jpeg[ch]->quality_override = q;
 
-    // Remember originals to restore after disconnect
-    int orig_w = global_jpeg[ch]->stream->width;
-    int orig_h = global_jpeg[ch]->stream->height;
-    int orig_fps = global_jpeg[ch]->stream->fps;
+    auto *stream_cfg = global_jpeg[ch]->stream;
+    int orig_fps = stream_cfg->fps;
 
-    // Request reconfiguration and wake worker
-    if (w > 0 && h > 0) {
+    bool size_change = (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
+    bool fps_change = (fps > 0 && fps != stream_cfg->fps);
+
+    // Request reconfiguration and wake worker if something actually changes
+    if (size_change) {
       global_jpeg[ch]->req_width = w;
       global_jpeg[ch]->req_height = h;
     }
-    if (fps > 0) {
+    if (fps_change) {
       global_jpeg[ch]->req_fps = fps;
     }
-    global_jpeg[ch]->reconfig = true;
-    global_jpeg[ch]->request();
 
-    // Wait briefly for reconfig to apply
-    int wait_ms = 500;
-    while (global_jpeg[ch]->reconfig.load() && wait_ms > 0) {
-      usleep(10 * 1000);
-      wait_ms -= 10;
+    bool needs_reconfig = size_change || fps_change;
+    if (needs_reconfig) {
+      global_jpeg[ch]->reconfig = true;
+      global_jpeg[ch]->request();
+
+      // Wait briefly for reconfig to apply
+      int wait_ms = 500;
+      while (global_jpeg[ch]->reconfig.load() && wait_ms > 0) {
+        usleep(10 * 1000);
+        wait_ms -= 10;
+      }
+    } else {
+      global_jpeg[ch]->request();
     }
 
     // Start streaming loop: multipart MJPEG parts
@@ -383,12 +390,6 @@ int IPCServer::handle_client(int fd) {
       usleep(usec);
     }
 
-    // Restore FPS (and original size) after client disconnect
-    global_jpeg[ch]->req_width = orig_w;
-    global_jpeg[ch]->req_height = orig_h;
-    global_jpeg[ch]->req_fps = orig_fps;
-    global_jpeg[ch]->reconfig = true;
-    global_jpeg[ch]->request();
     return 0;
   }
 

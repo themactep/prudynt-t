@@ -265,6 +265,8 @@ void HTTPMJPEG::handle_client(int cfd) {
     return;
   }
 
+  auto *stream_cfg = global_jpeg[ch]->stream;
+
   // Quantize w/h to multiples of 16 and cap to source size
   if (w > 0 && h > 0) {
     auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width : cfg->stream1.width;
@@ -281,15 +283,16 @@ void HTTPMJPEG::handle_client(int cfd) {
   if (q >= 1 && q <= 100)
     global_jpeg[ch]->quality_override = q;
 
-  int orig_w = global_jpeg[ch]->stream->width;
-  int orig_h = global_jpeg[ch]->stream->height;
-  int orig_fps = global_jpeg[ch]->stream->fps;
+  int orig_fps = stream_cfg->fps;
 
-  if (w > 0 && h > 0) {
+  bool size_change = (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
+  bool fps_change = (fps > 0 && fps != stream_cfg->fps);
+
+  if (size_change) {
     global_jpeg[ch]->req_width = w;
     global_jpeg[ch]->req_height = h;
   }
-  if (fps > 0) {
+  if (fps_change) {
     global_jpeg[ch]->req_fps = fps;
   }
 
@@ -311,14 +314,19 @@ void HTTPMJPEG::handle_client(int cfd) {
       tos_override = -1;
   }
 
-  global_jpeg[ch]->reconfig = true;
-  global_jpeg[ch]->request();
+  bool needs_reconfig = size_change || fps_change;
+  if (needs_reconfig) {
+    global_jpeg[ch]->reconfig = true;
+    global_jpeg[ch]->request();
 
-  // Wait briefly for reconfig to apply
-  int wait_ms = 500;
-  while (global_jpeg[ch]->reconfig.load() && wait_ms > 0) {
-    usleep(10 * 1000);
-    wait_ms -= 10;
+    // Wait briefly for reconfig to apply
+    int wait_ms = 500;
+    while (global_jpeg[ch]->reconfig.load() && wait_ms > 0) {
+      usleep(10 * 1000);
+      wait_ms -= 10;
+    }
+  } else {
+    global_jpeg[ch]->request();
   }
 
   // Apply optional socket overrides from query
@@ -423,13 +431,6 @@ void HTTPMJPEG::handle_client(int cfd) {
     // Inform producer we're still subscribed
     global_jpeg[ch]->request();
   }
-
-  // Restore original settings
-  global_jpeg[ch]->req_width = orig_w;
-  global_jpeg[ch]->req_height = orig_h;
-  global_jpeg[ch]->req_fps = orig_fps;
-  global_jpeg[ch]->reconfig = true;
-  global_jpeg[ch]->request();
 
   ::close(cfd);
 }
