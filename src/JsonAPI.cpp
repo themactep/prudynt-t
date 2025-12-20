@@ -1,4 +1,5 @@
 #include "JsonAPI.hpp"
+#include "AudioOutputWorker.hpp"
 #include "Config.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
@@ -343,6 +344,7 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
 void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrote) {
   const char *root = idx == 0 ? "stream0.osd" : "stream1.osd";
+
   auto add_int = [&](const char *key, const std::string &path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER)
@@ -352,7 +354,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
       wrote = true;
     }
   };
-  auto add_boolk2 = [&](const char *key, const std::string &path) {
+  auto add_boolk = [&](const char *key, const std::string &path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_BOOL)
         cfg->set<bool>(path, v->value.boolean != 0);
@@ -370,60 +372,254 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
       wrote = true;
     }
   };
-  auto add_hex = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_STRING && v->value.string)
-        cfg->set<unsigned int>(path, hexColorToUint(v->value.string));
-      add_key(sect, s2, key);
-      add_hexstr(sect, cfg->get<unsigned int>(path));
+
+  auto update_text_block = [&](JsonValue *node, const std::string &name, bool include_format) {
+    if (!node || node->type != JSON_OBJECT)
+      return;
+    const std::string base = std::string(root) + "." + name + ".";
+    if (JsonValue *enabled = obj_get(node, "enabled")) {
+      if (enabled->type == JSON_BOOL)
+        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
+    }
+    if (include_format) {
+      if (JsonValue *format = obj_get(node, "format")) {
+        if (format->type == JSON_STRING && format->value.string)
+          cfg->set<const char *>(base + "format", strdup(format->value.string));
+      }
+    }
+    if (JsonValue *position = obj_get(node, "position")) {
+      if (position->type == JSON_STRING && position->value.string)
+        cfg->set<const char *>(base + "position", strdup(position->value.string));
+    }
+    if (JsonValue *rotation = obj_get(node, "rotation")) {
+      if (rotation->type == JSON_NUMBER)
+        cfg->set<int>(base + "rotation", (int)rotation->value.number);
+    }
+    if (JsonValue *fill = obj_get(node, "fill_color")) {
+      if (fill->type == JSON_STRING && fill->value.string)
+        cfg->set<unsigned int>(base + "fill_color", hexColorToUint(fill->value.string));
+    }
+    if (JsonValue *stroke = obj_get(node, "stroke_color")) {
+      if (stroke->type == JSON_STRING && stroke->value.string)
+        cfg->set<unsigned int>(base + "stroke_color", hexColorToUint(stroke->value.string));
+    }
+  };
+
+  auto emit_text_block = [&](const std::string &name, bool include_format) {
+    add_key(sect, s2, name.c_str(), "{");
+    bool s_txt = false;
+    const std::string base = std::string(root) + "." + name + ".";
+    add_key(sect, s_txt, "enabled");
+    add_bool(sect, cfg->get<bool>(base + "enabled"));
+    if (include_format) {
+      add_key(sect, s_txt, "format");
+      add_str(sect, cfg->get<const char *>(base + "format"));
+    }
+    add_key(sect, s_txt, "position");
+    add_str(sect, cfg->get<const char *>(base + "position"));
+    add_key(sect, s_txt, "rotation");
+    add_num(sect, cfg->get<int>(base + "rotation"));
+    add_key(sect, s_txt, "fill_color");
+    add_hexstr(sect, cfg->get<unsigned int>(base + "fill_color"));
+    add_key(sect, s_txt, "stroke_color");
+    add_hexstr(sect, cfg->get<unsigned int>(base + "stroke_color"));
+    sect += "}";
+  };
+
+  auto handle_text_block = [&](const char *name, bool include_format) {
+    if (JsonValue *node = obj_get(obj, name); node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+      if (node->type == JSON_OBJECT)
+        update_text_block(node, name, include_format);
+      emit_text_block(name, include_format);
       wrote = true;
     }
   };
 
-  // Numbers
+  auto update_logo_block = [&](JsonValue *node) {
+    if (!node || node->type != JSON_OBJECT)
+      return;
+    const std::string base = std::string(root) + ".logo.";
+    if (JsonValue *enabled = obj_get(node, "enabled")) {
+      if (enabled->type == JSON_BOOL)
+        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
+    }
+    if (JsonValue *path = obj_get(node, "path")) {
+      if (path->type == JSON_STRING && path->value.string)
+        cfg->set<const char *>(base + "path", strdup(path->value.string));
+    }
+    if (JsonValue *position = obj_get(node, "position")) {
+      if (position->type == JSON_STRING && position->value.string)
+        cfg->set<const char *>(base + "position", strdup(position->value.string));
+    }
+    if (JsonValue *width = obj_get(node, "width")) {
+      if (width->type == JSON_NUMBER)
+        cfg->set<int>(base + "width", (int)width->value.number);
+    }
+    if (JsonValue *height = obj_get(node, "height")) {
+      if (height->type == JSON_NUMBER)
+        cfg->set<int>(base + "height", (int)height->value.number);
+    }
+    if (JsonValue *rotation = obj_get(node, "rotation")) {
+      if (rotation->type == JSON_NUMBER)
+        cfg->set<int>(base + "rotation", (int)rotation->value.number);
+    }
+    if (JsonValue *transparency = obj_get(node, "transparency")) {
+      if (transparency->type == JSON_NUMBER)
+        cfg->set<int>(base + "transparency", (int)transparency->value.number);
+    }
+  };
+
+  auto emit_logo_block = [&]() {
+    const std::string base = std::string(root) + ".logo.";
+    add_key(sect, s2, "logo", "{");
+    bool s_logo = false;
+    add_key(sect, s_logo, "enabled");
+    add_bool(sect, cfg->get<bool>(base + "enabled"));
+    add_key(sect, s_logo, "path");
+    add_str(sect, cfg->get<const char *>(base + "path"));
+    add_key(sect, s_logo, "position");
+    add_str(sect, cfg->get<const char *>(base + "position"));
+    add_key(sect, s_logo, "width");
+    add_num(sect, cfg->get<int>(base + "width"));
+    add_key(sect, s_logo, "height");
+    add_num(sect, cfg->get<int>(base + "height"));
+    add_key(sect, s_logo, "rotation");
+    add_num(sect, cfg->get<int>(base + "rotation"));
+    add_key(sect, s_logo, "transparency");
+    add_num(sect, cfg->get<int>(base + "transparency"));
+    sect += "}";
+  };
+
+  auto handle_logo_block = [&]() {
+    if (JsonValue *node = obj_get(obj, "logo"); node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+      if (node->type == JSON_OBJECT)
+        update_logo_block(node);
+      emit_logo_block();
+      wrote = true;
+    }
+  };
+
+  auto update_privacy_block = [&](JsonValue *node) {
+    if (!node || node->type != JSON_OBJECT)
+      return;
+    const std::string base = std::string(root) + ".privacy.";
+    if (JsonValue *enabled = obj_get(node, "enabled")) {
+      if (enabled->type == JSON_BOOL)
+        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
+    }
+    if (JsonValue *text = obj_get(node, "text")) {
+      if (text->type == JSON_STRING && text->value.string)
+        cfg->set<const char *>(base + "text", strdup(text->value.string));
+    }
+    if (JsonValue *position = obj_get(node, "position")) {
+      if (position->type == JSON_STRING && position->value.string)
+        cfg->set<const char *>(base + "position", strdup(position->value.string));
+    }
+    if (JsonValue *rotation = obj_get(node, "rotation")) {
+      if (rotation->type == JSON_NUMBER)
+        cfg->set<int>(base + "rotation", (int)rotation->value.number);
+    }
+    if (JsonValue *font_size = obj_get(node, "font_size")) {
+      if (font_size->type == JSON_NUMBER)
+        cfg->set<int>(base + "font_size", (int)font_size->value.number);
+    }
+    if (JsonValue *stroke_size = obj_get(node, "stroke_size")) {
+      if (stroke_size->type == JSON_NUMBER)
+        cfg->set<int>(base + "stroke_size", (int)stroke_size->value.number);
+    }
+    if (JsonValue *fill = obj_get(node, "fill_color")) {
+      if (fill->type == JSON_STRING && fill->value.string)
+        cfg->set<unsigned int>(base + "fill_color", hexColorToUint(fill->value.string));
+    }
+    if (JsonValue *stroke = obj_get(node, "stroke_color")) {
+      if (stroke->type == JSON_STRING && stroke->value.string)
+        cfg->set<unsigned int>(base + "stroke_color", hexColorToUint(stroke->value.string));
+    }
+    if (JsonValue *image_path = obj_get(node, "image_path")) {
+      if (image_path->type == JSON_STRING && image_path->value.string)
+        cfg->set<const char *>(base + "image_path", strdup(image_path->value.string));
+    }
+    if (JsonValue *image_width = obj_get(node, "image_width")) {
+      if (image_width->type == JSON_NUMBER)
+        cfg->set<int>(base + "image_width", (int)image_width->value.number);
+    }
+    if (JsonValue *image_height = obj_get(node, "image_height")) {
+      if (image_height->type == JSON_NUMBER)
+        cfg->set<int>(base + "image_height", (int)image_height->value.number);
+    }
+    if (JsonValue *layer = obj_get(node, "layer")) {
+      if (layer->type == JSON_NUMBER)
+        cfg->set<int>(base + "layer", (int)layer->value.number);
+    }
+    if (JsonValue *opacity = obj_get(node, "opacity")) {
+      if (opacity->type == JSON_NUMBER)
+        cfg->set<int>(base + "opacity", (int)opacity->value.number);
+    }
+  };
+
+  auto emit_privacy_block = [&]() {
+    const std::string base = std::string(root) + ".privacy.";
+    add_key(sect, s2, "privacy", "{");
+    bool s_priv = false;
+    add_key(sect, s_priv, "enabled");
+    add_bool(sect, cfg->get<bool>(base + "enabled"));
+    add_key(sect, s_priv, "text");
+    add_str(sect, cfg->get<const char *>(base + "text"));
+    add_key(sect, s_priv, "position");
+    add_str(sect, cfg->get<const char *>(base + "position"));
+    add_key(sect, s_priv, "rotation");
+    add_num(sect, cfg->get<int>(base + "rotation"));
+    add_key(sect, s_priv, "font_size");
+    add_num(sect, cfg->get<int>(base + "font_size"));
+    add_key(sect, s_priv, "stroke_size");
+    add_num(sect, cfg->get<int>(base + "stroke_size"));
+    add_key(sect, s_priv, "fill_color");
+    add_hexstr(sect, cfg->get<unsigned int>(base + "fill_color"));
+    add_key(sect, s_priv, "stroke_color");
+    add_hexstr(sect, cfg->get<unsigned int>(base + "stroke_color"));
+    add_key(sect, s_priv, "image_path");
+    add_str(sect, cfg->get<const char *>(base + "image_path"));
+    add_key(sect, s_priv, "image_width");
+    add_num(sect, cfg->get<int>(base + "image_width"));
+    add_key(sect, s_priv, "image_height");
+    add_num(sect, cfg->get<int>(base + "image_height"));
+    add_key(sect, s_priv, "layer");
+    add_num(sect, cfg->get<int>(base + "layer"));
+    add_key(sect, s_priv, "opacity");
+    add_num(sect, cfg->get<int>(base + "opacity"));
+    sect += "}";
+  };
+
+  auto handle_privacy_block = [&]() {
+    if (JsonValue *node = obj_get(obj, "privacy"); node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+      if (node->type == JSON_OBJECT)
+        update_privacy_block(node);
+      emit_privacy_block();
+      wrote = true;
+    }
+  };
+
   add_int("font_size", std::string(root) + ".font_size");
-  add_int("font_stroke_size", std::string(root) + ".font_stroke_size");
-  add_int("logo_height", std::string(root) + ".logo_height");
-  add_int("logo_width", std::string(root) + ".logo_width");
-  add_int("time_rotation", std::string(root) + ".time_rotation");
-  add_int("usertext_rotation", std::string(root) + ".usertext_rotation");
-  add_int("uptime_rotation", std::string(root) + ".uptime_rotation");
-  add_int("logo_rotation", std::string(root) + ".logo_rotation");
-  add_int("logo_transparency", std::string(root) + ".logo_transparency");
+  add_int("stroke_size", std::string(root) + ".stroke_size");
   add_int("start_delay", std::string(root) + ".start_delay");
 
-  // Bools
-  add_boolk2("enabled", std::string(root) + ".enabled");
-  add_boolk2("time_enabled", std::string(root) + ".time_enabled");
-  add_boolk2("usertext_enabled", std::string(root) + ".usertext_enabled");
-  add_boolk2("uptime_enabled", std::string(root) + ".uptime_enabled");
-  add_boolk2("logo_enabled", std::string(root) + ".logo_enabled");
-
-  // Strings
+  add_boolk("enabled", std::string(root) + ".enabled");
   add_strs("font_path", std::string(root) + ".font_path");
-  add_strs("time_format", std::string(root) + ".time_format");
-  add_strs("uptime_format", std::string(root) + ".uptime_format");
-  add_strs("usertext_format", std::string(root) + ".usertext_format");
-  add_strs("logo_path", std::string(root) + ".logo_path");
-  add_strs("time_position", std::string(root) + ".time_position");
-  add_strs("uptime_position", std::string(root) + ".uptime_position");
-  add_strs("usertext_position", std::string(root) + ".usertext_position");
-  add_strs("logo_position", std::string(root) + ".logo_position");
 
-  // Colors (accept hex string)
-  add_hex("time_font_color", std::string(root) + ".time_font_color");
-  add_hex("time_font_stroke_color", std::string(root) + ".time_font_stroke_color");
-  add_hex("uptime_font_color", std::string(root) + ".uptime_font_color");
-  add_hex("uptime_font_stroke_color", std::string(root) + ".uptime_font_stroke_color");
-  add_hex("usertext_font_color", std::string(root) + ".usertext_font_color");
-  add_hex("usertext_font_stroke_color", std::string(root) + ".usertext_font_stroke_color");
+  handle_logo_block();
+  handle_text_block("time", true);
+  handle_text_block("uptime", true);
+  handle_text_block("usertext", true);
+  handle_text_block("brightness", true);
+  handle_privacy_block();
 }
 
 void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   add_key(out, sep, "audio", "{");
   bool s2 = false;
   bool wrote = false;
-  auto add_int = [&](const char *key, const char *path, bool restart_audio = false) {
+
+  auto add_int = [&](const char *key, const char *path, bool restart_audio) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER) {
         cfg->set<int>(path, (int)v->value.number);
@@ -435,7 +631,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  auto add_boolk_a = [&](const char *key, const char *path, bool rest_rtsp = false, bool rest_audio = true) {
+  auto add_boolk_a = [&](const char *key, const char *path, bool rest_rtsp, bool rest_audio) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_BOOL) {
         cfg->set<bool>(path, v->value.boolean != 0);
@@ -449,7 +645,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  auto add_strk_a = [&](const char *key, const char *path, bool restart_audio = false) {
+  auto add_strk_a = [&](const char *key, const char *path, bool restart_audio) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_STRING && v->value.string) {
         cfg->set<const char *>(path, strdup(v->value.string));
@@ -463,25 +659,129 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   };
 
   // Input
-  add_boolk_a("input_enabled", "audio.input_enabled", /*rest_rtsp*/ false,
-              /*rest_audio*/ true);
-  add_strk_a("input_format", "audio.input_format", true);
-  add_int("input_vol", "audio.input_vol", false);
-  add_int("input_gain", "audio.input_gain", true);
-  add_int("input_bitrate", "audio.input_bitrate", true);
-  add_int("input_sample_rate", "audio.input_sample_rate", true);
+  add_boolk_a("mic_enabled", "audio.mic_enabled", false, true);
+  add_strk_a("mic_format", "audio.mic_format", true);
+
+  // mic_vol - apply immediately without restart
+  if (JsonValue *v = obj_get(obj, "mic_vol")) {
+    if (v->type == JSON_NUMBER) {
+      int vol = (int)v->value.number;
+      if (cfg->set<int>("audio.mic_vol", vol)) {
+        // Apply to hardware immediately like WS.cpp does
+        for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
+          if (global_audio[i]) {
+            IMP_AI_SetVol(i, global_audio[i]->aiChn, vol);
+          }
+        }
+      }
+    }
+    add_key(out, s2, "mic_vol");
+    add_num(out, cfg->get<int>("audio.mic_vol"));
+    wrote = true;
+  }
+
+  // mic_gain - apply immediately without restart
+  if (JsonValue *v = obj_get(obj, "mic_gain")) {
+    if (v->type == JSON_NUMBER) {
+      int gain = (int)v->value.number;
+      if (cfg->set<int>("audio.mic_gain", gain)) {
+        // Apply to hardware immediately like WS.cpp does
+        for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
+          if (global_audio[i]) {
+            IMP_AI_SetGain(i, global_audio[i]->aiChn, gain);
+          }
+        }
+      }
+    }
+    add_key(out, s2, "mic_gain");
+    add_num(out, cfg->get<int>("audio.mic_gain"));
+    wrote = true;
+  }
+  add_int("mic_bitrate", "audio.mic_bitrate", true);
+  add_int("mic_sample_rate", "audio.mic_sample_rate", true);
 #if defined(LIB_AUDIO_PROCESSING)
-  add_int("input_alc_gain", "audio.input_alc_gain", false);
-  add_int("input_noise_suppression", "audio.input_noise_suppression", true);
-  add_boolk_a("input_high_pass_filter", "audio.input_high_pass_filter", false, true);
-  add_boolk_a("input_agc_enabled", "audio.input_agc_enabled", false, true);
-  add_int("input_agc_target_level_dbfs", "audio.input_agc_target_level_dbfs", true);
-  add_int("input_agc_compression_gain_db", "audio.input_agc_compression_gain_db", true);
+
+  // mic_alc_gain - apply immediately without restart (platform-specific)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  if (JsonValue *v = obj_get(obj, "mic_alc_gain")) {
+    if (v->type == JSON_NUMBER) {
+      int alc_gain = (int)v->value.number;
+      if (cfg->set<int>("audio.mic_alc_gain", alc_gain)) {
+        // Apply to hardware immediately like WS.cpp does
+        IMP_AI_SetAlcGain(0, 0, alc_gain);
+      }
+    }
+    add_key(out, s2, "mic_alc_gain");
+    add_num(out, cfg->get<int>("audio.mic_alc_gain"));
+    wrote = true;
+  }
+#else
+  add_int("mic_alc_gain", "audio.mic_alc_gain", false);
+#endif
+
+  add_int("mic_noise_suppression", "audio.mic_noise_suppression", true);
+
+  // mic_high_pass_filter - apply immediately without restart
+  if (JsonValue *v = obj_get(obj, "mic_high_pass_filter")) {
+    if (v->type == JSON_BOOL) {
+      bool enable = v->value.boolean != 0;
+      if (cfg->set<bool>("audio.mic_high_pass_filter", enable)) {
+        // Apply to hardware immediately like WS.cpp does
+        for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
+          if (global_audio[i]) {
+            IMPAudioIOAttr ioattr;
+            int ret = IMP_AI_GetPubAttr(i, &ioattr);
+            if (ret == 0) {
+              if (enable) {
+                IMP_AI_EnableHpf(&ioattr);
+              } else {
+                IMP_AI_DisableHpf();
+              }
+            }
+          }
+        }
+      }
+    }
+    add_key(out, s2, "mic_high_pass_filter");
+    add_bool(out, cfg->get<bool>("audio.mic_high_pass_filter"));
+    wrote = true;
+  }
+
+  add_boolk_a("mic_agc_enabled", "audio.mic_agc_enabled", false, true);
+  add_int("mic_agc_target_level_dbfs", "audio.mic_agc_target_level_dbfs", true);
+  add_int("mic_agc_compression_gain_db", "audio.mic_agc_compression_gain_db", true);
   add_boolk_a("force_stereo", "audio.force_stereo", false, true);
   // Output
-  add_boolk_a("output_enabled", "audio.output_enabled", /*rest_rtsp*/ true,
-              /*rest_audio*/ true);
-  add_int("output_sample_rate", "audio.output_sample_rate", true);
+  add_boolk_a("spk_enabled", "audio.spk_enabled", true, true);
+  add_int("spk_sample_rate", "audio.spk_sample_rate", true);
+
+  // spk_vol - apply immediately without restart
+  if (JsonValue *v = obj_get(obj, "spk_vol")) {
+    if (v->type == JSON_NUMBER) {
+      int vol = (int)v->value.number;
+      if (cfg->set<int>("audio.spk_vol", vol)) {
+        // Apply to hardware immediately via AudioOutputWorker
+        AudioOutputWorker::applyVolumeGain(true, vol, false, 0);
+      }
+    }
+    add_key(out, s2, "spk_vol");
+    add_num(out, cfg->get<int>("audio.spk_vol"));
+    wrote = true;
+  }
+
+  // spk_gain - apply immediately without restart
+  if (JsonValue *v = obj_get(obj, "spk_gain")) {
+    if (v->type == JSON_NUMBER) {
+      int gain = (int)v->value.number;
+      if (cfg->set<int>("audio.spk_gain", gain)) {
+        // Apply to hardware immediately via AudioOutputWorker
+        AudioOutputWorker::applyVolumeGain(false, 0, true, gain);
+      }
+    }
+    add_key(out, s2, "spk_gain");
+    add_num(out, cfg->get<int>("audio.spk_gain"));
+    wrote = true;
+  }
 #endif
   add_int("buffer_warn_frames", "audio.buffer_warn_frames", false);
   add_int("buffer_cap_frames", "audio.buffer_cap_frames", false);
