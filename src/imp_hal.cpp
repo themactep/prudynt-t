@@ -810,7 +810,7 @@ void init_ai_channel_param(IMPAudioIChnParam &param) {
 namespace osd {
 
 uint32_t black_cover_color() {
-#if defined(OSD_IPU_BLACK)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return OSD_IPU_BLACK;
 #else
   return OSD_BLACK;
