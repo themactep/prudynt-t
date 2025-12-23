@@ -203,6 +203,11 @@ int IMPSystem::init() {
   ret = hal::isp::enable_sensor(&sinfo);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::enable_sensor(&sinfo)");
 
+  // Refresh sensor properties again after sensor is enabled
+  // This updates actual_fps and max_fps based on the resolution mode selected by the sensor driver
+  refresh_sensor_properties_from_proc();
+  clamp_streams_to_sensor_limits();
+
   /* system */
   ret = IMP_System_Init();
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Init()");

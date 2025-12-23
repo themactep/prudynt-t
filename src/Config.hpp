@@ -270,6 +270,7 @@ struct _sensor {
   const char *chip_id;
   const char *version;
   int min_fps;
+  int actual_fps;
 };
 struct _stream {
   int gop;
