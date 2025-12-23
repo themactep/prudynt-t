@@ -2529,13 +2529,12 @@ void WS::start() {
 
   LOG_INFO("Server started on port " << cfg->websocket.port);
 
-  while (true) {
+  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     lws_service(context, 50);
   }
 
   LOG_INFO("Server stopped.");
 
-  // Never reached in normal flow
   lws_context_destroy(context);
 }
 

@@ -503,6 +503,16 @@ int main(int argc, const char *argv[]) {
     LOG_DEBUG_OR_ERROR(ret, "join daynight thread");
   }
 
+#if defined(WEBSOCKET_ENABLED)
+  if (cfg->websocket.enabled) {
+    int ret = pthread_join(ws_thread, nullptr);
+    LOG_DEBUG_OR_ERROR(ret, "join websocket thread");
+  }
+#endif
+
+  int ret = pthread_join(cw_thread, nullptr);
+  LOG_DEBUG_OR_ERROR(ret, "join config watcher thread");
+
   if (http_mjpeg_started) {
     http_mjpeg.stop();
   }
