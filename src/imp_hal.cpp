@@ -196,7 +196,7 @@ const DenoiseDefaults &denoise() {
 #if defined(PLATFORM_C100) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   static constexpr DenoiseDefaults defaults{128, 128, 0, 255, 0, 255};
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
-  static constexpr DenoiseDefaults defaults{75, 75, 0, 255, 0, 255};
+  static constexpr DenoiseDefaults defaults{50, 50, 0, 255, 0, 255};
 #else
   static constexpr DenoiseDefaults defaults{50, 50, 50, 150, 50, 150};
 #endif
