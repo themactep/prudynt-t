@@ -15,6 +15,8 @@ JsonValue *parse_json_string(const char *json_str);
 #include <imp/imp_isp.h>
 #include <sstream>
 #include <imp/imp_audio.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace {
 
@@ -903,6 +905,48 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   out += "}";
 }
 
+void handle_privacy(JsonValue *obj, std::string &out, bool &sep) {
+  add_key(out, sep, "privacy", "{");
+  bool s2 = false;
+  bool wrote = false;
+
+  // Read enabled state from request
+  if (JsonValue *v = obj_get(obj, "enabled")) {
+    if (v->type == JSON_BOOL) {
+      bool enabled = v->value.boolean != 0;
+      // Apply privacy to all channels via FIFO
+      const char *fifo_path = "/run/prudynt/video_ctrl";
+      int fd = open(fifo_path, O_WRONLY | O_NONBLOCK);
+      if (fd >= 0) {
+        const char *cmd = enabled ? "PRIVACY channel=all value=1\n" : "PRIVACY channel=all value=0\n";
+        write(fd, cmd, strlen(cmd));
+        close(fd);
+      }
+      add_key(out, s2, "enabled");
+      add_bool(out, enabled);
+      wrote = true;
+    } else if (v->type == JSON_NULL) {
+      // Just query the state
+      bool any_privacy = false;
+      for (int i = 0; i < NUM_VIDEO_CHANNELS; i++) {
+        if (global_video[i] && global_video[i]->privacy_requested.load(std::memory_order_relaxed)) {
+          any_privacy = true;
+          break;
+        }
+      }
+      add_key(out, s2, "enabled");
+      add_bool(out, any_privacy);
+      wrote = true;
+    }
+  }
+
+  if (!wrote) {
+    out.erase(out.size() - 1);
+    return;
+  }
+  out += "}";
+}
+
 void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   add_key(out, sep, "daynight", "{");
   bool s2 = false;
@@ -1215,6 +1259,8 @@ bool process_json(const std::string &in, std::string &out) {
       handle_audio(v, out, sep);
     } else if (!strcmp(k, "motion") && v && v->type == JSON_OBJECT) {
       handle_motion(v, out, sep);
+    } else if (!strcmp(k, "privacy") && v && v->type == JSON_OBJECT) {
+      handle_privacy(v, out, sep);
     } else if (!strcmp(k, "info") && v && v->type == JSON_OBJECT) {
       handle_info(v, out, sep);
     } else if (!strcmp(k, "daynight") && v && v->type == JSON_OBJECT) {
