@@ -1,8 +1,49 @@
 #include "Motion.hpp"
 #include <algorithm>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 using namespace std::chrono;
 bool ignoreInitialPeriod = true;
+
+namespace {
+constexpr const char *kPrudyntRunDir = "/run/prudynt";
+constexpr const char *kMotionStatePath = "/run/prudynt/motion.active";
+constexpr const char *kMotionDetectedPath = "/run/prudynt/motion_detected.active";
+
+void write_motion_detection_state_file() {
+  int fd = ::open(kMotionStatePath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+  if (fd < 0) {
+    LOG_WARN("Motion: failed to create state file " << kMotionStatePath);
+    return;
+  }
+  const char *payload = "monitoring=true\n";
+  ssize_t ignored = ::write(fd, payload, strlen(payload));
+  (void)ignored;
+  ::close(fd);
+}
+
+void remove_motion_detection_state_file() {
+  ::unlink(kMotionStatePath);
+}
+
+void write_motion_detected_state_file() {
+  int fd = ::open(kMotionDetectedPath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+  if (fd < 0) {
+    LOG_WARN("Motion: failed to create detected state file " << kMotionDetectedPath);
+    return;
+  }
+  const char *payload = "motion=true\n";
+  ssize_t ignored = ::write(fd, payload, strlen(payload));
+  (void)ignored;
+  ::close(fd);
+}
+
+void remove_motion_detected_state_file() {
+  ::unlink(kMotionDetectedPath);
+}
+} // namespace
 
 std::string Motion::getConfigPath(const char *itemName) {
   return "motion." + std::string(itemName);
@@ -21,6 +62,8 @@ void Motion::detect() {
 
   if (init() != 0)
     return;
+
+  write_motion_detection_state_file();
 
   global_motion_thread_signal = true;
   while (global_motion_thread_signal) {
@@ -61,6 +104,7 @@ void Motion::detect() {
           if (!moving.load()) {
             moving = true;
             LOG_INFO("Motion Start");
+            write_motion_detected_state_file();
 
             char cmd[128];
             memset(cmd, 0, sizeof(cmd));
@@ -81,6 +125,7 @@ void Motion::detect() {
       auto duration = duration_cast<seconds>(currentTime - motionEndTime).count();
       if (moving && duration >= cfg->motion.min_time && duration >= cfg->motion.post_time) {
         LOG_INFO("End of Motion");
+        remove_motion_detected_state_file();
         char cmd[128];
         memset(cmd, 0, sizeof(cmd));
         snprintf(cmd, sizeof(cmd), "%s stop", cfg->motion.script_path);
@@ -103,6 +148,7 @@ void Motion::detect() {
   }
 
   exit();
+  remove_motion_detection_state_file();
 
   LOG_DEBUG("Exit motion detect thread.");
 }
