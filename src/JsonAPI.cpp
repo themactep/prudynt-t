@@ -3,6 +3,7 @@
 #include "Config.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
+#include "MP4Recorder.hpp"
 
 extern "C" {
 #include <json_config.h>
@@ -1214,6 +1215,179 @@ void handle_general(JsonValue *obj, std::string &out, bool &sep) {
     out += "}";
   }
 }
+
+void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
+  add_key(out, sep, "mp4", "{");
+  bool s2 = false;
+  bool wrote = false;
+
+  // Handle start command
+  if (JsonValue *start = obj_get(obj, "start")) {
+    if (start->type == JSON_OBJECT) {
+      int channel = 0;
+      JsonValue *ch = obj_get(start, "channel");
+      if (ch && ch->type == JSON_NUMBER) {
+        channel = (int)ch->value.number;
+      }
+
+      if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {
+        // Build the FIFO command to start recording
+        std::string fifo_cmd = "START ch=" + std::to_string(channel);
+
+        // Send mount and directory with hostname expansion
+        if (cfg && cfg->recorder.mount && cfg->recorder.mount[0]) {
+          fifo_cmd += " mount=" + std::string(cfg->recorder.mount);
+        }
+
+        if (cfg && cfg->recorder.device_path && cfg->recorder.device_path[0]) {
+          std::string device_path = cfg->recorder.device_path;
+          // Expand %hostname variable
+          size_t pos = device_path.find("%hostname");
+          if (pos != std::string::npos) {
+            char hostname[256] = {0};
+            gethostname(hostname, sizeof(hostname) - 1);
+            device_path.replace(pos, 9, hostname);
+          }
+          fifo_cmd += " dir=" + device_path;
+        }
+
+        if (cfg && cfg->recorder.filename && cfg->recorder.filename[0]) {
+          fifo_cmd += " template=" + std::string(cfg->recorder.filename);
+        }
+
+        // Enable loop mode for continuous recording until manual stop
+        fifo_cmd += " loop=1";
+
+        // Use duration from config or JSON for segment length
+        JsonValue *dur = obj_get(start, "duration");
+        if (dur && dur->type == JSON_NUMBER) {
+          fifo_cmd += " dur=" + std::to_string((int)dur->value.number);
+        } else if (cfg && cfg->recorder.duration > 0) {
+          fifo_cmd += " dur=" + std::to_string(cfg->recorder.duration);
+        }
+
+        // Write to mp4ctl FIFO
+        int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+        if (fd >= 0) {
+          fifo_cmd += "\n";
+          ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+          close(fd);
+
+          add_key(out, s2, "start");
+          if (written > 0) {
+            add_str(out, "ok");
+          } else {
+            add_str(out, "error");
+          }
+        } else {
+          add_key(out, s2, "start");
+          add_str(out, "fifo_unavailable");
+        }
+        wrote = true;
+      } else {
+        add_key(out, s2, "start");
+        add_str(out, "invalid_channel");
+        wrote = true;
+      }
+    }
+  }
+
+  // Handle stop command
+  if (JsonValue *stop = obj_get(obj, "stop")) {
+    if (stop->type == JSON_OBJECT) {
+      int channel = -1;
+      JsonValue *ch = obj_get(stop, "channel");
+      if (ch && ch->type == JSON_NUMBER) {
+        channel = (int)ch->value.number;
+      }
+
+      if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {
+        // Stop loop recording for specific channel
+        std::string fifo_cmd = "STOP LOOP ch=" + std::to_string(channel) + "\n";
+        int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+        if (fd >= 0) {
+          ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+          close(fd);
+
+          add_key(out, s2, "stop");
+          if (written > 0) {
+            add_str(out, "ok");
+          } else {
+            add_str(out, "error");
+          }
+        } else {
+          add_key(out, s2, "stop");
+          add_str(out, "fifo_unavailable");
+        }
+        wrote = true;
+      } else if (channel == -1) {
+        // Stop all channels
+        std::string fifo_cmd = "STOP\n";
+        int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+        if (fd >= 0) {
+          ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+          close(fd);
+
+          add_key(out, s2, "stop");
+          if (written > 0) {
+            add_str(out, "ok");
+          } else {
+            add_str(out, "error");
+          }
+        } else {
+          add_key(out, s2, "stop");
+          add_str(out, "fifo_unavailable");
+        }
+        wrote = true;
+      } else {
+        add_key(out, s2, "stop");
+        add_str(out, "invalid_channel");
+        wrote = true;
+      }
+    } else if (stop->type == JSON_NULL) {
+      // Stop all channels
+      std::string fifo_cmd = "STOP\n";
+      int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+      if (fd >= 0) {
+        ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+        close(fd);
+
+        add_key(out, s2, "stop");
+        if (written > 0) {
+          add_str(out, "ok");
+        } else {
+          add_str(out, "error");
+        }
+      } else {
+        add_key(out, s2, "stop");
+        add_str(out, "fifo_unavailable");
+      }
+      wrote = true;
+    }
+  }
+
+  // Handle status query
+  if (JsonValue *status = obj_get(obj, "status")) {
+    if (status->type == JSON_NULL || status->type == JSON_OBJECT) {
+      add_key(out, s2, "status", "{");
+      bool s3 = false;
+
+      for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ch++) {
+        add_key(out, s3, ("ch" + std::to_string(ch)).c_str());
+        add_bool(out, global_mp4_recorders[ch].isActive());
+      }
+
+      out += "}";
+      wrote = true;
+    }
+  }
+
+  if (!wrote) {
+    out.erase(out.size() - 1);
+    return;
+  }
+  out += "}";
+}
 } // namespace
 
 namespace JsonAPI {
@@ -1267,6 +1441,8 @@ bool process_json(const std::string &in, std::string &out) {
       handle_daynight(v, out, sep);
     } else if (!strcmp(k, "action") && v && v->type == JSON_OBJECT) {
       handle_action(v, out, sep);
+    } else if (!strcmp(k, "mp4") && v && v->type == JSON_OBJECT) {
+      handle_mp4(v, out, sep);
     }
   }
 

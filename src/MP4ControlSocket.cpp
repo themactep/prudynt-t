@@ -867,10 +867,6 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
   auto next_start = std::chrono::system_clock::now();
 
   while (!state->stopRequested.load(std::memory_order_relaxed)) {
-    if (!wait_until_channel_idle(channel, &state->stopRequested)) {
-      break;
-    }
-
     int segment_duration_seconds = state->params.durationSeconds;
     std::chrono::system_clock::time_point segment_start;
 
@@ -891,13 +887,12 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
       }
       next_start = boundary;
     } else {
-      auto now = std::chrono::system_clock::now();
-      if (next_start <= now) {
-        next_start = round_up_to_minute(now);
-      }
       auto scheduled_start = next_start;
-      if (!sleep_until_time(scheduled_start, &state->stopRequested)) {
-        break;
+      auto now = std::chrono::system_clock::now();
+      if (scheduled_start > now) {
+        if (!sleep_until_time(scheduled_start, &state->stopRequested)) {
+          break;
+        }
       }
       segment_start = scheduled_start;
       segment_duration_seconds = state->params.durationSeconds;
@@ -905,15 +900,17 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
       next_start = round_up_to_minute(next_start);
     }
 
+    if (!wait_until_channel_idle(channel, &state->stopRequested)) {
+      break;
+    }
+
     auto target = build_loop_target_path(state->params, segment_start);
     if (target.empty()) {
-      next_start = round_up_to_minute(std::chrono::system_clock::now());
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
       continue;
     }
     if (!begin_segment(target, channel, segment_duration_seconds)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      next_start = round_up_to_minute(std::chrono::system_clock::now());
       continue;
     }
     first_segment_pending = false;
