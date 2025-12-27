@@ -913,7 +913,7 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
     }
     if (!first_segment_pending) {
       // Advance next_start only after segment successfully started
-      next_start = segment_start + segment_duration_seconds;
+      next_start = segment_start + std::chrono::seconds(segment_duration_seconds);
       next_start = round_up_to_minute(next_start);
     }
     first_segment_pending = false;

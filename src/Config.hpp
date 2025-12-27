@@ -128,6 +128,9 @@ struct _daynight {
   int settle_samples_for_gb_record{20};
   const char *script_path{nullptr};
 
+  // Manual mode override (set by user via JSON API)
+  std::atomic<const char *> force_mode{nullptr};
+
   // Live telemetry populated by the worker
   std::atomic<int> live_brightness_percent{-1};
   std::atomic<int> live_ev{-1};
@@ -308,6 +311,7 @@ struct _stream {
   _osd osd;
   _stream_stats stats;
   bool audio_enabled;
+  bool video_enabled;
 };
 struct _sysinfo {
   const char *cpu = nullptr;

@@ -125,10 +125,18 @@ static inline int brightness_percent_from_ev(const Profile &pr,
   long long bright_ev = params.ev_day_low_primary;
 
   if (dark_ev > bright_ev) {
-    long long range = dark_ev - bright_ev;
-    long long num = (dark_ev - static_cast<long long>(ev)) * 100LL;
-    int pct = static_cast<int>(num / range);
-    return clampi(pct, 0, 100);
+    // Map EV to 0-100% with extended range to avoid always hitting 100%
+    // Use a wider range: from 50% below bright_ev to 50% above dark_ev
+    long long nominal_range = dark_ev - bright_ev;
+    long long extended_range = nominal_range * 2; // Double the range
+    long long bright_extended = bright_ev - (nominal_range / 2);
+    long long dark_extended = dark_ev + (nominal_range / 2);
+    
+    if (extended_range > 0) {
+      long long num = (dark_extended - static_cast<long long>(ev)) * 100LL;
+      int pct = static_cast<int>(num / extended_range);
+      return clampi(pct, 0, 100);
+    }
   }
 
   return percent_from_ev(pr, ev);
@@ -273,6 +281,13 @@ void *thread_entry(void *arg) {
   DayNightAlgo::State state{};
   DayNightAlgo::init(state);
 
+  // Skip automatic switching for N iterations after forced mode
+  int skip_auto_switch_iterations = 0;
+
+  // Anti-flapping: prevent rapid mode changes
+  int anti_flap_cooldown = 0;
+  const int anti_flap_iterations = 30; // ~30 seconds minimum between automatic switches
+
   // SoC profile mapping
   Profile pr = get_profile();
 
@@ -321,6 +336,36 @@ void *thread_entry(void *arg) {
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     refresh_daynight_log_level();
+    
+    // Check for manual force_mode override
+    const char *force_mode_str = cfg->daynight.force_mode.load(std::memory_order_relaxed);
+    if (force_mode_str != nullptr) {
+      DayNightAlgo::Mode forced_mode = DayNightAlgo::Mode::Unknown;
+      if (std::strcmp(force_mode_str, "day") == 0) {
+        forced_mode = DayNightAlgo::Mode::Day;
+      } else if (std::strcmp(force_mode_str, "night") == 0) {
+        forced_mode = DayNightAlgo::Mode::Night;
+      }
+      
+      if (forced_mode != DayNightAlgo::Mode::Unknown && forced_mode != current) {
+        if (daynight_should_log(Logger::INFO)) {
+          LOG_INFO("DayNight: applying forced mode " << force_mode_str);
+        }
+        apply_mode(forced_mode);
+        current = forced_mode;
+        if (current == DayNightAlgo::Mode::Night)
+          DayNightAlgo::on_enter_night(params, state);
+        else if (current == DayNightAlgo::Mode::Day)
+          DayNightAlgo::on_enter_day(state);
+        cfg->daynight.live_mode.store(force_mode_str, std::memory_order_relaxed);
+        initial_mode_applied = true;
+        // Skip automatic algorithm for next ~10 seconds to let forced mode stick
+        skip_auto_switch_iterations = 10;
+      }
+      // Clear the force flag after applying
+      cfg->daynight.force_mode.store(nullptr, std::memory_order_relaxed);
+    }
+    
     int ev = -1, gr = -1, gb = -1;
     (void)read_ev(ev);
     (void)read_awb(gr, gb);
@@ -365,15 +410,45 @@ void *thread_entry(void *arg) {
     }
 
     if (dec.toggled && dec.target != current) {
-      apply_mode(dec.target);
-      current = dec.target;
-      if (current == DayNightAlgo::Mode::Night)
-        DayNightAlgo::on_enter_night(params, state);
-      else if (current == DayNightAlgo::Mode::Day)
-        DayNightAlgo::on_enter_day(state);
-      // reflect new mode in metrics
-      cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                    std::memory_order_relaxed);
+      // Skip automatic switching if we just forced a mode
+      if (skip_auto_switch_iterations > 0) {
+        if (daynight_should_log(Logger::DEBUG)) {
+          LOG_DEBUG("DayNight: skipping automatic switch (forced mode cooldown: " 
+                    << skip_auto_switch_iterations << " iterations left)");
+        }
+        skip_auto_switch_iterations--;
+      } else if (anti_flap_cooldown > 0) {
+        // Prevent rapid toggling during twilight
+        if (daynight_should_log(Logger::DEBUG)) {
+          LOG_DEBUG("DayNight: skipping automatic switch (anti-flap cooldown: " 
+                    << anti_flap_cooldown << " iterations left)");
+        }
+        anti_flap_cooldown--;
+      } else {
+        apply_mode(dec.target);
+        current = dec.target;
+        if (current == DayNightAlgo::Mode::Night)
+          DayNightAlgo::on_enter_night(params, state);
+        else if (current == DayNightAlgo::Mode::Day)
+          DayNightAlgo::on_enter_day(state);
+        // reflect new mode in metrics
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
+                                      std::memory_order_relaxed);
+        // Set anti-flap cooldown after successful switch
+        anti_flap_cooldown = anti_flap_iterations;
+        if (daynight_should_log(Logger::INFO)) {
+          LOG_INFO("DayNight: automatic mode switch completed, cooldown set for " 
+                   << anti_flap_iterations << " iterations");
+        }
+      }
+    } else {
+      // Decrement counters even when no toggle decision is made
+      if (skip_auto_switch_iterations > 0) {
+        skip_auto_switch_iterations--;
+      }
+      if (anti_flap_cooldown > 0) {
+        anti_flap_cooldown--;
+      }
     }
 
     const char *mode_str = (current == DayNightAlgo::Mode::Day)

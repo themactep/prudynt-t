@@ -59,6 +59,8 @@ inline void on_enter_night(const Params &p, State &s) {
 inline void on_enter_day(State &s) {
   s.ircut_engaged = false;
   s.day_count = 0;
+  s.night_count = 0; // Reset night counter to prevent immediate flip-back
+  s.settle_remaining = 0; // No settle needed in day mode
 }
 
 inline void update_minima_window(State &s, const Signals &sig) {
@@ -75,7 +77,8 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
   Decision d{};
 
   // Night path: EV high for N samples
-  if (sig.ev > p.ev_night_high) {
+  // Only check if we're not in the settle window (where EV might be contaminated by IR)
+  if (s.settle_remaining == 0 && sig.ev > p.ev_night_high) {
     if (++s.night_count >= p.night_count_threshold) {
       d.target = Mode::Night;
       d.reason = 1;

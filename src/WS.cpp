@@ -224,7 +224,7 @@ enum {
   PNT_STREAM_OSD
 };
 
-static const char *const stream_keys[] = {"enabled",     "audio_enabled", "scale_enabled", "rtsp_endpoint", "rtsp_info",
+static const char *const stream_keys[] = {"enabled",     "audio_enabled", "video_enabled", "scale_enabled", "rtsp_endpoint", "rtsp_info",
                                           "format",      "mode",          "gop",           "max_gop",       "fps",
                                           "buffers",     "width",         "height",        "bitrate",       "rotation",
                                           "scale_width", "scale_height",  "profile",       "stats",         "osd"};
@@ -373,7 +373,7 @@ enum { PNT_RESTART_THREAD = 1, PNT_SAVE_CONFIG, PNT_CAPTURE };
 
 enum { PNT_THREAD_RTSP = 1, PNT_THREAD_VIDEO = 2, PNT_THREAD_AUDIO = 4 };
 
-static const char *const action_keys[] = {"restart_thread", "save_config", "capture"};
+static const char *const action_keys[] = {"restart_thread", "save_config", "dump_config", "capture"};
 
 #pragma endregion keys_and_enums
 

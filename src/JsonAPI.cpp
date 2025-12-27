@@ -161,6 +161,7 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   }
   if (idx < 2) {
     add_boolk("audio_enabled", std::string(root) + ".audio_enabled");
+    add_boolk("video_enabled", std::string(root) + ".video_enabled");
   }
   if (idx < 2) {
     add_boolk("scale_enabled", std::string(root) + ".scale_enabled");
@@ -992,6 +993,19 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   add_int("tolerance_percent", "daynight.tolerance_percent");
   add_strk("loglevel", "daynight.loglevel", true);
 
+  // Manual mode override
+  if (JsonValue *v = obj_get(obj, "force_mode")) {
+    if (v->type == JSON_STRING && v->value.string) {
+      const char *mode = v->value.string;
+      if (std::strcmp(mode, "day") == 0 || std::strcmp(mode, "night") == 0) {
+        cfg->daynight.force_mode.store(strdup(mode));
+      }
+      add_key(out, s2, "force_mode");
+      add_str(out, mode);
+      wrote = true;
+    }
+  }
+
   // Live status
   if (obj_get(obj, "status")) {
     add_key(out, s2, "status", "{");
@@ -1399,6 +1413,19 @@ bool process_json(const std::string &in, std::string &out) {
       free_json_value(root);
     out = "{}";
     return false;
+  }
+
+  // Special case: dump_config returns full config directly, not wrapped
+  if (JsonValue *action_obj = obj_get(root, "action"); action_obj && action_obj->type == JSON_OBJECT) {
+    if (JsonValue *dump_val = obj_get(action_obj, "dump_config"); dump_val && dump_val->type == JSON_NULL) {
+      char *json_str = json_to_string(cfg->jsonConfig, 0); // 0 = compact
+      if (json_str) {
+        out = json_str;
+        free(json_str);
+        free_json_value(root);
+        return true;
+      }
+    }
   }
 
   out = "{";
