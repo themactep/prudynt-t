@@ -896,8 +896,6 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
       }
       segment_start = scheduled_start;
       segment_duration_seconds = state->params.durationSeconds;
-      next_start = scheduled_start + std::chrono::seconds(state->params.durationSeconds);
-      next_start = round_up_to_minute(next_start);
     }
 
     if (!wait_until_channel_idle(channel, &state->stopRequested)) {
@@ -912,6 +910,11 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
     if (!begin_segment(target, channel, segment_duration_seconds)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       continue;
+    }
+    if (!first_segment_pending) {
+      // Advance next_start only after segment successfully started
+      next_start = segment_start + segment_duration_seconds;
+      next_start = round_up_to_minute(next_start);
     }
     first_segment_pending = false;
 
