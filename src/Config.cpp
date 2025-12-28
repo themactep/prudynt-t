@@ -86,7 +86,7 @@ void apply_motion_sensor_defaults(CFG &config) {
   adjust_frame_dim("frame_width", sensor_w, config.motion.frame_width);
   adjust_frame_dim("frame_height", sensor_h, config.motion.frame_height);
 
-  auto clamp_roi_coord = [&](const char *field, int sensor_max, int &value) {
+  auto clamp_roi_coord = [&](const char *field, int sensor_max, int &value, bool is_end_coord) {
     if (sensor_max <= 0) {
       int original = value;
       value = 0;
@@ -95,18 +95,28 @@ void apply_motion_sensor_defaults(CFG &config) {
     }
     int max_coord = std::max(sensor_max - 1, 0);
     int original = value;
-    if (value == IVS_AUTO_VALUE) {
-      value = max_coord;
+
+    if (is_end_coord) {
+      if (value == IVS_AUTO_VALUE || value <= 0) {
+        value = max_coord;
+      } else {
+        value = std::clamp(value, 0, max_coord);
+      }
     } else {
-      value = std::clamp(value, 0, max_coord);
+      if (value == IVS_AUTO_VALUE) {
+        value = 0;
+      } else {
+        value = std::clamp(value, 0, max_coord);
+      }
     }
+
     log_dimension_adjustment("motion", field, original, value);
   };
 
-  clamp_roi_coord("roi_0_x", sensor_w, config.motion.roi_0_x);
-  clamp_roi_coord("roi_0_y", sensor_h, config.motion.roi_0_y);
-  clamp_roi_coord("roi_1_x", sensor_w, config.motion.roi_1_x);
-  clamp_roi_coord("roi_1_y", sensor_h, config.motion.roi_1_y);
+  clamp_roi_coord("roi_0_x", sensor_w, config.motion.roi_0_x, false);
+  clamp_roi_coord("roi_0_y", sensor_h, config.motion.roi_0_y, false);
+  clamp_roi_coord("roi_1_x", sensor_w, config.motion.roi_1_x, true);
+  clamp_roi_coord("roi_1_y", sensor_h, config.motion.roi_1_y, true);
 
   auto enforce_roi_span = [&](const char *field, int sensor_max, int start, int &end) {
     if (sensor_max <= 0) {
