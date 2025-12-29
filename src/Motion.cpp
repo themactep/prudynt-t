@@ -1,4 +1,5 @@
 #include "Motion.hpp"
+#include "imp_hal.hpp"
 #include <algorithm>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -223,9 +224,15 @@ int Motion::init() {
   }
 
   memset(&move_param, 0, sizeof(IMP_IVS_MoveParam));
-  // OSD is affecting motion for some reason.
-  // Sensitivity range is 0-4
-  move_param.sense[0] = cfg->motion.sensitivity;
+
+  // Map web UI sensitivity (1-8) to hardware range (0-max)
+  // Hardware max varies by platform: older T20 supports 0-4, newer platforms support 0-8 for panoramic/fisheye cameras
+  int hw_sensitivity = cfg->motion.sensitivity - 1;
+  if (hw_sensitivity < 0) hw_sensitivity = 0;
+  int hw_max = hal::caps().motion_sensitivity_max;
+  if (hw_sensitivity > hw_max) hw_sensitivity = hw_max;
+
+  move_param.sense[0] = hw_sensitivity;
   move_param.skipFrameCnt = cfg->motion.skip_frame_count;
 
   // Adjust motion frame dimensions for video rotation
@@ -254,7 +261,9 @@ int Motion::init() {
   move_param.frameInfo.width = motion_width;
   move_param.frameInfo.height = motion_height;
 
-  LOG_INFO("Motion detection:" << " sensibility: " << move_param.sense[0] << ", skipCnt:" << move_param.skipFrameCnt
+  LOG_INFO("Motion detection: sensitivity: " << move_param.sense[0] << " (UI: " << cfg->motion.sensitivity 
+                               << ", HW max: " << hal::caps().motion_sensitivity_max << ")"
+                               << ", skipCnt:" << move_param.skipFrameCnt
                                << ", width:" << move_param.frameInfo.width
                                << ", height:" << move_param.frameInfo.height);
 

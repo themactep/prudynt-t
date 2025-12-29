@@ -164,6 +164,13 @@ static PlatformCaps g_caps = {
     .has_framesource_chn_rotate = false,
 #endif
 
+// Motion detection capabilities
+#if defined(PLATFORM_T20)
+    .motion_sensitivity_max = 4,
+#else
+    .motion_sensitivity_max = 8,
+#endif
+
 // System capabilities
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
     .uses_xburst2 = true,

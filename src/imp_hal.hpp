@@ -73,6 +73,9 @@ struct PlatformCaps {
   // Framesource capabilities
   bool has_framesource_chn_rotate;
 
+  // Motion detection capabilities
+  int motion_sensitivity_max;
+
   // System capabilities
   bool uses_xburst2;
   bool uses_kernel_4;
