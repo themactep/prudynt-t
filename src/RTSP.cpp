@@ -7,9 +7,9 @@
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
   LOG_DEBUG("identify stream " << chnNr);
-  
+
   ServerMediaSession *sms = ServerMediaSession::createNew(*env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
-  
+
   // Add video subsession if enabled
   if (stream.video_enabled) {
     auto deviceSource =
