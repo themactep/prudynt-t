@@ -35,7 +35,43 @@ inline void add_key(std::string &out, bool &sep, const char *k, const char *open
 }
 inline void add_str(std::string &out, const char *s) {
   out.push_back('"');
-  out += s ? s : "";
+  if (s) {
+    for (const char *p = s; *p; ++p) {
+      unsigned char c = static_cast<unsigned char>(*p);
+      switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (c < 0x20) {
+          char buf[7];
+          std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+          out += buf;
+        } else {
+          out.push_back(static_cast<char>(c));
+        }
+        break;
+      }
+    }
+  }
   out.push_back('"');
 }
 inline void add_num(std::string &out, int v) {
