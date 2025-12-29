@@ -133,7 +133,7 @@ static inline int brightness_percent_from_ev(const Profile &pr,
     long long dark_extended = dark_ev + (nominal_range / 2);
     
     if (extended_range > 0) {
-      long long num = (dark_extended - static_cast<long long>(ev)) * 100LL;
+      long long num = (static_cast<long long>(ev) - bright_extended) * 100LL;
       int pct = static_cast<int>(num / extended_range);
       return clampi(pct, 0, 100);
     }
