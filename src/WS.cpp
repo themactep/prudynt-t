@@ -341,6 +341,7 @@ enum {
   PNT_MOTION_DEBOUNCE_TIME = 1,
   PNT_MOTION_POST_TIME,
   PNT_MOTION_COOLDOWN_TIME,
+  PNT_MOTION_MOTOR_SETTLE_MS,
   PNT_MOTION_INIT_TIME,
   PNT_MOTION_MIN_TIME,
   PNT_MOTION_THREAD_WAIT,
@@ -359,9 +360,10 @@ enum {
 };
 
 static const char *const motion_keys[] = {
-    "debounce_time", "post_time",        "cooldown_time", "init_time",    "min_time",    "thread_wait",
-    "sensitivity",   "skip_frame_count", "frame_width",   "frame_height", "roi_0_x",     "roi_0_x",
-    "roi_1_x",       "roi_1_y",          "roi_count",     "enabled",      "script_path", "rois"};
+  "debounce_time",   "post_time",       "cooldown_time", "motor_settle_ms", "init_time",    "min_time",
+  "thread_wait",     "sensitivity",    "skip_frame_count", "frame_width",     "frame_height", "roi_0_x",
+  "roi_0_y",         "roi_1_x",        "roi_1_y",          "roi_count",     "enabled",      "script_path",
+  "rois"};
 
 /* INFO */
 enum { PNT_INFO_IMP_SYSTEM_VERSION = 1 };

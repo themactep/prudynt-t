@@ -179,6 +179,7 @@ struct _motion {
   int debounce_time;
   int post_time;
   int cooldown_time;
+  int motor_settle_ms;
   int init_time;
   int min_time;
   int ivs_polling_timeout;

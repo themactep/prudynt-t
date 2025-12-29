@@ -836,6 +836,7 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   add_int("debounce_time", "motion.debounce_time");
   add_int("post_time", "motion.post_time");
   add_int("cooldown_time", "motion.cooldown_time");
+  add_int("motor_settle_ms", "motion.motor_settle_ms");
   add_int("init_time", "motion.init_time");
   add_int("min_time", "motion.min_time");
   add_int("ivs_polling_timeout", "motion.ivs_polling_timeout");

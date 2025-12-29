@@ -11,6 +11,7 @@ namespace {
 constexpr const char *kPrudyntRunDir = "/run/prudynt";
 constexpr const char *kMotionStatePath = "/run/prudynt/motion.active";
 constexpr const char *kMotionDetectedPath = "/run/prudynt/motion_detected.active";
+constexpr const char *kMotorsActivePath = "/run/motors-active";
 
 void write_motion_detection_state_file() {
   int fd = ::open(kMotionStatePath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
@@ -66,6 +67,9 @@ void Motion::detect() {
   write_motion_detection_state_file();
 
   global_motion_thread_signal = true;
+  bool motorMovementActive = false;
+  auto motorSettleWindow = std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
+  auto lastMotorEventTime = startTime - motorSettleWindow;
   while (global_motion_thread_signal) {
     ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout);
     if (ret < 0) {
@@ -82,6 +86,37 @@ void Motion::detect() {
     auto currentTime = steady_clock::now();
     auto elapsedTime = duration_cast<seconds>(currentTime - startTime);
 
+    motorSettleWindow = std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
+    bool motorFlagPresent = (::access(kMotorsActivePath, F_OK) == 0);
+
+    if (motorFlagPresent) {
+      lastMotorEventTime = currentTime;
+    }
+
+    auto sinceLastMotor = duration_cast<milliseconds>(currentTime - lastMotorEventTime);
+
+    bool motorActiveOrSettling = motorFlagPresent || (sinceLastMotor < motorSettleWindow);
+
+    if (motorActiveOrSettling && !motorMovementActive) {
+      LOG_INFO("Motion suppressed: motor movement detected (flag=" << motorFlagPresent
+                                                                       << ", settle_ms="
+                                                                       << motorSettleWindow.count()
+                                                                       << ", since_last_ms="
+                                                                       << sinceLastMotor.count() << ")");
+    } else if (!motorActiveOrSettling && motorMovementActive) {
+      LOG_INFO("Motor movement ended; resuming motion monitoring (cooldown applies) (flag=" << motorFlagPresent
+                                                                                           << ", settle_ms="
+                                                                                           << motorSettleWindow.count()
+                                                                                           << ", since_last_ms="
+                                                                                           << sinceLastMotor.count()
+                                                                                           << ", cooldown_s="
+                                                                                           << cfg->motion.cooldown_time
+                                                                                           << ")");
+      isInCooldown = true;
+      cooldownEndTime = steady_clock::now();
+    }
+    motorMovementActive = motorActiveOrSettling;
+
     if (ignoreInitialPeriod && elapsedTime.count() < cfg->motion.init_time) {
       continue;
     } else {
@@ -95,29 +130,33 @@ void Motion::detect() {
     }
 
     bool motionDetected = false;
-    for (int i = 0; i < IMP_IVS_MOVE_MAX_ROI_CNT; i++) {
-      if (result->retRoi[i]) {
-        motionDetected = true;
-        LOG_INFO("Active motion detected in region " << i);
-        debounce++;
-        if (debounce >= cfg->motion.debounce_time) {
-          if (!moving.load()) {
-            moving = true;
-            LOG_INFO("Motion Start");
-            write_motion_detected_state_file();
+    if (!motorMovementActive) {
+      for (int i = 0; i < IMP_IVS_MOVE_MAX_ROI_CNT; i++) {
+        if (result->retRoi[i]) {
+          motionDetected = true;
+          LOG_INFO("Active motion detected in region " << i);
+          debounce++;
+          if (debounce >= cfg->motion.debounce_time) {
+            if (!moving.load()) {
+              moving = true;
+              LOG_INFO("Motion Start");
+              write_motion_detected_state_file();
 
-            char cmd[128];
-            memset(cmd, 0, sizeof(cmd));
-            snprintf(cmd, sizeof(cmd), "%s start", cfg->motion.script_path);
-            ret = system(cmd);
-            if (ret != 0) {
-              LOG_ERROR("Motion script failed:" << cmd);
+              char cmd[128];
+              memset(cmd, 0, sizeof(cmd));
+              snprintf(cmd, sizeof(cmd), "%s start", cfg->motion.script_path);
+              ret = system(cmd);
+              if (ret != 0) {
+                LOG_ERROR("Motion script failed:" << cmd);
+              }
             }
+            indicator = true;
+            motionEndTime = steady_clock::now(); // Update last motion time
           }
-          indicator = true;
-          motionEndTime = steady_clock::now(); // Update last motion time
         }
       }
+    } else {
+      debounce = 0;
     }
 
     if (!motionDetected) {

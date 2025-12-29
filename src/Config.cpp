@@ -458,6 +458,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.cooldown_time", motion.cooldown_time, 5, validateIntGe0},
       {"motion.init_time", motion.init_time, 5, validateIntGe0},
       {"motion.min_time", motion.min_time, 1, validateIntGe0},
+      {"motion.motor_settle_ms", motion.motor_settle_ms, 1200, [](const int &v) { return v >= 0 && v <= 10000; }},
       {"motion.sensitivity", motion.sensitivity, 1, validateIntGe0},
       {"motion.skip_frame_count", motion.skip_frame_count, 5, validateIntGe0},
       {"motion.frame_width", motion.frame_width, IVS_AUTO_VALUE, validateIntGe0},
