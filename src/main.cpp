@@ -336,11 +336,15 @@ int main(int argc, const char *argv[]) {
     }
     if (global_restart_video || startup) {
       if (cfg->stream0.enabled) {
-        start_video(0);
+        if (cfg->stream0.video_enabled) {
+          start_video(0);
+        }
       }
 
       if (cfg->stream1.enabled) {
-        start_video(1);
+        if (cfg->stream1.video_enabled) {
+          start_video(1);
+        }
       }
 
       if (cfg->stream2.enabled) {

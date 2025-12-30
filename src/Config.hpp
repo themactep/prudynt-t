@@ -259,6 +259,9 @@ struct _rtsp {
   const char *name;
   float packet_loss_threshold;
   float bandwidth_margin;
+  bool audio_only_enabled;
+  const char *audio_only_endpoint;
+  const char *audio_only_info;
 };
 struct _sensor {
   int fps;

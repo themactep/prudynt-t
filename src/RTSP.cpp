@@ -132,6 +132,17 @@ void RTSP::start() {
     addSubsession(1, cfg->stream1);
   }
 
+  // Optional audio-only RTSP session (microphone only, no video/backchannel)
+  if (cfg->audio.input_enabled && cfg->rtsp.audio_only_enabled) {
+    ServerMediaSession *sms =
+        ServerMediaSession::createNew(*env, cfg->rtsp.audio_only_endpoint, cfg->rtsp.audio_only_info, cfg->rtsp.name);
+    IMPAudioServerMediaSubsession *audioSub = IMPAudioServerMediaSubsession::createNew(*env, 0);
+    sms->addSubsession(audioSub);
+    rtspServer->addServerMediaSession(sms);
+    char *url = rtspServer->rtspURL(sms);
+    LOG_INFO("Audio-only stream available at: " << url);
+  }
+
   global_rtsp_thread_signal = 0;
   env->taskScheduler().doEventLoop(&global_rtsp_thread_signal);
 
