@@ -65,6 +65,14 @@ struct AudioFrame {
 
 struct H264NALUnit {
   std::vector<uint8_t> data;
+
+  // Frame boundary tracking (detect incomplete frames)
+  bool is_frame_start = false;      // First NAL unit of frame
+  bool is_frame_end = false;        // Last NAL unit of frame
+  uint32_t frame_id = 0;            // Unique per video frame
+  uint32_t packet_index = 0;        // Position within frame (0-based)
+  uint32_t packet_count = 0;        // Total NAL units in frame
+
   /* timestamp fix, can be removed if solved
   struct timeval time;
   int64_t imp_ts;

@@ -325,6 +325,18 @@ void VideoWorker::run() {
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
             nalu.data.insert(nalu.data.end(), start + 4, end);
+
+            // Add frame boundary metadata for complete frame detection
+            static uint32_t frame_counter = 0;
+            if (i == 0) {
+              frame_counter++;  // New frame starting
+            }
+            nalu.frame_id = frame_counter;
+            nalu.packet_index = i;
+            nalu.packet_count = stream.packCount;
+            nalu.is_frame_start = (i == 0);
+            nalu.is_frame_end = stream.pack[i].frameEnd;
+
             if (global_video[encChn]->idr == false) {
               if (nal_is_sps || nal_is_pps || nal_is_idr || nal_is_hevc_idr) {
                 global_video[encChn]->idr = true;
@@ -333,11 +345,18 @@ void VideoWorker::run() {
 
             if (global_video[encChn]->idr == true) {
               bool delivered = false;
-              if (global_video[encChn]->msgChannel->write(nalu)) {
+              // Use write_wait() to apply backpressure instead of silent drops
+              try {
+                global_video[encChn]->msgChannel->write_wait(nalu);
                 delivered = true;
                 std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
                 if (global_video[encChn]->onDataCallback)
                   global_video[encChn]->onDataCallback();
+              } catch (const std::exception& e) {
+                LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id 
+                         << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
+                         << " - Failed to queue: " << e.what());
+                delivered = false;
               }
               std::vector<VideoTapEntry> taps_copy;
               {
@@ -355,9 +374,10 @@ void VideoWorker::run() {
                 }
               }
               if (!delivered) {
-                LOG_ERROR("video " << "channel:" << encChn << ", "
-                                   << "package:" << i << " of " << stream.packCount << ", "
-                                   << "packageSize:" << nalu.data.size() << ".  !sink clogged!");
+                LOG_ERROR("video channel:" << encChn << ", "
+                                           << "frame_id:" << nalu.frame_id << ", "
+                                           << "package:" << i << " of " << stream.packCount << ", "
+                                           << "packageSize:" << nalu.data.size() << " - msgChannel sink clogged!");
               }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
@@ -371,6 +391,16 @@ void VideoWorker::run() {
               global_audio[0]->should_grab_frames.notify_one();
             }
 #endif
+          }
+        }
+
+        // Ensure final packet guarantees callback
+        // Even if last write failed silently in edge cases,
+        // call callback again to ensure last packet is processed
+        if (global_video[encChn]->hasDataCallback && stream.packCount > 0) {
+          std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+          if (global_video[encChn]->onDataCallback) {
+            global_video[encChn]->onDataCallback();
           }
         }
 
