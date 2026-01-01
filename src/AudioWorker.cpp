@@ -270,8 +270,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     mp4_audio_sample_rate = 0;
   }
 
-  if (!af.data.empty() && global_audio[encChn]->hasDataCallback &&
-      (global_video[0]->hasDataCallback || global_video[1]->hasDataCallback)) {
+  if (!af.data.empty() && global_audio[encChn]->hasDataCallback) {
     bool delivered = global_audio[encChn]->msgChannel->write(af);
     if (delivered) {
       std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
