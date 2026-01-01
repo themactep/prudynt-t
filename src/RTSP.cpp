@@ -118,9 +118,10 @@ void RTSP::start() {
     global_audio[audioChn]->streamReplicator = StreamReplicator::createNew(*env, audioSource, false);
 
     // The replicator stays alive even when no RTSP clients are connected, so
-    // clear the consumer tracking state until a real subscriber appears.
+    // keep the audio capture active. When RTSP clients connect via
+    // IMPAudioServerMediaSubsession, hasDataCallback will be managed by the
+    // sessionsubsession's createNewStreamSource/closeStreamSource.
     global_audio[audioChn]->rtsp_client_count.store(0, std::memory_order_relaxed);
-    global_audio[audioChn]->hasDataCallback = false;
   }
 #endif
 

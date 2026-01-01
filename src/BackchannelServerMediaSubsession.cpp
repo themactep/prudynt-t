@@ -270,8 +270,12 @@ void BackchannelServerMediaSubsession::startStream(
     return;
   }
 
-  state->startPlaying(rtcpRRHandler, rtcpRRHandlerClientData, serverRequestAlternativeByteHandler,
-                      serverRequestAlternativeByteHandlerClientData);
+  if (state->mediaSink && state->mediaSink->isActive()) {
+    LOG_DEBUG("Stream already playing for session " << static_cast<unsigned>(clientSessionId) << ", skipping startPlaying");
+  } else {
+    state->startPlaying(rtcpRRHandler, rtcpRRHandlerClientData, serverRequestAlternativeByteHandler,
+                        serverRequestAlternativeByteHandlerClientData);
+  }
 
   // Set initial RTP seq num and timestamp
   rtpSeqNum = 0;

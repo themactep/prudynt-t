@@ -181,7 +181,7 @@ struct audio_stream {
 
   audio_stream(int devId, int aiChn, int aeChn)
       : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
-        msgChannel(std::make_shared<MsgChannel<AudioFrame>>(30)), onDataCallback{nullptr}, hasDataCallback{false} {
+        msgChannel(nullptr), onDataCallback{nullptr}, hasDataCallback{false} {
   }
 };
 

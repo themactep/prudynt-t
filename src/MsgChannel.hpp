@@ -68,13 +68,22 @@ public:
     space_cv.notify_all();
   }
 
+  size_t size() const {
+    std::unique_lock<std::mutex> lck(cv_mtx);
+    return msg_buffer.size();
+  }
+
+  unsigned int capacity() const {
+    return buffer_size;
+  }
+
 private:
   bool can_read() {
     return !msg_buffer.empty();
   }
 
   std::deque<T> msg_buffer;
-  std::mutex cv_mtx;
+  mutable std::mutex cv_mtx;
   std::condition_variable write_cv;
   std::condition_variable space_cv;
   unsigned int buffer_size;

@@ -417,6 +417,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
       {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
 #endif
+      {"audio.buffer_warn_frames", audio.buffer_warn_frames, 80, [](const int &v) { return v >= 10 && v <= 1000; }},
+      {"audio.buffer_cap_frames", audio.buffer_cap_frames, 100, [](const int &v) { return v >= 10 && v <= 1000; }},
       {"daynight.switch_below_percent", daynight.switch_below_percent, 15, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.switch_above_percent", daynight.switch_above_percent, 80, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.tolerance_percent", daynight.tolerance_percent, 50, [](const int &v) { return v >= 0 && v <= 100; }},

@@ -16,6 +16,8 @@ public:
 
   Boolean startPlaying(FramedSource &source, MediaSink::afterPlayingFunc *afterFunc, void *afterClientData);
   void stopPlaying();
+  
+  bool isActive() const { return fIsActive; }
 
 protected:
   BackchannelSink(UsageEnvironment &env, unsigned clientSessionId, IMPBackchannelFormat format);
