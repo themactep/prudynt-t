@@ -230,7 +230,7 @@ int main(int argc, const char *argv[]) {
 #else
   LOG_INFO("WebSocket module not compiled into this build.");
 #endif
-  LOG_INFO("HTTP MJPEG module is " << (cfg->http_mjpeg.enabled ? "enabled" : "disabled"));
+  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) ? "enabled" : "disabled"));
   LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   if (!instance_lock.acquire()) {
@@ -309,8 +309,8 @@ int main(int argc, const char *argv[]) {
   pthread_create(&ws_thread, nullptr, WS::run, &ws);
 #endif
 
-  if (cfg->http_mjpeg.enabled) {
-    http_mjpeg.start(cfg->http_mjpeg.port);
+  if (cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) {
+    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled);
     http_mjpeg_started = true;
   }
 

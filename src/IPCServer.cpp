@@ -6,12 +6,16 @@
 #include <sys/sysinfo.h>
 
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <vector>
 
 // Local snapshot helper: return a clean JPEG starting from SOI
@@ -71,10 +75,19 @@ IPCServer::~IPCServer() {
   stop();
 }
 
+void IPCServer::configure_http(int port, bool enabled) {
+  http_port_ = port;
+  http_enabled_ = enabled && port > 0;
+}
+
 void IPCServer::start() {
   bool expected = false;
   if (running_.compare_exchange_strong(expected, true)) {
     th_ = std::thread(&IPCServer::server_loop, this);
+    if (http_enabled_ && http_port_ > 0) {
+      http_running_.store(true);
+      http_th_ = std::thread(&IPCServer::http_loop, this);
+    }
   }
 }
 
@@ -92,6 +105,17 @@ void IPCServer::stop() {
     }
     if (th_.joinable())
       th_.join();
+  }
+
+  if (http_running_.exchange(false)) {
+    if (http_listen_fd_ >= 0) {
+      ::shutdown(http_listen_fd_, SHUT_RDWR);
+      ::close(http_listen_fd_);
+      http_listen_fd_ = -1;
+    }
+    if (http_th_.joinable()) {
+      http_th_.join();
+    }
   }
 }
 
@@ -153,6 +177,177 @@ void IPCServer::server_loop() {
 
   close(s);
   ::unlink(SOCK_PATH);
+}
+
+void IPCServer::http_loop() {
+  int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    LOG_ERROR("HTTP API: socket() failed: " << strerror(errno));
+    http_running_.store(false);
+    return;
+  }
+
+  http_listen_fd_ = fd;
+
+  int yes = 1;
+  ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  // Bind only to loopback to avoid exposing the config API externally
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  addr.sin_port = htons(static_cast<uint16_t>(http_port_));
+  if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+    LOG_ERROR("HTTP API: bind(" << http_port_ << ") failed: " << strerror(errno));
+    ::close(fd);
+    http_listen_fd_ = -1;
+    http_running_.store(false);
+    return;
+  }
+
+  if (::listen(fd, 8) < 0) {
+    LOG_ERROR("HTTP API: listen() failed: " << strerror(errno));
+    ::close(fd);
+    http_listen_fd_ = -1;
+    http_running_.store(false);
+    return;
+  }
+
+  LOG_INFO("HTTP API: listening on port " << http_port_ << " (/api/v1/config)");
+
+  while (http_running_.load()) {
+    sockaddr_in cli{};
+    socklen_t clilen = sizeof(cli);
+    int cfd = ::accept(fd, reinterpret_cast<sockaddr *>(&cli), &clilen);
+    if (cfd < 0) {
+      if (errno == EINTR)
+        continue;
+      if (!http_running_.load())
+        break;
+      continue;
+    }
+    std::thread(&IPCServer::handle_http_client, this, cfd).detach();
+  }
+
+  if (http_listen_fd_ >= 0) {
+    ::close(http_listen_fd_);
+    http_listen_fd_ = -1;
+  }
+  http_running_.store(false);
+}
+
+static std::string trim(const std::string &s) {
+  size_t start = 0;
+  while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start])))
+    ++start;
+  size_t end = s.size();
+  while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1])))
+    --end;
+  return s.substr(start, end - start);
+}
+
+int IPCServer::handle_http_client(int fd) {
+  // Light-weight HTTP parser; assumes Content-Length is provided
+  int one = 1;
+  ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+
+  std::string req;
+  char buf[2048];
+  ssize_t r = 0;
+  while (req.find("\r\n\r\n") == std::string::npos) {
+    r = ::recv(fd, buf, sizeof(buf), 0);
+    if (r <= 0)
+      break;
+    req.append(buf, buf + r);
+    if (req.size() > 65536)
+      break; // avoid abuse
+  }
+
+  size_t hdr_end = req.find("\r\n\r\n");
+  if (hdr_end == std::string::npos) {
+    ::close(fd);
+    return -1;
+  }
+
+  // Parse request line
+  std::string method;
+  std::string path;
+  size_t line_end = req.find('\n');
+  if (line_end != std::string::npos) {
+    std::string line = req.substr(0, line_end);
+    size_t sp1 = line.find(' ');
+    size_t sp2 = line.find(' ', sp1 == std::string::npos ? 0 : sp1 + 1);
+    if (sp1 != std::string::npos && sp2 != std::string::npos) {
+      method = line.substr(0, sp1);
+      path = line.substr(sp1 + 1, sp2 - (sp1 + 1));
+    }
+  }
+
+  // Headers
+  size_t body_start = hdr_end + 4;
+  int content_length = 0;
+  size_t pos = req.find('\n');
+  while (pos != std::string::npos && pos < hdr_end) {
+    size_t next = req.find('\n', pos + 1);
+    size_t line_start = (pos == std::string::npos) ? 0 : pos + 1;
+    std::string line = trim(req.substr(line_start, (next == std::string::npos ? hdr_end : next) - line_start));
+    pos = next;
+    if (line.empty())
+      continue;
+    size_t colon = line.find(':');
+    if (colon == std::string::npos)
+      continue;
+    std::string key = line.substr(0, colon);
+    std::string val = trim(line.substr(colon + 1));
+    for (auto &c : key)
+      c = std::tolower(static_cast<unsigned char>(c));
+    if (key == "content-length") {
+      content_length = std::atoi(val.c_str());
+    }
+  }
+
+  // Read body if not fully buffered
+  std::string body = req.substr(body_start);
+  while (content_length > 0 && static_cast<int>(body.size()) < content_length) {
+    r = ::recv(fd, buf, sizeof(buf), 0);
+    if (r <= 0)
+      break;
+    body.append(buf, buf + r);
+  }
+
+  auto send_response = [&](int code, const std::string &ctype, const std::string &payload) {
+    char hdr[256];
+    int n = snprintf(hdr, sizeof(hdr), "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                     code, (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")),
+                     ctype.c_str(), payload.size());
+    write_full(fd, hdr, static_cast<size_t>(n));
+    if (!payload.empty()) {
+      write_full(fd, payload.data(), payload.size());
+    }
+  };
+
+  if (method != "POST" || path != "/api/v1/config") {
+    send_response(404, "text/plain", "not found\n");
+    ::close(fd);
+    return 0;
+  }
+
+  if (content_length <= 0) {
+    send_response(400, "text/plain", "missing content-length\n");
+    ::close(fd);
+    return -1;
+  }
+
+  std::string resp_json;
+  bool ok = process_json_with_jct(body, resp_json);
+  if (!ok) {
+    send_response(400, "application/json", "{\"error\":\"invalid_request\"}\n");
+  } else {
+    send_response(200, "application/json", resp_json);
+  }
+
+  ::close(fd);
+  return 0;
 }
 
 static bool starts_with(const std::string &s, const char *pfx) {

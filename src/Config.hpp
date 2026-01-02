@@ -145,8 +145,10 @@ struct _general {
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
 };
-struct _http_mjpeg {
+struct _http {
   bool enabled;
+  bool mjpeg_enabled;
+  bool api_enabled;
   int port;
 };
 struct _image {
@@ -368,7 +370,7 @@ public:
 #if defined(WEBSOCKET_ENABLED)
   _websocket websocket{};
 #endif
-  _http_mjpeg http_mjpeg{};
+  _http http{};
   _sysinfo sysinfo{};
   _recorder recorder{};
 

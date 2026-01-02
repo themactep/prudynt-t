@@ -15,12 +15,22 @@ public:
   // Signal shutdown and join
   void stop();
 
+  // Configure HTTP JSON API listener (call before start)
+  void configure_http(int port, bool enabled);
+
 private:
   void server_loop();
+  void http_loop();
   int handle_client(int fd);
+  int handle_http_client(int fd);
 
   std::thread th_;
+  std::thread http_th_;
   std::atomic<bool> running_{false};
+  std::atomic<bool> http_running_{false};
+  int http_port_{0};
+  bool http_enabled_{false};
+  int http_listen_fd_{-1};
 };
 
 #endif // IPC_SERVER_HPP

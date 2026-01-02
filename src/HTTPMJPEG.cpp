@@ -2,8 +2,10 @@
 
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "JsonAPI.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstdlib>
@@ -116,10 +118,12 @@ HTTPMJPEG::~HTTPMJPEG() {
   stop();
 }
 
-void HTTPMJPEG::start(int port) {
+void HTTPMJPEG::start(int port, bool enable_mjpeg, bool enable_api) {
   bool expected = false;
   if (!running_.compare_exchange_strong(expected, true))
     return; // already running
+  mjpeg_enabled_ = enable_mjpeg;
+  api_enabled_ = enable_api;
   th_ = std::thread(&HTTPMJPEG::server_loop, this, port);
 }
 
@@ -166,7 +170,7 @@ void HTTPMJPEG::server_loop(int port) {
     return;
   }
   LOG_INFO("HTTPMJPEG: listening on port " << port << " (/mjpg?ch=0.." << (NUM_JPEG_CHANNELS - 1)
-                                           << "&f=&q=&w=&h=)");
+                                           << "&f=&q=&w=&h=)" << (api_enabled_ ? " and /api/v1/config" : ""));
 
   while (running_.load()) {
     sockaddr_in cli{};
@@ -206,6 +210,7 @@ void HTTPMJPEG::handle_client(int cfd) {
   }
 
   // Parse request line
+  std::string method;
   int ch = 0, q = -1, fps = -1, w = -1, h = -1;
   int chunk_sz = 1024;      // default paced chunk size (bytes)
   int sndbuf_override = -1; // bytes; <=0 means use default
@@ -220,6 +225,7 @@ void HTTPMJPEG::handle_client(int cfd) {
     size_t sp1 = line.find(' ');
     size_t sp2 = line.find(' ', sp1 == std::string::npos ? 0 : sp1 + 1);
     if (sp1 != std::string::npos && sp2 != std::string::npos) {
+      method = line.substr(0, sp1);
       std::string url = line.substr(sp1 + 1, sp2 - (sp1 + 1));
       size_t qm = url.find('?');
       if (qm == std::string::npos) {
@@ -231,9 +237,77 @@ void HTTPMJPEG::handle_client(int cfd) {
     }
   }
 
-  if (path != "/mjpg" && path != "/x/mjpg" && path != "/mjpeg" && path != "/x/mjpeg") {
-    const char *resp = "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nnot found\n";
-    (void)write_full(cfd, resp, strlen(resp));
+  auto send_response = [&](int code, const char *ctype, const std::string &payload) {
+    char hdr[256];
+    int n = snprintf(hdr, sizeof(hdr), "HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                     code, (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")), ctype,
+                     payload.size());
+    write_full(cfd, hdr, static_cast<size_t>(n));
+    if (!payload.empty())
+      write_full(cfd, payload.data(), payload.size());
+  };
+
+  // Handle JSON API on the same port
+  if (api_enabled_ && path == "/api/v1/config") {
+    // Require POST
+    if (method != "POST") {
+      send_response(405, "text/plain", "method not allowed\n");
+      ::close(cfd);
+      return;
+    }
+
+    // Parse Content-Length
+    size_t hdr_end = req.find("\r\n\r\n");
+    int content_length = 0;
+    size_t pos = req.find('\n');
+    auto trim = [](const std::string &s) {
+      size_t a = 0, b = s.size();
+      while (a < b && std::isspace(static_cast<unsigned char>(s[a])))
+        ++a;
+      while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1])))
+        --b;
+      return s.substr(a, b - a);
+    };
+    while (pos != std::string::npos && pos < hdr_end) {
+      size_t next = req.find('\n', pos + 1);
+      size_t line_start = (pos == std::string::npos) ? 0 : pos + 1;
+      std::string line = trim(req.substr(line_start, (next == std::string::npos ? hdr_end : next) - line_start));
+      pos = next;
+      if (line.empty())
+        continue;
+      size_t colon = line.find(':');
+      if (colon == std::string::npos)
+        continue;
+      std::string key = line.substr(0, colon);
+      std::string val = trim(line.substr(colon + 1));
+      for (auto &c : key)
+        c = std::tolower(static_cast<unsigned char>(c));
+      if (key == "content-length") {
+        content_length = std::atoi(val.c_str());
+      }
+    }
+
+    std::string body = req.substr(hdr_end + 4);
+    while (content_length > 0 && static_cast<int>(body.size()) < content_length) {
+      ssize_t r = ::recv(cfd, buf, sizeof(buf), 0);
+      if (r <= 0)
+        break;
+      body.append(buf, buf + r);
+    }
+
+    std::string resp_json;
+    bool ok = JsonAPI::process_json(body, resp_json);
+    if (!ok) {
+      send_response(400, "application/json", "{\"error\":\"invalid_request\"}\n");
+    } else {
+      send_response(200, "application/json", resp_json);
+    }
+    ::close(cfd);
+    return;
+  }
+
+  if (!mjpeg_enabled_ || (path != "/mjpg" && path != "/x/mjpg" && path != "/mjpeg" && path != "/x/mjpeg")) {
+    send_response(404, "text/plain", "not found\n");
     ::close(cfd);
     return;
   }
