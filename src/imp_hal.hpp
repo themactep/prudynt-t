@@ -141,6 +141,8 @@ int set_anti_flicker(int mode);
 
 // Exposure controls
 int set_ae_compensation(int val);
+int set_ae_it_max(unsigned int it_max);
+int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short);
 
 // Advanced image processing (may not be available on all platforms)
 int set_dpc_strength(unsigned char val);
@@ -156,6 +158,9 @@ int set_max_dgain(unsigned char val);
 // White balance
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
+// Sensor timing
+int set_sensor_fps(int fps_num, int fps_den);
+
 // Running mode (HAL-level)
 enum class RunningMode { Day = 0, Night = 1, Custom = 2 };
 int set_running_mode(RunningMode mode);
@@ -164,6 +169,11 @@ int set_running_mode(RunningMode mode);
 // Returns 0 on success, -1 on unsupported/failure
 int get_ev(int &out_ev);
 int get_awb_weighted_gains(int &out_gr, int &out_gb);
+int get_total_gain(int &out_gain);
+int get_ae_luma(int &out_luma);
+int get_awb_color_temp(int &out_ct);
+int get_ev_attr(IMPISPEVAttr &out_attr);
+int get_ae_attr(IMPISPAEAttr &out_attr);
 
 // Sensor management functions (abstract IMPVI_MAIN parameter)
 int add_sensor(IMPSensorInfo *sinfo);
@@ -206,6 +216,15 @@ int get_h264_nal_type(const IMPEncoderPack &pack);
 
 // Get H.265 NAL type from stream pack
 int get_h265_nal_type(const IMPEncoderPack &pack);
+
+// Encoder channel tuning
+int set_bitrate(int channel, int bitrate);
+int set_gop_length(int channel, int length);
+int set_rc_mode(int channel, int mode);
+int set_framerate(int channel, int fps_num, int fps_den);
+int set_qp(int channel, int qp);
+int set_qp_bounds(int channel, int min_qp, int max_qp);
+int set_qp_ip_delta(int channel, int delta);
 
 // Encoder initialization helpers
 void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height);
@@ -264,11 +283,23 @@ namespace audio {
 
 void init_ai_channel_param(IMPAudioIChnParam &param);
 
+// Audio output controls
+int set_ao_hpf(int enable);
+int set_ao_volume(int vol);
+int set_ao_gain(int gain);
+
 } // namespace audio
 
 namespace osd {
 
 uint32_t black_cover_color();
+int show_region(int handle, int show);
+int set_region_pos(int handle, int x, int y);
+int set_region_alpha(int handle, int alpha);
+int get_region_attr(int handle, IMPOSDRgnAttr &out_attr);
+int get_group_attr(int handle, int group, IMPOSDGrpRgnAttr &out_attr);
+int set_region_attr(int handle, const char *params); // placeholder for future parsing
+int set_region_cover(int handle, const char *params); // placeholder for future parsing
 
 } // namespace osd
 
