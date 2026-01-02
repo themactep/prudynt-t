@@ -394,6 +394,33 @@ namespace isp {
 
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPVI IMPVI_MAIN
+
+// Helper to drive combined HV flip on T40/T41
+static int set_hvflip(bool h, bool v) {
+  IMPISPHVFLIP desired = IMPISP_FLIP_NORMAL_MODE;
+  if (h && v) {
+    desired = IMPISP_FLIP_HV_MODE;
+  } else if (h) {
+    desired = IMPISP_FLIP_H_MODE;
+  } else if (v) {
+    desired = IMPISP_FLIP_V_MODE;
+  }
+
+#if defined(PLATFORM_T41)
+  IMPISPHVFLIPAttr attr{};
+  if (IMP_ISP_Tuning_GetHVFLIP(IMPVI_MAIN, &attr) != 0) {
+    // Fall back to writing only sensor_mode if get fails
+    attr.sensor_mode = desired;
+  }
+  attr.isp_mode[0] = desired; // main channel
+  return IMP_ISP_Tuning_SetHVFLIP(IMPVI_MAIN, &attr);
+#else
+  IMPISPHVFLIP current = IMPISP_FLIP_NORMAL_MODE;
+  IMP_ISP_Tuning_GetHVFlip(IMPVI_MAIN, &current); // ignore failure, will overwrite below
+  current = desired;
+  return IMP_ISP_Tuning_SetHVFLIP(IMPVI_MAIN, &current);
+#endif
+}
 #endif
 
 int set_brightness(unsigned char val) {
@@ -485,11 +512,21 @@ int set_hue(unsigned char val) {
 
 int set_hflip(bool enable) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // T40 uses combined HVFLIP function
-  // For now, we'll need to get current vflip state and set both
-  // This is a limitation - we can't set H and V independently on T40
-  LOG_DEBUG("set_hflip: T40 uses combined HVFLIP - feature limited");
-  return 0; // TODO: implement combined flip handling
+  // Combined HV flip API
+  // Preserve the other axis by querying current state
+  bool v = false;
+#if defined(PLATFORM_T41)
+  IMPISPHVFLIPAttr attr{};
+  if (IMP_ISP_Tuning_GetHVFLIP(IMPVI_MAIN, &attr) == 0) {
+    v = (attr.isp_mode[0] == IMPISP_FLIP_V_MODE || attr.isp_mode[0] == IMPISP_FLIP_HV_MODE);
+  }
+#else
+  IMPISPHVFLIP hv = IMPISP_FLIP_NORMAL_MODE;
+  if (IMP_ISP_Tuning_GetHVFlip(IMPVI_MAIN, &hv) == 0) {
+    v = (hv == IMPISP_FLIP_V_MODE || hv == IMPISP_FLIP_HV_MODE);
+  }
+#endif
+  return set_hvflip(enable, v);
 #else
   IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
   return IMP_ISP_Tuning_SetISPHflip(mode);
@@ -498,9 +535,19 @@ int set_hflip(bool enable) {
 
 int set_vflip(bool enable) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // T40 uses combined HVFLIP function
-  LOG_DEBUG("set_vflip: T40 uses combined HVFLIP - feature limited");
-  return 0; // TODO: implement combined flip handling
+  bool h = false;
+#if defined(PLATFORM_T41)
+  IMPISPHVFLIPAttr attr{};
+  if (IMP_ISP_Tuning_GetHVFLIP(IMPVI_MAIN, &attr) == 0) {
+    h = (attr.isp_mode[0] == IMPISP_FLIP_H_MODE || attr.isp_mode[0] == IMPISP_FLIP_HV_MODE);
+  }
+#else
+  IMPISPHVFLIP hv = IMPISP_FLIP_NORMAL_MODE;
+  if (IMP_ISP_Tuning_GetHVFlip(IMPVI_MAIN, &hv) == 0) {
+    h = (hv == IMPISP_FLIP_H_MODE || hv == IMPISP_FLIP_HV_MODE);
+  }
+#endif
+  return set_hvflip(h, enable);
 #else
   IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
   return IMP_ISP_Tuning_SetISPVflip(mode);
@@ -778,10 +825,11 @@ int set_max_dgain(unsigned char val) {
 
 int set_wb(int mode, unsigned short rgain, unsigned short bgain) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // T40 uses IMPISPWBAttr with different structure
-  // For now, log and return success
-  LOG_DEBUG("set_wb: T40 WB API differs - needs implementation");
-  return 0; // TODO: implement T40 WB using IMPISPWBAttr
+  // Manual WB API not available on these SDKs
+  (void)mode;
+  (void)rgain;
+  (void)bgain;
+  return -1;
 #else
   IMPISPWB wb;
   memset(&wb, 0, sizeof(IMPISPWB));
@@ -982,6 +1030,76 @@ int set_qp_ip_delta(int channel, int delta) {
 #endif
 }
 
+void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // Newer SDK callers must fully populate chnAttr before creation.
+  (void)chnAttr;
+  (void)format;
+  (void)width;
+  (void)height;
+#else
+  // Older SDKs require explicit init of encoder attributes.
+  if (strcmp(format, "JPEG") == 0) {
+    IMPEncoderAttr *encAttr = &chnAttr.encAttr;
+    encAttr->enType = PT_JPEG;
+    encAttr->bufSize = 0;
+    encAttr->profile = 2;
+    encAttr->picWidth = width;
+    encAttr->picHeight = height;
+  } else if (strcmp(format, "H264") == 0) {
+    chnAttr.encAttr.enType = PT_H264;
+  }
+#if defined(PLATFORM_T30)
+  else if (strcmp(format, "H265") == 0) {
+    chnAttr.encAttr.enType = PT_H265;
+  }
+#endif
+#endif
+}
+
+int get_encoder_rc_mode_smart() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ENC_RC_MODE_CAPPED_QUALITY;
+#else
+  return ENC_RC_MODE_SMART;
+#endif
+}
+
+int get_encoder_profile_high(const char *format) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  if (strcmp(format, "H265") == 0) {
+    return IMP_ENC_PROFILE_HEVC_MAIN;
+  }
+  return IMP_ENC_PROFILE_AVC_HIGH;
+#else
+  // Older platforms use numeric profile values
+  return 2; // High profile
+#endif
+}
+
+int get_encoder_type(const char *format) {
+  if (strcmp(format, "JPEG") == 0) {
+    return PT_JPEG;
+  } else if (strcmp(format, "H264") == 0) {
+    return PT_H264;
+  }
+#if defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) ||              \
+    defined(PLATFORM_T41)
+  else if (strcmp(format, "H265") == 0) {
+    return PT_H265;
+  }
+#endif
+  return PT_H264; // Default
+}
+
+bool supports_jpeg_quality_table() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return hal::caps().has_jpeg_set_qtable;
+#else
+  return !hal::caps().has_jpeg_set_qtable;
+#endif
+}
+
 } // namespace encoder
 
 namespace audio {
@@ -994,8 +1112,76 @@ void init_ai_channel_param(IMPAudioIChnParam &param) {
   param.Rev = 0;
 }
 
+int set_ai_hpf(int enable) {
+  if (!caps().has_audio_hpf)
+    return -1;
+
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_AI_SetHpfCoFrequency(enable ? 20 : 0);
+#else
+  (void)enable;
+  return -1;
+#endif
+}
+
+int set_ai_agc(int gain_level, int max_gain) {
+  (void)gain_level; // gain_level handling is SDK-specific; preserved for API compatibility
+  if (!caps().has_audio_agc)
+    return -1;
+
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_AI_SetAgcMode(max_gain);
+#else
+  (void)max_gain;
+  return -1;
+#endif
+}
+
+int set_ai_noise_suppression(int level) {
+  (void)level;
+  // Noise suppression setup varies by SDK; not implemented here.
+  if (!caps().has_audio_ns)
+    return -1;
+  return -1;
+}
+
+int set_ai_echo_cancellation(int enable) {
+  (void)enable;
+  // AEC setup is platform-specific and not implemented in this HAL.
+  if (!caps().has_audio_aec_channel)
+    return -1;
+  return -1;
+}
+
+int set_ai_volume(int vol) {
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  int audioDevId = 0;
+  int aiChn = 0;
+  return IMP_AI_SetVol(audioDevId, aiChn, vol);
+#else
+  (void)vol;
+  return -1;
+#endif
+}
+
+int set_ai_gain(int gain) {
+  (void)gain;
+  return -1; // No generic AI gain API available
+}
+
+int set_ai_alc(int level) {
+  (void)level;
+  if (!caps().has_audio_alc)
+    return -1;
+  return -1; // Placeholder until platform-specific ALC API is wired
+}
+
 int set_ao_hpf(int enable) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_AO_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1004,7 +1190,8 @@ int set_ao_hpf(int enable) {
 }
 
 int set_ao_volume(int vol) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   int audioDevId = 0;
   int aoChn = 0;
   return IMP_AO_SetVol(audioDevId, aoChn, vol);
@@ -1015,7 +1202,8 @@ int set_ao_volume(int vol) {
 }
 
 int set_ao_gain(int gain) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   int audioDevId = 0;
   int aoChn = 0;
   return IMP_AO_SetGain(audioDevId, aoChn, gain);
@@ -1082,15 +1270,31 @@ int get_group_attr(int handle, int group, IMPOSDGrpRgnAttr &out_attr) {
 }
 
 int set_region_attr(int handle, const char *params) {
-  (void)handle;
-  (void)params;
-  return -1; // parsing not implemented
+  if (handle < 0 || params == nullptr)
+    return -1;
+
+  // Expect params to point to an IMPOSDRgnAttr buffer supplied by caller.
+  // Minimal sanity: require caller-provided size >= struct and reject invalid fmt.
+  IMPOSDRgnAttr attr{};
+  memcpy(&attr, params, sizeof(attr));
+
+  switch (attr.fmt) {
+  case PIX_FMT_MONOWHITE:
+  case PIX_FMT_MONOBLACK:
+  case PIX_FMT_BGRA:
+  case PIX_FMT_RGBA:
+  case PIX_FMT_RGB24:
+    break;
+  default:
+    return -1;
+  }
+
+  return IMP_OSD_SetRgnAttr(static_cast<IMPRgnHandle>(handle), &attr);
 }
 
 int set_region_cover(int handle, const char *params) {
-  (void)handle;
-  (void)params;
-  return -1; // parsing not implemented
+  // Same shape as set_region_attr; caller pre-fills coverData.
+  return set_region_attr(handle, params);
 }
 
 } // namespace osd

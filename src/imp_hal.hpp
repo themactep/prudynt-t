@@ -8,6 +8,10 @@
 #include <imp/imp_isp.h>
 #include <imp/imp_osd.h>
 
+struct _stream; // fwd decl
+
+namespace hal {
+
 // Normalize IMP type names across SDKs
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
@@ -17,18 +21,6 @@
 #else
 #define HAL_ENC_ATTR_WIDTH(a) ((a).encAttr.picWidth)
 #define HAL_ENC_ATTR_HEIGHT(a) ((a).encAttr.picHeight)
-#endif
-
-struct _stream; // fwd decl
-
-namespace hal {
-
-// Type compatibility for different platform APIs
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-// OSD field name compatibility
-
 #endif
 
 struct PlatformCaps {
@@ -282,6 +274,15 @@ inline int get_attr_payload(const IMPEncoderCHNAttr &chnAttr) {
 namespace audio {
 
 void init_ai_channel_param(IMPAudioIChnParam &param);
+
+// Audio input controls
+int set_ai_hpf(int enable);
+int set_ai_agc(int gain_level, int max_gain);
+int set_ai_noise_suppression(int level);
+int set_ai_echo_cancellation(int enable);
+int set_ai_volume(int vol);
+int set_ai_gain(int gain);
+int set_ai_alc(int level);
 
 // Audio output controls
 int set_ao_hpf(int enable);

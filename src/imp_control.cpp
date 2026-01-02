@@ -161,64 +161,31 @@ int imp_control_get_ae_attributes(char *buffer, int size) {
  * ============================================================================ */
 
 int imp_control_ai_set_hpf(int enable) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    /* HPF is typically set via channel params */
-    return IMP_AI_SetHpfCoFrequency(enable ? 20 : 0);
-#else
-    (void)enable;
-    return -1;  /* Not supported on this platform */
-#endif
+    return hal::audio::set_ai_hpf(enable);
 }
 
 int imp_control_ai_set_agc(int gain_level, int max_gain) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    /* Use the AGC mode function directly if available */
-    (void)gain_level; /* gain_level parameter usage depends on implementation */
-    return IMP_AI_SetAgcMode(max_gain);
-#else
-    (void)gain_level; (void)max_gain;
-    return -1;  /* Not supported on this platform */
-#endif
+    return hal::audio::set_ai_agc(gain_level, max_gain);
 }
 
 int imp_control_ai_set_noise_suppression(int level) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    /* Noise suppression level - implementation depends on platform */
-    (void)level;
-    return -1;  /* Requires webrtc profile or channel params - complex setup */
-#else
-    (void)level;
-    return -1;  /* Not supported on this platform */
-#endif
+    return hal::audio::set_ai_noise_suppression(level);
 }
 
 int imp_control_ai_set_echo_cancellation(int enable) {
-    /* AEC setup is complex and platform-specific */
-    (void)enable;
-    return -1;  /* Requires platform-specific AEC setup */
+    return hal::audio::set_ai_echo_cancellation(enable);
 }
 
 int imp_control_ai_set_volume(int vol) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    int audioDevId = 0;
-    int aiChn = 0;
-    return IMP_AI_SetVol(audioDevId, aiChn, vol);
-#else
-    (void)vol;
-    return -1;  /* Not supported on this platform */
-#endif
+    return hal::audio::set_ai_volume(vol);
 }
 
 int imp_control_ai_set_gain(int gain) {
-    /* Gain parameter not directly in IMPAudioIChnParam for T31 */
-    (void)gain;
-    return -1;  /* Requires platform-specific implementation */
+    return hal::audio::set_ai_gain(gain);
 }
 
 int imp_control_ai_set_alc(int level) {
-    /* ALC parameter not directly in IMPAudioIChnParam for T31 */
-    (void)level;
-    return -1;  /* Requires platform-specific implementation */
+    return hal::audio::set_ai_alc(level);
 }
 
 /* ============================================================================
