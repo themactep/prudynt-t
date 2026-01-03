@@ -8,6 +8,7 @@
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
+#include "PreTriggerBuffer.hpp"
 #include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
@@ -380,6 +381,29 @@ void VideoWorker::run() {
                                            << "packageSize:" << nalu.data.size() << " - msgChannel sink clogged!");
               }
             }
+            
+            // Capture frame for prebuffer if enabled and frame is complete
+            if (global_video[encChn]->prebuffer && nalu.is_frame_end) {
+              // Collect complete frame data from all NAL units in this frame
+              std::vector<uint8_t> complete_frame;
+              bool frame_is_keyframe = false;
+              
+              // Check if any NAL in this frame is a keyframe
+              if (nal_is_idr || nal_is_hevc_idr) {
+                frame_is_keyframe = true;
+              }
+              
+              // For now, just capture the current NAL unit
+              // TODO: Implement proper frame assembly from all NAL units
+              complete_frame = nalu.data;
+              
+              global_video[encChn]->prebuffer->addFrame(
+                complete_frame.data(),
+                complete_frame.size(),
+                stream.pack[i].timestamp,
+                frame_is_keyframe
+              );
+            }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
             /* Since the audio stream is permanently in use by the stream
              * replicator, and the audio grabber and encoder standby is also
@@ -511,6 +535,24 @@ void *VideoWorker::thread_entry(void *arg) {
   // inform main that initialization is complete
   sh->has_started.release();
 
+  // Initialize prebuffer if enabled
+  if (cfg->recorder.prebuffer_enabled) {
+    global_video[encChn]->prebuffer = std::make_unique<PreTriggerBuffer>();
+    int fps = global_video[encChn]->stream ? global_video[encChn]->stream->fps : 25;
+    bool init_success = global_video[encChn]->prebuffer->init(
+        cfg->recorder.prebuffer_seconds,
+        fps,
+        cfg->recorder.prebuffer_max_memory_mb,
+        cfg->recorder.prebuffer_keyframe_only
+    );
+    if (init_success) {
+      LOG_INFO("PreTriggerBuffer initialized for channel " << encChn);
+    } else {
+      LOG_WARN("Failed to initialize PreTriggerBuffer for channel " << encChn);
+      global_video[encChn]->prebuffer.reset();
+    }
+  }
+
   ret = IMP_Encoder_StartRecvPic(encChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StartRecvPic(" << encChn << ")");
   if (ret != 0)
@@ -541,6 +583,12 @@ void *VideoWorker::thread_entry(void *arg) {
   {
     std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
     global_video[encChn]->privacy_mask.reset();
+  }
+
+  // Cleanup prebuffer
+  if (global_video[encChn]->prebuffer) {
+    global_video[encChn]->prebuffer.reset();
+    LOG_DEBUG("PreTriggerBuffer cleaned up for channel " << encChn);
   }
 
   return 0;

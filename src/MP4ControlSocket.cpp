@@ -24,6 +24,7 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "MP4Muxer.hpp"
+#include "PreTriggerBuffer.hpp"
 #include "globals.hpp"
 
 #include <imp/imp_common.h>
@@ -518,6 +519,28 @@ bool start_recording(const std::string &path, int target_channel) {
     global_mp4_active_recorders.fetch_add(1, std::memory_order_relaxed);
     LOG_INFO("MP4ControlSocket: recorder started with avcC payload size=" << init.avcC.size() << " on channel "
                                                                           << target_channel);
+    
+    // Flush prebuffer frames if enabled
+    if (cfg->recorder.prebuffer_enabled && video->prebuffer && video->prebuffer->isEnabled()) {
+      auto prebuffer_frames = video->prebuffer->getFrames();
+      if (!prebuffer_frames.empty()) {
+        LOG_INFO("MP4ControlSocket: flushing " << prebuffer_frames.size() << " prebuffer frames");
+        
+        // Calculate timestamp base from first prebuffer frame
+        int64_t timestamp_base = prebuffer_frames[0].timestamp_us;
+        
+        for (const auto& frame : prebuffer_frames) {
+          // Calculate relative timestamp (negative for prebuffer frames)
+          int64_t relative_ts = frame.timestamp_us - timestamp_base;
+          int64_t pts_ms = relative_ts / 1000;
+          
+          // Write prebuffer frame to MP4
+          recorder.writeVideo(frame.data.data(), frame.data.size(), pts_ms, frame.is_keyframe);
+        }
+        
+        LOG_DEBUG("MP4ControlSocket: prebuffer frames flushed successfully");
+      }
+    }
   } else {
     reset_wait_state();
     disable_force_if_idle();
@@ -538,6 +561,12 @@ void stop_recording(int channel) {
   recorder.stop();
   if (global_video[channel]) {
     global_video[channel]->mp4_waiting_for_idr.store(false);
+    
+    // Clear prebuffer when recording stops
+    if (global_video[channel]->prebuffer) {
+      global_video[channel]->prebuffer->clear();
+      LOG_DEBUG("MP4ControlSocket: prebuffer cleared for channel " << channel);
+    }
   }
   remove_channel_state_file(channel);
 
