@@ -338,11 +338,5 @@
   "http_mjpeg": {
     "enabled": true,
     "port": 8081
-  },
-  "websocket": {
-    "enabled": true,
-    "port": 8089,
-    "secured": false,
-    "token": "auto"
   }
 }
