@@ -581,11 +581,12 @@ std::string OSD::buildBrightnessText(const BrightnessSample &sample) {
   };
 
   std::string text = osd.brightness_format ? osd.brightness_format : "Brightness:%b%% Avg:%a%% %m";
+  replace(text, "%%", "\x01");  // Temporary placeholder for escaped %
   replace(text, "%b", formatValue(sample.current));
   replace(text, "%a", formatValue(sample.average));
   const std::string modeText = sample.mode.empty() ? std::string("UNKNOWN") : sample.mode;
   replace(text, "%m", modeText);
-  replace(text, "%%", "%");
+  replace(text, "\x01", "%");  // Restore escaped %
   return text;
 }
 
@@ -737,9 +738,6 @@ void OSD::init() {
   int ret = 0;
   LOG_DEBUG("OSD init for begin");
 
-  ret = IMP_OSD_SetPoolSize(cfg->general.osd_pool_size * 1024);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << (cfg->general.osd_pool_size * 1024) << ")");
-
   // cfg = _cfg;
   last_updated_second = -1;
 
@@ -752,23 +750,19 @@ void OSD::init() {
   stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
   stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
 
-  // Calculate realistic OSD pool size based on typical usage
+  // Calculate realistic OSD pool size based on stream resolution
   // Estimate: ~10% of screen area for OSD elements (text, logos, etc.)
   // Formula: (width * height * 4 bytes * 0.1) / 1024 + safety margin
   int estimated_usage = (stream_width * stream_height * 4 * 0.1) / 1024; // 10% screen coverage
   int safety_margin = 256;                                               // 256KB safety margin
-  int recommended_pool_size = estimated_usage + safety_margin;
-  int configured_pool_size = cfg->general.osd_pool_size;
+  int calculated_pool_size = estimated_usage + safety_margin;
 
-  // Only warn if configured size is significantly smaller than recommended
-  if (configured_pool_size < recommended_pool_size) {
-    LOG_WARN("OSD pool size (" << configured_pool_size << "KB) may be insufficient for " << stream_width << "x"
-                               << stream_height << " resolution with large fonts/logos. "
-                               << "Consider increasing to " << recommended_pool_size << "KB for optimal performance");
-  } else {
-    LOG_DEBUG("OSD pool size (" << configured_pool_size << "KB) is adequate for " << stream_width << "x"
-                                << stream_height << " resolution");
-  }
+  // Use calculated size per stream instead of global config
+  int actual_pool_size = calculated_pool_size;
+
+  ret = IMP_OSD_SetPoolSize(actual_pool_size * 1024);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << actual_pool_size << "KB) for " << stream_width << "x" << stream_height 
+                     << " (calculated: " << calculated_pool_size << "KB)");
 
   LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: " << stream_width << "x" << stream_height);
 
@@ -1020,9 +1014,6 @@ int OSD::start() {
 
   ret = IMP_OSD_Start(osdGrp);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Start(" << osdGrp << ")");
-
-  ret = IMP_OSD_SetPoolSize(cfg->general.osd_pool_size * 1024);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << (cfg->general.osd_pool_size * 1024) << ")");
 
   is_started = true;
 
