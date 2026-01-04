@@ -2,6 +2,12 @@
 
 #include <cstdint>
 
+// Define stub type for platforms that don't have IMPISPAEAttr
+// Must be before SDK headers are included
+#if !defined(PLATFORM_T23) && !defined(PLATFORM_T31) && !defined(PLATFORM_C100)
+struct IMPISPAEAttr {};
+#endif
+
 #include <imp/imp_audio.h>
 #include <imp/imp_common.h>
 #include <imp/imp_encoder.h>

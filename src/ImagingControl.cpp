@@ -64,13 +64,6 @@ const int kTemperStrengthMin = kDenoiseDefaults.temper_min;
 const int kTemperStrengthMax = kDenoiseDefaults.temper_max;
 const int kTemperStrengthDefault = kDenoiseDefaults.temper_default;
 
-#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&            \
-    !defined(PLATFORM_T30)
-constexpr bool kAdvancedHdrSupported = true;
-#else
-constexpr bool kAdvancedHdrSupported = false;
-#endif
-
 static int apply_brightness(int value) {
 #if defined(NO_TUNINGS)
   (void)value;
@@ -115,13 +108,13 @@ static int apply_backlight(int value) {
 #if defined(NO_TUNINGS)
   (void)value;
   return 0;
-#elif !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&          \
-    !defined(PLATFORM_T30)
-  LOG_DEBUG("ImagingControl: apply backlight=" << value);
-  return IMP_ISP_Tuning_SetBacklightComp(value);
 #else
-  (void)value;
-  return 0;
+  if (!hal::caps().has_isp_backlight_comp) {
+    LOG_DEBUG("ImagingControl: backlight compensation unsupported on this platform");
+    return 0;
+  }
+  LOG_DEBUG("ImagingControl: apply backlight=" << value);
+  return hal::isp::set_backlight_comp(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -129,13 +122,13 @@ static int apply_wide_dynamic_range(int value) {
 #if defined(NO_TUNINGS)
   (void)value;
   return 0;
-#elif !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&          \
-    !defined(PLATFORM_T30)
-  LOG_DEBUG("ImagingControl: apply wdr=" << value);
-  return IMP_ISP_Tuning_SetDRC_Strength(value);
 #else
-  (void)value;
-  return 0;
+  if (!hal::caps().has_isp_drc) {
+    LOG_DEBUG("ImagingControl: DRC/WDR unsupported on this platform");
+    return 0;
+  }
+  LOG_DEBUG("ImagingControl: apply wdr=" << value);
+  return hal::isp::set_drc_strength(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -153,14 +146,13 @@ static int apply_defog(int value) {
 #if defined(NO_TUNINGS)
   (void)value;
   return 0;
-#elif !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T21) && !defined(PLATFORM_T23) &&          \
-    !defined(PLATFORM_T30)
-  uint8_t strength = static_cast<uint8_t>(value);
-  LOG_DEBUG("ImagingControl: apply defog=" << static_cast<int>(strength));
-  return IMP_ISP_Tuning_SetDefog_Strength(reinterpret_cast<uint8_t *>(&strength));
 #else
-  (void)value;
-  return 0;
+  if (!hal::caps().has_isp_defog) {
+    LOG_DEBUG("ImagingControl: defog unsupported on this platform");
+    return 0;
+  }
+  LOG_DEBUG("ImagingControl: apply defog=" << value);
+  return hal::isp::set_defog_strength(static_cast<uint8_t>(value));
 #endif
 }
 
@@ -168,12 +160,13 @@ static int apply_noise_reduction(int value) {
 #if defined(NO_TUNINGS)
   (void)value;
   return 0;
-#elif !defined(PLATFORM_T21)
-  LOG_DEBUG("ImagingControl: apply noise_reduction=" << value);
-  return IMP_ISP_Tuning_SetSinterStrength(value);
 #else
-  (void)value;
-  return 0;
+  if (!hal::caps().has_isp_sinter) {
+    LOG_DEBUG("ImagingControl: sinter/noise reduction unsupported on this platform");
+    return 0;
+  }
+  LOG_DEBUG("ImagingControl: apply noise_reduction=" << value);
+  return hal::isp::set_sinter_strength(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -196,15 +189,15 @@ static const FieldBinding kFields[] = {
     {"saturation", "image.saturation", 0, 255, 128, &_image::saturation, &apply_saturation, true},
     {"sharpness", "image.sharpness", 0, 255, 128, &_image::sharpness, &apply_sharpness, true},
     {"backlight", "image.backlight_compensation", kBacklightMin, kBacklightMax, kBacklightDefault,
-     &_image::backlight_compensation, &apply_backlight, kAdvancedHdrSupported},
+     &_image::backlight_compensation, &apply_backlight, hal::caps().has_isp_backlight_comp},
     {"wide_dynamic_range", "image.drc_strength", kWideDynamicRangeMin, kWideDynamicRangeMax, kWideDynamicRangeDefault,
-     &_image::drc_strength, &apply_wide_dynamic_range, kAdvancedHdrSupported},
+     &_image::drc_strength, &apply_wide_dynamic_range, hal::caps().has_isp_drc},
     {"tone", "image.highlight_depress", kToneMin, kToneMax, kToneDefault, &_image::highlight_depress, &apply_tone,
-     true},
+     hal::caps().has_isp_highlight_depress},
     {"defog", "image.defog_strength", kDefogMin, kDefogMax, kDefogDefault, &_image::defog_strength, &apply_defog,
-     kAdvancedHdrSupported},
+     hal::caps().has_isp_defog},
     {"noise_reduction", "image.sinter_strength", kNoiseReductionMin, kNoiseReductionMax, kNoiseReductionDefault,
-     &_image::sinter_strength, &apply_noise_reduction, true},
+     &_image::sinter_strength, &apply_noise_reduction, hal::caps().has_isp_sinter},
     {"temper_strength", "image.temper_strength", kTemperStrengthMin, kTemperStrengthMax, kTemperStrengthDefault,
      &_image::temper_strength, &apply_temper, hal::caps().has_isp_temper},
 };

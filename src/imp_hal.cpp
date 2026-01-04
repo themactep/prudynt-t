@@ -25,7 +25,7 @@ static PlatformCaps g_caps = {
     .has_smart_rc = true,
     .has_super_frm = true,
     .has_intra_refresh = true,
-#elif defined(PLATFORM_T30)
+#elif defined(PLATFORM_T21) || defined(PLATFORM_T30)
     .has_h265 = true,
     .has_capped_quality = false,
     .has_capped_vbr = false,
@@ -704,7 +704,7 @@ int set_ae_compensation(int val) {
 }
 
 int set_ae_it_max(unsigned int it_max) {
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_ISP_Tuning_SetAe_IT_MAX(it_max);
 #else
   (void)it_max;
@@ -714,7 +714,7 @@ int set_ae_it_max(unsigned int it_max) {
 }
 
 int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short) {
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   IMPISPAEMin ae_min{};
   ae_min.min_it = min_it;
   ae_min.min_again = min_again;
@@ -1083,8 +1083,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) ||              \
-    defined(PLATFORM_T41)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }
@@ -1116,8 +1116,8 @@ int set_ai_hpf(int enable) {
   if (!caps().has_audio_hpf)
     return -1;
 
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_AI_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1130,13 +1130,9 @@ int set_ai_agc(int gain_level, int max_gain) {
   if (!caps().has_audio_agc)
     return -1;
 
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  return IMP_AI_SetAgcMode(max_gain);
-#else
+  // T21 doesn't have IMP_AI_SetAgcMode - AGC is handled differently
   (void)max_gain;
-  return -1;
-#endif
+  return 0; // AGC enabled via IMPAudioIOAttr at channel creation
 }
 
 int set_ai_noise_suppression(int level) {
@@ -1173,15 +1169,19 @@ int set_ai_gain(int gain) {
 }
 
 int set_ai_alc(int level) {
-  (void)level;
   if (!caps().has_audio_alc)
     return -1;
-  return -1; // Placeholder until platform-specific ALC API is wired
+#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_AI_SetAlcGain(0, 0, level);
+#else
+  (void)level;
+  return -1;
+#endif
 }
 
 int set_ao_hpf(int enable) {
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_AO_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1359,8 +1359,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) ||               \
-    defined(PLATFORM_T41)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }

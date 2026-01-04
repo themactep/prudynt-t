@@ -1087,37 +1087,38 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
       }
       add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
     }
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
-    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) ||               \
-    defined(PLATFORM_T41)
     else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_ENABLED) {
-      IMPAudioIOAttr ioattr;
-      int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
-      if (ret == 0) {
-        if (reason == LEJPCB_VAL_TRUE) {
-          if (cfg->set<bool>(u_ctx->path, true)) {
-            global_restart_audio = true;
-          }
-        } else if (reason == LEJPCB_VAL_FALSE) {
-          if (cfg->set<bool>(u_ctx->path, false)) {
-            global_restart_audio = true;
+      if (!hal::caps().has_audio_agc) {
+        add_json_null(u_ctx->message);
+      } else {
+        IMPAudioIOAttr ioattr;
+        int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
+        if (ret == 0) {
+          if (reason == LEJPCB_VAL_TRUE) {
+            if (cfg->set<bool>(u_ctx->path, true)) {
+              global_restart_audio = true;
+            }
+          } else if (reason == LEJPCB_VAL_FALSE) {
+            if (cfg->set<bool>(u_ctx->path, false)) {
+              global_restart_audio = true;
+            }
           }
         }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
       }
-      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
     } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_TARGET_LEVEL_DBFS ||
                ctx->path_match == PNT_AUDIO_INPUT_AGC_COMPRESSION_GAIN_DB) {
-      if (reason == LEJPCB_VAL_NUM_INT) {
-        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-          global_restart_audio = true;
+      if (!hal::caps().has_audio_agc) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            global_restart_audio = true;
+          }
         }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       }
-      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
     }
-#else
-    add_json_null(u_ctx->message);
-  }
-#endif
     else {
       switch (ctx->path_match) {
       case PNT_AUDIO_OUTPUT_ENABLED:
@@ -1163,17 +1164,16 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_AUDIO_INPUT_ALC_GAIN:
-#if defined(PLATFORM_T21) || defined(PLATFORM_T31) ||                                                                  \
-    defined(PLATFORM_C100) //|| defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        if (reason == LEJPCB_VAL_NUM_INT) {
-          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-            IMP_AI_SetAlcGain(0, 0, cfg->get<int>(u_ctx->path));
+        if (!hal::caps().has_audio_alc) {
+          add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_UNSUPPORTED]);
+        } else {
+          if (reason == LEJPCB_VAL_NUM_INT) {
+            if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+              hal::audio::set_ai_alc(cfg->get<int>(u_ctx->path));
+            }
           }
+          add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         }
-        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-      add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_UNSUPPORTED]);
-#endif
         break;
       case PNT_AUDIO_INPUT_FORMAT:
         if (reason == LEJPCB_VAL_STR_END)

@@ -173,22 +173,11 @@ void VideoWorker::run() {
           fps++;
           bps += stream.pack[i].length;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-          uint8_t *start = (uint8_t *)stream.virAddr + stream.pack[i].offset;
-          uint8_t *end = start + stream.pack[i].length;
-          uint32_t h264_nal = stream.pack[i].nalType.h264NalType;
-          uint32_t h265_nal = stream.pack[i].nalType.h265NalType;
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23)
-          uint8_t *start = (uint8_t *)stream.pack[i].virAddr;
-          uint8_t *end = (uint8_t *)stream.pack[i].virAddr + stream.pack[i].length;
-          uint32_t h264_nal = stream.pack[i].dataType.h264Type;
-          uint32_t h265_nal = 0;
-#elif defined(PLATFORM_T30)
-          uint8_t *start = (uint8_t *)stream.pack[i].virAddr;
-          uint8_t *end = (uint8_t *)stream.pack[i].virAddr + stream.pack[i].length;
-          uint32_t h264_nal = stream.pack[i].dataType.h264Type;
-          uint32_t h265_nal = stream.pack[i].dataType.h265Type;
-#endif
+          uint8_t *start = hal::encoder::get_pack_data_start(stream, i);
+          uint32_t length = hal::encoder::get_pack_data_length(stream, i);
+          uint8_t *end = start + length;
+          uint32_t h264_nal = hal::encoder::get_h264_nal_type(stream.pack[i]);
+          uint32_t h265_nal = hal::encoder::get_h265_nal_type(stream.pack[i]);
 
           ptrdiff_t raw_payload_len = end - (start + 4);
           if (raw_payload_len <= 0) {

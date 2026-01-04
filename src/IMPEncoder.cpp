@@ -179,12 +179,9 @@ void IMPEncoder::initProfile() {
     return;
   } else if (strcmp(stream->format, "H264") == 0) {
     chnAttr.encAttr.enType = PT_H264;
+  } else if (strcmp(stream->format, "H265") == 0) {
+    chnAttr.encAttr.enType = static_cast<IMPPayloadType>(hal::encoder::get_encoder_type("H265"));
   }
-#if defined(PLATFORM_T30)
-  else if (strcmp(stream->format, "H265") == 0) {
-    chnAttr.encAttr.enType = PT_H265;
-  }
-#endif
 
   IMPEncoderRcMode rcMode = ENC_RC_MODE_SMART;
 
@@ -272,8 +269,9 @@ void IMPEncoder::initProfile() {
     case ENC_RC_MODE_INV:
       break;
     }
-#if defined(PLATFORM_T30)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30)
   } else if (chnAttr.encAttr.enType == PT_H265) {
+    // H.265 rate control configuration (T21/T30 with older SDK)
     rcAttr->attrRcMode.rcMode = ENC_RC_MODE_SMART;
     rcAttr->attrRcMode.attrH265Smart.maxQp = 45;
     rcAttr->attrRcMode.attrH265Smart.minQp = 15;
@@ -285,7 +283,7 @@ void IMPEncoder::initProfile() {
     rcAttr->attrRcMode.attrH265Smart.frmQPStep = 3;
     rcAttr->attrRcMode.attrH265Smart.gopQPStep = 15;
     rcAttr->attrRcMode.attrH265Smart.flucLvl = 2;
-#endif // defined(PLATFORM_T30)
+#endif
   }
   // Optional overrides via HAL (legacy platforms)
   hal::apply_rc_overrides(chnAttr, rcMode, *stream);
@@ -324,14 +322,12 @@ int IMPEncoder::init() {
     LOG_DEBUG("Encoder bufSize auto-set to " << hal::encoder::get_attr_bufsize(chnAttr));
   }
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   // On T31-family SoCs, JPEG channels (2/3) must share buffers with a video channel (0/1)
   // Call bufshare BEFORE creating the JPEG channel. Use (jpegEncChn=encChn, shareChn=encGrp).
-  if (is_jpeg && stream->allow_shared) {
+  if (is_jpeg && stream->allow_shared && hal::caps().has_bufshare) {
     ret = hal::maybe_enable_bufshare(encChn, encGrp, stream->allow_shared);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare(" << encChn << ", " << encGrp << ")");
   }
-#endif
 
   if (!is_jpeg) {
     ret = IMP_Encoder_CreateGroup(encGrp);
