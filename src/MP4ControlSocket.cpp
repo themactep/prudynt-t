@@ -514,32 +514,72 @@ bool start_recording(const std::string &path, int target_channel) {
     return false;
   }
 
+  // Calculate prebuffer offset BEFORE starting recorder to prevent race condition
+  // with VideoWorker writing live frames
+  int64_t prebuffer_offset_ms = 0;
+  std::vector<PreTriggerFrame> prebuffer_frames;
+  size_t first_keyframe_idx = 0;
+  
+  if (cfg->recorder.prebuffer_enabled && video->prebuffer && video->prebuffer->isEnabled()) {
+    prebuffer_frames = video->prebuffer->getFrames();
+    if (!prebuffer_frames.empty()) {
+      // Find first keyframe - decoder needs to start with IDR
+      for (size_t i = 0; i < prebuffer_frames.size(); ++i) {
+        if (prebuffer_frames[i].is_keyframe) {
+          first_keyframe_idx = i;
+          break;
+        }
+      }
+      
+      // Calculate prebuffer duration from first keyframe to last frame
+      int64_t timestamp_base = prebuffer_frames[first_keyframe_idx].timestamp_us;
+      int64_t last_prebuffer_ts = prebuffer_frames.back().timestamp_us;
+      int64_t prebuffer_duration_us = last_prebuffer_ts - timestamp_base;
+      prebuffer_offset_ms = prebuffer_duration_us / 1000;
+      
+      // Add one frame duration to ensure no overlap
+      int fps = (video->stream) ? video->stream->fps : 30;
+      prebuffer_offset_ms += (1000 / fps);
+      
+    }
+  }
+  
+  // Set the prebuffer offset BEFORE starting the recorder
+  // This ensures VideoWorker uses the correct offset from the first frame
+  video->mp4_prebuffer_offset_ms.store(prebuffer_offset_ms, std::memory_order_relaxed);
+  
+  // Block live frame writing while we flush prebuffer
+  if (!prebuffer_frames.empty()) {
+    video->mp4_prebuffer_flushing.store(true, std::memory_order_release);
+  }
+  
   bool ok = recorder.start(path.c_str(), init);
   if (ok) {
     global_mp4_active_recorders.fetch_add(1, std::memory_order_relaxed);
     LOG_INFO("MP4ControlSocket: recorder started with avcC payload size=" << init.avcC.size() << " on channel "
                                                                           << target_channel);
     
-    // Flush prebuffer frames if enabled
-    if (cfg->recorder.prebuffer_enabled && video->prebuffer && video->prebuffer->isEnabled()) {
-      auto prebuffer_frames = video->prebuffer->getFrames();
-      if (!prebuffer_frames.empty()) {
-        LOG_INFO("MP4ControlSocket: flushing " << prebuffer_frames.size() << " prebuffer frames");
+    // Now flush prebuffer frames (recorder is active, VideoWorker will use the offset we set)
+    if (!prebuffer_frames.empty()) {
+      size_t frames_to_write = prebuffer_frames.size() - first_keyframe_idx;
+      LOG_INFO("MP4ControlSocket: flushing " << frames_to_write << " prebuffer frames (skipping "
+               << first_keyframe_idx << " frames before first keyframe)");
+      
+      // Calculate timestamp base from first keyframe
+      int64_t timestamp_base = prebuffer_frames[first_keyframe_idx].timestamp_us;
+      
+      for (size_t i = first_keyframe_idx; i < prebuffer_frames.size(); ++i) {
+        const auto& frame = prebuffer_frames[i];
+        // Calculate relative timestamp starting from 0
+        int64_t relative_ts = frame.timestamp_us - timestamp_base;
+        int64_t pts_ms = relative_ts / 1000;
         
-        // Calculate timestamp base from first prebuffer frame
-        int64_t timestamp_base = prebuffer_frames[0].timestamp_us;
-        
-        for (const auto& frame : prebuffer_frames) {
-          // Calculate relative timestamp (negative for prebuffer frames)
-          int64_t relative_ts = frame.timestamp_us - timestamp_base;
-          int64_t pts_ms = relative_ts / 1000;
-          
-          // Write prebuffer frame to MP4
-          recorder.writeVideo(frame.data.data(), frame.data.size(), pts_ms, frame.is_keyframe);
-        }
-        
-        LOG_DEBUG("MP4ControlSocket: prebuffer frames flushed successfully");
+        // Write prebuffer frame to MP4
+        recorder.writeVideo(frame.data.data(), frame.data.size(), pts_ms, frame.is_keyframe);
       }
+      
+      // Allow live frames to be written now
+      video->mp4_prebuffer_flushing.store(false, std::memory_order_release);
     }
   } else {
     reset_wait_state();
@@ -562,11 +602,13 @@ void stop_recording(int channel) {
   if (global_video[channel]) {
     global_video[channel]->mp4_waiting_for_idr.store(false);
     
-    // Clear prebuffer when recording stops
+    // Clear prebuffer frames when recording stops (but keep buffer enabled)
     if (global_video[channel]->prebuffer) {
-      global_video[channel]->prebuffer->clear();
-      LOG_DEBUG("MP4ControlSocket: prebuffer cleared for channel " << channel);
+      global_video[channel]->prebuffer->clearFrames();
     }
+    // Reset prebuffer offset and flushing flag for next recording
+    global_video[channel]->mp4_prebuffer_offset_ms.store(0, std::memory_order_relaxed);
+    global_video[channel]->mp4_prebuffer_flushing.store(false, std::memory_order_relaxed);
   }
   remove_channel_state_file(channel);
 

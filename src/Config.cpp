@@ -301,6 +301,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
       {"recorder.enabled", recorder.enabled, false, validateBool},
+      {"recorder.prebuffer_enabled", recorder.prebuffer_enabled, false, validateBool},
       {"recorder.prebuffer_keyframe_only", recorder.prebuffer_keyframe_only, false, validateBool},
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
       {"rtsp.audio_only_enabled", rtsp.audio_only_enabled, true, validateBool},

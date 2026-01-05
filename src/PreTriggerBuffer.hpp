@@ -26,7 +26,10 @@ public:
     // Get all buffered frames for recording (oldest first)
     std::vector<PreTriggerFrame> getFrames();
     
-    // Clear buffer and reset
+    // Clear frame data only (keeps buffer enabled and ready for new frames)
+    void clearFrames();
+    
+    // Clear buffer completely and disable (for shutdown)
     void clear();
     
     // Get current memory usage in bytes
@@ -40,6 +43,7 @@ private:
     size_t write_index_;
     size_t capacity_;
     size_t max_memory_bytes_;
+    int64_t duration_us_;           // Target duration in microseconds (time-based eviction)
     bool keyframe_only_;
     std::atomic<bool> enabled_;
     mutable std::mutex buffer_mutex_;
@@ -48,5 +52,6 @@ private:
     std::atomic<size_t> peak_memory_usage_;
     
     void enforceMemoryLimit();
+    void enforceTimeLimit(int64_t newest_timestamp);
     void reduceBufferSize();
 };
