@@ -2,10 +2,14 @@
 
 #include <cstdint>
 
-// Define stub type for platforms that don't have IMPISPAEAttr
+// Define stub types for platforms missing IMP ISP attribute records
 // Must be before SDK headers are included
-#if !defined(PLATFORM_T23) && !defined(PLATFORM_T31) && !defined(PLATFORM_C100)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T10) || defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 struct IMPISPAEAttr {};
+#endif
+
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+struct IMPISPEVAttr {};
 #endif
 
 #include <imp/imp_audio.h>
@@ -119,6 +123,12 @@ int maybe_enable_bufshare(int jpegEncGrp, int srcEncChn, bool allow_shared);
 
 namespace isp {
 
+// Low-level ISP lifecycle helpers
+int open();
+int close();
+int enable_tuning();
+int disable_tuning();
+
 // Basic image quality controls
 int set_brightness(unsigned char val);
 int set_contrast(unsigned char val);
@@ -158,10 +168,12 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
 // Sensor timing
 int set_sensor_fps(int fps_num, int fps_den);
+int get_sensor_fps(int &fps_num, int &fps_den);
 
 // Running mode (HAL-level)
 enum class RunningMode { Day = 0, Night = 1, Custom = 2 };
 int set_running_mode(RunningMode mode);
+int get_running_mode(int &out_mode);
 
 // Statistics getters (platform-normalized)
 // Returns 0 on success, -1 on unsupported/failure
@@ -172,6 +184,10 @@ int get_ae_luma(int &out_luma);
 int get_awb_color_temp(int &out_ct);
 int get_ev_attr(IMPISPEVAttr &out_attr);
 int get_ae_attr(IMPISPAEAttr &out_attr);
+
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+int set_auto_zoom(const IMPISPAutoZoom &zoom);
+#endif
 
 // Sensor management functions (abstract IMPVI_MAIN parameter)
 int add_sensor(IMPSensorInfo *sinfo);

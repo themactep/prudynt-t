@@ -397,7 +397,7 @@ const char *imp_control_get_channel_encoding_type(int channel) {
  * ============================================================================ */
 
 int imp_control_set_fisheye_status(int enable) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)
     /* Fisheye control - channel 0 assumed */
     return IMP_Encoder_SetFisheyeEnableStatus(0, enable);
 #else
@@ -408,7 +408,14 @@ int imp_control_set_fisheye_status(int enable) {
 
 int imp_control_set_front_crop(int x, int y, int width, int height) {
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    IMPISPAutoZoom zoom;
+    IMPISPAutoZoom zoom{};
+    #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    zoom.zoom_chx_en[0] = 1;
+    zoom.zoom_left[0] = x;
+    zoom.zoom_top[0] = y;
+    zoom.zoom_width[0] = width;
+    zoom.zoom_height[0] = height;
+    #else
     zoom.chan = 0;
     zoom.scaler_enable = 0;
     zoom.scaler_outwidth = 0;
@@ -418,7 +425,8 @@ int imp_control_set_front_crop(int x, int y, int width, int height) {
     zoom.crop_top = y;
     zoom.crop_width = width;
     zoom.crop_height = height;
-    return IMP_ISP_Tuning_SetAutoZoom(&zoom);
+    #endif
+    return hal::isp::set_auto_zoom(zoom);
 #else
     (void)x; (void)y; (void)width; (void)height;
     return -1;  /* Not supported on this platform */

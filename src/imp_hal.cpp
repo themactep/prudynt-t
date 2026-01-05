@@ -392,6 +392,22 @@ void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode, const _stream &s
 
 namespace isp {
 
+int open() {
+  return IMP_ISP_Open();
+}
+
+int close() {
+  return IMP_ISP_Close();
+}
+
+int enable_tuning() {
+  return IMP_ISP_EnableTuning();
+}
+
+int disable_tuning() {
+  return IMP_ISP_DisableTuning();
+}
+
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPVI IMPVI_MAIN
 
@@ -567,6 +583,19 @@ int set_running_mode(RunningMode mode) {
   return set_running_mode(static_cast<int>(mode));
 }
 
+int get_running_mode(int &out_mode) {
+  IMPISPRunningMode mode = IMPISP_RUNNING_MODE_DAY;
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  int ret = IMP_ISP_Tuning_GetISPRunningMode(IMPVI, &mode);
+#else
+  int ret = IMP_ISP_Tuning_GetISPRunningMode(&mode);
+#endif
+  if (ret == 0) {
+    out_mode = static_cast<int>(mode);
+  }
+  return ret;
+}
+
 int get_ev(int &out_ev) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   IMPISPAEExprInfo info{};
@@ -663,7 +692,9 @@ int get_ae_attr(IMPISPAEAttr &out_attr) {
 
 int set_isp_bypass(bool enable) {
   IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T41)
+  return IMP_ISP_SetISPBypass(IMPVI, &mode);
+#elif defined(PLATFORM_T40)
   return IMP_ISP_Tuning_SetISPBypass(IMPVI, &mode);
 #else
   return IMP_ISP_Tuning_SetISPBypass(mode);
@@ -799,6 +830,17 @@ int set_highlight_depress(unsigned char val) {
 #endif
 }
 
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+int set_auto_zoom(const IMPISPAutoZoom &zoom) {
+  IMPISPAutoZoom local = zoom;
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_SetAutoZoom(IMPVI, &local);
+#else
+  return IMP_ISP_Tuning_SetAutoZoom(&local);
+#endif
+}
+#endif
+
 int set_max_again(unsigned char val) {
   if (!caps().has_isp_max_gain) {
     LOG_DEBUG("set_max_again not supported on this platform");
@@ -853,6 +895,28 @@ int set_sensor_fps(int fps_num, int fps_den) {
 #else
   return IMP_ISP_Tuning_SetSensorFPS(static_cast<uint32_t>(fps_num), static_cast<uint32_t>(fps_den));
 #endif
+}
+
+int get_sensor_fps(int &fps_num, int &fps_den) {
+#if defined(PLATFORM_T40)
+  uint32_t num = 0;
+  uint32_t den = 0;
+  int ret = IMP_ISP_Tuning_GetSensorFPS(IMPVI_MAIN, &num, &den);
+#elif defined(PLATFORM_T41)
+  IMPISPSensorFps fps{};
+  int ret = IMP_ISP_Tuning_GetSensorFPS(IMPVI_MAIN, &fps);
+  uint32_t num = fps.num;
+  uint32_t den = fps.den;
+#else
+  uint32_t num = 0;
+  uint32_t den = 0;
+  int ret = IMP_ISP_Tuning_GetSensorFPS(&num, &den);
+#endif
+  if (ret == 0) {
+    fps_num = static_cast<int>(num);
+    fps_den = static_cast<int>(den);
+  }
+  return ret;
 }
 
 int add_sensor(IMPSensorInfo *sinfo) {
@@ -977,7 +1041,12 @@ int set_gop_length(int channel, int length) {
 }
 
 int set_rc_mode(int channel, int mode) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T41)
+  (void)channel;
+  (void)mode;
+  LOG_DEBUG("set_rc_mode not supported on this platform");
+  return -1;
+#elif defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)
   IMPEncoderAttrRcMode rcModeCfg;
   int ret = IMP_Encoder_GetChnAttrRcMode(channel, &rcModeCfg);
   if (ret != 0)
@@ -1000,8 +1069,13 @@ int set_framerate(int channel, int fps_num, int fps_den) {
 }
 
 int set_qp(int channel, int qp) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_Encoder_SetChnQp(channel, qp);
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  LOG_DEBUG("set_qp not supported on this platform");
+  (void)channel;
+  (void)qp;
+  return -1;
 #else
   (void)channel;
   (void)qp;
@@ -1021,8 +1095,13 @@ int set_qp_bounds(int channel, int min_qp, int max_qp) {
 }
 
 int set_qp_ip_delta(int channel, int delta) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_Encoder_SetChnQpIPDelta(channel, delta);
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  LOG_DEBUG("set_qp_ip_delta not supported on this platform");
+  (void)channel;
+  (void)delta;
+  return -1;
 #else
   (void)channel;
   (void)delta;
