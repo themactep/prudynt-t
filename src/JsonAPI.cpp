@@ -742,22 +742,22 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 #if defined(LIB_AUDIO_PROCESSING)
 
   // mic_alc_gain - apply immediately without restart (platform-specific)
-#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  if (JsonValue *v = obj_get(obj, "mic_alc_gain")) {
-    if (v->type == JSON_NUMBER) {
-      int alc_gain = (int)v->value.number;
-      if (cfg->set<int>("audio.mic_alc_gain", alc_gain)) {
-        // Apply to hardware immediately like WS.cpp does
-        IMP_AI_SetAlcGain(0, 0, alc_gain);
+  if (hal::caps().has_audio_alc) {
+    if (JsonValue *v = obj_get(obj, "mic_alc_gain")) {
+      if (v->type == JSON_NUMBER) {
+        int alc_gain = (int)v->value.number;
+        if (cfg->set<int>("audio.mic_alc_gain", alc_gain)) {
+          // Apply to hardware immediately like WS.cpp does
+          hal::audio::set_ai_alc(alc_gain);
+        }
       }
+      add_key(out, s2, "mic_alc_gain");
+      add_num(out, cfg->get<int>("audio.mic_alc_gain"));
+      wrote = true;
     }
-    add_key(out, s2, "mic_alc_gain");
-    add_num(out, cfg->get<int>("audio.mic_alc_gain"));
-    wrote = true;
+  } else {
+    add_int("mic_alc_gain", "audio.mic_alc_gain", false);
   }
-#else
-  add_int("mic_alc_gain", "audio.mic_alc_gain", false);
-#endif
 
   add_int("mic_noise_suppression", "audio.mic_noise_suppression", true);
 

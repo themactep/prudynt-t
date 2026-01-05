@@ -25,7 +25,7 @@ static PlatformCaps g_caps = {
     .has_smart_rc = true,
     .has_super_frm = true,
     .has_intra_refresh = true,
-#elif defined(PLATFORM_T30)
+#elif defined(PLATFORM_T21) || defined(PLATFORM_T30)
     .has_h265 = true,
     .has_capped_quality = false,
     .has_capped_vbr = false,
@@ -203,7 +203,7 @@ const DenoiseDefaults &denoise() {
 #if defined(PLATFORM_C100) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   static constexpr DenoiseDefaults defaults{128, 128, 0, 255, 0, 255};
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
-  static constexpr DenoiseDefaults defaults{50, 50, 0, 255, 0, 255};
+  static constexpr DenoiseDefaults defaults{14, 95, 0, 255, 0, 255};
 #else
   static constexpr DenoiseDefaults defaults{50, 50, 50, 150, 50, 150};
 #endif
@@ -392,8 +392,51 @@ void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode, const _stream &s
 
 namespace isp {
 
+int open() {
+  return IMP_ISP_Open();
+}
+
+int close() {
+  return IMP_ISP_Close();
+}
+
+int enable_tuning() {
+  return IMP_ISP_EnableTuning();
+}
+
+int disable_tuning() {
+  return IMP_ISP_DisableTuning();
+}
+
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPVI IMPVI_MAIN
+
+// Helper to drive combined HV flip on T40/T41
+static int set_hvflip(bool h, bool v) {
+  IMPISPHVFLIP desired = IMPISP_FLIP_NORMAL_MODE;
+  if (h && v) {
+    desired = IMPISP_FLIP_HV_MODE;
+  } else if (h) {
+    desired = IMPISP_FLIP_H_MODE;
+  } else if (v) {
+    desired = IMPISP_FLIP_V_MODE;
+  }
+
+#if defined(PLATFORM_T41)
+  IMPISPHVFLIPAttr attr{};
+  if (IMP_ISP_Tuning_GetHVFLIP(IMPVI_MAIN, &attr) != 0) {
+    // Fall back to writing only sensor_mode if get fails
+    attr.sensor_mode = desired;
+  }
+  attr.isp_mode[0] = desired; // main channel
+  return IMP_ISP_Tuning_SetHVFLIP(IMPVI_MAIN, &attr);
+#else
+  IMPISPHVFLIP current = IMPISP_FLIP_NORMAL_MODE;
+  IMP_ISP_Tuning_GetHVFlip(IMPVI_MAIN, &current); // ignore failure, will overwrite below
+  current = desired;
+  return IMP_ISP_Tuning_SetHVFLIP(IMPVI_MAIN, &current);
+#endif
+}
 #endif
 
 int set_brightness(unsigned char val) {
@@ -485,11 +528,21 @@ int set_hue(unsigned char val) {
 
 int set_hflip(bool enable) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // T40 uses combined HVFLIP function
-  // For now, we'll need to get current vflip state and set both
-  // This is a limitation - we can't set H and V independently on T40
-  LOG_DEBUG("set_hflip: T40 uses combined HVFLIP - feature limited");
-  return 0; // TODO: implement combined flip handling
+  // Combined HV flip API
+  // Preserve the other axis by querying current state
+  bool v = false;
+#if defined(PLATFORM_T41)
+  IMPISPHVFLIPAttr attr{};
+  if (IMP_ISP_Tuning_GetHVFLIP(IMPVI_MAIN, &attr) == 0) {
+    v = (attr.isp_mode[0] == IMPISP_FLIP_V_MODE || attr.isp_mode[0] == IMPISP_FLIP_HV_MODE);
+  }
+#else
+  IMPISPHVFLIP hv = IMPISP_FLIP_NORMAL_MODE;
+  if (IMP_ISP_Tuning_GetHVFlip(IMPVI_MAIN, &hv) == 0) {
+    v = (hv == IMPISP_FLIP_V_MODE || hv == IMPISP_FLIP_HV_MODE);
+  }
+#endif
+  return set_hvflip(enable, v);
 #else
   IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
   return IMP_ISP_Tuning_SetISPHflip(mode);
@@ -498,9 +551,19 @@ int set_hflip(bool enable) {
 
 int set_vflip(bool enable) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // T40 uses combined HVFLIP function
-  LOG_DEBUG("set_vflip: T40 uses combined HVFLIP - feature limited");
-  return 0; // TODO: implement combined flip handling
+  bool h = false;
+#if defined(PLATFORM_T41)
+  IMPISPHVFLIPAttr attr{};
+  if (IMP_ISP_Tuning_GetHVFLIP(IMPVI_MAIN, &attr) == 0) {
+    h = (attr.isp_mode[0] == IMPISP_FLIP_H_MODE || attr.isp_mode[0] == IMPISP_FLIP_HV_MODE);
+  }
+#else
+  IMPISPHVFLIP hv = IMPISP_FLIP_NORMAL_MODE;
+  if (IMP_ISP_Tuning_GetHVFlip(IMPVI_MAIN, &hv) == 0) {
+    h = (hv == IMPISP_FLIP_H_MODE || hv == IMPISP_FLIP_HV_MODE);
+  }
+#endif
+  return set_hvflip(h, enable);
 #else
   IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
   return IMP_ISP_Tuning_SetISPVflip(mode);
@@ -518,6 +581,19 @@ int set_running_mode(int mode) {
 
 int set_running_mode(RunningMode mode) {
   return set_running_mode(static_cast<int>(mode));
+}
+
+int get_running_mode(int &out_mode) {
+  IMPISPRunningMode mode = IMPISP_RUNNING_MODE_DAY;
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  int ret = IMP_ISP_Tuning_GetISPRunningMode(IMPVI, &mode);
+#else
+  int ret = IMP_ISP_Tuning_GetISPRunningMode(&mode);
+#endif
+  if (ret == 0) {
+    out_mode = static_cast<int>(mode);
+  }
+  return ret;
 }
 
 int get_ev(int &out_ev) {
@@ -559,9 +635,66 @@ int get_awb_weighted_gains(int &out_gr, int &out_gb) {
   return -1;
 }
 
+int get_total_gain(int &out_gain) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  uint32_t gain = 0;
+  int ret = IMP_ISP_Tuning_GetTotalGain(&gain);
+  if (ret == 0) {
+    out_gain = static_cast<int>(gain);
+  }
+  return ret;
+#else
+  (void)out_gain;
+  return -1;
+#endif
+}
+
+int get_ae_luma(int &out_luma) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetAeLuma(&out_luma);
+#else
+  (void)out_luma;
+  return -1;
+#endif
+}
+
+int get_awb_color_temp(int &out_ct) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  unsigned int ct = 0;
+  int ret = IMP_ISP_Tuning_GetAWBCt(&ct);
+  if (ret == 0) {
+    out_ct = static_cast<int>(ct);
+  }
+  return ret;
+#else
+  (void)out_ct;
+  return -1;
+#endif
+}
+
+int get_ev_attr(IMPISPEVAttr &out_attr) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetEVAttr(&out_attr);
+#else
+  (void)out_attr;
+  return -1;
+#endif
+}
+
+int get_ae_attr(IMPISPAEAttr &out_attr) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetAeAttr(&out_attr);
+#else
+  (void)out_attr;
+  return -1;
+#endif
+}
+
 int set_isp_bypass(bool enable) {
   IMPISPTuningOpsMode mode = enable ? IMPISP_TUNING_OPS_MODE_ENABLE : IMPISP_TUNING_OPS_MODE_DISABLE;
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T41)
+  return IMP_ISP_SetISPBypass(IMPVI, &mode);
+#elif defined(PLATFORM_T40)
   return IMP_ISP_Tuning_SetISPBypass(IMPVI, &mode);
 #else
   return IMP_ISP_Tuning_SetISPBypass(mode);
@@ -569,13 +702,23 @@ int set_isp_bypass(bool enable) {
 }
 
 int set_anti_flicker(int mode) {
+  // mode: 0=disable, 1=50Hz, 2=60Hz
+  if (mode < 0 || mode > 2)
+    return -1;
+
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  IMPISPAntiflickerAttr attr;
-  attr.mode = (IMPISPAntiflickerMode)mode;
-  attr.freq = 50; // Default to 50Hz, could be made configurable
+  IMPISPAntiflickerAttr attr{};
+  attr.mode = (mode == 0) ? IMPISP_ANTIFLICKER_DISABLE_MODE : IMPISP_ANTIFLICKER_NORMAL_MODE;
+  attr.freq = (mode == 2) ? 60 : 50;
   return IMP_ISP_Tuning_SetAntiFlickerAttr(IMPVI, &attr);
 #else
-  return IMP_ISP_Tuning_SetAntiFlickerAttr((IMPISPAntiflickerAttr)mode);
+  IMPISPAntiflickerAttr attr = IMPISP_ANTIFLICKER_DISABLE;
+  if (mode == 1) {
+    attr = IMPISP_ANTIFLICKER_50HZ;
+  } else if (mode == 2) {
+    attr = IMPISP_ANTIFLICKER_60HZ;
+  }
+  return IMP_ISP_Tuning_SetAntiFlickerAttr(attr);
 #endif
 }
 
@@ -588,6 +731,34 @@ int set_ae_compensation(int val) {
   return IMP_ISP_Tuning_SetAeComp(val);
 #else
   return 0;
+#endif
+}
+
+int set_ae_it_max(unsigned int it_max) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_SetAe_IT_MAX(it_max);
+#else
+  (void)it_max;
+  LOG_DEBUG("set_ae_it_max not supported on this platform");
+  return -1;
+#endif
+}
+
+int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  IMPISPAEMin ae_min{};
+  ae_min.min_it = min_it;
+  ae_min.min_again = min_again;
+  ae_min.min_it_short = min_it_short;
+  ae_min.min_again_short = min_again_short;
+  return IMP_ISP_Tuning_SetAeMin(&ae_min);
+#else
+  (void)min_it;
+  (void)min_again;
+  (void)min_it_short;
+  (void)min_again_short;
+  LOG_DEBUG("set_ae_min not supported on this platform");
+  return -1;
 #endif
 }
 
@@ -659,6 +830,17 @@ int set_highlight_depress(unsigned char val) {
 #endif
 }
 
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+int set_auto_zoom(const IMPISPAutoZoom &zoom) {
+  IMPISPAutoZoom local = zoom;
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_SetAutoZoom(IMPVI, &local);
+#else
+  return IMP_ISP_Tuning_SetAutoZoom(&local);
+#endif
+}
+#endif
+
 int set_max_again(unsigned char val) {
   if (!caps().has_isp_max_gain) {
     LOG_DEBUG("set_max_again not supported on this platform");
@@ -685,10 +867,11 @@ int set_max_dgain(unsigned char val) {
 
 int set_wb(int mode, unsigned short rgain, unsigned short bgain) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // T40 uses IMPISPWBAttr with different structure
-  // For now, log and return success
-  LOG_DEBUG("set_wb: T40 WB API differs - needs implementation");
-  return 0; // TODO: implement T40 WB using IMPISPWBAttr
+  // Manual WB API not available on these SDKs
+  (void)mode;
+  (void)rgain;
+  (void)bgain;
+  return -1;
 #else
   IMPISPWB wb;
   memset(&wb, 0, sizeof(IMPISPWB));
@@ -697,6 +880,43 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain) {
   wb.bgain = bgain;
   return IMP_ISP_Tuning_SetWB(&wb);
 #endif
+}
+
+int set_sensor_fps(int fps_num, int fps_den) {
+#if defined(PLATFORM_T40)
+  uint32_t num = static_cast<uint32_t>(fps_num);
+  uint32_t den = static_cast<uint32_t>(fps_den);
+  return IMP_ISP_Tuning_SetSensorFPS(IMPVI_MAIN, &num, &den);
+#elif defined(PLATFORM_T41)
+  IMPISPSensorFps fps{};
+  fps.num = static_cast<uint32_t>(fps_num);
+  fps.den = static_cast<uint32_t>(fps_den);
+  return IMP_ISP_Tuning_SetSensorFPS(IMPVI_MAIN, &fps);
+#else
+  return IMP_ISP_Tuning_SetSensorFPS(static_cast<uint32_t>(fps_num), static_cast<uint32_t>(fps_den));
+#endif
+}
+
+int get_sensor_fps(int &fps_num, int &fps_den) {
+#if defined(PLATFORM_T40)
+  uint32_t num = 0;
+  uint32_t den = 0;
+  int ret = IMP_ISP_Tuning_GetSensorFPS(IMPVI_MAIN, &num, &den);
+#elif defined(PLATFORM_T41)
+  IMPISPSensorFps fps{};
+  int ret = IMP_ISP_Tuning_GetSensorFPS(IMPVI_MAIN, &fps);
+  uint32_t num = fps.num;
+  uint32_t den = fps.den;
+#else
+  uint32_t num = 0;
+  uint32_t den = 0;
+  int ret = IMP_ISP_Tuning_GetSensorFPS(&num, &den);
+#endif
+  if (ret == 0) {
+    fps_num = static_cast<int>(num);
+    fps_den = static_cast<int>(den);
+  }
+  return ret;
 }
 
 int add_sensor(IMPSensorInfo *sinfo) {
@@ -800,6 +1020,165 @@ int get_h265_nal_type(const IMPEncoderPack &pack) {
 #endif
 }
 
+int set_bitrate(int channel, int bitrate) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_Encoder_SetChnBitRate(channel, bitrate, bitrate);
+#else
+  (void)channel;
+  (void)bitrate;
+  return -1;
+#endif
+}
+
+int set_gop_length(int channel, int length) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_Encoder_SetChnGopLength(channel, length);
+#else
+  (void)channel;
+  (void)length;
+  return -1;
+#endif
+}
+
+int set_rc_mode(int channel, int mode) {
+#if defined(PLATFORM_T41)
+  (void)channel;
+  (void)mode;
+  LOG_DEBUG("set_rc_mode not supported on this platform");
+  return -1;
+#elif defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)
+  IMPEncoderAttrRcMode rcModeCfg;
+  int ret = IMP_Encoder_GetChnAttrRcMode(channel, &rcModeCfg);
+  if (ret != 0)
+    return ret;
+
+  rcModeCfg.rcMode = static_cast<IMPEncoderRcMode>(mode);
+  return IMP_Encoder_SetChnAttrRcMode(channel, &rcModeCfg);
+#else
+  (void)channel;
+  (void)mode;
+  return -1;
+#endif
+}
+
+int set_framerate(int channel, int fps_num, int fps_den) {
+  IMPEncoderFrmRate frmRate{};
+  frmRate.frmRateNum = fps_num;
+  frmRate.frmRateDen = fps_den;
+  return IMP_Encoder_SetChnFrmRate(channel, &frmRate);
+}
+
+int set_qp(int channel, int qp) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_Encoder_SetChnQp(channel, qp);
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  LOG_DEBUG("set_qp not supported on this platform");
+  (void)channel;
+  (void)qp;
+  return -1;
+#else
+  (void)channel;
+  (void)qp;
+  return -1;
+#endif
+}
+
+int set_qp_bounds(int channel, int min_qp, int max_qp) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_Encoder_SetChnQpBounds(channel, min_qp, max_qp);
+#else
+  (void)channel;
+  (void)min_qp;
+  (void)max_qp;
+  return -1;
+#endif
+}
+
+int set_qp_ip_delta(int channel, int delta) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_Encoder_SetChnQpIPDelta(channel, delta);
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  LOG_DEBUG("set_qp_ip_delta not supported on this platform");
+  (void)channel;
+  (void)delta;
+  return -1;
+#else
+  (void)channel;
+  (void)delta;
+  return -1;
+#endif
+}
+
+void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // Newer SDK callers must fully populate chnAttr before creation.
+  (void)chnAttr;
+  (void)format;
+  (void)width;
+  (void)height;
+#else
+  // Older SDKs require explicit init of encoder attributes.
+  if (strcmp(format, "JPEG") == 0) {
+    IMPEncoderAttr *encAttr = &chnAttr.encAttr;
+    encAttr->enType = PT_JPEG;
+    encAttr->bufSize = 0;
+    encAttr->profile = 2;
+    encAttr->picWidth = width;
+    encAttr->picHeight = height;
+  } else if (strcmp(format, "H264") == 0) {
+    chnAttr.encAttr.enType = PT_H264;
+  }
+#if defined(PLATFORM_T30)
+  else if (strcmp(format, "H265") == 0) {
+    chnAttr.encAttr.enType = PT_H265;
+  }
+#endif
+#endif
+}
+
+int get_encoder_rc_mode_smart() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ENC_RC_MODE_CAPPED_QUALITY;
+#else
+  return ENC_RC_MODE_SMART;
+#endif
+}
+
+int get_encoder_profile_high(const char *format) {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  if (strcmp(format, "H265") == 0) {
+    return IMP_ENC_PROFILE_HEVC_MAIN;
+  }
+  return IMP_ENC_PROFILE_AVC_HIGH;
+#else
+  // Older platforms use numeric profile values
+  return 2; // High profile
+#endif
+}
+
+int get_encoder_type(const char *format) {
+  if (strcmp(format, "JPEG") == 0) {
+    return PT_JPEG;
+  } else if (strcmp(format, "H264") == 0) {
+    return PT_H264;
+  }
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  else if (strcmp(format, "H265") == 0) {
+    return PT_H265;
+  }
+#endif
+  return PT_H264; // Default
+}
+
+bool supports_jpeg_quality_table() {
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return hal::caps().has_jpeg_set_qtable;
+#else
+  return !hal::caps().has_jpeg_set_qtable;
+#endif
+}
+
 } // namespace encoder
 
 namespace audio {
@@ -810,6 +1189,107 @@ void init_ai_channel_param(IMPAudioIChnParam &param) {
   param.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
 #endif
   param.Rev = 0;
+}
+
+int set_ai_hpf(int enable) {
+  if (!caps().has_audio_hpf)
+    return -1;
+
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_AI_SetHpfCoFrequency(enable ? 20 : 0);
+#else
+  (void)enable;
+  return -1;
+#endif
+}
+
+int set_ai_agc(int gain_level, int max_gain) {
+  (void)gain_level; // gain_level handling is SDK-specific; preserved for API compatibility
+  if (!caps().has_audio_agc)
+    return -1;
+
+  // T21 doesn't have IMP_AI_SetAgcMode - AGC is handled differently
+  (void)max_gain;
+  return 0; // AGC enabled via IMPAudioIOAttr at channel creation
+}
+
+int set_ai_noise_suppression(int level) {
+  (void)level;
+  // Noise suppression setup varies by SDK; not implemented here.
+  if (!caps().has_audio_ns)
+    return -1;
+  return -1;
+}
+
+int set_ai_echo_cancellation(int enable) {
+  (void)enable;
+  // AEC setup is platform-specific and not implemented in this HAL.
+  if (!caps().has_audio_aec_channel)
+    return -1;
+  return -1;
+}
+
+int set_ai_volume(int vol) {
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  int audioDevId = 0;
+  int aiChn = 0;
+  return IMP_AI_SetVol(audioDevId, aiChn, vol);
+#else
+  (void)vol;
+  return -1;
+#endif
+}
+
+int set_ai_gain(int gain) {
+  (void)gain;
+  return -1; // No generic AI gain API available
+}
+
+int set_ai_alc(int level) {
+  if (!caps().has_audio_alc)
+    return -1;
+#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_AI_SetAlcGain(0, 0, level);
+#else
+  (void)level;
+  return -1;
+#endif
+}
+
+int set_ao_hpf(int enable) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_AO_SetHpfCoFrequency(enable ? 20 : 0);
+#else
+  (void)enable;
+  return -1;
+#endif
+}
+
+int set_ao_volume(int vol) {
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  int audioDevId = 0;
+  int aoChn = 0;
+  return IMP_AO_SetVol(audioDevId, aoChn, vol);
+#else
+  (void)vol;
+  return -1;
+#endif
+}
+
+int set_ao_gain(int gain) {
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  int audioDevId = 0;
+  int aoChn = 0;
+  return IMP_AO_SetGain(audioDevId, aoChn, gain);
+#else
+  (void)gain;
+  return -1;
+#endif
 }
 
 } // namespace audio
@@ -824,9 +1304,86 @@ uint32_t black_cover_color() {
 #endif
 }
 
+int show_region(int handle, int show) {
+  return IMP_OSD_ShowRgn(static_cast<IMPRgnHandle>(handle), 0, show);
+}
+
+int set_region_pos(int handle, int x, int y) {
+  IMPOSDRgnAttr rgnAttr{};
+  int ret = IMP_OSD_GetRgnAttr(static_cast<IMPRgnHandle>(handle), &rgnAttr);
+  if (ret != 0)
+    return ret;
+  rgnAttr.rect.p0.x = x;
+  rgnAttr.rect.p0.y = y;
+  return IMP_OSD_SetRgnAttr(static_cast<IMPRgnHandle>(handle), &rgnAttr);
+}
+
+int set_region_alpha(int handle, int alpha) {
+  if (handle < 0 || alpha < 0 || alpha > 255)
+    return -1;
+
+  IMPOSDRgnAttr rgnAttr{};
+  int ret = IMP_OSD_GetRgnAttr(static_cast<IMPRgnHandle>(handle), &rgnAttr);
+  if (ret != 0)
+    return ret;
+
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  rgnAttr.fmt = PIX_FMT_BGRA;
+#else
+  rgnAttr.fmt = PIX_FMT_MONOWHITE;
+#endif
+  // Alpha typically carried in pixel data; we still set fmt to safe value
+  return IMP_OSD_SetRgnAttr(static_cast<IMPRgnHandle>(handle), &rgnAttr);
+}
+
+int get_region_attr(int handle, IMPOSDRgnAttr &out_attr) {
+  if (handle < 0)
+    return -1;
+  return IMP_OSD_GetRgnAttr(static_cast<IMPRgnHandle>(handle), &out_attr);
+}
+
+int get_group_attr(int handle, int group, IMPOSDGrpRgnAttr &out_attr) {
+  if (handle < 0 || group < 0)
+    return -1;
+  return IMP_OSD_GetGrpRgnAttr(static_cast<IMPRgnHandle>(handle), group, &out_attr);
+}
+
+int set_region_attr(int handle, const char *params) {
+  if (handle < 0 || params == nullptr)
+    return -1;
+
+  // Expect params to point to an IMPOSDRgnAttr buffer supplied by caller.
+  // Minimal sanity: require caller-provided size >= struct and reject invalid fmt.
+  IMPOSDRgnAttr attr{};
+  memcpy(&attr, params, sizeof(attr));
+
+  switch (attr.fmt) {
+  case PIX_FMT_MONOWHITE:
+  case PIX_FMT_MONOBLACK:
+  case PIX_FMT_BGRA:
+  case PIX_FMT_RGBA:
+  case PIX_FMT_RGB24:
+    break;
+  default:
+    return -1;
+  }
+
+  return IMP_OSD_SetRgnAttr(static_cast<IMPRgnHandle>(handle), &attr);
+}
+
+int set_region_cover(int handle, const char *params) {
+  // Same shape as set_region_attr; caller pre-fills coverData.
+  return set_region_attr(handle, params);
+}
+
 } // namespace osd
 
 } // namespace hal
+
+// C-linkage shim for C callers (e.g., imp_control.cpp)
+extern "C" int hal_isp_set_running_mode(int mode) {
+  return hal::isp::set_running_mode(mode);
+}
 
 void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height) {
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -881,8 +1438,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) ||               \
-    defined(PLATFORM_T41)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }

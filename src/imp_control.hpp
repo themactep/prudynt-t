@@ -1,12 +1,12 @@
-#ifndef LIBIMP_CONTROL_WRAPPER_H
-#define LIBIMP_CONTROL_WRAPPER_H
+#ifndef IMP_CONTROL_HPP
+#define IMP_CONTROL_HPP
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /*
- * libimp_control Wrapper Functions
+ * IMP control bindings
  *
  * Direct integration of libimp_control capabilities into prudynt.
  * This layer provides C bindings to imaging, audio, and encoding controls
@@ -132,4 +132,4 @@ int imp_control_get_af_metrics(char *buffer, int size);
 }
 #endif
 
-#endif /* LIBIMP_CONTROL_WRAPPER_H */
+#endif /* IMP_CONTROL_HPP */
