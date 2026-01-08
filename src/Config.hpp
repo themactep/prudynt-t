@@ -126,16 +126,21 @@ struct _daynight {
   int night_count_threshold{6};
   int day_count_threshold{4};
   int settle_samples_for_gb_record{20};
+  int total_gain_night_threshold{3000};
+  int total_gain_day_threshold{300};
   const char *script_path{nullptr};
 
   // Manual mode override (set by user via JSON API)
   std::atomic<const char *> force_mode{nullptr};
 
-  // Live telemetry populated by the worker
+  // Live telemetry populated by the worker - RAW ISP sensor data
   std::atomic<int> live_brightness_percent{-1};
   std::atomic<int> live_ev{-1};
   std::atomic<int> live_gb{-1};
   std::atomic<int> live_gr{-1};
+  std::atomic<int> live_total_gain{-1};      // Total ISP gain (analog + digital)
+  std::atomic<int> live_ae_luma{-1};         // AE luma value
+  std::atomic<int> live_awb_color_temp{-1};  // AWB color temperature (when available)
   std::atomic<const char *> live_mode{"unknown"};
 };
 struct _general {

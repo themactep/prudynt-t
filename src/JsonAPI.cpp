@@ -1051,6 +1051,9 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     int live_ev = cfg->daynight.live_ev.load();
     int live_gb = cfg->daynight.live_gb.load();
     int live_gr = cfg->daynight.live_gr.load();
+    int live_total_gain = cfg->daynight.live_total_gain.load();
+    int live_ae_luma = cfg->daynight.live_ae_luma.load();
+    int live_awb_ct = cfg->daynight.live_awb_color_temp.load();
     const char *mode_ptr = cfg->daynight.live_mode.load();
     add_key(out, s3, "brightness_percent");
     add_num(out, live_brightness);
@@ -1060,6 +1063,16 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     add_num(out, live_gb);
     add_key(out, s3, "gr");
     add_num(out, live_gr);
+    add_key(out, s3, "total_gain");
+    add_num(out, live_total_gain);
+    add_key(out, s3, "ae_luma");
+    add_num(out, live_ae_luma);
+    add_key(out, s3, "awb_color_temp");
+    add_num(out, live_awb_ct);
+    add_key(out, s3, "total_gain_night_threshold");
+    add_num(out, cfg->daynight.total_gain_night_threshold);
+    add_key(out, s3, "total_gain_day_threshold");
+    add_num(out, cfg->daynight.total_gain_day_threshold);
     add_key(out, s3, "mode");
     add_str(out, mode_ptr ? mode_ptr : "unknown");
     out += "}";

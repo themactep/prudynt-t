@@ -126,4 +126,76 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
   return d;
 }
 
+// ============================================================================
+// SIMPLE TOTAL GAIN ALGORITHM (NEW - CURRENTLY ACTIVE)
+// ============================================================================
+// This simplified algorithm uses only total_gain for reliable day/night detection
+// since GB/GR AWB gains are not available on T23 platforms.
+//
+// Total Gain behavior:
+//   - Low gain values (< 100) = Bright conditions = Day mode
+//   - High gain values (> 200) = Dark conditions = Night mode
+//
+// These thresholds should be calibrated using real sensor data collection.
+// ============================================================================
+
+struct SimpleParams {
+  int total_gain_night_threshold = 200;  // Switch to night when gain > this
+  int total_gain_day_threshold = 100;    // Switch to day when gain < this
+  int night_count_threshold = 6;         // Consecutive samples before switching to night
+  int day_count_threshold = 4;           // Consecutive samples before switching to day
+};
+
+struct SimpleState {
+  bool is_night = true;  // Current mode (true = night, false = day)
+  int night_count = 0;
+  int day_count = 0;
+};
+
+inline void simple_init(SimpleState &s) {
+  s = {};
+  s.is_night = true;
+}
+
+inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_gain) {
+  Decision d{};
+
+  // Invalid gain value - no decision
+  if (total_gain < 0) {
+    s.night_count = 0;
+    s.day_count = 0;
+    return d;
+  }
+
+  // Night detection: gain above threshold
+  if (total_gain > p.total_gain_night_threshold) {
+    s.day_count = 0;
+    if (++s.night_count >= p.night_count_threshold) {
+      if (!s.is_night) {
+        d.target = Mode::Night;
+        d.reason = 1;
+        d.toggled = true;
+      }
+    }
+  }
+  // Day detection: gain below threshold
+  else if (total_gain < p.total_gain_day_threshold) {
+    s.night_count = 0;
+    if (++s.day_count >= p.day_count_threshold) {
+      if (s.is_night) {
+        d.target = Mode::Day;
+        d.reason = 3;
+        d.toggled = true;
+      }
+    }
+  }
+  // In between thresholds - reset counters (hysteresis zone)
+  else {
+    s.night_count = 0;
+    s.day_count = 0;
+  }
+
+  return d;
+}
+
 } // namespace DayNightAlgo

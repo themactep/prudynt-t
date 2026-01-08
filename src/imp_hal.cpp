@@ -626,7 +626,12 @@ int get_awb_weighted_gains(int &out_gr, int &out_gb) {
 #elif defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
     defined(PLATFORM_T31) || defined(PLATFORM_C100)
   IMPISPAWBHist awb{};
-  if (IMP_ISP_Tuning_GetAwbHist(&awb) == 0) {
+  int ret = IMP_ISP_Tuning_GetAwbHist(&awb);
+  if (ret == 0) {
+    // NOTE: AWB histogram gains on T23/T31 platforms typically return 0
+    // This is a known limitation - the ISP histogram statistics may not be populated
+    // or these fields represent histogram weights rather than applied gains.
+    // Use EV (exposure) metric instead for reliable sensor response data.
     out_gr = static_cast<int>(awb.awb_stat.r_gain);
     out_gb = static_cast<int>(awb.awb_stat.b_gain);
     return 0;

@@ -424,6 +424,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"daynight.switch_below_percent", daynight.switch_below_percent, 15, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.switch_above_percent", daynight.switch_above_percent, 80, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.tolerance_percent", daynight.tolerance_percent, 50, [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.total_gain_night_threshold", daynight.total_gain_night_threshold, 3000, [](const int &v) { return v >= 0 && v <= 10000; }},
+      {"daynight.total_gain_day_threshold", daynight.total_gain_day_threshold, 300, [](const int &v) { return v >= 0 && v <= 10000; }},
       {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000, [](const int &v) { return v >= 100 && v <= 60000; }},
       {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
