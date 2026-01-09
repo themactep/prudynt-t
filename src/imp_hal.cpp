@@ -1289,6 +1289,59 @@ int get_ae_zone(unsigned int zone[15][15]) {
 #endif
 }
 
+int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh, unsigned char stat_nodev) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // AE histogram config not available on T40/T41
+  (void)thresholds;
+  (void)stat_nodeh;
+  (void)stat_nodev;
+  return -1;
+#else
+  IMPISPAEHist hist;
+  memset(&hist, 0, sizeof(IMPISPAEHist));
+  memcpy(hist.ae_histhresh, thresholds, 4);
+  hist.ae_stat_nodeh = stat_nodeh;
+  hist.ae_stat_nodev = stat_nodev;
+  return IMP_ISP_Tuning_SetAeHist(&hist);
+#endif
+}
+
+int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh, unsigned char &stat_nodev) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // AE histogram not available on T40/T41
+  (void)thresholds;
+  (void)bins;
+  (void)stat_nodeh;
+  (void)stat_nodev;
+  return -1;
+#else
+  IMPISPAEHist hist;
+  int ret = IMP_ISP_Tuning_GetAeHist(&hist);
+  if (ret == 0) {
+    memcpy(thresholds, hist.ae_histhresh, 4);
+    memcpy(bins, hist.ae_hist, 5 * sizeof(unsigned short));
+    stat_nodeh = hist.ae_stat_nodeh;
+    stat_nodev = hist.ae_stat_nodev;
+  }
+  return ret;
+#endif
+}
+
+int get_ae_hist_origin(unsigned int bins[256]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // AE histogram not available on T40/T41
+  (void)bins;
+  return -1;
+#else
+  IMPISPAEHistOrigin hist;
+  int ret = IMP_ISP_Tuning_GetAeHist_Origin(&hist);
+  if (ret == 0) {
+    memcpy(bins, hist.ae_hist, 256 * sizeof(unsigned int));
+  }
+  return ret;
+#endif
+}
+
 int set_sensor_fps(int fps_num, int fps_den) {
 #if defined(PLATFORM_T40)
   uint32_t num = static_cast<uint32_t>(fps_num);

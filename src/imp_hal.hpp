@@ -197,6 +197,11 @@ int set_ae_roi(const unsigned char roi[15][15]);
 int get_ae_roi(unsigned char roi[15][15]);
 int get_ae_zone(unsigned int zone[15][15]);
 
+// AE histogram (5-bin normalized or 256-bin origin)
+int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh, unsigned char stat_nodev);
+int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh, unsigned char &stat_nodev);
+int get_ae_hist_origin(unsigned int bins[256]);
+
 // Sensor timing
 int set_sensor_fps(int fps_num, int fps_den);
 int get_sensor_fps(int &fps_num, int &fps_den);
