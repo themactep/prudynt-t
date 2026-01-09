@@ -19,7 +19,9 @@
     "spk_sample_rate": 16000,
     "spk_vol": 60,
     "tap_enabled": true,
-    "tap_path": "/run/prudynt/audio_mic.pcm"
+    "tap_path": "/run/prudynt/audio_mic.pcm",
+    "buffer_warn_frames": 80,
+    "buffer_cap_frames": 100
   },
   "daynight": {
     "enabled": true,
@@ -32,6 +34,13 @@
     "switch_above_percent": 80,
     "switch_below_percent": 15,
     "tolerance_percent": 50,
+    "total_gain_night_threshold": 3000,
+    "total_gain_day_threshold": 300,
+    "gb_gain_delta": 15,
+    "gb_gain_absolute": 145,
+    "night_count_threshold": 6,
+    "day_count_threshold": 4,
+    "settle_samples_for_gb_record": 20,
     "controls": {
       "color": true,
       "ircut": true,
@@ -41,15 +50,19 @@
     }
   },
   "general": {
-    "allocation_tracking_enabled": false,
-    "audio_debug_verbose": true,
-    "imp_polling_timeout": 500,
     "loglevel": "INFO",
-    "memory_monitoring_enabled": true,
     "osd_pool_size": 1200,
+    "imp_polling_timeout": 500,
     "timestamp_validation_enabled": true,
-    "zero_copy_buffer_pool_size": 10,
-    "zero_copy_enabled": true
+    "audio_debug_verbose": true,
+    "memory_monitoring_enabled": true,
+    "allocation_tracking_enabled": false
+  },
+  "http": {
+    "enabled": true,
+    "api_enabled": true,
+    "mjpeg_enabled": true,
+    "port": 8080
   },
   "image": {
     "ae_compensation": 128,
@@ -109,26 +122,23 @@
     "device_path": "%hostname",
     "duration": 60,
     "filename": "%Y/%m/%d/%H-%M-%S",
-    "limit": 15,
     "mount": ""
   },
   "rtsp": {
-    "adaptation_interval_seconds": 5,
-    "adaptive_bitrate_enabled": true,
+    "port": 554,
+    "est_bitrate": 5000,
+    "out_buffer_size": 500000,
+    "send_buffer_size": 307200,
+    "session_reclaim": 65,
     "auth_required": true,
+    "username": "thingino",
+    "password": "thingino",
+    "name": "thingino prudynt",
+    "packet_loss_threshold": 0.05,
     "bandwidth_margin": 1.2,
     "audio_only_enabled": true,
     "audio_only_endpoint": "mic",
-    "audio_only_info": "audio from the microphone",
-    "est_bitrate": 5000,
-    "name": "thingino prudynt",
-    "out_buffer_size": 1000000,
-    "packet_loss_threshold": 0.05,
-    "password": "thingino",
-    "port": 554,
-    "send_buffer_size": 307200,
-    "session_reclaim": 65,
-    "username": "thingino"
+    "audio_only_info": "audio from the microphone"
   },
   "sensor": {
     "boot": 0,
@@ -139,16 +149,16 @@
     "video_interface": 0
   },
   "stream0": {
-    "adaptive_gop": true,
+    "enabled": true,
     "audio_enabled": true,
+    "video_enabled": true,
     "bitrate": 3000,
     "buffers": 1,
-    "enabled": true,
     "format": "H264",
     "fps": 0,
     "gop": 30,
     "height": 0,
-    "i_frame_interval": 0,
+    "width": 0,
     "qp_init": -1,
     "qp_min": -1,
     "qp_max": -1,
@@ -157,6 +167,10 @@
     "max_bitrate": 0,
     "max_gop": 60,
     "mode": "CBR",
+    "scale_enabled": false,
+    "scale_width": 0,
+    "scale_height": 0,
+    "allow_shared": true,
     "osd": {
       "enabled": true,
       "font_path": "/usr/share/fonts/default.ttf",
@@ -221,24 +235,21 @@
       }
     },
     "profile": 2,
-    "quality_level": 2,
     "rotation": 0,
     "rtsp_endpoint": "ch0",
-    "rtsp_info": "stream0",
-    "scene_change_detection": false,
-    "width": 0
+    "rtsp_info": "stream0"
   },
   "stream1": {
-    "adaptive_gop": true,
+    "enabled": true,
     "audio_enabled": true,
+    "video_enabled": true,
     "bitrate": 1000,
     "buffers": 1,
-    "enabled": true,
     "format": "H264",
     "fps": 0,
     "gop": 30,
     "height": 360,
-    "i_frame_interval": 0,
+    "width": 640,
     "qp_init": -1,
     "qp_min": -1,
     "qp_max": -1,
@@ -247,6 +258,10 @@
     "max_bitrate": 0,
     "max_gop": 60,
     "mode": "CBR",
+    "scale_enabled": false,
+    "scale_width": 0,
+    "scale_height": 0,
+    "allow_shared": true,
     "osd": {
       "enabled": true,
       "font_path": "/usr/share/fonts/default.ttf",
@@ -311,12 +326,9 @@
       }
     },
     "profile": 2,
-    "quality_level": 2,
     "rotation": 0,
     "rtsp_endpoint": "ch1",
-    "rtsp_info": "stream1",
-    "scene_change_detection": false,
-    "width": 640
+    "rtsp_info": "stream1"
   },
   "stream2": {
     "enabled": true,
@@ -324,19 +336,14 @@
     "jpeg_channel": 0,
     "jpeg_idle_fps": 1,
     "jpeg_path": "/tmp/snapshot.jpg",
-    "jpeg_quality": 75,
-    "jpeg_refresh": 1000
+    "jpeg_quality": 75
   },
-    "stream3": {
+  "stream3": {
     "enabled": true,
     "fps": 15,
     "jpeg_channel": 1,
     "jpeg_idle_fps": 1,
     "jpeg_path": "/tmp/snapshot_ch1.jpg",
     "jpeg_quality": 75
-  },
-  "http_mjpeg": {
-    "enabled": true,
-    "port": 8081
   }
 }
