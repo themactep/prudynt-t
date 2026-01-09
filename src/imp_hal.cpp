@@ -447,11 +447,27 @@ int set_brightness(unsigned char val) {
 #endif
 }
 
+int get_brightness(unsigned char &out_val) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetBrightness(IMPVI, &out_val);
+#else
+  return IMP_ISP_Tuning_GetBrightness(&out_val);
+#endif
+}
+
 int set_contrast(unsigned char val) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_ISP_Tuning_SetContrast(IMPVI, &val);
 #else
   return IMP_ISP_Tuning_SetContrast(val);
+#endif
+}
+
+int get_contrast(unsigned char &out_val) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetContrast(IMPVI, &out_val);
+#else
+  return IMP_ISP_Tuning_GetContrast(&out_val);
 #endif
 }
 
@@ -463,11 +479,27 @@ int set_saturation(unsigned char val) {
 #endif
 }
 
+int get_saturation(unsigned char &out_val) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetSaturation(IMPVI, &out_val);
+#else
+  return IMP_ISP_Tuning_GetSaturation(&out_val);
+#endif
+}
+
 int set_sharpness(unsigned char val) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_ISP_Tuning_SetSharpness(IMPVI, &val);
 #else
   return IMP_ISP_Tuning_SetSharpness(val);
+#endif
+}
+
+int get_sharpness(unsigned char &out_val) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetSharpness(IMPVI, &out_val);
+#else
+  return IMP_ISP_Tuning_GetSharpness(&out_val);
 #endif
 }
 
@@ -492,6 +524,26 @@ int set_sinter_strength(unsigned char val) {
 #endif
 }
 
+int get_sinter_strength(unsigned char &out_val) {
+  if (!caps().has_isp_sinter) {
+    LOG_DEBUG("get_sinter_strength not supported on this platform");
+    return -1;
+  }
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetSinterStrength(&out_val);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+  IMPISPSinterDenoiseAttr attr;
+  int ret = IMP_ISP_Tuning_GetSinterDnsAttr(&attr);
+  if (ret == 0) {
+    out_val = attr.sinter_strength;
+  }
+  return ret;
+#else
+  (void)out_val;
+  return -1;
+#endif
+}
+
 int set_temper_strength(unsigned char val) {
   if (!caps().has_isp_temper) {
     LOG_DEBUG("set_temper_strength not supported on this platform");
@@ -512,6 +564,26 @@ int set_temper_strength(unsigned char val) {
 #endif
 }
 
+int get_temper_strength(unsigned char &out_val) {
+  if (!caps().has_isp_temper) {
+    LOG_DEBUG("get_temper_strength not supported on this platform");
+    return -1;
+  }
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetTemperStrength(&out_val);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+  IMPISPTemperDenoiseAttr attr;
+  int ret = IMP_ISP_Tuning_GetTemperDnsAttr(&attr);
+  if (ret == 0) {
+    out_val = attr.temper_strength;
+  }
+  return ret;
+#else
+  (void)out_val;
+  return -1;
+#endif
+}
+
 int set_hue(unsigned char val) {
   if (!caps().has_isp_hue) {
     LOG_DEBUG("set_hue not supported on this platform");
@@ -521,6 +593,25 @@ int set_hue(unsigned char val) {
   return IMP_ISP_Tuning_SetBcshHue(val);
 #elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_ISP_Tuning_SetBcshHue(IMPVI_MAIN, &val);
+#else
+  return 0;
+#endif
+}
+
+int get_hue(unsigned char &out_val) {
+  if (!caps().has_isp_hue) {
+    LOG_DEBUG("get_hue not supported on this platform");
+    return -1;
+  }
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetBcshHue(&out_val);
+#elif defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetBcshHue(IMPVI_MAIN, &out_val);
+#else
+  (void)out_val;
+  return -1;
+#endif
+}
 #else
   return 0; // Function doesn't exist on this platform
 #endif
@@ -663,7 +754,7 @@ int get_total_gain(int &out_gain) {
 }
 
 int get_ae_luma(int &out_luma) {
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_ISP_Tuning_GetAeLuma(&out_luma);
 #else
   (void)out_luma;
@@ -686,7 +777,8 @@ int get_awb_color_temp(int &out_ct) {
 }
 
 int get_ev_attr(IMPISPEVAttr &out_attr) {
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_ISP_Tuning_GetEVAttr(&out_attr);
 #else
   (void)out_attr;
@@ -735,6 +827,36 @@ int set_anti_flicker(int mode) {
 #endif
 }
 
+int get_anti_flicker(int &out_mode) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPAntiflickerAttr attr{};
+  int ret = IMP_ISP_Tuning_GetAntiFlickerAttr(IMPVI, &attr);
+  if (ret == 0) {
+    if (attr.mode == IMPISP_ANTIFLICKER_DISABLE_MODE) {
+      out_mode = 0;
+    } else {
+      out_mode = (attr.freq == 60) ? 2 : 1;
+    }
+  }
+  return ret;
+#else
+  IMPISPAntiflickerAttr attr;
+  int ret = IMP_ISP_Tuning_GetAntiFlickerAttr(&attr);
+  if (ret == 0) {
+    if (attr == IMPISP_ANTIFLICKER_DISABLE) {
+      out_mode = 0;
+    } else if (attr == IMPISP_ANTIFLICKER_50HZ) {
+      out_mode = 1;
+    } else if (attr == IMPISP_ANTIFLICKER_60HZ) {
+      out_mode = 2;
+    } else {
+      out_mode = 0;
+    }
+  }
+  return ret;
+#endif
+}
+
 int set_ae_compensation(int val) {
   if (!caps().has_isp_ae_comp) {
     LOG_DEBUG("set_ae_compensation not supported on this platform");
@@ -747,12 +869,34 @@ int set_ae_compensation(int val) {
 #endif
 }
 
+int get_ae_compensation(int &out_val) {
+  if (!caps().has_isp_ae_comp) {
+    LOG_DEBUG("get_ae_compensation not supported on this platform");
+    return -1;
+  }
+#if !defined(PLATFORM_T21) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetAeComp(&out_val);
+#else
+  (void)out_val;
+  return -1;
+#endif
+}
+
 int set_ae_it_max(unsigned int it_max) {
 #if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_ISP_Tuning_SetAe_IT_MAX(it_max);
 #else
   (void)it_max;
   LOG_DEBUG("set_ae_it_max not supported on this platform");
+  return -1;
+#endif
+}
+
+int get_ae_it_max(unsigned int &out_it_max) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetAE_IT_MAX(&out_it_max);
+#else
+  (void)out_it_max;
   return -1;
 #endif
 }
@@ -775,6 +919,26 @@ int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short)
 #endif
 }
 
+int get_ae_min(int &out_min_it, int &out_min_again, int &out_min_it_short, int &out_min_again_short) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  IMPISPAEMin ae_min{};
+  int ret = IMP_ISP_Tuning_GetAeMin(&ae_min);
+  if (ret == 0) {
+    out_min_it = ae_min.min_it;
+    out_min_again = ae_min.min_again;
+    out_min_it_short = ae_min.min_it_short;
+    out_min_again_short = ae_min.min_again_short;
+  }
+  return ret;
+#else
+  (void)out_min_it;
+  (void)out_min_again;
+  (void)out_min_it_short;
+  (void)out_min_again_short;
+  return -1;
+#endif
+}
+
 int set_dpc_strength(unsigned char val) {
   if (!caps().has_isp_dpc) {
     LOG_DEBUG("set_dpc_strength not supported on this platform");
@@ -784,6 +948,19 @@ int set_dpc_strength(unsigned char val) {
   return IMP_ISP_Tuning_SetDPC_Strength(val);
 #else
   return 0;
+#endif
+}
+
+int get_dpc_strength(unsigned char &out_val) {
+  if (!caps().has_isp_dpc) {
+    LOG_DEBUG("get_dpc_strength not supported on this platform");
+    return -1;
+  }
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetDPC_Strength(&out_val);
+#else
+  (void)out_val;
+  return -1;
 #endif
 }
 
@@ -804,6 +981,26 @@ int set_drc_strength(unsigned char val) {
   return IMP_ISP_Tuning_SetRawDRC(&attr);
 #else
   return 0;
+#endif
+}
+
+int get_drc_strength(unsigned char &out_val) {
+  if (!caps().has_isp_drc) {
+    LOG_DEBUG("get_drc_strength not supported on this platform");
+    return -1;
+  }
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  return IMP_ISP_Tuning_GetDRC_Strength(&out_val);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+  IMPISPDrcAttr attr;
+  int ret = IMP_ISP_Tuning_GetRawDRC(&attr);
+  if (ret == 0) {
+    out_val = attr.drc_strength;
+  }
+  return ret;
+#else
+  (void)out_val;
+  return -1;
 #endif
 }
 
@@ -866,11 +1063,43 @@ int set_max_again(unsigned char val) {
 #endif
 }
 
+int get_max_again(unsigned char &out_val) {
+  if (!caps().has_isp_max_gain) {
+    LOG_DEBUG("get_max_again not supported on this platform");
+    return -1;
+  }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetMaxAgain(&out_val);
+#else
+  (void)out_val;
+  return -1;
+#endif
+}
+
 int set_max_dgain(unsigned char val) {
   if (!caps().has_isp_max_gain) {
     LOG_DEBUG("set_max_dgain not supported on this platform");
     return 0;
   }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_SetMaxDgain(val);
+#else
+  return 0;
+#endif
+}
+
+int get_max_dgain(unsigned char &out_val) {
+  if (!caps().has_isp_max_gain) {
+    LOG_DEBUG("get_max_dgain not supported on this platform");
+    return -1;
+  }
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
+  return IMP_ISP_Tuning_GetMaxDgain(&out_val);
+#else
+  (void)out_val;
+  return -1;
+#endif
+}
 #if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
   return IMP_ISP_Tuning_SetMaxDgain(val);
 #else

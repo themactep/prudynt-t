@@ -131,12 +131,19 @@ int disable_tuning();
 
 // Basic image quality controls
 int set_brightness(unsigned char val);
+int get_brightness(unsigned char &out_val);
 int set_contrast(unsigned char val);
+int get_contrast(unsigned char &out_val);
 int set_saturation(unsigned char val);
+int get_saturation(unsigned char &out_val);
 int set_sharpness(unsigned char val);
+int get_sharpness(unsigned char &out_val);
 int set_sinter_strength(unsigned char val);
+int get_sinter_strength(unsigned char &out_val);
 int set_temper_strength(unsigned char val);
+int get_temper_strength(unsigned char &out_val);
 int set_hue(unsigned char val);
+int get_hue(unsigned char &out_val);
 
 // Flip/mirror controls
 int set_hflip(bool enable);
@@ -146,22 +153,30 @@ int set_vflip(bool enable);
 int set_running_mode(int mode);
 int set_isp_bypass(bool enable);
 int set_anti_flicker(int mode);
+int get_anti_flicker(int &out_mode);
 
 // Exposure controls
 int set_ae_compensation(int val);
+int get_ae_compensation(int &out_val);
 int set_ae_it_max(unsigned int it_max);
+int get_ae_it_max(unsigned int &out_it_max);
 int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short);
+int get_ae_min(int &out_min_it, int &out_min_again, int &out_min_it_short, int &out_min_again_short);
 
 // Advanced image processing (may not be available on all platforms)
 int set_dpc_strength(unsigned char val);
+int get_dpc_strength(unsigned char &out_val);
 int set_drc_strength(unsigned char val);
+int get_drc_strength(unsigned char &out_val);
 int set_defog_strength(uint8_t val);
 int set_backlight_comp(unsigned char val);
 int set_highlight_depress(unsigned char val);
 
 // Gain controls
 int set_max_again(unsigned char val);
+int get_max_again(unsigned char &out_val);
 int set_max_dgain(unsigned char val);
+int get_max_dgain(unsigned char &out_val);
 
 // White balance
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
