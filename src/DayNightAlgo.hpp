@@ -147,14 +147,14 @@ struct SimpleParams {
 };
 
 struct SimpleState {
-  bool is_night = true;  // Current mode (true = night, false = day)
+  bool is_night = false;  // Current mode (true = night, false = day)
   int night_count = 0;
   int day_count = 0;
 };
 
 inline void simple_init(SimpleState &s) {
   s = {};
-  s.is_night = true;
+  s.is_night = false;
 }
 
 inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_gain) {
