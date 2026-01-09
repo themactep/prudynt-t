@@ -641,7 +641,15 @@ int get_awb_weighted_gains(int &out_gr, int &out_gb) {
 }
 
 int get_total_gain(int &out_gain) {
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPAEExprInfo info{};
+  int ret = IMP_ISP_Tuning_GetAeExprInfo(IMPVI, &info);
+  if (ret == 0) {
+    out_gain = static_cast<int>(info.TotalGainDb);
+  }
+  return ret;
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   uint32_t gain = 0;
   int ret = IMP_ISP_Tuning_GetTotalGain(&gain);
   if (ret == 0) {
