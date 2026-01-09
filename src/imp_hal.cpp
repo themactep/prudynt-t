@@ -1107,6 +1107,39 @@ int get_max_dgain(unsigned char &out_val) {
 #endif
 }
 
+int set_gamma(const uint16_t gamma[129]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPGammaAttr attr;
+  memset(&attr, 0, sizeof(IMPISPGammaAttr));
+  attr.Curve_type = IMP_ISP_GAMMA_CURVE_USER;
+  memcpy(attr.gamma, gamma, 129 * sizeof(uint16_t));
+  return IMP_ISP_Tuning_SetGammaAttr(IMPVI_MAIN, &attr);
+#else
+  IMPISPGamma g;
+  memcpy(g.gamma, gamma, 129 * sizeof(uint16_t));
+  return IMP_ISP_Tuning_SetGamma(&g);
+#endif
+}
+
+int get_gamma(uint16_t gamma[129]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPGammaAttr attr;
+  memset(&attr, 0, sizeof(IMPISPGammaAttr));
+  int ret = IMP_ISP_Tuning_GetGammaAttr(IMPVI_MAIN, &attr);
+  if (ret == 0) {
+    memcpy(gamma, attr.gamma, 129 * sizeof(uint16_t));
+  }
+  return ret;
+#else
+  IMPISPGamma g;
+  int ret = IMP_ISP_Tuning_GetGamma(&g);
+  if (ret == 0) {
+    memcpy(gamma, g.gamma, 129 * sizeof(uint16_t));
+  }
+  return ret;
+#endif
+}
+
 int set_wb(int mode, unsigned short rgain, unsigned short bgain) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   // Manual WB API not available on these SDKs

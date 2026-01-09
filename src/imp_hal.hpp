@@ -178,6 +178,10 @@ int get_max_again(unsigned char &out_val);
 int set_max_dgain(unsigned char val);
 int get_max_dgain(unsigned char &out_val);
 
+// Gamma curve (129 points)
+int set_gamma(const uint16_t gamma[129]);
+int get_gamma(uint16_t gamma[129]);
+
 // White balance
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
