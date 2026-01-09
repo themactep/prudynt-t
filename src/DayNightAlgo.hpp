@@ -130,20 +130,23 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
 // SIMPLE TOTAL GAIN ALGORITHM (NEW - CURRENTLY ACTIVE)
 // ============================================================================
 // This simplified algorithm uses only total_gain for reliable day/night detection
-// since GB/GR AWB gains are not available on T23 platforms.
 //
 // Total Gain behavior:
-//   - Low gain values (< 100) = Bright conditions = Day mode
-//   - High gain values (> 200) = Dark conditions = Night mode
+//   - Low gain values (< 300) = Bright conditions = Day mode
+//   - High gain values (> 3000) = Dark conditions = Night mode
 //
 // These thresholds should be calibrated using real sensor data collection.
 // ============================================================================
 
 struct SimpleParams {
-  int total_gain_night_threshold = 200;  // Switch to night when gain > this
-  int total_gain_day_threshold = 100;    // Switch to day when gain < this
+  int total_gain_night_threshold = 3000; // Switch to night when gain > this
+  int total_gain_day_threshold = 300;    // Switch to day when gain < this
   int night_count_threshold = 6;         // Consecutive samples before switching to night
   int day_count_threshold = 4;           // Consecutive samples before switching to day
+
+  // EV-based thresholds for platforms without total_gain (T10, T20)
+  int ev_night_threshold = 1500000;      // Switch to night when EV > this (dark)
+  int ev_day_threshold = 200000;         // Switch to day when EV < this (bright)
 };
 
 struct SimpleState {
@@ -157,39 +160,70 @@ inline void simple_init(SimpleState &s) {
   s.is_night = false;
 }
 
-inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_gain) {
+inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_gain, int ev) {
   Decision d{};
 
-  // Invalid gain value - no decision
-  if (total_gain < 0) {
-    s.night_count = 0;
-    s.day_count = 0;
-    return d;
-  }
-
-  // Night detection: gain above threshold
-  if (total_gain > p.total_gain_night_threshold) {
-    s.day_count = 0;
-    if (++s.night_count >= p.night_count_threshold) {
-      if (!s.is_night) {
-        d.target = Mode::Night;
-        d.reason = 1;
-        d.toggled = true;
+  // If total_gain is available, use it (T23, T31, C100)
+  if (total_gain >= 0) {
+    // Night detection: gain above threshold
+    if (total_gain > p.total_gain_night_threshold) {
+      s.day_count = 0;
+      if (++s.night_count >= p.night_count_threshold) {
+        if (!s.is_night) {
+          d.target = Mode::Night;
+          d.reason = 1;
+          d.toggled = true;
+        }
       }
     }
-  }
-  // Day detection: gain below threshold
-  else if (total_gain < p.total_gain_day_threshold) {
-    s.night_count = 0;
-    if (++s.day_count >= p.day_count_threshold) {
-      if (s.is_night) {
-        d.target = Mode::Day;
-        d.reason = 3;
-        d.toggled = true;
+    // Day detection: gain below threshold
+    else if (total_gain < p.total_gain_day_threshold) {
+      s.night_count = 0;
+      if (++s.day_count >= p.day_count_threshold) {
+        if (s.is_night) {
+          d.target = Mode::Day;
+          d.reason = 3;
+          d.toggled = true;
+        }
       }
     }
+    // In between thresholds - reset counters (hysteresis zone)
+    else {
+      s.night_count = 0;
+      s.day_count = 0;
+    }
   }
-  // In between thresholds - reset counters (hysteresis zone)
+  // Fallback to EV-based algorithm for platforms without total_gain (T10, T20)
+  else if (ev >= 0) {
+    // Night detection: high EV means dark (sensor needs more exposure)
+    if (ev > p.ev_night_threshold) {
+      s.day_count = 0;
+      if (++s.night_count >= p.night_count_threshold) {
+        if (!s.is_night) {
+          d.target = Mode::Night;
+          d.reason = 1;
+          d.toggled = true;
+        }
+      }
+    }
+    // Day detection: low EV means bright
+    else if (ev < p.ev_day_threshold) {
+      s.night_count = 0;
+      if (++s.day_count >= p.day_count_threshold) {
+        if (s.is_night) {
+          d.target = Mode::Day;
+          d.reason = 3;
+          d.toggled = true;
+        }
+      }
+    }
+    // In between thresholds - reset counters (hysteresis zone)
+    else {
+      s.night_count = 0;
+      s.day_count = 0;
+    }
+  }
+  // No valid sensor data - hold current state
   else {
     s.night_count = 0;
     s.day_count = 0;

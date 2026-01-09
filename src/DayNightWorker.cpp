@@ -497,6 +497,8 @@ void *thread_entry(void *arg) {
   simple_params.total_gain_day_threshold = cfg->get<int>("daynight.total_gain_day_threshold");
   simple_params.night_count_threshold = cfg->get<int>("daynight.night_count_threshold");
   simple_params.day_count_threshold = cfg->get<int>("daynight.day_count_threshold");
+  simple_params.ev_night_threshold = cfg->get<int>("daynight.ev_night_threshold");
+  simple_params.ev_day_threshold = cfg->get<int>("daynight.ev_day_threshold");
 
   int interval_ms = cfg->get<int>("daynight.sample_interval_ms");
   if (interval_ms <= 0)
@@ -559,8 +561,8 @@ void *thread_entry(void *arg) {
     int bright_pct = brightness_percent_from_ev(pr, legacy_params, ev);
     cfg->daynight.live_brightness_percent.store(bright_pct, std::memory_order_relaxed);
 
-    // Run the simple algorithm using total_gain
-    auto dec = DayNightAlgo::simple_decide(simple_params, simple_state, total_gain);
+    // Run the simple algorithm using total_gain (or EV fallback for T10/T20)
+    auto dec = DayNightAlgo::simple_decide(simple_params, simple_state, total_gain, ev);
 
     if (daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG("DayNight: TotalGain=" << total_gain << " EV=" << ev << " AELuma=" << ae_luma
