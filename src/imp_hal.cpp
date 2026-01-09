@@ -1206,6 +1206,89 @@ int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned 
 #endif
 }
 
+int set_ae_weight(const unsigned char weight[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPAEWeightAttr attr;
+  memset(&attr, 0, sizeof(IMPISPAEWeightAttr));
+  attr.weight_enable = IMPISP_TUNING_OPS_MODE_ENABLE;
+  attr.roi_enable = IMPISP_TUNING_OPS_MODE_DISABLE;
+  memcpy(attr.ae_weight.weight, weight, sizeof(attr.ae_weight.weight));
+  return IMP_ISP_Tuning_SetAeWeight(IMPVI_MAIN, &attr);
+#else
+  IMPISPWeight w;
+  memcpy(w.weight, weight, sizeof(w.weight));
+  return IMP_ISP_Tuning_SetAeWeight(&w);
+#endif
+}
+
+int get_ae_weight(unsigned char weight[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPAEWeightAttr attr;
+  memset(&attr, 0, sizeof(IMPISPAEWeightAttr));
+  int ret = IMP_ISP_Tuning_GetAeWeight(IMPVI_MAIN, &attr);
+  if (ret == 0) {
+    memcpy(weight, attr.ae_weight.weight, sizeof(attr.ae_weight.weight));
+  }
+  return ret;
+#else
+  IMPISPWeight w;
+  int ret = IMP_ISP_Tuning_GetAeWeight(&w);
+  if (ret == 0) {
+    memcpy(weight, w.weight, sizeof(w.weight));
+  }
+  return ret;
+#endif
+}
+
+int set_ae_roi(const unsigned char roi[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPAEWeightAttr attr;
+  memset(&attr, 0, sizeof(IMPISPAEWeightAttr));
+  attr.roi_enable = IMPISP_TUNING_OPS_MODE_ENABLE;
+  attr.weight_enable = IMPISP_TUNING_OPS_MODE_DISABLE;
+  memcpy(attr.ae_roi.weight, roi, sizeof(attr.ae_roi.weight));
+  return IMP_ISP_Tuning_SetAeWeight(IMPVI_MAIN, &attr);
+#else
+  IMPISPWeight w;
+  memcpy(w.weight, roi, sizeof(w.weight));
+  return IMP_ISP_Tuning_AE_SetROI(&w);
+#endif
+}
+
+int get_ae_roi(unsigned char roi[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPAEWeightAttr attr;
+  memset(&attr, 0, sizeof(IMPISPAEWeightAttr));
+  int ret = IMP_ISP_Tuning_GetAeWeight(IMPVI_MAIN, &attr);
+  if (ret == 0) {
+    memcpy(roi, attr.ae_roi.weight, sizeof(attr.ae_roi.weight));
+  }
+  return ret;
+#else
+  IMPISPWeight w;
+  int ret = IMP_ISP_Tuning_AE_GetROI(&w);
+  if (ret == 0) {
+    memcpy(roi, w.weight, sizeof(w.weight));
+  }
+  return ret;
+#endif
+}
+
+int get_ae_zone(unsigned int zone[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // AE zone stats not available on T40/T41
+  (void)zone;
+  return -1;
+#else
+  IMPISPZone z;
+  int ret = IMP_ISP_Tuning_GetAeZone(&z);
+  if (ret == 0) {
+    memcpy(zone, z.zone, sizeof(z.zone));
+  }
+  return ret;
+#endif
+}
+
 int set_sensor_fps(int fps_num, int fps_den) {
 #if defined(PLATFORM_T40)
   uint32_t num = static_cast<uint32_t>(fps_num);

@@ -190,6 +190,13 @@ int set_awb_weight(const unsigned char weight[15][15]);
 int get_awb_weight(unsigned char weight[15][15]);
 int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned char zone_b[225]);
 
+// AE zone weights and ROI (15x15 grid)
+int set_ae_weight(const unsigned char weight[15][15]);
+int get_ae_weight(unsigned char weight[15][15]);
+int set_ae_roi(const unsigned char roi[15][15]);
+int get_ae_roi(unsigned char roi[15][15]);
+int get_ae_zone(unsigned int zone[15][15]);
+
 // Sensor timing
 int set_sensor_fps(int fps_num, int fps_den);
 int get_sensor_fps(int &fps_num, int &fps_den);
