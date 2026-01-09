@@ -300,14 +300,14 @@ int IMPSystem::init() {
   if (cfg->sensor.fps > 0 && desired_sensor_fps > (int)cfg->sensor.fps) {
     desired_sensor_fps = cfg->sensor.fps;
   }
-  ret = IMP_ISP_Tuning_SetSensorFPS(desired_sensor_fps, 1);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_SetSensorFPS(" << desired_sensor_fps << ", 1)");
+  ret = hal::isp::set_sensor_fps(desired_sensor_fps, 1);
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_sensor_fps(" << desired_sensor_fps << ", 1)");
 
 #if defined(PLATFORM_T21)
   // T20 T21 only set FPS if it is read after set.
-  uint32_t fps_num, fps_den;
-  ret = IMP_ISP_Tuning_GetSensorFPS(&fps_num, &fps_den);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Tuning_GetSensorFPS(" << fps_num << ", " << fps_den << ")");
+  int fps_num, fps_den;
+  ret = hal::isp::get_sensor_fps(fps_num, fps_den);
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::get_sensor_fps(" << fps_num << ", " << fps_den << ")");
 #endif
 
   // Set the ISP to DAY on launch

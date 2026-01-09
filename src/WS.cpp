@@ -937,10 +937,10 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
           }
         }
 
-        IMPISPRunningMode running_mode;
-        int ret = IMP_ISP_Tuning_GetISPRunningMode(&running_mode);
+        int running_mode;
+        int ret = hal::isp::get_running_mode(running_mode);
         if (ret == 0)
-          cfg->set<int>(u_ctx->path, (int)running_mode);
+          cfg->set<int>(u_ctx->path, running_mode);
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       } break;
       case PNT_IMAGE_AE_COMPENSATION:

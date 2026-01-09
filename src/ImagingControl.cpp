@@ -70,7 +70,7 @@ static int apply_brightness(int value) {
   return 0;
 #else
   LOG_DEBUG("ImagingControl: apply brightness=" << value);
-  return IMP_ISP_Tuning_SetBrightness(value);
+  return hal::isp::set_brightness(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -80,7 +80,7 @@ static int apply_contrast(int value) {
   return 0;
 #else
   LOG_DEBUG("ImagingControl: apply contrast=" << value);
-  return IMP_ISP_Tuning_SetContrast(value);
+  return hal::isp::set_contrast(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -90,7 +90,7 @@ static int apply_saturation(int value) {
   return 0;
 #else
   LOG_DEBUG("ImagingControl: apply saturation=" << value);
-  return IMP_ISP_Tuning_SetSaturation(value);
+  return hal::isp::set_saturation(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -100,7 +100,7 @@ static int apply_sharpness(int value) {
   return 0;
 #else
   LOG_DEBUG("ImagingControl: apply sharpness=" << value);
-  return IMP_ISP_Tuning_SetSharpness(value);
+  return hal::isp::set_sharpness(static_cast<unsigned char>(value));
 #endif
 }
 
@@ -138,7 +138,7 @@ static int apply_tone(int value) {
   return 0;
 #else
   LOG_DEBUG("ImagingControl: apply tone=" << value);
-  return IMP_ISP_Tuning_SetHiLightDepress(value);
+  return hal::isp::set_highlight_depress(static_cast<unsigned char>(value));
 #endif
 }
 
