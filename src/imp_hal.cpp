@@ -1157,6 +1157,55 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain) {
 #endif
 }
 
+int set_awb_weight(const unsigned char weight[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPWeight w;
+  memcpy(w.weight, weight, sizeof(w.weight));
+  return IMP_ISP_Tuning_SetAwbWeight(IMPVI_MAIN, &w);
+#else
+  IMPISPWeight w;
+  memcpy(w.weight, weight, sizeof(w.weight));
+  return IMP_ISP_Tuning_SetAwbWeight(&w);
+#endif
+}
+
+int get_awb_weight(unsigned char weight[15][15]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  IMPISPWeight w;
+  int ret = IMP_ISP_Tuning_GetAwbWeight(IMPVI_MAIN, &w);
+  if (ret == 0) {
+    memcpy(weight, w.weight, sizeof(w.weight));
+  }
+  return ret;
+#else
+  IMPISPWeight w;
+  int ret = IMP_ISP_Tuning_GetAwbWeight(&w);
+  if (ret == 0) {
+    memcpy(weight, w.weight, sizeof(w.weight));
+  }
+  return ret;
+#endif
+}
+
+int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned char zone_b[225]) {
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+  // AWB zone stats not available on T40/T41
+  (void)zone_r;
+  (void)zone_g;
+  (void)zone_b;
+  return -1;
+#else
+  IMPISPAWBZone zone;
+  int ret = IMP_ISP_Tuning_GetAwbZone(&zone);
+  if (ret == 0) {
+    memcpy(zone_r, zone.zone_r, 225);
+    memcpy(zone_g, zone.zone_g, 225);
+    memcpy(zone_b, zone.zone_b, 225);
+  }
+  return ret;
+#endif
+}
+
 int set_sensor_fps(int fps_num, int fps_den) {
 #if defined(PLATFORM_T40)
   uint32_t num = static_cast<uint32_t>(fps_num);

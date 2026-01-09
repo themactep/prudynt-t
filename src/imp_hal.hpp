@@ -185,6 +185,11 @@ int get_gamma(uint16_t gamma[129]);
 // White balance
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
+// AWB zone weights (15x15 grid)
+int set_awb_weight(const unsigned char weight[15][15]);
+int get_awb_weight(unsigned char weight[15][15]);
+int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned char zone_b[225]);
+
 // Sensor timing
 int set_sensor_fps(int fps_num, int fps_den);
 int get_sensor_fps(int &fps_num, int &fps_den);
