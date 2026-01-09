@@ -3,6 +3,7 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <dlfcn.h>
 
@@ -25,7 +26,7 @@ static PlatformCaps g_caps = {
     .has_smart_rc = true,
     .has_super_frm = true,
     .has_intra_refresh = true,
-#elif defined(PLATFORM_T21) || defined(PLATFORM_T30)
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T30)
     .has_h265 = true,
     .has_capped_quality = false,
     .has_capped_vbr = false,
@@ -530,7 +531,9 @@ int get_sinter_strength(unsigned char &out_val) {
     return -1;
   }
 #if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  return IMP_ISP_Tuning_GetSinterStrength(&out_val);
+  LOG_DEBUG("get_sinter_strength not supported on this platform");
+  (void)out_val;
+  return -1;
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
   IMPISPSinterDenoiseAttr attr;
   int ret = IMP_ISP_Tuning_GetSinterDnsAttr(&attr);
@@ -570,7 +573,9 @@ int get_temper_strength(unsigned char &out_val) {
     return -1;
   }
 #if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  return IMP_ISP_Tuning_GetTemperStrength(&out_val);
+  LOG_DEBUG("get_temper_strength not supported on this platform");
+  (void)out_val;
+  return -1;
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
   IMPISPTemperDenoiseAttr attr;
   int ret = IMP_ISP_Tuning_GetTemperDnsAttr(&attr);
@@ -610,10 +615,6 @@ int get_hue(unsigned char &out_val) {
 #else
   (void)out_val;
   return -1;
-#endif
-}
-#else
-  return 0; // Function doesn't exist on this platform
 #endif
 }
 
@@ -957,7 +958,12 @@ int get_dpc_strength(unsigned char &out_val) {
     return -1;
   }
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  return IMP_ISP_Tuning_GetDPC_Strength(&out_val);
+  unsigned int ratio = 0;
+  int ret = IMP_ISP_Tuning_GetDPC_Strength(&ratio);
+  if (ret == 0) {
+    out_val = static_cast<unsigned char>(std::min(ratio, 255u));
+  }
+  return ret;
 #else
   (void)out_val;
   return -1;
@@ -990,7 +996,12 @@ int get_drc_strength(unsigned char &out_val) {
     return -1;
   }
 #if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  return IMP_ISP_Tuning_GetDRC_Strength(&out_val);
+  unsigned int ratio = 0;
+  int ret = IMP_ISP_Tuning_GetDRC_Strength(&ratio);
+  if (ret == 0) {
+    out_val = static_cast<unsigned char>(std::min(ratio, 255u));
+  }
+  return ret;
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
   IMPISPDrcAttr attr;
   int ret = IMP_ISP_Tuning_GetRawDRC(&attr);
@@ -1057,7 +1068,7 @@ int set_max_again(unsigned char val) {
     return 0;
   }
 #if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-  return IMP_ISP_Tuning_SetMaxAgain(val);
+  return IMP_ISP_Tuning_SetMaxAgain(static_cast<uint32_t>(val));
 #else
   return 0;
 #endif
@@ -1069,7 +1080,16 @@ int get_max_again(unsigned char &out_val) {
     return -1;
   }
 #if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-  return IMP_ISP_Tuning_GetMaxAgain(&out_val);
+  uint32_t gain = 0;
+  int ret = IMP_ISP_Tuning_GetMaxAgain(&gain);
+  if (ret == 0) {
+    if (gain > 255) {
+      out_val = 255;
+    } else {
+      out_val = static_cast<unsigned char>(gain);
+    }
+  }
+  return ret;
 #else
   (void)out_val;
   return -1;
@@ -1082,7 +1102,7 @@ int set_max_dgain(unsigned char val) {
     return 0;
   }
 #if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-  return IMP_ISP_Tuning_SetMaxDgain(val);
+  return IMP_ISP_Tuning_SetMaxDgain(static_cast<uint32_t>(val));
 #else
   return 0;
 #endif
@@ -1094,16 +1114,19 @@ int get_max_dgain(unsigned char &out_val) {
     return -1;
   }
 #if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-  return IMP_ISP_Tuning_GetMaxDgain(&out_val);
+  uint32_t gain = 0;
+  int ret = IMP_ISP_Tuning_GetMaxDgain(&gain);
+  if (ret == 0) {
+    if (gain > 255) {
+      out_val = 255;
+    } else {
+      out_val = static_cast<unsigned char>(gain);
+    }
+  }
+  return ret;
 #else
   (void)out_val;
   return -1;
-#endif
-}
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
-  return IMP_ISP_Tuning_SetMaxDgain(val);
-#else
-  return 0;
 #endif
 }
 
@@ -1194,6 +1217,29 @@ int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned 
   (void)zone_g;
   (void)zone_b;
   return -1;
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
+  IMPISPAWBZone zone;
+  int ret = IMP_ISP_Tuning_GetAwbZone(&zone);
+  if (ret == 0) {
+    for (int y = 0; y < 15; ++y) {
+      for (int x = 0; x < 15; ++x) {
+        const int idx = y * 15 + x;
+        const auto &cell = zone.awb_sta_zone[y][x];
+        unsigned char r = static_cast<unsigned char>((cell.red_green >> 4) > 0xFF ? 0xFF : (cell.red_green >> 4));
+        unsigned char b = static_cast<unsigned char>((cell.blue_green >> 4) > 0xFF ? 0xFF : (cell.blue_green >> 4));
+        zone_r[idx] = r;
+        zone_b[idx] = b;
+        zone_g[idx] = static_cast<unsigned char>((static_cast<unsigned int>(r) + static_cast<unsigned int>(b)) / 2);
+      }
+    }
+  }
+  return ret;
+#elif defined(PLATFORM_T21) || defined(PLATFORM_T30)
+  // Legacy SDK does not expose AWB zone statistics API on these targets
+  (void)zone_r;
+  (void)zone_g;
+  (void)zone_b;
+  return -1;
 #else
   IMPISPAWBZone zone;
   int ret = IMP_ISP_Tuning_GetAwbZone(&zone);
@@ -1248,6 +1294,45 @@ int set_ae_roi(const unsigned char roi[15][15]) {
   attr.weight_enable = IMPISP_TUNING_OPS_MODE_DISABLE;
   memcpy(attr.ae_roi.weight, roi, sizeof(attr.ae_roi.weight));
   return IMP_ISP_Tuning_SetAeWeight(IMPVI_MAIN, &attr);
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T30)
+  int min_row = 15;
+  int min_col = 15;
+  int max_row = -1;
+  int max_col = -1;
+  for (int y = 0; y < 15; ++y) {
+    for (int x = 0; x < 15; ++x) {
+      if (roi[y][x] > 0) {
+        if (y < min_row)
+          min_row = y;
+        if (y > max_row)
+          max_row = y;
+        if (x < min_col)
+          min_col = x;
+        if (x > max_col)
+          max_col = x;
+      }
+    }
+  }
+
+  auto cell_to_coord = [](int idx, bool is_end) -> unsigned char {
+    if (idx < 0)
+      return is_end ? 255 : 0;
+    int scaled = static_cast<int>(((idx + (is_end ? 1 : 0)) * 256) / 15);
+    if (is_end)
+      --scaled;
+    if (scaled < 0)
+      scaled = 0;
+    if (scaled > 255)
+      scaled = 255;
+    return static_cast<unsigned char>(scaled);
+  };
+
+  IMPISPAERoi rect{};
+  rect.startx = cell_to_coord(min_col, false);
+  rect.starty = cell_to_coord(min_row, false);
+  rect.endx = cell_to_coord(max_col, true);
+  rect.endy = cell_to_coord(max_row, true);
+  return IMP_ISP_Tuning_AE_SetROI(&rect);
 #else
   IMPISPWeight w;
   memcpy(w.weight, roi, sizeof(w.weight));
@@ -1264,6 +1349,29 @@ int get_ae_roi(unsigned char roi[15][15]) {
     memcpy(roi, attr.ae_roi.weight, sizeof(attr.ae_roi.weight));
   }
   return ret;
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T30)
+  IMPISPAERoi rect{};
+  int ret = IMP_ISP_Tuning_AE_GetROI(&rect);
+  if (ret == 0) {
+    memset(roi, 0, sizeof(unsigned char) * 15 * 15);
+    auto coord_to_cell = [](unsigned char coord) -> int {
+      return static_cast<int>(coord) * 15 / 256;
+    };
+    int start_col = coord_to_cell(rect.startx);
+    int end_col = coord_to_cell(rect.endx);
+    int start_row = coord_to_cell(rect.starty);
+    int end_row = coord_to_cell(rect.endy);
+    if (end_col >= 15)
+      end_col = 14;
+    if (end_row >= 15)
+      end_row = 14;
+    for (int y = start_row; y <= end_row; ++y) {
+      for (int x = start_col; x <= end_col; ++x) {
+        roi[y][x] = 8;
+      }
+    }
+  }
+  return ret;
 #else
   IMPISPWeight w;
   int ret = IMP_ISP_Tuning_AE_GetROI(&w);
@@ -1277,6 +1385,19 @@ int get_ae_roi(unsigned char roi[15][15]) {
 int get_ae_zone(unsigned int zone[15][15]) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   // AE zone stats not available on T40/T41
+  (void)zone;
+  return -1;
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
+  IMPISPAEZone z;
+  int ret = IMP_ISP_Tuning_GetAeZone(&z);
+  if (ret == 0) {
+    for (int i = 0; i < 15 * 15; ++i) {
+      zone[i / 15][i % 15] = z.ae_sta_zone[i];
+    }
+  }
+  return ret;
+#elif defined(PLATFORM_T30)
+  // AE zone stats not available on legacy T30 SDK
   (void)zone;
   return -1;
 #else
@@ -1328,17 +1449,16 @@ int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned ch
 }
 
 int get_ae_hist_origin(unsigned int bins[256]) {
-#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // AE histogram not available on T40/T41
-  (void)bins;
-  return -1;
-#else
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   IMPISPAEHistOrigin hist;
   int ret = IMP_ISP_Tuning_GetAeHist_Origin(&hist);
   if (ret == 0) {
     memcpy(bins, hist.ae_hist, 256 * sizeof(unsigned int));
   }
   return ret;
+#else
+  (void)bins;
+  return -1;
 #endif
 }
 
@@ -1652,7 +1772,7 @@ void init_ai_channel_param(IMPAudioIChnParam &param) {
 }
 
 int set_ai_hpf(int enable) {
-  if (!caps().has_audio_hpf)
+  if (!::hal::caps().has_audio_hpf)
     return -1;
 
 #if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
@@ -1666,7 +1786,7 @@ int set_ai_hpf(int enable) {
 
 int set_ai_agc(int gain_level, int max_gain) {
   (void)gain_level; // gain_level handling is SDK-specific; preserved for API compatibility
-  if (!caps().has_audio_agc)
+  if (!::hal::caps().has_audio_agc)
     return -1;
 
   // T21 doesn't have IMP_AI_SetAgcMode - AGC is handled differently
@@ -1677,7 +1797,7 @@ int set_ai_agc(int gain_level, int max_gain) {
 int set_ai_noise_suppression(int level) {
   (void)level;
   // Noise suppression setup varies by SDK; not implemented here.
-  if (!caps().has_audio_ns)
+  if (!::hal::caps().has_audio_ns)
     return -1;
   return -1;
 }
@@ -1685,7 +1805,7 @@ int set_ai_noise_suppression(int level) {
 int set_ai_echo_cancellation(int enable) {
   (void)enable;
   // AEC setup is platform-specific and not implemented in this HAL.
-  if (!caps().has_audio_aec_channel)
+  if (!::hal::caps().has_audio_aec_channel)
     return -1;
   return -1;
 }
@@ -1708,7 +1828,7 @@ int set_ai_gain(int gain) {
 }
 
 int set_ai_alc(int level) {
-  if (!caps().has_audio_alc)
+  if (!::hal::caps().has_audio_alc)
     return -1;
 #if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_AI_SetAlcGain(0, 0, level);
