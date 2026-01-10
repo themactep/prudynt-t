@@ -1023,12 +1023,32 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     }
   };
 
-  // Settings
+  // Basic settings
   add_boolk("enabled", "daynight.enabled");
+  add_strk("loglevel", "daynight.loglevel", true);
+  add_strk("script_path", "daynight.script_path");
+
+  // Percentage thresholds (simple algorithm)
   add_int("switch_below_percent", "daynight.switch_below_percent");
   add_int("switch_above_percent", "daynight.switch_above_percent");
   add_int("tolerance_percent", "daynight.tolerance_percent");
-  add_strk("loglevel", "daynight.loglevel", true);
+
+  // Total gain thresholds (simple algorithm)
+  add_int("total_gain_night_threshold", "daynight.total_gain_night_threshold");
+  add_int("total_gain_day_threshold", "daynight.total_gain_day_threshold");
+
+  // Algorithm parameters
+  add_int("sample_interval_ms", "daynight.sample_interval_ms");
+  add_int("night_count_threshold", "daynight.night_count_threshold");
+  add_int("day_count_threshold", "daynight.day_count_threshold");
+
+  // Expert/advanced parameters (legacy algorithm)
+  add_int("ev_night_high", "daynight.ev_night_high");
+  add_int("ev_day_low_primary", "daynight.ev_day_low_primary");
+  add_int("ev_day_low_secondary", "daynight.ev_day_low_secondary");
+  add_int("gb_gain_delta", "daynight.gb_gain_delta");
+  add_int("gb_gain_absolute", "daynight.gb_gain_absolute");
+  add_int("settle_samples_for_gb_record", "daynight.settle_samples_for_gb_record");
 
   // Manual mode override
   if (JsonValue *v = obj_get(obj, "force_mode")) {
@@ -1043,7 +1063,50 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     }
   }
 
-  // Live status
+  // Photosensing values - can be queried individually or via status
+  if (obj_get(obj, "brightness_percent")) {
+    add_key(out, s2, "brightness_percent");
+    add_num(out, cfg->daynight.live_brightness_percent.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "ev")) {
+    add_key(out, s2, "ev");
+    add_num(out, cfg->daynight.live_ev.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "gb")) {
+    add_key(out, s2, "gb");
+    add_num(out, cfg->daynight.live_gb.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "gr")) {
+    add_key(out, s2, "gr");
+    add_num(out, cfg->daynight.live_gr.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "total_gain")) {
+    add_key(out, s2, "total_gain");
+    add_num(out, cfg->daynight.live_total_gain.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "ae_luma")) {
+    add_key(out, s2, "ae_luma");
+    add_num(out, cfg->daynight.live_ae_luma.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "awb_color_temp")) {
+    add_key(out, s2, "awb_color_temp");
+    add_num(out, cfg->daynight.live_awb_color_temp.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "mode")) {
+    add_key(out, s2, "mode");
+    const char *mode_ptr = cfg->daynight.live_mode.load();
+    add_str(out, mode_ptr ? mode_ptr : "unknown");
+    wrote = true;
+  }
+
+  // Live status - returns all photosensing values in one object
   if (obj_get(obj, "status")) {
     add_key(out, s2, "status", "{");
     bool s3 = false;
