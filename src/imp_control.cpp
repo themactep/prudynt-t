@@ -103,6 +103,10 @@ int imp_control_set_running_mode(int mode) {
     return hal::isp::set_running_mode(mode);
 }
 
+int imp_control_switch_bin(const char *bin_path) {
+    return hal::isp::switch_bin(bin_path);
+}
+
 int imp_control_set_flicker_mode(int mode) {
     return hal::isp::set_anti_flicker(mode);
 }

@@ -68,6 +68,7 @@ struct PlatformCaps {
   bool has_isp_running_mode;
   bool has_isp_anti_flicker;
   bool has_isp_wb;
+  bool has_isp_switch_bin;
 
   // OSD capabilities
   bool has_osd_region_invert;
@@ -210,6 +211,9 @@ int get_sensor_fps(int &fps_num, int &fps_den);
 enum class RunningMode { Day = 0, Night = 1, Custom = 2 };
 int set_running_mode(RunningMode mode);
 int get_running_mode(int &out_mode);
+
+// IQ bin file switching (available on T23/T31/T40/T41)
+int switch_bin(const char *bin_path);
 
 // Statistics getters (platform-normalized)
 // Returns 0 on success, -1 on unsupported/failure

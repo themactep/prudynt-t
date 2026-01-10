@@ -151,6 +151,12 @@ static PlatformCaps g_caps = {
     .has_isp_anti_flicker = true, // All platforms support anti-flicker
     .has_isp_wb = true,           // All platforms support white balance
 
+#if defined(PLATFORM_T41)
+    .has_isp_switch_bin = true,   // Bin switching only on T41 (T23 needs SDK 1.1.2+)
+#else
+    .has_isp_switch_bin = false,
+#endif
+
 // OSD capabilities
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
     .has_osd_region_invert = true,
@@ -686,6 +692,28 @@ int get_running_mode(int &out_mode) {
     out_mode = static_cast<int>(mode);
   }
   return ret;
+}
+
+int switch_bin(const char *bin_path) {
+  if (!bin_path || bin_path[0] == '\0') {
+    return -1;
+  }
+#if defined(PLATFORM_T41)
+  // T41 supports bin switching
+  IMPISPBinAttr attr{};
+  attr.enable = IMPISP_TUNING_OPS_MODE_ENABLE;
+  std::strncpy(attr.bname, bin_path, sizeof(attr.bname) - 1);
+  attr.bname[sizeof(attr.bname) - 1] = '\0';
+  return IMP_ISP_Tuning_SwitchBin(IMPVI, &attr);
+#elif defined(PLATFORM_T23)
+  // T23 only supports bin switching in SDK 1.1.2+, not in default 1.1.0
+  // Since we can't reliably detect SDK version at compile time, disable for T23
+  (void)bin_path;
+  return -1; // Not supported - would need SDK 1.1.2
+#else
+  (void)bin_path;
+  return -1; // Not supported on this platform
+#endif
 }
 
 int get_ev(int &out_ev) {

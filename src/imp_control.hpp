@@ -45,6 +45,7 @@ int imp_control_set_backlight_comp(unsigned char val);
 int imp_control_set_highlight_depress(unsigned char val);
 int imp_control_set_running_mode(int mode);
 int imp_control_set_flicker_mode(int mode);        /* 0=off, 1=50Hz, 2=60Hz */
+int imp_control_switch_bin(const char *bin_path);  /* Switch IQ bin file */
 
 /* White balance */
 int imp_control_set_white_balance(int mode, unsigned short rgain, unsigned short bgain);
