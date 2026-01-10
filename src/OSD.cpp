@@ -524,8 +524,10 @@ OSD::BrightnessSample OSD::BrightnessMeter::measure() {
 
   if (cfg && cfg->get<bool>("daynight.enabled")) {
     int live_pct = cfg->daynight.live_brightness_percent.load();
+    int live_total_gain = cfg->daynight.live_total_gain.load();
     if (live_pct >= 0) {
       sample.current = static_cast<float>(live_pct);
+      sample.total_gain = live_total_gain;
       const char *mode_ptr = cfg->daynight.live_mode.load();
       if (mode_ptr && *mode_ptr) {
         sample.mode = mode_ptr;
@@ -571,23 +573,13 @@ OSD::BrightnessSample OSD::BrightnessMeter::measure() {
 }
 
 std::string OSD::buildBrightnessText(const BrightnessSample &sample) {
-  auto formatValue = [](float value) {
-    if (value < 0.0f) {
-      return std::string("--");
-    }
-    char buffer[16];
-    snprintf(buffer, sizeof(buffer), "%.1f", value);
-    return std::string(buffer);
-  };
-
-  std::string text = osd.brightness_format ? osd.brightness_format : "Brightness:%b%% Avg:%a%% %m";
-  replace(text, "%%", "\x01");  // Temporary placeholder for escaped %
-  replace(text, "%b", formatValue(sample.current));
-  replace(text, "%a", formatValue(sample.average));
-  const std::string modeText = sample.mode.empty() ? std::string("UNKNOWN") : sample.mode;
-  replace(text, "%m", modeText);
-  replace(text, "\x01", "%");  // Restore escaped %
-  return text;
+  // Display only the total gain value, no text
+  if (sample.total_gain < 0) {
+    return std::string("--");
+  }
+  char buffer[16];
+  snprintf(buffer, sizeof(buffer), "%d", sample.total_gain);
+  return std::string(buffer);
 }
 
 void OSD::updateBrightnessText() {
