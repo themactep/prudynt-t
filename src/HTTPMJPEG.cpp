@@ -29,6 +29,26 @@ using namespace std::chrono;
 
 namespace {
 
+// Simple base64 decoder for HTTP Basic Authentication
+std::string base64_decode(const std::string &encoded) {
+  static const std::string base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string decoded;
+  std::vector<int> T(256, -1);
+  for (int i = 0; i < 64; i++) T[base64_chars[i]] = i;
+
+  int val = 0, valb = -8;
+  for (unsigned char c : encoded) {
+    if (T[c] == -1) break;
+    val = (val << 6) + T[c];
+    valb += 6;
+    if (valb >= 0) {
+      decoded.push_back(char((val >> valb) & 0xFF));
+      valb -= 8;
+    }
+  }
+  return decoded;
+}
+
 // Helper: write all bytes (handles EINTR/partial)
 bool write_full(int fd, const void *data, size_t len) {
   const char *p = static_cast<const char *>(data);
@@ -111,6 +131,65 @@ std::string get_param(const std::string &qs, const std::string &name) {
   return "";
 }
 
+// Extract Authorization header value
+std::string get_auth_header(const std::string &req) {
+  size_t pos = 0;
+  while (pos < req.size()) {
+    size_t line_end = req.find('\n', pos);
+    if (line_end == std::string::npos)
+      break;
+    std::string line = req.substr(pos, line_end - pos);
+    // Remove \r if present
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
+    
+    // Case-insensitive header search
+    if (line.size() > 14) {
+      std::string header_name = line.substr(0, 14);
+      for (auto &c : header_name)
+        c = std::tolower(static_cast<unsigned char>(c));
+      if (header_name == "authorization:") {
+        size_t val_start = 14;
+        while (val_start < line.size() && std::isspace(static_cast<unsigned char>(line[val_start])))
+          ++val_start;
+        return line.substr(val_start);
+      }
+    }
+    pos = line_end + 1;
+  }
+  return "";
+}
+
+// Check HTTP Basic Authentication
+bool check_auth(const std::string &req, const char *username, const char *password) {
+  std::string auth = get_auth_header(req);
+  if (auth.empty())
+    return false;
+  
+  // Check for "Basic " prefix (case-insensitive)
+  if (auth.size() < 6)
+    return false;
+  std::string prefix = auth.substr(0, 6);
+  for (auto &c : prefix)
+    c = std::tolower(static_cast<unsigned char>(c));
+  if (prefix != "basic ")
+    return false;
+  
+  // Decode base64 credentials
+  std::string encoded = auth.substr(6);
+  std::string decoded = base64_decode(encoded);
+  
+  // Expected format: "username:password"
+  size_t colon = decoded.find(':');
+  if (colon == std::string::npos)
+    return false;
+  
+  std::string user = decoded.substr(0, colon);
+  std::string pass = decoded.substr(colon + 1);
+  
+  return (user == username && pass == password);
+}
+
 } // namespace
 
 HTTPMJPEG::HTTPMJPEG() = default;
@@ -118,12 +197,16 @@ HTTPMJPEG::~HTTPMJPEG() {
   stop();
 }
 
-void HTTPMJPEG::start(int port, bool enable_mjpeg, bool enable_api) {
+void HTTPMJPEG::start(int port, bool enable_mjpeg, bool enable_api, 
+                      bool auth_required, const char *username, const char *password) {
   bool expected = false;
   if (!running_.compare_exchange_strong(expected, true))
     return; // already running
   mjpeg_enabled_ = enable_mjpeg;
   api_enabled_ = enable_api;
+  auth_required_ = auth_required;
+  username_ = username;
+  password_ = password;
   th_ = std::thread(&HTTPMJPEG::server_loop, this, port);
 }
 
@@ -246,6 +329,23 @@ void HTTPMJPEG::handle_client(int cfd) {
     if (!payload.empty())
       write_full(cfd, payload.data(), payload.size());
   };
+
+  auto send_auth_required = [&]() {
+    const char *hdr = "HTTP/1.0 401 Unauthorized\r\n"
+                      "WWW-Authenticate: Basic realm=\"Prudynt MJPEG Server\"\r\n"
+                      "Content-Type: text/plain\r\n"
+                      "Content-Length: 13\r\n"
+                      "Connection: close\r\n\r\n"
+                      "Unauthorized\n";
+    write_full(cfd, hdr, strlen(hdr));
+  };
+
+  // Check authentication if required
+  if (auth_required_ && !check_auth(req, username_, password_)) {
+    send_auth_required();
+    ::close(cfd);
+    return;
+  }
 
   // Handle JSON API on the same port
   if (api_enabled_ && path == "/api/v1/config") {

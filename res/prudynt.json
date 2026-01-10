@@ -59,10 +59,13 @@
     "timestamp_validation_enabled": true
   },
   "http": {
-    "enabled": true,
     "api_enabled": true,
+    "auth_required": true,
+    "enabled": true,
     "mjpeg_enabled": true,
-    "port": 8080
+    "password": "thingino",
+    "port": 8080,
+    "username": "thingino"
   },
   "image": {
     "ae_compensation": 128,

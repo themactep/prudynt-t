@@ -155,6 +155,9 @@ struct _http {
   bool mjpeg_enabled;
   bool api_enabled;
   int port;
+  bool auth_required;
+  const char *username;
+  const char *password;
 };
 struct _image {
   int contrast;

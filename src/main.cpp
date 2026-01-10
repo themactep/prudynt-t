@@ -310,7 +310,8 @@ int main(int argc, const char *argv[]) {
 #endif
 
   if (cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) {
-    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled);
+    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled,
+                     cfg->http.auth_required, cfg->http.username, cfg->http.password);
     http_mjpeg_started = true;
   }
 
