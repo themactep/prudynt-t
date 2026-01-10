@@ -323,8 +323,24 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
   if (JsonValue *rm = obj_get(obj, "running_mode")) {
     if (rm->type == JSON_NUMBER) {
-      cfg->set<int>("image.running_mode", (int)rm->value.number);
+      int mode = (int)rm->value.number;
+      cfg->set<int>("image.running_mode", mode);
       hal::isp::set_running_mode(cfg->image.running_mode);
+
+      // Auto-switch bin file if configured and enabled
+      if (cfg->daynight.controls.binswitch) {
+        if (mode == 0) { // Day mode
+          const char *day_bin = cfg->get<const char *>("daynight.day_bin_path");
+          if (day_bin && day_bin[0] != '\0') {
+            hal::isp::switch_bin(day_bin);
+          }
+        } else if (mode == 1) { // Night mode
+          const char *night_bin = cfg->get<const char *>("daynight.night_bin_path");
+          if (night_bin && night_bin[0] != '\0') {
+            hal::isp::switch_bin(night_bin);
+          }
+        }
+      }
     }
     add_key(out, s2, "running_mode");
     add_num(out, cfg->get<int>("image.running_mode"));
@@ -1027,6 +1043,50 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   add_boolk("enabled", "daynight.enabled");
   add_strk("loglevel", "daynight.loglevel", true);
   add_strk("script_path", "daynight.script_path");
+  add_strk("day_bin_path", "daynight.day_bin_path", true);
+  add_strk("night_bin_path", "daynight.night_bin_path", true);
+
+  // Controls (hardware toggles)
+  if (JsonValue *controls_obj = obj_get(obj, "controls")) {
+    if (controls_obj->type == JSON_OBJECT) {
+      add_key(out, s2, "controls", "{");
+      bool s3 = false;
+      auto add_ctrl = [&](const char *key, const char *path) {
+        if (JsonValue *v = obj_get(controls_obj, key)) {
+          if (v->type == JSON_BOOL) {
+            cfg->set<bool>(path, v->value.boolean);
+          }
+          add_key(out, s3, key);
+          add_bool(out, cfg->get<bool>(path));
+          wrote = true;
+        }
+      };
+      add_ctrl("binswitch", "daynight.controls.binswitch");
+      add_ctrl("color", "daynight.controls.color");
+      add_ctrl("ircut", "daynight.controls.ircut");
+      add_ctrl("ir850", "daynight.controls.ir850");
+      add_ctrl("ir940", "daynight.controls.ir940");
+      add_ctrl("white", "daynight.controls.white");
+      out += "}";
+    }
+  } else {
+    // Read-only output of current controls
+    add_key(out, s2, "controls", "{");
+    bool s3 = false;
+    add_key(out, s3, "binswitch");
+    add_bool(out, cfg->daynight.controls.binswitch);
+    add_key(out, s3, "color");
+    add_bool(out, cfg->daynight.controls.color);
+    add_key(out, s3, "ircut");
+    add_bool(out, cfg->daynight.controls.ircut);
+    add_key(out, s3, "ir850");
+    add_bool(out, cfg->daynight.controls.ir850);
+    add_key(out, s3, "ir940");
+    add_bool(out, cfg->daynight.controls.ir940);
+    add_key(out, s3, "white");
+    add_bool(out, cfg->daynight.controls.white);
+    out += "}";
+  }
 
   // Percentage thresholds (simple algorithm)
   add_int("switch_below_percent", "daynight.switch_below_percent");
@@ -1059,6 +1119,21 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
       }
       add_key(out, s2, "force_mode");
       add_str(out, mode);
+      wrote = true;
+    }
+  }
+
+  // Manual bin switching
+  if (JsonValue *v = obj_get(obj, "switch_bin")) {
+    if (v->type == JSON_STRING && v->value.string) {
+      const char *bin_path = v->value.string;
+      int ret = hal::isp::switch_bin(bin_path);
+      add_key(out, s2, "switch_bin");
+      if (ret == 0) {
+        add_str(out, "success");
+      } else {
+        add_str(out, "failed");
+      }
       wrote = true;
     }
   }

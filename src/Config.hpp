@@ -107,12 +107,23 @@ struct _audio {
   int buffer_warn_frames;
   int buffer_cap_frames;
 };
+struct _daynight_controls {
+  bool binswitch{true};
+  bool color{true};
+  bool ircut{true};
+  bool ir850{true};
+  bool ir940{true};
+  bool white{false};
+};
 struct _daynight {
   // User-configurable knobs
   bool enabled{true};
   int switch_below_percent{15};
   int switch_above_percent{80};
   int tolerance_percent{50};
+
+  // Hardware control toggles
+  _daynight_controls controls;
 
   const char *loglevel{nullptr};
 
@@ -129,6 +140,10 @@ struct _daynight {
   int total_gain_night_threshold{3000};
   int total_gain_day_threshold{300};
   const char *script_path{nullptr};
+
+  // IQ bin file paths for day/night modes
+  const char *day_bin_path{nullptr};
+  const char *night_bin_path{nullptr};
 
   // Manual mode override (set by user via JSON API)
   std::atomic<const char *> force_mode{nullptr};

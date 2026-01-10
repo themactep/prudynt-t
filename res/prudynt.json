@@ -25,6 +25,7 @@
   },
   "daynight": {
     "day_count_threshold": 4,
+    "day_bin_path": "",
     "enabled": true,
     "ev_day_low_primary": 0,
     "ev_day_low_secondary": 0,
@@ -32,6 +33,7 @@
     "gb_gain_absolute": 145,
     "gb_gain_delta": 15,
     "loglevel": "INFO",
+    "night_bin_path": "",
     "night_count_threshold": 6,
     "sample_interval_ms": 1000,
     "script_path": "/sbin/daynight",
@@ -42,6 +44,7 @@
     "total_gain_day_threshold": 300,
     "total_gain_night_threshold": 3000,
     "controls": {
+      "binswitch": true,
       "color": true,
       "ircut": true,
       "ir850": true,

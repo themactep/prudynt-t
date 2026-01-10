@@ -224,6 +224,19 @@ static void apply_mode(DayNightAlgo::Mode m) {
   const char *script = (script_cfg && std::strlen(script_cfg) > 0) ? script_cfg : "/sbin/daynight";
 
   if (m == DayNightAlgo::Mode::Day) {
+    // Switch to day bin if configured and enabled
+    if (cfg->daynight.controls.binswitch) {
+      const char *day_bin = cfg->get<const char *>("daynight.day_bin_path");
+      if (day_bin && day_bin[0] != '\0') {
+        int bin_ret = hal::isp::switch_bin(day_bin);
+        if (bin_ret != 0 && daynight_should_log(Logger::WARN)) {
+          LOG_WARN("Failed to switch to day bin '" << day_bin << "': " << bin_ret);
+        } else if (bin_ret == 0 && daynight_should_log(Logger::INFO)) {
+          LOG_INFO("Switched to day IQ bin: " << day_bin);
+        }
+      }
+    }
+
     int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
     if (ret != 0) {
       if (daynight_should_log(Logger::WARN)) {
@@ -233,6 +246,19 @@ static void apply_mode(DayNightAlgo::Mode m) {
     std::string cmd = std::string(script) + " day";
     (void)std::system(cmd.c_str());
   } else if (m == DayNightAlgo::Mode::Night) {
+    // Switch to night bin if configured and enabled
+    if (cfg->daynight.controls.binswitch) {
+      const char *night_bin = cfg->get<const char *>("daynight.night_bin_path");
+      if (night_bin && night_bin[0] != '\0') {
+        int bin_ret = hal::isp::switch_bin(night_bin);
+        if (bin_ret != 0 && daynight_should_log(Logger::WARN)) {
+          LOG_WARN("Failed to switch to night bin '" << night_bin << "': " << bin_ret);
+        } else if (bin_ret == 0 && daynight_should_log(Logger::INFO)) {
+          LOG_INFO("Switched to night IQ bin: " << night_bin);
+        }
+      }
+    }
+
     int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Night);
     if (ret != 0) {
       if (daynight_should_log(Logger::WARN)) {
