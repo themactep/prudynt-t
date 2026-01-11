@@ -1003,6 +1003,8 @@ void handle_privacy(JsonValue *obj, std::string &out, bool &sep) {
 }
 
 void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
+  const size_t section_start = out.size();
+  const bool prev_sep = sep;
   add_key(out, sep, "daynight", "{");
   bool s2 = false;
   bool wrote = false;
@@ -1218,7 +1220,8 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   }
 
   if (!wrote) {
-    out.erase(out.size() - 1);
+    out.resize(section_start);
+    sep = prev_sep;
     return;
   }
   out += "}";
