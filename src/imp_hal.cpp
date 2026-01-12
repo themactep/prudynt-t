@@ -1185,7 +1185,7 @@ int set_daynight(bool enable) {
     return 0;
 }
 
-int add_sensor(IMPSensorInfo *sinfo) {
+int set_gamma(const uint16_t gamma[129]) 
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   IMPISPGammaAttr attr;
   memset(&attr, 0, sizeof(IMPISPGammaAttr));
