@@ -227,6 +227,10 @@ struct _motion {
   int roi_1_y;
   int roi_count;
   bool enabled;
+
+  bool whiteLight;  
+  int onTime;  // in seconds
+
   const char *script_path;
   std::array<roi, 52> rois;
 };
