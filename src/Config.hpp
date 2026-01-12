@@ -359,6 +359,7 @@ public:
   _rtsp rtsp{};
   _sensor sensor{};
   _image image{};
+  _gpio gpio{};
   _stream stream0{};
   _stream stream1{};
   _stream stream2{};
