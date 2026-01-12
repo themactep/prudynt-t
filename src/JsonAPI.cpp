@@ -950,6 +950,9 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   add_boolk_m("enabled", "motion.enabled", /*restart_video*/ true);
   add_strs("script_path", "motion.script_path");
 
+  add_boolk_m("whiteLight","motion.whiteLight");
+  add_int("onTime","motion.onTime");
+  
   if (JsonValue *rois = obj_get(obj, "rois")) {
     if (rois->type == JSON_NULL) {
       add_key(out, s2, "rois", "[");
