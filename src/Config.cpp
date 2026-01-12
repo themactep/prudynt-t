@@ -440,6 +440,15 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [min = denoiseDefaults.temper_min, max = denoiseDefaults.temper_max](const int &v) { return v >= min && v <= max; }},
       {"image.wb_bgain", image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
       {"image.wb_rgain", image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
+      
+      // webui gpio support, use int to allow status feedback.  0: off, 1: on, 2: current state feedback
+      {"gpio.sensor_switch", gpio.sensor_switch, 0, validateInt2},  
+      {"gpio.ir850", gpio.ir850, 0, validateInt2},  
+      {"gpio.ir940", gpio.ir940, 0, validateInt2},  
+      {"gpio.white", gpio.white, 0, validateInt2},  
+      {"gpio.ircut", gpio.ircut, 0, validateInt2},  
+      {"gpio.daynight", gpio.daynight, 0, validateInt2},  
+
       {"motion.debounce_time", motion.debounce_time, 0, validateIntGe0},
       {"motion.post_time", motion.post_time, 0, validateIntGe0},
       {"motion.ivs_polling_timeout", motion.ivs_polling_timeout, 1000, [](const int &v) { return v >= 100 && v <= 10000; }},
