@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "WorkerUtils.hpp"
 
 using namespace std::chrono;
 bool ignoreInitialPeriod = true;
@@ -61,6 +62,10 @@ void Motion::detect() {
   auto cooldownEndTime = steady_clock::now();
   auto motionEndTime = steady_clock::now();
   auto startTime = steady_clock::now();
+
+  std::string gpio_name = "gpio_white";
+  bool current_white =  false;
+  int white_pin = WorkerUtils::getGPIO_Pin_byName(gpio_name);
 
   if (init() != 0)
     return;
@@ -128,6 +133,12 @@ void Motion::detect() {
       continue;
     } else {
       isInCooldown = false;
+      
+      if (cfg->motion.whiteLight) {
+        sleep(cfg->motion.onTime);  // in seconds
+        // restore light state
+            WorkerUtils::setGPIO(white_pin, current_white);
+        }
     }
 
     bool motionDetected = false;
@@ -143,6 +154,11 @@ void Motion::detect() {
               LOG_INFO("Motion Start");
               write_motion_detected_state_file();
 
+              if (cfg->motion.whiteLight) {
+                    // preserve current light state
+                    current_white = WorkerUtils::getGPIO(white_pin);
+                    WorkerUtils::setGPIO(white_pin, true);
+              }
               char cmd[128];
               memset(cmd, 0, sizeof(cmd));
               snprintf(cmd, sizeof(cmd), "%s start", cfg->motion.script_path);
