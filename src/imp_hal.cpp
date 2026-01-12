@@ -9,6 +9,8 @@
 #include <imp/imp_encoder.h>
 #include <imp/imp_isp.h>
 
+#include "WorkerUtils.hpp"
+
 extern void MakeTables(int q, uint8_t *lqt, uint8_t *cqt);
 
 namespace hal {
