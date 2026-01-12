@@ -309,6 +309,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"image.vflip", image.vflip, false, validateBool},
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
+      {"motion.whiteLight", motion.whiteLight, false, validateBool},
       {"recorder.enabled", recorder.enabled, false, validateBool},
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
       {"rtsp.audio_only_enabled", rtsp.audio_only_enabled, true, validateBool},
@@ -498,6 +499,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.roi_1_x", motion.roi_1_x, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_1_y", motion.roi_1_y, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_count", motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }},
+      {"motion.onTime", motion.onTime, 10, validateIntGe0},  // in seconds
       {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
       {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
