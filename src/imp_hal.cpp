@@ -692,6 +692,31 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain) {
 #endif
 }
 
+// GPIO
+bool set_gpio(std::string gpio_name, bool enable) {
+    WorkerUtils::setGPIObyName(gpio_name, enable);
+    return enable;
+}
+
+bool get_gpio(std::string gpio_name) {
+    if (gpio_name == "ircut") {
+        return WorkerUtils::getIRCUT();
+    } else if (gpio_name == "daynight") {
+        WorkerUtils::getDAYNIGHT();
+    }
+    return WorkerUtils::getGPIObyName(gpio_name);
+}
+
+int set_ircut(bool enable) {
+    WorkerUtils::setIRCUT(enable);
+    return 0;
+}
+
+int set_daynight(bool enable) {
+    WorkerUtils::setDAYNIGHT(enable);
+    return 0;
+}
+
 int add_sensor(IMPSensorInfo *sinfo) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return IMP_ISP_AddSensor(IMPVI_MAIN, sinfo);
