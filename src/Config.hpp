@@ -171,6 +171,15 @@ struct _image {
   int wb_rgain;
   int wb_bgain;
 };
+// GPIO support
+struct _gpio {
+        int    ir850;
+        int    ir940;
+        int    white;
+        int    ircut;
+        int    sensor_switch;
+        int    daynight;
+};
 struct _motion {
   int monitor_stream;
   int debounce_time;
