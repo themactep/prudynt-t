@@ -342,6 +342,52 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
   out += "}";
 }
 
+  void handle_gpio(JsonValue *obj, std::string &out, bool &sep)
+    {
+        add_key(out, sep, "gpio", "{"); 
+        bool s2=false; 
+        bool wrote=false;
+        std::string cpp_key;
+        // use int inplace of bool - 0: false, 1: true, > 1 status readback
+        auto add_int_g = [&](std::string& key, bool& setter_state){
+            if (JsonValue* v = obj_get(obj, key.c_str())){
+                std::string path = "gpio." + key;
+                if ((v->type == JSON_NUMBER) && ((int)v->value.number <= 1)){  // set state
+                    cfg->set<int>(path, (int)v->value.number); 
+                    if ((int)v->value.number == 0) { setter_state = false; } else { setter_state =  true; } 
+                } else {  // add feedback
+                    int current_state = (int) (hal::isp::get_gpio(("gpio_" + key)) ? 1:0);
+                    cfg->set<int>(path, current_state);
+                    setter_state = (current_state ? true:false);
+                }
+                add_key(out,s2,key.c_str()); add_num(out, cfg->get<int>(path)); wrote=true;
+                return true;
+            }
+            return false;
+        };
+
+        const std::string cmd[] = {"sensor_switch","ir850","white","ir940"};
+        bool state;
+        for (std::string strkey : cmd) {
+            if (add_int_g(strkey, state)) {
+                hal::isp::set_gpio(("gpio_" + strkey),state);
+            }
+        }
+
+        std::string strkey = "ircut";
+        if (add_int_g(strkey, state)) {
+                hal::isp::set_ircut(state);
+        }
+        strkey = "daynight";
+        if (add_int_g(strkey, state)) {
+                hal::isp::set_daynight(state);
+        }
+        if (!wrote){ 
+            out.erase(out.size()-1); sep = (out.back()==','); return; 
+        }
+        out += "}";
+  }
+
 void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrote) {
   const char *root = idx == 0 ? "stream0.osd" : "stream1.osd";
 
@@ -1205,6 +1251,8 @@ bool process_json(const std::string &in, std::string &out) {
       handle_image(v, out, sep);
     } else if (!strcmp(k, "general") && v && v->type == JSON_OBJECT) {
       handle_general(v, out, sep);
+    } else if (!strcmp(k, "gpio")   && v && v->type == JSON_OBJECT){ 
+      handle_gpio(v, out, sep);
     } else if (!strcmp(k, "rtsp") && v && v->type == JSON_OBJECT) {
       handle_rtsp(v, out, sep);
     } else if (!strcmp(k, "sensor") && v && v->type == JSON_OBJECT) {
