@@ -613,8 +613,15 @@ void *thread_entry(void *arg) {
     }
 
     // Handle mode switching with anti-flap cooldown
+    // ONLY run automatic switching if photosensing is enabled
+    bool photosensing_enabled = cfg->daynight.enabled;
     if (dec.toggled && dec.target != current) {
-      if (anti_flap_cooldown > 0) {
+      if (!photosensing_enabled) {
+        // Photosensing is disabled - skip automatic switching
+        if (daynight_should_log(Logger::DEBUG)) {
+          LOG_DEBUG("DayNight: skipping automatic switch (photosensing disabled)");
+        }
+      } else if (anti_flap_cooldown > 0) {
         if (daynight_should_log(Logger::DEBUG)) {
           LOG_DEBUG("DayNight: skipping switch (anti-flap cooldown: " << anti_flap_cooldown << " iterations)");
         }
