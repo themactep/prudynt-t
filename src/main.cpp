@@ -42,6 +42,8 @@
 
 using namespace std::chrono;
 
+#define ENV_FILE  "/tmp/environment"
+
 std::mutex mutex_main;
 std::condition_variable global_cv_worker_restart;
 
@@ -233,6 +235,12 @@ int main(int argc, const char *argv[]) {
   LOG_INFO("HTTP MJPEG module is " << (cfg->http_mjpeg.enabled ? "enabled" : "disabled"));
   LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
+  // get GPIO settings from environment file
+  WorkerUtils::getEnv_gpio(ENV_FILE); 
+  // enable memory access for GPIO registers
+  int fd = 0;
+  WorkerUtils::openMMIO (fd);
+   
   if (!instance_lock.acquire()) {
     LOG_ERROR("Prudynt is already running. Exiting.");
     return 1;
