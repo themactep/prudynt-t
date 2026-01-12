@@ -232,7 +232,7 @@ int main(int argc, const char *argv[]) {
 #else
   LOG_INFO("WebSocket module not compiled into this build.");
 #endif
-  LOG_INFO("HTTP MJPEG module is " << (cfg->http_mjpeg.enabled ? "enabled" : "disabled"));
+  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) ? "enabled" : "disabled"));
   LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   // get GPIO settings from environment file
@@ -307,6 +307,7 @@ int main(int argc, const char *argv[]) {
   global_jpeg[1] = std::make_shared<jpeg_stream>(3, &cfg->stream3);
 
   global_audio[0] = std::make_shared<audio_stream>(audio_input_device_id, 0, 0);
+  global_audio[0]->msgChannel = std::make_shared<MsgChannel<AudioFrame>>(cfg->audio.buffer_cap_frames);
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 
@@ -316,8 +317,9 @@ int main(int argc, const char *argv[]) {
   pthread_create(&ws_thread, nullptr, WS::run, &ws);
 #endif
 
-  if (cfg->http_mjpeg.enabled) {
-    http_mjpeg.start(cfg->http_mjpeg.port);
+  if (cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) {
+    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled,
+                     cfg->http.auth_required, cfg->http.username, cfg->http.password);
     http_mjpeg_started = true;
   }
 
@@ -344,11 +346,15 @@ int main(int argc, const char *argv[]) {
     }
     if (global_restart_video || startup) {
       if (cfg->stream0.enabled) {
-        start_video(0);
+        if (cfg->stream0.video_enabled) {
+          start_video(0);
+        }
       }
 
       if (cfg->stream1.enabled) {
-        start_video(1);
+        if (cfg->stream1.video_enabled) {
+          start_video(1);
+        }
       }
 
       if (cfg->stream2.enabled) {
@@ -510,6 +516,16 @@ int main(int argc, const char *argv[]) {
     int ret = pthread_join(daynight_thread, nullptr);
     LOG_DEBUG_OR_ERROR(ret, "join daynight thread");
   }
+
+#if defined(WEBSOCKET_ENABLED)
+  if (cfg->websocket.enabled) {
+    int ret = pthread_join(ws_thread, nullptr);
+    LOG_DEBUG_OR_ERROR(ret, "join websocket thread");
+  }
+#endif
+
+  int ret = pthread_join(cw_thread, nullptr);
+  LOG_DEBUG_OR_ERROR(ret, "join config watcher thread");
 
   if (http_mjpeg_started) {
     http_mjpeg.stop();

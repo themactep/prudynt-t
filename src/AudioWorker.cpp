@@ -245,9 +245,6 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     }
 
     any_recorder_active = true;
-    if (frame_len == 0) {
-      continue;
-    }
 
     if (mp4_audio_sample_rate <= 0) {
       if (global_audio[encChn]->imp_audio) {
@@ -262,7 +259,10 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     if (mp4_audio_sample_rate > 0) {
       pts_ms = (mp4_audio_samples[ch] * 1000) / mp4_audio_sample_rate;
     }
-    recorder.writeAudio(start, frame_len, pts_ms);
+    
+    if (frame_len > 0) {
+      recorder.writeAudio(start, frame_len, pts_ms);
+    }
     mp4_audio_samples[ch] += frame_samples;
   }
 
@@ -270,13 +270,19 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     mp4_audio_sample_rate = 0;
   }
 
-  if (!af.data.empty() && global_audio[encChn]->hasDataCallback &&
-      (global_video[0]->hasDataCallback || global_video[1]->hasDataCallback)) {
+  if (!af.data.empty() && global_audio[encChn]->hasDataCallback) {
     bool delivered = global_audio[encChn]->msgChannel->write(af);
     if (delivered) {
       std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
       if (global_audio[encChn]->onDataCallback)
         global_audio[encChn]->onDataCallback();
+      
+      // Check buffer utilization and warn if getting full
+      size_t buf_size = global_audio[encChn]->msgChannel->size();
+      if (buf_size >= static_cast<size_t>(cfg->audio.buffer_warn_frames)) {
+        LOG_WARN("Audio buffer high: " << buf_size << "/" << cfg->audio.buffer_cap_frames 
+                 << " frames - RTSP client may not be consuming fast enough");
+      }
     }
     std::vector<AudioTapEntry> taps_copy;
     {
@@ -376,12 +382,10 @@ void AudioWorker::run() {
 
   while (global_audio[encChn]->running) {
     bool recorder_needs_audio = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
-    bool video_clients_active = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
-                                global_force_video_active.load(std::memory_order_relaxed) || recorder_needs_audio;
+    bool audio_clients_active = global_audio[encChn]->hasDataCallback;
     bool tap_requests_audio = tap && tap->wantsCapture();
     bool should_capture_audio = cfg->audio.input_enabled &&
-                                (global_audio[encChn]->hasDataCallback || recorder_needs_audio || tap_requests_audio) &&
-                                (video_clients_active || recorder_needs_audio || tap_requests_audio);
+                                (audio_clients_active || recorder_needs_audio || tap_requests_audio);
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn,
@@ -431,10 +435,16 @@ void AudioWorker::run() {
        */
       while (!global_restart_audio) {
         bool recorder_needed_now = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
+        bool audio_clients_active_now = global_audio[encChn]->hasDataCallback;
         bool video_clients_active_now = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
                                         global_force_video_active.load(std::memory_order_relaxed) ||
                                         recorder_needed_now;
-        if (global_audio[encChn]->onDataCallback != nullptr && (video_clients_active_now || recorder_needed_now)) {
+        // Resume if audio clients are active (audio-only streams like /mic)
+        if (audio_clients_active_now) {
+          break;
+        }
+        // Resume if video clients need audio
+        if (global_audio[encChn]->onDataCallback != nullptr && video_clients_active_now) {
           break;
         }
         if (recorder_needed_now) {

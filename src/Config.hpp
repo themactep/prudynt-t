@@ -107,12 +107,23 @@ struct _audio {
   int buffer_warn_frames;
   int buffer_cap_frames;
 };
+struct _daynight_controls {
+  bool binswitch{true};
+  bool color{true};
+  bool ircut{true};
+  bool ir850{true};
+  bool ir940{true};
+  bool white{false};
+};
 struct _daynight {
   // User-configurable knobs
   bool enabled{true};
   int switch_below_percent{15};
   int switch_above_percent{80};
   int tolerance_percent{50};
+
+  // Hardware control toggles
+  _daynight_controls controls;
 
   const char *loglevel{nullptr};
 
@@ -126,13 +137,25 @@ struct _daynight {
   int night_count_threshold{6};
   int day_count_threshold{4};
   int settle_samples_for_gb_record{20};
+  int total_gain_night_threshold{3000};
+  int total_gain_day_threshold{300};
   const char *script_path{nullptr};
 
-  // Live telemetry populated by the worker
+  // IQ bin file paths for day/night modes
+  const char *day_bin_path{nullptr};
+  const char *night_bin_path{nullptr};
+
+  // Manual mode override (set by user via JSON API)
+  std::atomic<const char *> force_mode{nullptr};
+
+  // Live telemetry populated by the worker - RAW ISP sensor data
   std::atomic<int> live_brightness_percent{-1};
   std::atomic<int> live_ev{-1};
   std::atomic<int> live_gb{-1};
   std::atomic<int> live_gr{-1};
+  std::atomic<int> live_total_gain{-1};      // Total ISP gain (analog + digital)
+  std::atomic<int> live_ae_luma{-1};         // AE luma value
+  std::atomic<int> live_awb_color_temp{-1};  // AWB color temperature (when available)
   std::atomic<const char *> live_mode{"unknown"};
 };
 struct _general {
@@ -142,9 +165,14 @@ struct _general {
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
 };
-struct _http_mjpeg {
+struct _http {
   bool enabled;
+  bool mjpeg_enabled;
+  bool api_enabled;
   int port;
+  bool auth_required;
+  const char *username;
+  const char *password;
 };
 struct _image {
   int contrast;
@@ -185,6 +213,7 @@ struct _motion {
   int debounce_time;
   int post_time;
   int cooldown_time;
+  int motor_settle_ms;
   int init_time;
   int min_time;
   int ivs_polling_timeout;
@@ -264,6 +293,9 @@ struct _rtsp {
   const char *name;
   float packet_loss_threshold;
   float bandwidth_margin;
+  bool audio_only_enabled;
+  const char *audio_only_endpoint;
+  const char *audio_only_info;
 };
 struct _sensor {
   int fps;
@@ -279,6 +311,7 @@ struct _sensor {
   const char *chip_id;
   const char *version;
   int min_fps;
+  int actual_fps;
 };
 struct _stream {
   int gop;
@@ -316,6 +349,7 @@ struct _stream {
   _osd osd;
   _stream_stats stats;
   bool audio_enabled;
+  bool video_enabled;
 };
 struct _sysinfo {
   const char *cpu = nullptr;
@@ -369,7 +403,7 @@ public:
 #if defined(WEBSOCKET_ENABLED)
   _websocket websocket{};
 #endif
-  _http_mjpeg http_mjpeg{};
+  _http http{};
   _sysinfo sysinfo{};
   _recorder recorder{};
 

@@ -2,11 +2,25 @@
 
 #include <cstdint>
 
+// Define stub types for platforms missing IMP ISP attribute records
+// Must be before SDK headers are included
+#if defined(PLATFORM_T20) || defined(PLATFORM_T10) || defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+struct IMPISPAEAttr {};
+#endif
+
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+struct IMPISPEVAttr {};
+#endif
+
 #include <imp/imp_audio.h>
 #include <imp/imp_common.h>
 #include <imp/imp_encoder.h>
 #include <imp/imp_isp.h>
 #include <imp/imp_osd.h>
+
+struct _stream; // fwd decl
+
+namespace hal {
 
 // Normalize IMP type names across SDKs
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -17,18 +31,6 @@
 #else
 #define HAL_ENC_ATTR_WIDTH(a) ((a).encAttr.picWidth)
 #define HAL_ENC_ATTR_HEIGHT(a) ((a).encAttr.picHeight)
-#endif
-
-struct _stream; // fwd decl
-
-namespace hal {
-
-// Type compatibility for different platform APIs
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-#define IMPEncoderCHNAttr IMPEncoderChnAttr
-#define IMPEncoderCHNStat IMPEncoderChnStat
-// OSD field name compatibility
-
 #endif
 
 struct PlatformCaps {
@@ -66,12 +68,16 @@ struct PlatformCaps {
   bool has_isp_running_mode;
   bool has_isp_anti_flicker;
   bool has_isp_wb;
+  bool has_isp_switch_bin;
 
   // OSD capabilities
   bool has_osd_region_invert;
 
   // Framesource capabilities
   bool has_framesource_chn_rotate;
+
+  // Motion detection capabilities
+  int motion_sensitivity_max;
 
   // System capabilities
   bool uses_xburst2;
@@ -118,14 +124,27 @@ int maybe_enable_bufshare(int jpegEncGrp, int srcEncChn, bool allow_shared);
 
 namespace isp {
 
+// Low-level ISP lifecycle helpers
+int open();
+int close();
+int enable_tuning();
+int disable_tuning();
+
 // Basic image quality controls
 int set_brightness(unsigned char val);
+int get_brightness(unsigned char &out_val);
 int set_contrast(unsigned char val);
+int get_contrast(unsigned char &out_val);
 int set_saturation(unsigned char val);
+int get_saturation(unsigned char &out_val);
 int set_sharpness(unsigned char val);
+int get_sharpness(unsigned char &out_val);
 int set_sinter_strength(unsigned char val);
+int get_sinter_strength(unsigned char &out_val);
 int set_temper_strength(unsigned char val);
+int get_temper_strength(unsigned char &out_val);
 int set_hue(unsigned char val);
+int get_hue(unsigned char &out_val);
 
 // Flip/mirror controls
 int set_hflip(bool enable);
@@ -135,32 +154,80 @@ int set_vflip(bool enable);
 int set_running_mode(int mode);
 int set_isp_bypass(bool enable);
 int set_anti_flicker(int mode);
+int get_anti_flicker(int &out_mode);
 
 // Exposure controls
 int set_ae_compensation(int val);
+int get_ae_compensation(int &out_val);
+int set_ae_it_max(unsigned int it_max);
+int get_ae_it_max(unsigned int &out_it_max);
+int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short);
+int get_ae_min(int &out_min_it, int &out_min_again, int &out_min_it_short, int &out_min_again_short);
 
 // Advanced image processing (may not be available on all platforms)
 int set_dpc_strength(unsigned char val);
+int get_dpc_strength(unsigned char &out_val);
 int set_drc_strength(unsigned char val);
+int get_drc_strength(unsigned char &out_val);
 int set_defog_strength(uint8_t val);
 int set_backlight_comp(unsigned char val);
 int set_highlight_depress(unsigned char val);
 
 // Gain controls
 int set_max_again(unsigned char val);
+int get_max_again(unsigned char &out_val);
 int set_max_dgain(unsigned char val);
+int get_max_dgain(unsigned char &out_val);
+
+// Gamma curve (129 points)
+int set_gamma(const uint16_t gamma[129]);
+int get_gamma(uint16_t gamma[129]);
 
 // White balance
 int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 
+// AWB zone weights (15x15 grid)
+int set_awb_weight(const unsigned char weight[15][15]);
+int get_awb_weight(unsigned char weight[15][15]);
+int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned char zone_b[225]);
+
+// AE zone weights and ROI (15x15 grid)
+int set_ae_weight(const unsigned char weight[15][15]);
+int get_ae_weight(unsigned char weight[15][15]);
+int set_ae_roi(const unsigned char roi[15][15]);
+int get_ae_roi(unsigned char roi[15][15]);
+int get_ae_zone(unsigned int zone[15][15]);
+
+// AE histogram (5-bin normalized or 256-bin origin)
+int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh, unsigned char stat_nodev);
+int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh, unsigned char &stat_nodev);
+int get_ae_hist_origin(unsigned int bins[256]);
+
+// Sensor timing
+int set_sensor_fps(int fps_num, int fps_den);
+int get_sensor_fps(int &fps_num, int &fps_den);
+
 // Running mode (HAL-level)
 enum class RunningMode { Day = 0, Night = 1, Custom = 2 };
 int set_running_mode(RunningMode mode);
+int get_running_mode(int &out_mode);
+
+// IQ bin file switching (available on T23/T31/T40/T41)
+int switch_bin(const char *bin_path);
 
 // Statistics getters (platform-normalized)
 // Returns 0 on success, -1 on unsupported/failure
 int get_ev(int &out_ev);
 int get_awb_weighted_gains(int &out_gr, int &out_gb);
+int get_total_gain(int &out_gain);
+int get_ae_luma(int &out_luma);
+int get_awb_color_temp(int &out_ct);
+int get_ev_attr(IMPISPEVAttr &out_attr);
+int get_ae_attr(IMPISPAEAttr &out_attr);
+
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+int set_auto_zoom(const IMPISPAutoZoom &zoom);
+#endif
 
 // Sensor management functions (abstract IMPVI_MAIN parameter)
 int add_sensor(IMPSensorInfo *sinfo);
@@ -209,6 +276,15 @@ int get_h264_nal_type(const IMPEncoderPack &pack);
 
 // Get H.265 NAL type from stream pack
 int get_h265_nal_type(const IMPEncoderPack &pack);
+
+// Encoder channel tuning
+int set_bitrate(int channel, int bitrate);
+int set_gop_length(int channel, int length);
+int set_rc_mode(int channel, int mode);
+int set_framerate(int channel, int fps_num, int fps_den);
+int set_qp(int channel, int qp);
+int set_qp_bounds(int channel, int min_qp, int max_qp);
+int set_qp_ip_delta(int channel, int delta);
 
 // Encoder initialization helpers
 void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height);
@@ -267,11 +343,32 @@ namespace audio {
 
 void init_ai_channel_param(IMPAudioIChnParam &param);
 
+// Audio input controls
+int set_ai_hpf(int enable);
+int set_ai_agc(int gain_level, int max_gain);
+int set_ai_noise_suppression(int level);
+int set_ai_echo_cancellation(int enable);
+int set_ai_volume(int vol);
+int set_ai_gain(int gain);
+int set_ai_alc(int level);
+
+// Audio output controls
+int set_ao_hpf(int enable);
+int set_ao_volume(int vol);
+int set_ao_gain(int gain);
+
 } // namespace audio
 
 namespace osd {
 
 uint32_t black_cover_color();
+int show_region(int handle, int show);
+int set_region_pos(int handle, int x, int y);
+int set_region_alpha(int handle, int alpha);
+int get_region_attr(int handle, IMPOSDRgnAttr &out_attr);
+int get_group_attr(int handle, int group, IMPOSDGrpRgnAttr &out_attr);
+int set_region_attr(int handle, const char *params); // placeholder for future parsing
+int set_region_cover(int handle, const char *params); // placeholder for future parsing
 
 } // namespace osd
 

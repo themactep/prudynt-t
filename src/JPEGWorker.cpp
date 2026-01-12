@@ -87,17 +87,14 @@ void JPEGWorker::run() {
     if (request_or_overrun || targetFps) {
       auto diff_last_image = duration_cast<milliseconds>(now - global_jpeg[jpgChn]->last_image).count();
 
-      // we remove targetFps/10 milliseconds as image creation time
-      // guard against division by zero if targetFps is 0
+      // remove targetFps/10 milliseconds as image creation time guard against division by zero if targetFps is 0
       int next_interval_ms = (targetFps > 0) ? ((1000 / targetFps) - (targetFps / 10)) : 0;
 
       // throttle capture cadence toward requested fps while accounting for encode time
       if ((targetFps > 0 && diff_last_image >= next_interval_ms) || (targetFps == 0 && request_or_overrun)) {
         // check if current jpeg channal is running if not start it
         if (!global_video[global_jpeg[jpgChn]->streamChn]->active) {
-          /* required video channel was not running, we need to start it
-           * and set run_for_jpeg as a reason.
-           */
+          // required video channel was not running, we need to start it and set run_for_jpeg as a reason.
           std::unique_lock<std::mutex> lock_stream{mutex_main};
           global_video[global_jpeg[jpgChn]->streamChn]->run_for_jpeg = true;
           global_video[global_jpeg[jpgChn]->streamChn]->should_grab_frames.notify_one();
@@ -167,18 +164,8 @@ void JPEGWorker::run() {
             size_t total_size = 0;
             // First pass: compute total size across packs (including wrap)
             for (uint32_t i = 0; i < stream.packCount; i++) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-              IMPEncoderPack *pack = &stream.pack[i];
-              if (!pack->length)
-                continue;
-              uint32_t remSize = stream.streamSize - pack->offset;
-              size_t part = (remSize < pack->length) ? remSize : pack->length;
-              size_t wrap = (remSize && pack->length > remSize) ? (pack->length - remSize) : 0;
-              total_size += part + wrap;
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||            \
-    defined(PLATFORM_T30)
-              total_size += stream.pack[i].length;
-#endif
+              auto slices = hal::encoder::get_pack_slices(stream, i);
+              total_size += slices.first_len + slices.second_len;
             }
 
             if (total_size) {
@@ -188,31 +175,15 @@ void JPEGWorker::run() {
               unsigned char *dst = buf.data();
               // Second pass: copy data into buffer
               for (uint32_t i = 0; i < stream.packCount; i++) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-                IMPEncoderPack *pack = &stream.pack[i];
-                if (!pack->length)
-                  continue;
-                uint32_t remSize = stream.streamSize - pack->offset;
-                void *data_ptr = (void *)((char *)stream.virAddr + pack->offset);
-                size_t part = (remSize < pack->length) ? remSize : pack->length;
-                if (part) {
-                  std::memcpy(dst, data_ptr, part);
-                  dst += part;
+                auto slices = hal::encoder::get_pack_slices(stream, i);
+                if (slices.first_len) {
+                  std::memcpy(dst, slices.first_ptr, slices.first_len);
+                  dst += slices.first_len;
                 }
-                if (remSize && pack->length > remSize) {
-                  size_t wrap = pack->length - remSize;
-                  std::memcpy(dst, (void *)((char *)stream.virAddr), wrap);
-                  dst += wrap;
+                if (slices.second_len) {
+                  std::memcpy(dst, slices.second_ptr, slices.second_len);
+                  dst += slices.second_len;
                 }
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||            \
-    defined(PLATFORM_T30)
-                void *data_ptr = reinterpret_cast<void *>(stream.pack[i].virAddr);
-                size_t data_len = stream.pack[i].length;
-                if (data_len) {
-                  std::memcpy(dst, data_ptr, data_len);
-                  dst += data_len;
-                }
-#endif
               }
             }
 
@@ -294,8 +265,7 @@ void *JPEGWorker::thread_entry(void *arg) {
   int jpgChn = sh->encChn - 2;
   int ret;
 
-  /* do not use the live config variable
-   */
+  // do not use the live config variable
   auto *stream_cfg = global_jpeg[jpgChn]->stream;
   global_jpeg[jpgChn]->streamChn = stream_cfg->jpeg_channel;
 

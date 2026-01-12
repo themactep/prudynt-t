@@ -5,3 +5,4 @@ obj/
 include/*/version.hpp
 3rdparty/
 buildroot-package/
+src_alt

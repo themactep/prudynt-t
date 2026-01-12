@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <mutex>
 #include <sstream>
@@ -23,6 +24,23 @@
 namespace {
 constexpr const char *kFifoDir = "/run/prudynt";
 constexpr const char *kFifoPath = "/run/prudynt/video_ctrl";
+constexpr const char *kPrivacyStatePath = "/run/prudynt/privacy.active";
+
+void write_privacy_state_file() {
+  int fd = ::open(kPrivacyStatePath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+  if (fd < 0) {
+    LOG_WARN("VideoPrivacyControl: failed to create state file " << kPrivacyStatePath);
+    return;
+  }
+  const char *payload = "privacy=true\n";
+  ssize_t ignored = ::write(fd, payload, strlen(payload));
+  (void)ignored;
+  ::close(fd);
+}
+
+void remove_privacy_state_file() {
+  ::unlink(kPrivacyStatePath);
+}
 
 std::string trim(const std::string &value) {
   auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
@@ -78,35 +96,60 @@ void ensureFifo() {
   }
 }
 
-bool applyPrivacy(int channel, bool enabled) {
-  if (channel < 0 || channel >= NUM_VIDEO_CHANNELS) {
-    LOG_WARN("VideoPrivacyControl: channel " << channel << " out of range");
-    return false;
-  }
-  auto stream = global_video[channel];
-  if (!stream) {
-    LOG_WARN("VideoPrivacyControl: channel " << channel << " is unavailable");
-    return false;
-  }
-  stream->privacy_requested.store(enabled, std::memory_order_relaxed);
-
-  std::shared_ptr<VideoPrivacyMask> mask;
-  {
-    std::lock_guard<std::mutex> lock(stream->privacy_mutex);
-    mask = stream->privacy_mask;
-  }
-
-  if (mask && mask->isReady()) {
-    if (!mask->setEnabled(enabled)) {
-      LOG_WARN("VideoPrivacyControl: failed to set privacy " << enabled << " on channel " << channel);
-      return false;
+void applyPrivacyToAllChannels(bool enabled) {
+  if (enabled) {
+    // When enabling, show the mask on all channels first
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+      auto stream = global_video[ch];
+      if (!stream) {
+        continue;
+      }
+      std::shared_ptr<VideoPrivacyMask> mask;
+      {
+        std::lock_guard<std::mutex> lock(stream->privacy_mutex);
+        mask = stream->privacy_mask;
+      }
+      if (mask && mask->isReady()) {
+        if (!mask->setEnabled(true)) {
+          LOG_WARN("VideoPrivacyControl: failed to enable privacy on channel " << ch);
+        }
+      }
     }
-    LOG_INFO("VideoPrivacyControl: channel " << channel << (enabled ? " muted" : " restored"));
-    return true;
+    // Then set all flags
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+      if (global_video[ch]) {
+        global_video[ch]->privacy_requested.store(true, std::memory_order_release);
+      }
+    }
+    write_privacy_state_file();
+    LOG_INFO("VideoPrivacyControl: privacy enabled on all channels");
+  } else {
+    // When disabling, clear flags first
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+      if (global_video[ch]) {
+        global_video[ch]->privacy_requested.store(false, std::memory_order_release);
+      }
+    }
+    // Then hide the masks
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+      auto stream = global_video[ch];
+      if (!stream) {
+        continue;
+      }
+      std::shared_ptr<VideoPrivacyMask> mask;
+      {
+        std::lock_guard<std::mutex> lock(stream->privacy_mutex);
+        mask = stream->privacy_mask;
+      }
+      if (mask && mask->isReady()) {
+        if (!mask->setEnabled(false)) {
+          LOG_WARN("VideoPrivacyControl: failed to disable privacy on channel " << ch);
+        }
+      }
+    }
+    remove_privacy_state_file();
+    LOG_INFO("VideoPrivacyControl: privacy disabled on all channels");
   }
-
-  LOG_INFO("VideoPrivacyControl: channel " << channel << " privacy=" << (enabled ? 1 : 0) << " pending worker init");
-  return true;
 }
 
 void handleCommand(const std::string &line) {
@@ -126,9 +169,6 @@ void handleCommand(const std::string &line) {
     return;
   }
 
-  int channel = 0;
-  bool channel_set = false;
-  bool apply_all = false;
   bool value = false;
   bool value_set = false;
 
@@ -147,22 +187,6 @@ void handleCommand(const std::string &line) {
                      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     }
 
-    if (key == "ch" || key == "channel") {
-      std::string val_lower = val;
-      std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(),
-                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-      if (val_lower == "all" || val_lower == "both" || val_lower == "*") {
-        apply_all = true;
-        channel_set = true;
-      } else if (parseInt(val, channel)) {
-        channel_set = true;
-      } else {
-        LOG_WARN("VideoPrivacyControl: invalid channel token '" << token << "'");
-      }
-      continue;
-    }
-
     if (key == "value" || key == "state" || key.empty()) {
       if (parseBool(val, value)) {
         value_set = true;
@@ -178,18 +202,8 @@ void handleCommand(const std::string &line) {
     return;
   }
 
-  if (!channel_set) {
-    apply_all = true;
-  }
-
-  if (apply_all) {
-    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
-      applyPrivacy(ch, value);
-    }
-    return;
-  }
-
-  applyPrivacy(channel, value);
+  // Always apply privacy to all channels simultaneously for security
+  applyPrivacyToAllChannels(value);
 }
 
 void fifoLoop() {

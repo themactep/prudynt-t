@@ -91,6 +91,7 @@ private:
     float current{-1.0f};
     float average{-1.0f};
     std::string mode{"UNKNOWN"};
+    int total_gain{-1};
     bool valid{false};
   };
 

@@ -69,8 +69,7 @@ ifneq ($(MAKECMDGOALS),clean)
 # ---------------------------
 ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
 override LDFLAGS       += -static -static-libgcc -static-libstdc++
-                          MP4Muxer_simple.cpp
-                          -l:libalog.a \
+LIBS                    = -l:libalog.a \
                           -l:libsysutils.a \
                           -l:libliveMedia.a \
                           -l:libgroupsock.a \
@@ -84,7 +83,8 @@ override LDFLAGS       += -static -static-libgcc -static-libstdc++
                           -l:libhelix-mp3.a \
                           -l:libflac-lite.a \
                           -l:libcurl.a \
-                          -ljct
+                          -ljct \
+                          -latomic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
@@ -95,28 +95,27 @@ endif
 # Hybrid Binary Configuration
 # ---------------------------
 else ifneq (,$(findstring -DBINARY_HYBRID,$(CFLAGS)))
-override LDFLAGS       += -static-libstdc++
 LIBS                    = -Wl,-Bdynamic \
                           -l:libimp.so \
                           -l:libalog.so \
                           -l:libsysutils.so \
                           -l:libaudioProcess.so \
-                          -l:libaudioshim.so \
                           $(WEBSOCKET_LIB_HYBRID_LINE) \
                           -Wl,-Bstatic \
                           -l:libliveMedia.a \
                           -l:libgroupsock.a \
                           -l:libBasicUsageEnvironment.a \
                           -l:libUsageEnvironment.a \
-                          -l:libschrift.a \
-                          -l:libopus.a \
-                          -l:libfaac.a \
-                          -l:libhelix-aac.a \
-                          -l:libhelix-mp3.a \
-                          -l:libflac-lite.a \
                           -Wl,-Bdynamic \
+                          -lschrift \
+                          -lopus \
+                          -lfaac \
+                          -lhelix-aac \
+                          -lhelix-mp3 \
+                          -lflac-lite \
                           -ljct \
-                          -lcurl
+                          -lcurl \
+                          -latomic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed

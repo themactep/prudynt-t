@@ -86,7 +86,7 @@ void apply_motion_sensor_defaults(CFG &config) {
   adjust_frame_dim("frame_width", sensor_w, config.motion.frame_width);
   adjust_frame_dim("frame_height", sensor_h, config.motion.frame_height);
 
-  auto clamp_roi_coord = [&](const char *field, int sensor_max, int &value) {
+  auto clamp_roi_coord = [&](const char *field, int sensor_max, int &value, bool is_end_coord) {
     if (sensor_max <= 0) {
       int original = value;
       value = 0;
@@ -95,18 +95,28 @@ void apply_motion_sensor_defaults(CFG &config) {
     }
     int max_coord = std::max(sensor_max - 1, 0);
     int original = value;
-    if (value == IVS_AUTO_VALUE) {
-      value = max_coord;
+
+    if (is_end_coord) {
+      if (value == IVS_AUTO_VALUE || value <= 0) {
+        value = max_coord;
+      } else {
+        value = std::clamp(value, 0, max_coord);
+      }
     } else {
-      value = std::clamp(value, 0, max_coord);
+      if (value == IVS_AUTO_VALUE) {
+        value = 0;
+      } else {
+        value = std::clamp(value, 0, max_coord);
+      }
     }
+
     log_dimension_adjustment("motion", field, original, value);
   };
 
-  clamp_roi_coord("roi_0_x", sensor_w, config.motion.roi_0_x);
-  clamp_roi_coord("roi_0_y", sensor_h, config.motion.roi_0_y);
-  clamp_roi_coord("roi_1_x", sensor_w, config.motion.roi_1_x);
-  clamp_roi_coord("roi_1_y", sensor_h, config.motion.roi_1_y);
+  clamp_roi_coord("roi_0_x", sensor_w, config.motion.roi_0_x, false);
+  clamp_roi_coord("roi_0_y", sensor_h, config.motion.roi_0_y, false);
+  clamp_roi_coord("roi_1_x", sensor_w, config.motion.roi_1_x, true);
+  clamp_roi_coord("roi_1_y", sensor_h, config.motion.roi_1_y, true);
 
   auto enforce_roi_span = [&](const char *field, int sensor_max, int start, int &end) {
     if (sensor_max <= 0) {
@@ -285,14 +295,25 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
       {"daynight.enabled", daynight.enabled, true, validateBool},
-      {"http_mjpeg.enabled", http_mjpeg.enabled, true, validateBool},
+      {"daynight.controls.binswitch", daynight.controls.binswitch, true, validateBool},
+      {"daynight.controls.color", daynight.controls.color, true, validateBool},
+      {"daynight.controls.ircut", daynight.controls.ircut, true, validateBool},
+      {"daynight.controls.ir850", daynight.controls.ir850, true, validateBool},
+      {"daynight.controls.ir940", daynight.controls.ir940, true, validateBool},
+      {"daynight.controls.white", daynight.controls.white, false, validateBool},
+      {"http.enabled", http.enabled, true, validateBool},
+      {"http.api_enabled", http.api_enabled, true, validateBool},
+      {"http.mjpeg_enabled", http.mjpeg_enabled, true, validateBool},
+      {"http.auth_required", http.auth_required, true, validateBool},
       {"image.isp_bypass", image.isp_bypass, true, validateBool},
       {"image.vflip", image.vflip, false, validateBool},
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
       {"recorder.enabled", recorder.enabled, false, validateBool},
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
+      {"rtsp.audio_only_enabled", rtsp.audio_only_enabled, true, validateBool},
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
+      {"stream0.video_enabled", stream0.video_enabled, true, validateBool},
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
       {"stream0.osd.brightness.enabled", stream0.osd.brightness_enabled, false, validateBool},
@@ -303,6 +324,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"stream0.osd.uptime.enabled", stream0.osd.uptime_enabled, true, validateBool},
       {"stream0.osd.usertext.enabled", stream0.osd.usertext_enabled, true, validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
+      {"stream1.video_enabled", stream1.video_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
       {"stream1.osd.brightness.enabled", stream1.osd.brightness_enabled, false, validateBool},
@@ -329,13 +351,19 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
       {"daynight.script_path", daynight.script_path, "/sbin/daynight", validateCharNotEmpty},
       {"daynight.loglevel", daynight.loglevel, "", validateLogLevelString},
+      {"daynight.day_bin_path", daynight.day_bin_path, "", validateCharDummy},
+      {"daynight.night_bin_path", daynight.night_bin_path, "", validateCharDummy},
       {"general.loglevel", general.loglevel, "INFO", [](const char *v) { std::set<std::string> a = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"}; return a.count(std::string(v)) == 1; }},
       {"motion.script_path", motion.script_path, "/usr/sbin/motion", validateCharNotEmpty},
       {"recorder.device_path", recorder.device_path, "%hostname", validateCharDummy},
       {"recorder.filename", recorder.filename, "%Y/%m/%d/%H-%M-%S", validateCharNotEmpty},
       {"recorder.mount", recorder.mount, "/mnt/mmc", validateCharNotEmpty},
+      {"http.username", http.username, "thingino", validateCharNotEmpty},
+      {"http.password", http.password, "thingino", validateCharNotEmpty},
       {"rtsp.name", rtsp.name, "thingino prudynt", validateCharNotEmpty},
       {"rtsp.password", rtsp.password, "thingino", validateCharNotEmpty},
+      {"rtsp.audio_only_endpoint", rtsp.audio_only_endpoint, "mic", validateCharNotEmpty},
+      {"rtsp.audio_only_info", rtsp.audio_only_info, "audio from the microphone", validateCharNotEmpty},
       {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
       {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/name"},
       {"sensor.chip_id", sensor.chip_id, "unknown", validateCharNotEmpty, false, "/proc/jz/sensor/chip_id"},
@@ -402,9 +430,13 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"audio.spk_gain", audio.output_gain, 20, [](const int &v) { return v >= 0 && v <= 31; }},
       {"audio.spk_vol", audio.output_vol, 60, [](const int &v) { return v >= -30 && v <= 120; }},
 #endif
+      {"audio.buffer_warn_frames", audio.buffer_warn_frames, 80, [](const int &v) { return v >= 10 && v <= 1000; }},
+      {"audio.buffer_cap_frames", audio.buffer_cap_frames, 100, [](const int &v) { return v >= 10 && v <= 1000; }},
       {"daynight.switch_below_percent", daynight.switch_below_percent, 15, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.switch_above_percent", daynight.switch_above_percent, 80, [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.tolerance_percent", daynight.tolerance_percent, 50, [](const int &v) { return v >= 0 && v <= 100; }},
+      {"daynight.total_gain_night_threshold", daynight.total_gain_night_threshold, 3000, [](const int &v) { return v >= 0 && v <= 10000; }},
+      {"daynight.total_gain_day_threshold", daynight.total_gain_day_threshold, 300, [](const int &v) { return v >= 0 && v <= 10000; }},
       {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000, [](const int &v) { return v >= 100 && v <= 60000; }},
       {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, 1024, [](const int &v) { return v >= 0 && v <= 65535; }},
@@ -418,7 +450,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"daynight.night_count_threshold", daynight.night_count_threshold, 6, [](const int &v) { return v >= 1 && v <= 100; }},
       {"daynight.day_count_threshold", daynight.day_count_threshold, 4, [](const int &v) { return v >= 1 && v <= 100; }},
       {"daynight.settle_samples_for_gb_record", daynight.settle_samples_for_gb_record, 20, [](const int &v) { return v >= 0 && v <= 200; }},
-      {"http_mjpeg.port", http_mjpeg.port, 8081, validateInt65535},
+      {"http.port", http.port, 8080, validateInt65535},
       {"image.anti_flicker", image.anti_flicker, 2, validateInt2},
       {"image.backlight_compensation", image.backlight_compensation, 0, [](const int &v) { return v >= 0 && v <= 10; }},
       {"image.brightness", image.brightness, 128, validateInt255},
@@ -455,6 +487,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.cooldown_time", motion.cooldown_time, 5, validateIntGe0},
       {"motion.init_time", motion.init_time, 5, validateIntGe0},
       {"motion.min_time", motion.min_time, 1, validateIntGe0},
+      {"motion.motor_settle_ms", motion.motor_settle_ms, 1200, [](const int &v) { return v >= 0 && v <= 10000; }},
       {"motion.sensitivity", motion.sensitivity, 1, validateIntGe0},
       {"motion.skip_frame_count", motion.skip_frame_count, 5, validateIntGe0},
       {"motion.frame_width", motion.frame_width, IVS_AUTO_VALUE, validateIntGe0},

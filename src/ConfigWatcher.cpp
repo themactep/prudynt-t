@@ -56,7 +56,25 @@ void ConfigWatcher::watch_using_notify() {
 
   LOG_DEBUG("Monitoring file for changes: " << cfg->filePath);
 
-  while (true) {
+  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
+    // Use select with timeout to check inotify fd and allow checking shutdown flag
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(inotifyFd, &read_fds);
+
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+
+    int ret = select(inotifyFd + 1, &read_fds, nullptr, nullptr, &timeout);
+    if (ret < 0) {
+      LOG_ERROR("Error in select()");
+      break;
+    } else if (ret == 0) {
+      // Timeout - loop again to check shutdown flag
+      continue;
+    }
+
     int length = read(inotifyFd, buffer, EVENT_BUF_LEN);
     if (length < 0) {
       LOG_ERROR("Error reading file change notification.");
@@ -85,7 +103,7 @@ void ConfigWatcher::watch_using_poll() {
   struct stat fileInfo;
   time_t lastModifiedTime = 0;
 
-  while (true) {
+  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     if (stat(cfg->filePath.c_str(), &fileInfo) == 0) {
       if (lastModifiedTime == 0) {
         lastModifiedTime = fileInfo.st_mtime;

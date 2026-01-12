@@ -99,32 +99,7 @@ std::array<std::shared_ptr<LoopState>, NUM_VIDEO_CHANNELS> loop_states;
 std::array<std::thread, NUM_VIDEO_CHANNELS> loop_threads;
 std::mutex loop_state_mutex;
 
-std::chrono::system_clock::time_point round_up_to_minute(std::chrono::system_clock::time_point tp) {
-  auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(tp);
-  auto epoch_seconds = seconds.time_since_epoch();
-  auto remainder = epoch_seconds.count() % 60;
-  if (remainder == 0) {
-    return seconds;
-  }
-  return seconds + std::chrono::seconds(60 - remainder);
-}
 
-bool sleep_until_time(std::chrono::system_clock::time_point target, std::atomic<bool> *stop_flag = nullptr) {
-  while (true) {
-    if (stop_flag && stop_flag->load(std::memory_order_relaxed)) {
-      return false;
-    }
-    auto now = std::chrono::system_clock::now();
-    if (now >= target) {
-      return true;
-    }
-    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(target - now);
-    if (remaining > std::chrono::milliseconds(250)) {
-      remaining = std::chrono::milliseconds(250);
-    }
-    std::this_thread::sleep_for(remaining);
-  }
-}
 
 struct MountEntry {
   fs::path mountPoint;
@@ -860,11 +835,7 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
     return;
   }
 
-  constexpr auto kMinute = std::chrono::seconds(60);
-  constexpr auto kShortClipThreshold = std::chrono::seconds(15);
-
-  bool first_segment_pending = true;
-  auto next_start = std::chrono::system_clock::now();
+  constexpr int kShortClipSeconds = 15;
 
   while (!state->stopRequested.load(std::memory_order_relaxed)) {
     if (!wait_until_channel_idle(channel, &state->stopRequested)) {
@@ -872,51 +843,21 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
     }
 
     int segment_duration_seconds = state->params.durationSeconds;
-    std::chrono::system_clock::time_point segment_start;
-
-    if (first_segment_pending) {
-      segment_start = std::chrono::system_clock::now();
-      auto boundary = round_up_to_minute(segment_start);
-      if (boundary <= segment_start) {
-        boundary += kMinute;
-      }
-      auto span = std::chrono::duration_cast<std::chrono::seconds>(boundary - segment_start);
-      if (span < kShortClipThreshold) {
-        boundary += kMinute;
-        span = std::chrono::duration_cast<std::chrono::seconds>(boundary - segment_start);
-      }
-      segment_duration_seconds = static_cast<int>(span.count());
-      if (segment_duration_seconds <= 0) {
-        segment_duration_seconds = state->params.durationSeconds;
-      }
-      next_start = boundary;
-    } else {
-      auto now = std::chrono::system_clock::now();
-      if (next_start <= now) {
-        next_start = round_up_to_minute(now);
-      }
-      auto scheduled_start = next_start;
-      if (!sleep_until_time(scheduled_start, &state->stopRequested)) {
-        break;
-      }
-      segment_start = scheduled_start;
-      segment_duration_seconds = state->params.durationSeconds;
-      next_start = scheduled_start + std::chrono::seconds(state->params.durationSeconds);
-      next_start = round_up_to_minute(next_start);
+    if (segment_duration_seconds < kShortClipSeconds) {
+      segment_duration_seconds = kShortClipSeconds;
     }
 
-    auto target = build_loop_target_path(state->params, segment_start);
+    auto now = std::chrono::system_clock::now();
+    auto target = build_loop_target_path(state->params, now);
     if (target.empty()) {
-      next_start = round_up_to_minute(std::chrono::system_clock::now());
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
       continue;
     }
+
     if (!begin_segment(target, channel, segment_duration_seconds)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      next_start = round_up_to_minute(std::chrono::system_clock::now());
       continue;
     }
-    first_segment_pending = false;
 
     if (!wait_for_recording_completion(channel, &state->stopRequested)) {
       break;

@@ -224,7 +224,7 @@ enum {
   PNT_STREAM_OSD
 };
 
-static const char *const stream_keys[] = {"enabled",     "audio_enabled", "scale_enabled", "rtsp_endpoint", "rtsp_info",
+static const char *const stream_keys[] = {"enabled",     "audio_enabled", "video_enabled", "scale_enabled", "rtsp_endpoint", "rtsp_info",
                                           "format",      "mode",          "gop",           "max_gop",       "fps",
                                           "buffers",     "width",         "height",        "bitrate",       "rotation",
                                           "scale_width", "scale_height",  "profile",       "stats",         "osd"};
@@ -341,6 +341,7 @@ enum {
   PNT_MOTION_DEBOUNCE_TIME = 1,
   PNT_MOTION_POST_TIME,
   PNT_MOTION_COOLDOWN_TIME,
+  PNT_MOTION_MOTOR_SETTLE_MS,
   PNT_MOTION_INIT_TIME,
   PNT_MOTION_MIN_TIME,
   PNT_MOTION_THREAD_WAIT,
@@ -359,9 +360,10 @@ enum {
 };
 
 static const char *const motion_keys[] = {
-    "debounce_time", "post_time",        "cooldown_time", "init_time",    "min_time",    "thread_wait",
-    "sensitivity",   "skip_frame_count", "frame_width",   "frame_height", "roi_0_x",     "roi_0_x",
-    "roi_1_x",       "roi_1_y",          "roi_count",     "enabled",      "script_path", "rois"};
+  "debounce_time",   "post_time",       "cooldown_time", "motor_settle_ms", "init_time",    "min_time",
+  "thread_wait",     "sensitivity",    "skip_frame_count", "frame_width",     "frame_height", "roi_0_x",
+  "roi_0_y",         "roi_1_x",        "roi_1_y",          "roi_count",     "enabled",      "script_path",
+  "rois"};
 
 /* INFO */
 enum { PNT_INFO_IMP_SYSTEM_VERSION = 1 };
@@ -373,7 +375,7 @@ enum { PNT_RESTART_THREAD = 1, PNT_SAVE_CONFIG, PNT_CAPTURE };
 
 enum { PNT_THREAD_RTSP = 1, PNT_THREAD_VIDEO = 2, PNT_THREAD_AUDIO = 4 };
 
-static const char *const action_keys[] = {"restart_thread", "save_config", "capture"};
+static const char *const action_keys[] = {"restart_thread", "save_config", "dump_config", "capture"};
 
 #pragma endregion keys_and_enums
 
@@ -935,10 +937,10 @@ signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
           }
         }
 
-        IMPISPRunningMode running_mode;
-        int ret = IMP_ISP_Tuning_GetISPRunningMode(&running_mode);
+        int running_mode;
+        int ret = hal::isp::get_running_mode(running_mode);
         if (ret == 0)
-          cfg->set<int>(u_ctx->path, (int)running_mode);
+          cfg->set<int>(u_ctx->path, running_mode);
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       } break;
       case PNT_IMAGE_AE_COMPENSATION:
@@ -1085,37 +1087,38 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
       }
       add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
     }
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
-    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) ||               \
-    defined(PLATFORM_T41)
     else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_ENABLED) {
-      IMPAudioIOAttr ioattr;
-      int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
-      if (ret == 0) {
-        if (reason == LEJPCB_VAL_TRUE) {
-          if (cfg->set<bool>(u_ctx->path, true)) {
-            global_restart_audio = true;
-          }
-        } else if (reason == LEJPCB_VAL_FALSE) {
-          if (cfg->set<bool>(u_ctx->path, false)) {
-            global_restart_audio = true;
+      if (!hal::caps().has_audio_agc) {
+        add_json_null(u_ctx->message);
+      } else {
+        IMPAudioIOAttr ioattr;
+        int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
+        if (ret == 0) {
+          if (reason == LEJPCB_VAL_TRUE) {
+            if (cfg->set<bool>(u_ctx->path, true)) {
+              global_restart_audio = true;
+            }
+          } else if (reason == LEJPCB_VAL_FALSE) {
+            if (cfg->set<bool>(u_ctx->path, false)) {
+              global_restart_audio = true;
+            }
           }
         }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
       }
-      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
     } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_TARGET_LEVEL_DBFS ||
                ctx->path_match == PNT_AUDIO_INPUT_AGC_COMPRESSION_GAIN_DB) {
-      if (reason == LEJPCB_VAL_NUM_INT) {
-        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-          global_restart_audio = true;
+      if (!hal::caps().has_audio_agc) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            global_restart_audio = true;
+          }
         }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       }
-      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
     }
-#else
-    add_json_null(u_ctx->message);
-  }
-#endif
     else {
       switch (ctx->path_match) {
       case PNT_AUDIO_OUTPUT_ENABLED:
@@ -1161,17 +1164,16 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
       case PNT_AUDIO_INPUT_ALC_GAIN:
-#if defined(PLATFORM_T21) || defined(PLATFORM_T31) ||                                                                  \
-    defined(PLATFORM_C100) //|| defined(PLATFORM_T40) || defined(PLATFORM_T41)
-        if (reason == LEJPCB_VAL_NUM_INT) {
-          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-            IMP_AI_SetAlcGain(0, 0, cfg->get<int>(u_ctx->path));
+        if (!hal::caps().has_audio_alc) {
+          add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_UNSUPPORTED]);
+        } else {
+          if (reason == LEJPCB_VAL_NUM_INT) {
+            if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+              hal::audio::set_ai_alc(cfg->get<int>(u_ctx->path));
+            }
           }
+          add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         }
-        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-#else
-      add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_UNSUPPORTED]);
-#endif
         break;
       case PNT_AUDIO_INPUT_FORMAT:
         if (reason == LEJPCB_VAL_STR_END)
@@ -2529,13 +2531,12 @@ void WS::start() {
 
   LOG_INFO("Server started on port " << cfg->websocket.port);
 
-  while (true) {
+  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     lws_service(context, 50);
   }
 
   LOG_INFO("Server stopped.");
 
-  // Never reached in normal flow
   lws_context_destroy(context);
 }
 

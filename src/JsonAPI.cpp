@@ -3,6 +3,7 @@
 #include "Config.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
+#include "MP4Recorder.hpp"
 
 extern "C" {
 #include <json_config.h>
@@ -15,6 +16,8 @@ JsonValue *parse_json_string(const char *json_str);
 #include <imp/imp_isp.h>
 #include <sstream>
 #include <imp/imp_audio.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace {
 
@@ -32,7 +35,43 @@ inline void add_key(std::string &out, bool &sep, const char *k, const char *open
 }
 inline void add_str(std::string &out, const char *s) {
   out.push_back('"');
-  out += s ? s : "";
+  if (s) {
+    for (const char *p = s; *p; ++p) {
+      unsigned char c = static_cast<unsigned char>(*p);
+      switch (c) {
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        if (c < 0x20) {
+          char buf[7];
+          std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+          out += buf;
+        } else {
+          out.push_back(static_cast<char>(c));
+        }
+        break;
+      }
+    }
+  }
   out.push_back('"');
 }
 inline void add_num(std::string &out, int v) {
@@ -158,6 +197,7 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   }
   if (idx < 2) {
     add_boolk("audio_enabled", std::string(root) + ".audio_enabled");
+    add_boolk("video_enabled", std::string(root) + ".video_enabled");
   }
   if (idx < 2) {
     add_boolk("scale_enabled", std::string(root) + ".scale_enabled");
@@ -283,8 +323,24 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
   if (JsonValue *rm = obj_get(obj, "running_mode")) {
     if (rm->type == JSON_NUMBER) {
-      cfg->set<int>("image.running_mode", (int)rm->value.number);
+      int mode = (int)rm->value.number;
+      cfg->set<int>("image.running_mode", mode);
       hal::isp::set_running_mode(cfg->image.running_mode);
+
+      // Auto-switch bin file if configured and enabled
+      if (cfg->daynight.controls.binswitch) {
+        if (mode == 0) { // Day mode
+          const char *day_bin = cfg->get<const char *>("daynight.day_bin_path");
+          if (day_bin && day_bin[0] != '\0') {
+            hal::isp::switch_bin(day_bin);
+          }
+        } else if (mode == 1) { // Night mode
+          const char *night_bin = cfg->get<const char *>("daynight.night_bin_path");
+          if (night_bin && night_bin[0] != '\0') {
+            hal::isp::switch_bin(night_bin);
+          }
+        }
+      }
     }
     add_key(out, s2, "running_mode");
     add_num(out, cfg->get<int>("image.running_mode"));
@@ -748,22 +804,22 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 #if defined(LIB_AUDIO_PROCESSING)
 
   // mic_alc_gain - apply immediately without restart (platform-specific)
-#if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
-  if (JsonValue *v = obj_get(obj, "mic_alc_gain")) {
-    if (v->type == JSON_NUMBER) {
-      int alc_gain = (int)v->value.number;
-      if (cfg->set<int>("audio.mic_alc_gain", alc_gain)) {
-        // Apply to hardware immediately like WS.cpp does
-        IMP_AI_SetAlcGain(0, 0, alc_gain);
+  if (hal::caps().has_audio_alc) {
+    if (JsonValue *v = obj_get(obj, "mic_alc_gain")) {
+      if (v->type == JSON_NUMBER) {
+        int alc_gain = (int)v->value.number;
+        if (cfg->set<int>("audio.mic_alc_gain", alc_gain)) {
+          // Apply to hardware immediately like WS.cpp does
+          hal::audio::set_ai_alc(alc_gain);
+        }
       }
+      add_key(out, s2, "mic_alc_gain");
+      add_num(out, cfg->get<int>("audio.mic_alc_gain"));
+      wrote = true;
     }
-    add_key(out, s2, "mic_alc_gain");
-    add_num(out, cfg->get<int>("audio.mic_alc_gain"));
-    wrote = true;
+  } else {
+    add_int("mic_alc_gain", "audio.mic_alc_gain", false);
   }
-#else
-  add_int("mic_alc_gain", "audio.mic_alc_gain", false);
-#endif
 
   add_int("mic_noise_suppression", "audio.mic_noise_suppression", true);
 
@@ -878,6 +934,7 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   add_int("debounce_time", "motion.debounce_time");
   add_int("post_time", "motion.post_time");
   add_int("cooldown_time", "motion.cooldown_time");
+  add_int("motor_settle_ms", "motion.motor_settle_ms");
   add_int("init_time", "motion.init_time");
   add_int("min_time", "motion.min_time");
   add_int("ivs_polling_timeout", "motion.ivs_polling_timeout");
@@ -949,7 +1006,51 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   out += "}";
 }
 
+void handle_privacy(JsonValue *obj, std::string &out, bool &sep) {
+  add_key(out, sep, "privacy", "{");
+  bool s2 = false;
+  bool wrote = false;
+
+  // Read enabled state from request
+  if (JsonValue *v = obj_get(obj, "enabled")) {
+    if (v->type == JSON_BOOL) {
+      bool enabled = v->value.boolean != 0;
+      // Apply privacy to all channels via FIFO
+      const char *fifo_path = "/run/prudynt/video_ctrl";
+      int fd = open(fifo_path, O_WRONLY | O_NONBLOCK);
+      if (fd >= 0) {
+        const char *cmd = enabled ? "PRIVACY channel=all value=1\n" : "PRIVACY channel=all value=0\n";
+        write(fd, cmd, strlen(cmd));
+        close(fd);
+      }
+      add_key(out, s2, "enabled");
+      add_bool(out, enabled);
+      wrote = true;
+    } else if (v->type == JSON_NULL) {
+      // Just query the state
+      bool any_privacy = false;
+      for (int i = 0; i < NUM_VIDEO_CHANNELS; i++) {
+        if (global_video[i] && global_video[i]->privacy_requested.load(std::memory_order_relaxed)) {
+          any_privacy = true;
+          break;
+        }
+      }
+      add_key(out, s2, "enabled");
+      add_bool(out, any_privacy);
+      wrote = true;
+    }
+  }
+
+  if (!wrote) {
+    out.erase(out.size() - 1);
+    return;
+  }
+  out += "}";
+}
+
 void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
+  const size_t section_start = out.size();
+  const bool prev_sep = sep;
   add_key(out, sep, "daynight", "{");
   bool s2 = false;
   bool wrote = false;
@@ -986,14 +1087,149 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     }
   };
 
-  // Settings
+  // Basic settings
   add_boolk("enabled", "daynight.enabled");
+  add_strk("loglevel", "daynight.loglevel", true);
+  add_strk("script_path", "daynight.script_path");
+  add_strk("day_bin_path", "daynight.day_bin_path", true);
+  add_strk("night_bin_path", "daynight.night_bin_path", true);
+
+  // Controls (hardware toggles)
+  if (JsonValue *controls_obj = obj_get(obj, "controls")) {
+    if (controls_obj->type == JSON_OBJECT) {
+      add_key(out, s2, "controls", "{");
+      bool s3 = false;
+      auto add_ctrl = [&](const char *key, const char *path) {
+        if (JsonValue *v = obj_get(controls_obj, key)) {
+          if (v->type == JSON_BOOL) {
+            cfg->set<bool>(path, v->value.boolean);
+          }
+          add_key(out, s3, key);
+          add_bool(out, cfg->get<bool>(path));
+          wrote = true;
+        }
+      };
+      add_ctrl("binswitch", "daynight.controls.binswitch");
+      add_ctrl("color", "daynight.controls.color");
+      add_ctrl("ircut", "daynight.controls.ircut");
+      add_ctrl("ir850", "daynight.controls.ir850");
+      add_ctrl("ir940", "daynight.controls.ir940");
+      add_ctrl("white", "daynight.controls.white");
+      out += "}";
+    }
+  } else {
+    // Read-only output of current controls
+    add_key(out, s2, "controls", "{");
+    bool s3 = false;
+    add_key(out, s3, "binswitch");
+    add_bool(out, cfg->daynight.controls.binswitch);
+    add_key(out, s3, "color");
+    add_bool(out, cfg->daynight.controls.color);
+    add_key(out, s3, "ircut");
+    add_bool(out, cfg->daynight.controls.ircut);
+    add_key(out, s3, "ir850");
+    add_bool(out, cfg->daynight.controls.ir850);
+    add_key(out, s3, "ir940");
+    add_bool(out, cfg->daynight.controls.ir940);
+    add_key(out, s3, "white");
+    add_bool(out, cfg->daynight.controls.white);
+    out += "}";
+  }
+
+  // Percentage thresholds (simple algorithm)
   add_int("switch_below_percent", "daynight.switch_below_percent");
   add_int("switch_above_percent", "daynight.switch_above_percent");
   add_int("tolerance_percent", "daynight.tolerance_percent");
-  add_strk("loglevel", "daynight.loglevel", true);
 
-  // Live status
+  // Total gain thresholds (simple algorithm)
+  add_int("total_gain_night_threshold", "daynight.total_gain_night_threshold");
+  add_int("total_gain_day_threshold", "daynight.total_gain_day_threshold");
+
+  // Algorithm parameters
+  add_int("sample_interval_ms", "daynight.sample_interval_ms");
+  add_int("night_count_threshold", "daynight.night_count_threshold");
+  add_int("day_count_threshold", "daynight.day_count_threshold");
+
+  // Expert/advanced parameters (legacy algorithm)
+  add_int("ev_night_high", "daynight.ev_night_high");
+  add_int("ev_day_low_primary", "daynight.ev_day_low_primary");
+  add_int("ev_day_low_secondary", "daynight.ev_day_low_secondary");
+  add_int("gb_gain_delta", "daynight.gb_gain_delta");
+  add_int("gb_gain_absolute", "daynight.gb_gain_absolute");
+  add_int("settle_samples_for_gb_record", "daynight.settle_samples_for_gb_record");
+
+  // Manual mode override
+  if (JsonValue *v = obj_get(obj, "force_mode")) {
+    if (v->type == JSON_STRING && v->value.string) {
+      const char *mode = v->value.string;
+      if (std::strcmp(mode, "day") == 0 || std::strcmp(mode, "night") == 0) {
+        cfg->daynight.force_mode.store(strdup(mode));
+      }
+      add_key(out, s2, "force_mode");
+      add_str(out, mode);
+      wrote = true;
+    }
+  }
+
+  // Manual bin switching
+  if (JsonValue *v = obj_get(obj, "switch_bin")) {
+    if (v->type == JSON_STRING && v->value.string) {
+      const char *bin_path = v->value.string;
+      int ret = hal::isp::switch_bin(bin_path);
+      add_key(out, s2, "switch_bin");
+      if (ret == 0) {
+        add_str(out, "success");
+      } else {
+        add_str(out, "failed");
+      }
+      wrote = true;
+    }
+  }
+
+  // Photosensing values - can be queried individually or via status
+  if (obj_get(obj, "brightness_percent")) {
+    add_key(out, s2, "brightness_percent");
+    add_num(out, cfg->daynight.live_brightness_percent.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "ev")) {
+    add_key(out, s2, "ev");
+    add_num(out, cfg->daynight.live_ev.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "gb")) {
+    add_key(out, s2, "gb");
+    add_num(out, cfg->daynight.live_gb.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "gr")) {
+    add_key(out, s2, "gr");
+    add_num(out, cfg->daynight.live_gr.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "total_gain")) {
+    add_key(out, s2, "total_gain");
+    add_num(out, cfg->daynight.live_total_gain.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "ae_luma")) {
+    add_key(out, s2, "ae_luma");
+    add_num(out, cfg->daynight.live_ae_luma.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "awb_color_temp")) {
+    add_key(out, s2, "awb_color_temp");
+    add_num(out, cfg->daynight.live_awb_color_temp.load());
+    wrote = true;
+  }
+  if (obj_get(obj, "mode")) {
+    add_key(out, s2, "mode");
+    const char *mode_ptr = cfg->daynight.live_mode.load();
+    add_str(out, mode_ptr ? mode_ptr : "unknown");
+    wrote = true;
+  }
+
+  // Live status - returns all photosensing values in one object
   if (obj_get(obj, "status")) {
     add_key(out, s2, "status", "{");
     bool s3 = false;
@@ -1001,6 +1237,9 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     int live_ev = cfg->daynight.live_ev.load();
     int live_gb = cfg->daynight.live_gb.load();
     int live_gr = cfg->daynight.live_gr.load();
+    int live_total_gain = cfg->daynight.live_total_gain.load();
+    int live_ae_luma = cfg->daynight.live_ae_luma.load();
+    int live_awb_ct = cfg->daynight.live_awb_color_temp.load();
     const char *mode_ptr = cfg->daynight.live_mode.load();
     add_key(out, s3, "brightness_percent");
     add_num(out, live_brightness);
@@ -1010,6 +1249,16 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     add_num(out, live_gb);
     add_key(out, s3, "gr");
     add_num(out, live_gr);
+    add_key(out, s3, "total_gain");
+    add_num(out, live_total_gain);
+    add_key(out, s3, "ae_luma");
+    add_num(out, live_ae_luma);
+    add_key(out, s3, "awb_color_temp");
+    add_num(out, live_awb_ct);
+    add_key(out, s3, "total_gain_night_threshold");
+    add_num(out, cfg->daynight.total_gain_night_threshold);
+    add_key(out, s3, "total_gain_day_threshold");
+    add_num(out, cfg->daynight.total_gain_day_threshold);
     add_key(out, s3, "mode");
     add_str(out, mode_ptr ? mode_ptr : "unknown");
     out += "}";
@@ -1017,7 +1266,8 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   }
 
   if (!wrote) {
-    out.erase(out.size() - 1);
+    out.resize(section_start);
+    sep = prev_sep;
     return;
   }
   out += "}";
@@ -1216,6 +1466,179 @@ void handle_general(JsonValue *obj, std::string &out, bool &sep) {
     out += "}";
   }
 }
+
+void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
+  add_key(out, sep, "mp4", "{");
+  bool s2 = false;
+  bool wrote = false;
+
+  // Handle start command
+  if (JsonValue *start = obj_get(obj, "start")) {
+    if (start->type == JSON_OBJECT) {
+      int channel = 0;
+      JsonValue *ch = obj_get(start, "channel");
+      if (ch && ch->type == JSON_NUMBER) {
+        channel = (int)ch->value.number;
+      }
+
+      if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {
+        // Build the FIFO command to start recording
+        std::string fifo_cmd = "START ch=" + std::to_string(channel);
+
+        // Send mount and directory with hostname expansion
+        if (cfg && cfg->recorder.mount && cfg->recorder.mount[0]) {
+          fifo_cmd += " mount=" + std::string(cfg->recorder.mount);
+        }
+
+        if (cfg && cfg->recorder.device_path && cfg->recorder.device_path[0]) {
+          std::string device_path = cfg->recorder.device_path;
+          // Expand %hostname variable
+          size_t pos = device_path.find("%hostname");
+          if (pos != std::string::npos) {
+            char hostname[256] = {0};
+            gethostname(hostname, sizeof(hostname) - 1);
+            device_path.replace(pos, 9, hostname);
+          }
+          fifo_cmd += " dir=" + device_path;
+        }
+
+        if (cfg && cfg->recorder.filename && cfg->recorder.filename[0]) {
+          fifo_cmd += " template=" + std::string(cfg->recorder.filename);
+        }
+
+        // Enable loop mode for continuous recording until manual stop
+        fifo_cmd += " loop=1";
+
+        // Use duration from config or JSON for segment length
+        JsonValue *dur = obj_get(start, "duration");
+        if (dur && dur->type == JSON_NUMBER) {
+          fifo_cmd += " dur=" + std::to_string((int)dur->value.number);
+        } else if (cfg && cfg->recorder.duration > 0) {
+          fifo_cmd += " dur=" + std::to_string(cfg->recorder.duration);
+        }
+
+        // Write to mp4ctl FIFO
+        int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+        if (fd >= 0) {
+          fifo_cmd += "\n";
+          ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+          close(fd);
+
+          add_key(out, s2, "start");
+          if (written > 0) {
+            add_str(out, "ok");
+          } else {
+            add_str(out, "error");
+          }
+        } else {
+          add_key(out, s2, "start");
+          add_str(out, "fifo_unavailable");
+        }
+        wrote = true;
+      } else {
+        add_key(out, s2, "start");
+        add_str(out, "invalid_channel");
+        wrote = true;
+      }
+    }
+  }
+
+  // Handle stop command
+  if (JsonValue *stop = obj_get(obj, "stop")) {
+    if (stop->type == JSON_OBJECT) {
+      int channel = -1;
+      JsonValue *ch = obj_get(stop, "channel");
+      if (ch && ch->type == JSON_NUMBER) {
+        channel = (int)ch->value.number;
+      }
+
+      if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {
+        // Stop loop recording for specific channel
+        std::string fifo_cmd = "STOP LOOP ch=" + std::to_string(channel) + "\n";
+        int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+        if (fd >= 0) {
+          ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+          close(fd);
+
+          add_key(out, s2, "stop");
+          if (written > 0) {
+            add_str(out, "ok");
+          } else {
+            add_str(out, "error");
+          }
+        } else {
+          add_key(out, s2, "stop");
+          add_str(out, "fifo_unavailable");
+        }
+        wrote = true;
+      } else if (channel == -1) {
+        // Stop all channels
+        std::string fifo_cmd = "STOP\n";
+        int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+        if (fd >= 0) {
+          ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+          close(fd);
+
+          add_key(out, s2, "stop");
+          if (written > 0) {
+            add_str(out, "ok");
+          } else {
+            add_str(out, "error");
+          }
+        } else {
+          add_key(out, s2, "stop");
+          add_str(out, "fifo_unavailable");
+        }
+        wrote = true;
+      } else {
+        add_key(out, s2, "stop");
+        add_str(out, "invalid_channel");
+        wrote = true;
+      }
+    } else if (stop->type == JSON_NULL) {
+      // Stop all channels
+      std::string fifo_cmd = "STOP\n";
+      int fd = open("/run/prudynt/mp4ctl", O_WRONLY | O_NONBLOCK);
+      if (fd >= 0) {
+        ssize_t written = write(fd, fifo_cmd.c_str(), fifo_cmd.length());
+        close(fd);
+
+        add_key(out, s2, "stop");
+        if (written > 0) {
+          add_str(out, "ok");
+        } else {
+          add_str(out, "error");
+        }
+      } else {
+        add_key(out, s2, "stop");
+        add_str(out, "fifo_unavailable");
+      }
+      wrote = true;
+    }
+  }
+
+  // Handle status query
+  if (JsonValue *status = obj_get(obj, "status")) {
+    if (status->type == JSON_NULL || status->type == JSON_OBJECT) {
+      add_key(out, s2, "status", "{");
+      bool s3 = false;
+
+      for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ch++) {
+        add_key(out, s3, ("ch" + std::to_string(ch)).c_str());
+        add_bool(out, global_mp4_recorders[ch].isActive());
+      }
+
+      out += "}";
+      wrote = true;
+    }
+  }
+
+  if (!wrote) {
+    out.erase(out.size() - 1);
+    return;
+  }
+  out += "}";
+}
 } // namespace
 
 namespace JsonAPI {
@@ -1227,6 +1650,19 @@ bool process_json(const std::string &in, std::string &out) {
       free_json_value(root);
     out = "{}";
     return false;
+  }
+
+  // Special case: dump_config returns full config directly, not wrapped
+  if (JsonValue *action_obj = obj_get(root, "action"); action_obj && action_obj->type == JSON_OBJECT) {
+    if (JsonValue *dump_val = obj_get(action_obj, "dump_config"); dump_val && dump_val->type == JSON_NULL) {
+      char *json_str = json_to_string(cfg->jsonConfig, 0); // 0 = compact
+      if (json_str) {
+        out = json_str;
+        free(json_str);
+        free_json_value(root);
+        return true;
+      }
+    }
   }
 
   out = "{";
@@ -1263,12 +1699,16 @@ bool process_json(const std::string &in, std::string &out) {
       handle_audio(v, out, sep);
     } else if (!strcmp(k, "motion") && v && v->type == JSON_OBJECT) {
       handle_motion(v, out, sep);
+    } else if (!strcmp(k, "privacy") && v && v->type == JSON_OBJECT) {
+      handle_privacy(v, out, sep);
     } else if (!strcmp(k, "info") && v && v->type == JSON_OBJECT) {
       handle_info(v, out, sep);
     } else if (!strcmp(k, "daynight") && v && v->type == JSON_OBJECT) {
       handle_daynight(v, out, sep);
     } else if (!strcmp(k, "action") && v && v->type == JSON_OBJECT) {
       handle_action(v, out, sep);
+    } else if (!strcmp(k, "mp4") && v && v->type == JSON_OBJECT) {
+      handle_mp4(v, out, sep);
     }
   }
 
