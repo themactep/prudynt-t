@@ -168,6 +168,12 @@ int enable_sensor(IMPSensorInfo *sinfo);
 int disable_sensor();
 int del_sensor(IMPSensorInfo *sinfo);
 
+bool set_gpio(std::string gpio_name, bool enable);
+bool get_gpio(std::string gpio_name);
+
+int set_ircut(bool enable);
+int set_daynight(bool enable);
+
 } // namespace isp
 
 // ============================================================================
