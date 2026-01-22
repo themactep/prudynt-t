@@ -1,5 +1,18 @@
 #pragma once
 
+/* ============================================================================
+ * Platform Detection
+ * Supports: T10, T20, T21, T23, T30, T31, T40, T41, C100
+ * ============================================================================ */
+
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+    #define PLATFORM_NEW_SDK  /* T31+ use newer SDK API */
+#elif defined(PLATFORM_T30) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T10)
+    #define PLATFORM_OLD_SDK  /* T10-T30 use older SDK API */
+#else
+    #define PLATFORM_OLD_SDK  /* Default to older API */
+#endif
+
 #include <cstdint>
 
 // Define stub types for platforms missing IMP ISP attribute records

@@ -69,7 +69,7 @@ void IMPEncoder::initProfile() {
   memset(&chnAttr, 0, sizeof(IMPEncoderCHNAttr));
   rcAttr = &chnAttr.rcAttr;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#ifdef PLATFORM_NEW_SDK
   IMPEncoderRcMode rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
   IMPEncoderProfile encoderProfile = IMP_ENC_PROFILE_AVC_HIGH;
 
@@ -166,8 +166,7 @@ void IMPEncoder::initProfile() {
   // Apply optional overrides from stream{0,1} via HAL
   hal::apply_rc_overrides(chnAttr, rcMode, *stream);
 
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
-    defined(PLATFORM_T30)
+#elif defined(PLATFORM_OLD_SDK)
   if (strcmp(stream->format, "JPEG") == 0) {
     IMPEncoderAttr *encAttr;
     encAttr = &chnAttr.encAttr;
@@ -295,9 +294,7 @@ void IMPEncoder::initProfile() {
   rcAttr->attrHSkip.hSkipAttr.bEnableScenecut = 0;
   rcAttr->attrHSkip.hSkipAttr.bBlackEnhance = 0;
   rcAttr->attrHSkip.maxHSkipType = IMP_Encoder_STYPE_N1X;
-#endif // defined(PLATFORM_T10) || defined(PLATFORM_T20) ||
-       // defined(PLATFORM_T21) || defined(PLATFORM_T23) ||
-       // defined(PLATFORM_T30)
+#endif // PLATFORM_OLD_SDK
   LOG_DEBUG("STREAM PROFILE " << stream->rtsp_endpoint << ", "
                               << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum << ", "
                               << "bps:" << stream->bitrate << ", "
