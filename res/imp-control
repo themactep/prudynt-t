@@ -73,7 +73,7 @@ case "$COMMAND" in
     # ISP/Image controls
     ispmode)
         [ -z "$VALUE" ] && { echo "Error: ispmode requires value (0 or 1)" >&2; exit 1; }
-        send_config "{\"image\": {\"running_mode\": $VALUE}}"
+        send_config "{\"daynight\": {\"enabled\": false}, \"image\": {\"running_mode\": $VALUE}}"
         ;;
     brightness)
         [ -z "$VALUE" ] && { echo "Error: brightness requires value (0-255)" >&2; exit 1; }
