@@ -1,8 +1,6 @@
 #!/bin/sh
-# imp-control replacement - communicates with prudynt via HTTP JSON API
-# Defaults to local listener exposed by prudynt (/api/v1/config)
-
-: "${API_URL:=http://127.0.0.1:8080/api/v1/config}"
+# imp-control replacement - communicates with prudynt via Unix socket
+# Uses prudyntctl to send JSON to /run/prudynt/prudynt.sock
 
 usage() {
     cat << EOF
@@ -60,7 +58,7 @@ EOF
 
 send_config() {
     local json="$1"
-    curl -s -X POST "$API_URL" -H "Content-Type: application/json" -d "$json" > /dev/null 2>&1
+    echo "$json" | prudyntctl json - > /dev/null 2>&1
     return $?
 }
 
