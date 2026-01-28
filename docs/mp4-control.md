@@ -16,6 +16,34 @@ While a channel is actively recording, Prudynt also creates a small state file:
 
 Scripts can watch for the presence/removal of this file to know precisely when the muxer has finished writing (more reliable than sleeping for the requested duration).
 
+## Pre-Trigger Buffer Integration
+
+When prebuffer is enabled in the configuration, recordings automatically include pre-trigger content captured before the START command. This provides context for motion events or other triggers.
+
+**Key Features:**
+- Captures 3 seconds of video before trigger (configurable 1-10 seconds)
+- Memory-efficient circular buffer (~1.5MB per channel)
+- Seamless timestamp continuity in recordings
+- Zero overhead when disabled (default)
+
+**Configuration in `/etc/prudynt.json`:**
+```json
+{
+  "recorder": {
+    "prebuffer_enabled": false,
+    "prebuffer_seconds": 3,
+    "prebuffer_keyframe_only": false,
+    "prebuffer_max_memory_mb": 2
+  }
+}
+```
+
+**Recording Timeline Example:**
+- Prebuffer: 3 seconds of content before trigger
+- Requested duration: 10 seconds
+- Total recording: 13 seconds (T-3 to T+10)
+- Timestamps: -3000ms to +10000ms for seamless playback
+
 ## START command
 
 ```

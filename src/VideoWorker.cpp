@@ -8,6 +8,7 @@
 #include "IMPEncoder.hpp"
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
+#include "PreTriggerBuffer.hpp"
 #include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
@@ -46,6 +47,19 @@ void VideoWorker::run() {
   int64_t mp4_sample_ts_base = -1;
   bool mp4_waiting_frame_end = false;
   bool mp4_inserted_codec_config = false;
+  
+  // Prebuffer frame accumulation (similar to mp4_sample)
+  std::vector<uint8_t> prebuffer_sample;
+  bool prebuffer_sample_is_key = false;
+  int64_t prebuffer_sample_ts = -1;
+  
+  // Queue for frames that arrive during prebuffer flush
+  struct PendingFrame {
+    std::vector<uint8_t> data;
+    int64_t timestamp;
+    bool is_keyframe;
+  };
+  std::vector<PendingFrame> pending_frames_during_flush;
   auto compute_frame_switch_threshold = [](int fps_value) -> int64_t {
     int fps = fps_value > 0 ? fps_value : 25;
     int64_t frame_period = 1000000LL / fps;
@@ -61,6 +75,27 @@ void VideoWorker::run() {
     mp4_waiting_frame_end = false;
     mp4_inserted_codec_config = false;
   };
+  
+  auto reset_prebuffer_sample = [&]() {
+    prebuffer_sample.clear();
+    prebuffer_sample_is_key = false;
+    prebuffer_sample_ts = -1;
+  };
+  
+  auto flush_prebuffer_sample = [&]() {
+    if (prebuffer_sample.empty() || !global_video[encChn]->prebuffer) {
+      reset_prebuffer_sample();
+      return;
+    }
+    
+    global_video[encChn]->prebuffer->addFrame(
+      prebuffer_sample.data(),
+      prebuffer_sample.size(),
+      prebuffer_sample_ts,
+      prebuffer_sample_is_key
+    );
+    reset_prebuffer_sample();
+  };
 
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
@@ -68,22 +103,89 @@ void VideoWorker::run() {
   };
 
   auto flush_mp4_sample = [&](bool recorder_active) {
-    if (!recorder_active || mp4_sample.empty()) {
+    static bool was_recorder_active = false;
+    
+    if (!recorder_active) {
+      if (was_recorder_active) {
+        pending_frames_during_flush.clear();  // Clear pending frames
+      }
+      was_recorder_active = false;
       reset_mp4_sample();
       return;
+    }
+    was_recorder_active = true;
+    
+    if (mp4_sample.empty()) {
+      reset_mp4_sample();
+      return;
+    }
+    
+    // Queue frames while prebuffer is being flushed (instead of skipping)
+    if (video_state && video_state->mp4_prebuffer_flushing.load(std::memory_order_acquire)) {
+      // Queue this frame for later
+      PendingFrame pf;
+      pf.data = std::move(mp4_sample);
+      pf.timestamp = mp4_sample_ts;
+      pf.is_keyframe = mp4_sample_is_key;
+      pending_frames_during_flush.push_back(std::move(pf));
+      
+      reset_mp4_sample();
+      mp4_sample_ts_base = -1;  // Reset timestamp base so we recalculate after flush
+      return;
+    }
+    
+    // If we have pending frames from during the flush, write them first
+    if (!pending_frames_during_flush.empty()) {
+      
+      int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
+      
+      // Find the first keyframe in pending frames to establish timestamp base
+      int64_t pending_ts_base = -1;
+      for (const auto& pf : pending_frames_during_flush) {
+        if (pf.is_keyframe) {
+          pending_ts_base = pf.timestamp;
+          break;
+        }
+      }
+      // If no keyframe, use first frame's timestamp
+      if (pending_ts_base < 0 && !pending_frames_during_flush.empty()) {
+        pending_ts_base = pending_frames_during_flush.front().timestamp;
+      }
+      
+      for (const auto& pf : pending_frames_during_flush) {
+        int64_t relative_ts = pf.timestamp;
+        if (pending_ts_base >= 0) {
+          relative_ts -= pending_ts_base;
+        }
+        if (relative_ts < 0) relative_ts = 0;
+        int64_t pts_ms = relative_ts / 1000 + prebuffer_offset;
+        
+        channel_recorder.writeVideo(pf.data.data(), pf.data.size(), pts_ms, pf.is_keyframe);
+      }
+      
+      // Update timestamp base for subsequent live frames
+      if (!pending_frames_during_flush.empty()) {
+        mp4_sample_ts_base = pending_frames_during_flush.back().timestamp;
+      }
+      
+      pending_frames_during_flush.clear();
     }
 
     bool waiting_for_idr = video_state ? video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed) : false;
     if (waiting_for_idr) {
       if (!mp4_sample_is_key) {
-        reset_mp4_sample();
+        // Reset full state including timestamp base so next frame starts fresh
+        reset_mp4_state();
         return;
       }
       int64_t required_ts = video_state ? video_state->mp4_required_idr_ts.load(std::memory_order_relaxed) : -1;
       if (required_ts >= 0 && mp4_sample_ts <= required_ts) {
-        reset_mp4_sample();
+        // Reset full state including timestamp base so next frame starts fresh
+        reset_mp4_state();
         return;
       }
+      // IDR accepted - timestamp base will be set from this frame's timestamp
+      // when the next sample is accumulated (line 316)
       video_state->mp4_waiting_for_idr.store(false, std::memory_order_relaxed);
     }
 
@@ -97,6 +199,12 @@ void VideoWorker::run() {
         relative_ts = 0;
       }
       pts_ms = relative_ts / 1000;
+      
+      // Add prebuffer offset so live frames continue after prebuffer frames
+      int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
+      if (prebuffer_offset > 0) {
+        pts_ms += prebuffer_offset;
+      }
     }
     if (mp4_sample_is_key && video_state) {
       video_state->mp4_last_idr_ts.store(mp4_sample_ts, std::memory_order_relaxed);
@@ -139,7 +247,9 @@ void VideoWorker::run() {
      * 2. a jpeg is requested
      * 3. recording explicitly forces the video loop active
      */
-    if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active) {
+    // Keep video loop active when prebuffer is enabled (even without RTSP clients)
+    bool prebuffer_active = global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled();
+    if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active || prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
@@ -381,6 +491,40 @@ void VideoWorker::run() {
             }
 #endif
           }
+          
+          // Capture frame for prebuffer if enabled
+          // This is OUTSIDE the hasDataCallback block so prebuffer works without RTSP clients
+          // Accumulate all NAL units (except SPS/PPS) into prebuffer_sample, flush on frameEnd
+          if (global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled()) {
+            // Skip SPS/PPS for prebuffer (they're in the avcC)
+            if (!(nal_is_sps || nal_is_pps) && payload_len > 0) {
+              // Set timestamp from first NAL unit of frame
+              if (prebuffer_sample_ts == -1) {
+                prebuffer_sample_ts = stream.pack[i].timestamp;
+              }
+              
+              // Mark as keyframe if any NAL is IDR
+              if (nal_is_idr || nal_is_hevc_idr) {
+                prebuffer_sample_is_key = true;
+              }
+              
+              // Append length-prefixed NAL unit (same format as MP4)
+              size_t write_offset = prebuffer_sample.size();
+              prebuffer_sample.resize(write_offset + 4 + payload_len);
+              uint8_t *dst = prebuffer_sample.data() + write_offset;
+              uint32_t be_len = static_cast<uint32_t>(payload_len);
+              dst[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
+              dst[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
+              dst[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
+              dst[3] = static_cast<uint8_t>(be_len & 0xFF);
+              std::memcpy(dst + 4, start + 4, payload_len);
+              
+              // Flush on frame end
+              if (stream.pack[i].frameEnd) {
+                flush_prebuffer_sample();
+              }
+            }
+          }
         }
 
         // Ensure final packet guarantees callback
@@ -430,7 +574,7 @@ void VideoWorker::run() {
         LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout << ") timeout !");
       }
     } else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-               !global_video[encChn]->run_for_jpeg && !global_force_video_active) {
+               !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active) {
       LOG_DDEBUG("VIDEO LOCK" << " channel:" << encChn
                               << " hasCallbackIsNull:" << (global_video[encChn]->onDataCallback == nullptr)
                               << " restartVideo:" << global_restart_video
@@ -443,8 +587,10 @@ void VideoWorker::run() {
 
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_video[encChn]->active = false;
+      // Also check prebuffer_active to prevent sleeping when prebuffer needs frames
+      bool prebuffer_active_inner = global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled();
       while (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-             !global_video[encChn]->run_for_jpeg && !global_force_video_active)
+             !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active_inner)
         global_video[encChn]->should_grab_frames.wait(lock_stream);
 
       global_video[encChn]->active = true;
@@ -500,6 +646,24 @@ void *VideoWorker::thread_entry(void *arg) {
   // inform main that initialization is complete
   sh->has_started.release();
 
+  // Initialize prebuffer if enabled
+  if (cfg->recorder.prebuffer_enabled) {
+    global_video[encChn]->prebuffer = std::make_unique<PreTriggerBuffer>();
+    int fps = global_video[encChn]->stream ? global_video[encChn]->stream->fps : 25;
+    bool init_success = global_video[encChn]->prebuffer->init(
+        cfg->recorder.prebuffer_seconds,
+        fps,
+        cfg->recorder.prebuffer_max_memory_mb,
+        cfg->recorder.prebuffer_keyframe_only
+    );
+    if (init_success) {
+      LOG_INFO("PreTriggerBuffer initialized for channel " << encChn);
+    } else {
+      LOG_WARN("Failed to initialize PreTriggerBuffer for channel " << encChn);
+      global_video[encChn]->prebuffer.reset();
+    }
+  }
+
   ret = IMP_Encoder_StartRecvPic(encChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StartRecvPic(" << encChn << ")");
   if (ret != 0)
@@ -530,6 +694,12 @@ void *VideoWorker::thread_entry(void *arg) {
   {
     std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
     global_video[encChn]->privacy_mask.reset();
+  }
+
+  // Cleanup prebuffer
+  if (global_video[encChn]->prebuffer) {
+    global_video[encChn]->prebuffer.reset();
+    LOG_DEBUG("PreTriggerBuffer cleaned up for channel " << encChn);
   }
 
   return 0;
