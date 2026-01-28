@@ -48,10 +48,12 @@ void VideoWorker::run() {
   bool mp4_waiting_frame_end = false;
   bool mp4_inserted_codec_config = false;
   
+#ifdef PREBUFFER_ENABLED
   // Prebuffer frame accumulation (similar to mp4_sample)
   std::vector<uint8_t> prebuffer_sample;
   bool prebuffer_sample_is_key = false;
   int64_t prebuffer_sample_ts = -1;
+#endif
   
   // Queue for frames that arrive during prebuffer flush
   struct PendingFrame {
@@ -254,7 +256,11 @@ void VideoWorker::run() {
      * 3. recording explicitly forces the video loop active
      */
     // Keep video loop active when prebuffer is enabled (even without RTSP clients)
+#ifdef PREBUFFER_ENABLED
     bool prebuffer_active = global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled();
+#else
+    bool prebuffer_active = false;
+#endif
     if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active || prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {

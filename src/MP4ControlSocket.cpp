@@ -516,13 +516,11 @@ bool start_recording(const std::string &path, int target_channel) {
 
   // Calculate prebuffer offset BEFORE starting recorder to prevent race condition
   // with VideoWorker writing live frames
-  int64_t prebuffer_offset_ms = 0;
 #ifdef PREBUFFER_ENABLED
+  int64_t prebuffer_offset_ms = 0;
   std::vector<PreTriggerFrame> prebuffer_frames;
   size_t first_keyframe_idx = 0;
-#endif
 
-#ifdef PREBUFFER_ENABLED
   if (cfg->recorder.prebuffer_enabled && video->prebuffer && video->prebuffer->isEnabled()) {
     prebuffer_frames = video->prebuffer->getFrames();
     if (!prebuffer_frames.empty()) {
@@ -555,6 +553,7 @@ bool start_recording(const std::string &path, int target_channel) {
   if (!prebuffer_frames.empty()) {
     video->mp4_prebuffer_flushing.store(true, std::memory_order_release);
   }
+#endif
   
   bool ok = recorder.start(path.c_str(), init);
   if (ok) {
@@ -562,6 +561,7 @@ bool start_recording(const std::string &path, int target_channel) {
     LOG_INFO("MP4ControlSocket: recorder started with avcC payload size=" << init.avcC.size() << " on channel "
                                                                           << target_channel);
     
+#ifdef PREBUFFER_ENABLED
     // Now flush prebuffer frames (recorder is active, VideoWorker will use the offset we set)
     if (!prebuffer_frames.empty()) {
       size_t frames_to_write = prebuffer_frames.size() - first_keyframe_idx;
@@ -606,6 +606,7 @@ void stop_recording(int channel) {
   if (global_video[channel]) {
     global_video[channel]->mp4_waiting_for_idr.store(false);
     
+#ifdef PREBUFFER_ENABLED
     // Clear prebuffer frames when recording stops (but keep buffer enabled)
     if (global_video[channel]->prebuffer) {
       global_video[channel]->prebuffer->clearFrames();
@@ -613,6 +614,7 @@ void stop_recording(int channel) {
     // Reset prebuffer offset and flushing flag for next recording
     global_video[channel]->mp4_prebuffer_offset_ms.store(0, std::memory_order_relaxed);
     global_video[channel]->mp4_prebuffer_flushing.store(false, std::memory_order_relaxed);
+#endif
   }
   remove_channel_state_file(channel);
 
