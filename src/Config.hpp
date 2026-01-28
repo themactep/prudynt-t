@@ -271,10 +271,12 @@ struct _recorder {
   const char *filename;
   int duration;
   int channel;
+#ifdef PREBUFFER_ENABLED
   bool prebuffer_enabled;
   int prebuffer_seconds;
   bool prebuffer_keyframe_only;
   int prebuffer_max_memory_mb;
+#endif
 };
 struct _rtsp {
   int port;

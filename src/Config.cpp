@@ -310,8 +310,10 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
       {"recorder.enabled", recorder.enabled, false, validateBool},
+#ifdef PREBUFFER_ENABLED
       {"recorder.prebuffer_enabled", recorder.prebuffer_enabled, false, validateBool},
       {"recorder.prebuffer_keyframe_only", recorder.prebuffer_keyframe_only, false, validateBool},
+#endif
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
       {"rtsp.audio_only_enabled", rtsp.audio_only_enabled, true, validateBool},
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
@@ -493,8 +495,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.roi_count", motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }},
       {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
       {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
+#ifdef PREBUFFER_ENABLED
       {"recorder.prebuffer_seconds", recorder.prebuffer_seconds, 3, [](const int &v) { return v >= 1 && v <= 10; }},
       {"recorder.prebuffer_max_memory_mb", recorder.prebuffer_max_memory_mb, 2, [](const int &v) { return v >= 1 && v <= 8; }},
+#endif
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
       {"rtsp.out_buffer_size", rtsp.out_buffer_size, 500000, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},

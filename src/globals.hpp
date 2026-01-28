@@ -8,7 +8,9 @@
 #include "IMPFramesource.hpp"
 #include "MP4Recorder.hpp"
 #include "MsgChannel.hpp"
+#ifdef PREBUFFER_ENABLED
 #include "PreTriggerBuffer.hpp"
+#endif
 #include "liveMedia.hh"
 
 #include <algorithm>
@@ -229,8 +231,10 @@ struct video_stream {
   std::shared_ptr<VideoPrivacyMask> privacy_mask;
   std::atomic<bool> privacy_requested{false};
   
+#ifdef PREBUFFER_ENABLED
   // Pre-trigger buffer for MP4 recording
   std::unique_ptr<PreTriggerBuffer> prebuffer;
+#endif
 
   video_stream(int encChn, _stream *stream, const char *name)
       : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0), imp_encoder(nullptr),

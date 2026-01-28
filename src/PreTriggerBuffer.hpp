@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef PREBUFFER_ENABLED
+
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -55,3 +57,5 @@ private:
     void enforceTimeLimit(int64_t newest_timestamp);
     void reduceBufferSize();
 };
+
+#endif // PREBUFFER_ENABLED

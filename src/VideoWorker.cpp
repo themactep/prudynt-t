@@ -76,6 +76,7 @@ void VideoWorker::run() {
     mp4_inserted_codec_config = false;
   };
   
+#ifdef PREBUFFER_ENABLED
   auto reset_prebuffer_sample = [&]() {
     prebuffer_sample.clear();
     prebuffer_sample_is_key = false;
@@ -96,6 +97,7 @@ void VideoWorker::run() {
     );
     reset_prebuffer_sample();
   };
+#endif
 
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
@@ -107,7 +109,9 @@ void VideoWorker::run() {
     
     if (!recorder_active) {
       if (was_recorder_active) {
+#ifdef PREBUFFER_ENABLED
         pending_frames_during_flush.clear();  // Clear pending frames
+#endif
       }
       was_recorder_active = false;
       reset_mp4_sample();
@@ -120,6 +124,7 @@ void VideoWorker::run() {
       return;
     }
     
+#ifdef PREBUFFER_ENABLED
     // Queue frames while prebuffer is being flushed (instead of skipping)
     if (video_state && video_state->mp4_prebuffer_flushing.load(std::memory_order_acquire)) {
       // Queue this frame for later
@@ -170,6 +175,7 @@ void VideoWorker::run() {
       
       pending_frames_during_flush.clear();
     }
+#endif
 
     bool waiting_for_idr = video_state ? video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed) : false;
     if (waiting_for_idr) {
@@ -492,6 +498,7 @@ void VideoWorker::run() {
 #endif
           }
           
+#ifdef PREBUFFER_ENABLED
           // Capture frame for prebuffer if enabled
           // This is OUTSIDE the hasDataCallback block so prebuffer works without RTSP clients
           // Accumulate all NAL units (except SPS/PPS) into prebuffer_sample, flush on frameEnd
@@ -525,6 +532,7 @@ void VideoWorker::run() {
               }
             }
           }
+#endif
         }
 
         // Ensure final packet guarantees callback
@@ -588,7 +596,11 @@ void VideoWorker::run() {
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_video[encChn]->active = false;
       // Also check prebuffer_active to prevent sleeping when prebuffer needs frames
+#ifdef PREBUFFER_ENABLED
       bool prebuffer_active_inner = global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled();
+#else
+      bool prebuffer_active_inner = false;
+#endif
       while (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
              !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active_inner)
         global_video[encChn]->should_grab_frames.wait(lock_stream);
@@ -646,6 +658,7 @@ void *VideoWorker::thread_entry(void *arg) {
   // inform main that initialization is complete
   sh->has_started.release();
 
+#ifdef PREBUFFER_ENABLED
   // Initialize prebuffer if enabled
   if (cfg->recorder.prebuffer_enabled) {
     global_video[encChn]->prebuffer = std::make_unique<PreTriggerBuffer>();
@@ -663,6 +676,7 @@ void *VideoWorker::thread_entry(void *arg) {
       global_video[encChn]->prebuffer.reset();
     }
   }
+#endif
 
   ret = IMP_Encoder_StartRecvPic(encChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StartRecvPic(" << encChn << ")");
@@ -696,11 +710,13 @@ void *VideoWorker::thread_entry(void *arg) {
     global_video[encChn]->privacy_mask.reset();
   }
 
+#ifdef PREBUFFER_ENABLED
   // Cleanup prebuffer
   if (global_video[encChn]->prebuffer) {
     global_video[encChn]->prebuffer.reset();
     LOG_DEBUG("PreTriggerBuffer cleaned up for channel " << encChn);
   }
+#endif
 
   return 0;
 }

@@ -517,9 +517,12 @@ bool start_recording(const std::string &path, int target_channel) {
   // Calculate prebuffer offset BEFORE starting recorder to prevent race condition
   // with VideoWorker writing live frames
   int64_t prebuffer_offset_ms = 0;
+#ifdef PREBUFFER_ENABLED
   std::vector<PreTriggerFrame> prebuffer_frames;
   size_t first_keyframe_idx = 0;
-  
+#endif
+
+#ifdef PREBUFFER_ENABLED
   if (cfg->recorder.prebuffer_enabled && video->prebuffer && video->prebuffer->isEnabled()) {
     prebuffer_frames = video->prebuffer->getFrames();
     if (!prebuffer_frames.empty()) {
@@ -581,6 +584,7 @@ bool start_recording(const std::string &path, int target_channel) {
       // Allow live frames to be written now
       video->mp4_prebuffer_flushing.store(false, std::memory_order_release);
     }
+#endif
   } else {
     reset_wait_state();
     disable_force_if_idle();

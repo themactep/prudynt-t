@@ -1,3 +1,5 @@
+#ifdef PREBUFFER_ENABLED
+
 #include "PreTriggerBuffer.hpp"
 #include "Logger.hpp"
 #include <algorithm>
@@ -208,3 +210,5 @@ void PreTriggerBuffer::reduceBufferSize() {
     
     LOG_INFO("PreTriggerBuffer capacity reduced, current frames: " << frames_.size());
 }
+
+#endif // PREBUFFER_ENABLED
