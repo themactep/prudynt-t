@@ -33,6 +33,14 @@ ifeq ($(USE_WEBSOCKETS),1)
 override CFLAGS        += -DWEBSOCKET_ENABLED
 endif
 
+# Pre-trigger buffer support
+# ---------------------------
+USE_PREBUFFER          ?= 1
+
+ifeq ($(USE_PREBUFFER),1)
+override CFLAGS        += -DPREBUFFER_ENABLED
+endif
+
 ifeq ($(USE_WEBSOCKETS),1)
 WEBSOCKET_LIB_STATIC_LINE = -l:libwebsockets.a
 WEBSOCKET_LIB_HYBRID_LINE = -l:libwebsockets.so
