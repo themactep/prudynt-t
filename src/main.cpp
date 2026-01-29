@@ -42,14 +42,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <dlfcn.h>
-
-// execinfo.h is only available on glibc, not uclibc/musl
-#if !defined(LIBC_UCLIBC) && !defined(LIBC_MUSL)
 #include <execinfo.h>
-#define HAS_BACKTRACE 1
-#else
-#define HAS_BACKTRACE 0
-#endif
 
 using namespace std::chrono;
 
@@ -327,11 +320,10 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
       safe_write(crash_fd, "\n");
     }
   }
-#else
-  safe_write(crash_fd, "\nBacktrace: (not available - execinfo.h not found)\n");
-  safe_write(crash_fd, "To get a backtrace, enable core dumps with 'ulimit -c unlimited'\n");
-  safe_write(crash_fd, "and use 'gdb /usr/bin/prudynt core' to analyze the crash.\n");
 #endif
+
+  safe_write(crash_fd, "\n=== END CRASH REPORT ===\n");
+
   // Also write to stderr
   if (crash_fd != STDERR_FILENO) {
     safe_write(STDERR_FILENO, "\nPrudynt crashed! Crash report saved to ");
