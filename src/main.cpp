@@ -37,8 +37,19 @@
 #include <signal.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/ucontext.h>
 #include <thread>
 #include <unistd.h>
+#include <time.h>
+#include <dlfcn.h>
+
+// execinfo.h is only available on glibc, not uclibc/musl
+#if !defined(LIBC_UCLIBC) && !defined(LIBC_MUSL)
+#include <execinfo.h>
+#define HAS_BACKTRACE 1
+#else
+#define HAS_BACKTRACE 0
+#endif
 
 using namespace std::chrono;
 
@@ -153,6 +164,197 @@ struct InstanceLockGuard {
 namespace {
 sigset_t shutdown_signal_set;
 
+// Helper to write strings safely in signal handler
+static void safe_write(int fd, const char* str) {
+  write(fd, str, strlen(str));
+}
+
+// Helper to write hex value safely
+static void safe_write_hex(int fd, unsigned long val) {
+  char buf[20];
+  char* p = buf + sizeof(buf) - 1;
+  *p = '\0';
+  if (val == 0) {
+    *(--p) = '0';
+  } else {
+    while (val > 0 && p > buf) {
+      unsigned int digit = val & 0xf;
+      *(--p) = digit < 10 ? '0' + digit : 'a' + (digit - 10);
+      val >>= 4;
+    }
+  }
+  safe_write(fd, p);
+}
+
+// Enhanced crash handler with diagnostics
+void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
+  constexpr const char *kCrashReportPath = "/tmp/prudynt_crash.log";
+
+  // Open crash report file
+  int crash_fd = open(kCrashReportPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (crash_fd < 0) {
+    crash_fd = STDERR_FILENO;
+  }
+
+  // Get timestamp
+  time_t now = time(nullptr);
+  char timebuf[64];
+  struct tm tm_info;
+  localtime_r(&now, &tm_info);
+  strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", &tm_info);
+
+  // Write crash header
+  safe_write(crash_fd, "\n=== PRUDYNT CRASH REPORT ===\n");
+  safe_write(crash_fd, "Timestamp: ");
+  safe_write(crash_fd, timebuf);
+  safe_write(crash_fd, "\nVersion: " FULL_VERSION_STRING "\n");
+  safe_write(crash_fd, "PID: ");
+  safe_write_hex(crash_fd, getpid());
+  safe_write(crash_fd, "\n\n");
+
+  // Signal information
+  safe_write(crash_fd, "Signal: ");
+  const char *signame = "UNKNOWN";
+  switch (sig) {
+    case SIGSEGV: signame = "SIGSEGV (Segmentation fault)"; break;
+    case SIGABRT: signame = "SIGABRT (Abort)"; break;
+    case SIGILL:  signame = "SIGILL (Illegal instruction)"; break;
+    case SIGFPE:  signame = "SIGFPE (Floating point exception)"; break;
+    case SIGBUS:  signame = "SIGBUS (Bus error)"; break;
+  }
+  safe_write(crash_fd, signame);
+  safe_write(crash_fd, "\n");
+
+  // Signal details
+  if (info) {
+    safe_write(crash_fd, "Signal code: ");
+    safe_write_hex(crash_fd, info->si_code);
+
+    if (sig == SIGILL) {
+      safe_write(crash_fd, " (");
+      switch (info->si_code) {
+        case ILL_ILLOPC: safe_write(crash_fd, "illegal opcode"); break;
+        case ILL_ILLOPN: safe_write(crash_fd, "illegal operand"); break;
+        case ILL_ILLADR: safe_write(crash_fd, "illegal addressing mode"); break;
+        case ILL_ILLTRP: safe_write(crash_fd, "illegal trap"); break;
+        case ILL_PRVOPC: safe_write(crash_fd, "privileged opcode"); break;
+        case ILL_PRVREG: safe_write(crash_fd, "privileged register"); break;
+        case ILL_COPROC: safe_write(crash_fd, "coprocessor error"); break;
+        case ILL_BADSTK: safe_write(crash_fd, "internal stack error"); break;
+        default: safe_write(crash_fd, "unknown"); break;
+      }
+      safe_write(crash_fd, ")");
+    } else if (sig == SIGSEGV) {
+      safe_write(crash_fd, " (");
+      switch (info->si_code) {
+        case SEGV_MAPERR: safe_write(crash_fd, "address not mapped"); break;
+        case SEGV_ACCERR: safe_write(crash_fd, "invalid permissions"); break;
+        default: safe_write(crash_fd, "unknown"); break;
+      }
+      safe_write(crash_fd, ")");
+    }
+    safe_write(crash_fd, "\n");
+
+    safe_write(crash_fd, "Fault address: 0x");
+    safe_write_hex(crash_fd, (unsigned long)info->si_addr);
+    safe_write(crash_fd, "\n");
+  }
+
+  // Program counter and registers (MIPS-specific)
+  if (context) {
+    ucontext_t *uc = (ucontext_t *)context;
+    safe_write(crash_fd, "\nRegisters:\n");
+
+#if defined(__mips__)
+    // MIPS register access
+    safe_write(crash_fd, "PC (Instruction Address): 0x");
+    safe_write_hex(crash_fd, uc->uc_mcontext.pc);
+    safe_write(crash_fd, "\n");
+
+    safe_write(crash_fd, "SP (Stack Pointer): 0x");
+    safe_write_hex(crash_fd, uc->uc_mcontext.gregs[29]);
+    safe_write(crash_fd, "\n");
+
+    safe_write(crash_fd, "RA (Return Address): 0x");
+    safe_write_hex(crash_fd, uc->uc_mcontext.gregs[31]);
+    safe_write(crash_fd, "\n");
+#elif defined(__arm__)
+    safe_write(crash_fd, "PC: 0x");
+    safe_write_hex(crash_fd, uc->uc_mcontext.arm_pc);
+    safe_write(crash_fd, "\n");
+    safe_write(crash_fd, "SP: 0x");
+    safe_write_hex(crash_fd, uc->uc_mcontext.arm_sp);
+    safe_write(crash_fd, "\n");
+    safe_write(crash_fd, "LR: 0x");
+    safe_write_hex(crash_fd, uc->uc_mcontext.arm_lr);
+    safe_write(crash_fd, "\n");
+#else
+    safe_write(crash_fd, "(register dump not available for this architecture)\n");
+#endif
+  }
+
+  // Backtrace
+#if HAS_BACKTRACE
+  safe_write(crash_fd, "\nBacktrace:\n");
+  void *backtrace_buffer[64];
+  int frame_count = backtrace(backtrace_buffer, 64);
+
+  // backtrace_symbols is not async-signal-safe, but we're crashing anyway
+  // and we need the information. We'll use backtrace_symbols_fd which writes directly.
+  backtrace_symbols_fd(backtrace_buffer, frame_count, crash_fd);
+
+  // Try to resolve symbols using dladdr (also not async-signal-safe, but informative)
+  safe_write(crash_fd, "\nDetailed backtrace:\n");
+  for (int i = 0; i < frame_count; i++) {
+    Dl_info dlinfo;
+    if (dladdr(backtrace_buffer[i], &dlinfo)) {
+      safe_write(crash_fd, "#");
+      safe_write_hex(crash_fd, i);
+      safe_write(crash_fd, " 0x");
+      safe_write_hex(crash_fd, (unsigned long)backtrace_buffer[i]);
+      safe_write(crash_fd, " in ");
+      if (dlinfo.dli_sname) {
+        safe_write(crash_fd, dlinfo.dli_sname);
+      } else {
+        safe_write(crash_fd, "???");
+      }
+      safe_write(crash_fd, " from ");
+      if (dlinfo.dli_fname) {
+        safe_write(crash_fd, dlinfo.dli_fname);
+      } else {
+        safe_write(crash_fd, "???");
+      }
+      safe_write(crash_fd, "\n");
+    }
+  }
+#else
+  safe_write(crash_fd, "\nBacktrace: (not available - execinfo.h not found)\n");
+  safe_write(crash_fd, "To get a backtrace, enable core dumps with 'ulimit -c unlimited'\n");
+  safe_write(crash_fd, "and use 'gdb /usr/bin/prudynt core' to analyze the crash.\n");
+#endif
+  // Also write to stderr
+  if (crash_fd != STDERR_FILENO) {
+    safe_write(STDERR_FILENO, "\nPrudynt crashed! Crash report saved to ");
+    safe_write(STDERR_FILENO, kCrashReportPath);
+    safe_write(STDERR_FILENO, "\n");
+    safe_write(STDERR_FILENO, "Signal: ");
+    safe_write(STDERR_FILENO, signame);
+    if (info) {
+      safe_write(STDERR_FILENO, " at address 0x");
+      safe_write_hex(STDERR_FILENO, (unsigned long)info->si_addr);
+    }
+    safe_write(STDERR_FILENO, "\n");
+    close(crash_fd);
+  }
+
+  // Release the instance lock
+  release_instance_lock();
+
+  // Re-raise the signal with default handler to generate core dump if enabled
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
 void *shutdown_signal_thread(void *arg) {
   sigset_t local_set = *static_cast<sigset_t *>(arg);
   int received_signal = 0;
@@ -237,6 +439,19 @@ int main(int argc, const char *argv[]) {
     LOG_ERROR("Prudynt is already running. Exiting.");
     return 1;
   }
+
+  // Install crash signal handlers to clean up lock file and collect diagnostics on abnormal termination
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_sigaction = crash_signal_handler_extended;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_SIGINFO | SA_RESETHAND; // Get detailed signal info, reset to default after first invocation
+
+  sigaction(SIGSEGV, &sa, nullptr); // Segmentation fault
+  sigaction(SIGABRT, &sa, nullptr); // Abort signal
+  sigaction(SIGILL, &sa, nullptr);  // Illegal instruction
+  sigaction(SIGFPE, &sa, nullptr);  // Floating point exception
+  sigaction(SIGBUS, &sa, nullptr);  // Bus error
 
   sigemptyset(&shutdown_signal_set);
   sigaddset(&shutdown_signal_set, SIGINT);
