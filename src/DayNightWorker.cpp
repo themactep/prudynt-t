@@ -601,30 +601,36 @@ void *thread_entry(void *arg) {
 
     // Apply initial mode if not set - infer from current sensor readings
     if (!initial_mode_applied) {
-      DayNightAlgo::Mode initial = DayNightAlgo::Mode::Day;
+      DayNightAlgo::Mode initial = DayNightAlgo::Mode::Unknown;
       
       // Infer initial mode from sensor readings to avoid black screen on boot in dark conditions
       if (total_gain >= 0) {
         // Use total_gain if available
         if (total_gain > simple_params.total_gain_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
+        } else if (total_gain < simple_params.total_gain_day_threshold) {
+          initial = DayNightAlgo::Mode::Day;
         }
       } else if (ev >= 0) {
         // Fallback to EV for platforms without total_gain
         if (ev > simple_params.ev_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
+        } else if (ev < simple_params.ev_day_threshold) {
+          initial = DayNightAlgo::Mode::Day;
         }
       }
       
-      apply_mode(initial);
-      current = initial;
-      simple_state.is_night = (current == DayNightAlgo::Mode::Night);
-      cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                    std::memory_order_relaxed);
-      initial_mode_applied = true;
-      if (daynight_should_log(Logger::INFO)) {
-        LOG_INFO("DayNight: applied initial mode " << (current == DayNightAlgo::Mode::Day ? "day" : "night")
-                 << " (total_gain=" << total_gain << ", ev=" << ev << ")");
+      if (initial != DayNightAlgo::Mode::Unknown) {
+        apply_mode(initial);
+        current = initial;
+        simple_state.is_night = (current == DayNightAlgo::Mode::Night);
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
+                                      std::memory_order_relaxed);
+        initial_mode_applied = true;
+        if (daynight_should_log(Logger::INFO)) {
+          LOG_INFO("DayNight: applied initial mode " << (current == DayNightAlgo::Mode::Day ? "day" : "night")
+                   << " (total_gain=" << total_gain << ", ev=" << ev << ")");
+        }
       }
     }
 
