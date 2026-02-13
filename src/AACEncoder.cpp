@@ -74,6 +74,15 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
     LOG_ERROR("Input: " << frameSamples << " samples (" << data->len << " bytes), expected: " << inputSamples);
     LOG_ERROR("Audio config: rate=" << sampleRate << "Hz, channels=" << numChn << ", bitrate=" << cfg->audio.input_bitrate << "kbps");
     LOG_ERROR("This usually indicates sample count mismatch or invalid audio configuration");
+
+    // Attempt recovery: reinitialize encoder
+    LOG_WARN("Attempting to reinitialize AAC encoder...");
+    close();
+    if (open() == 0) {
+      LOG_INFO("AAC encoder successfully reinitialized");
+    } else {
+      LOG_ERROR("Failed to reinitialize AAC encoder - audio encoding will fail");
+    }
     return -1;
   }
 
