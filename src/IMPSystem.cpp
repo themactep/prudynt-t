@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include "imp_hal.hpp"
 #include <fstream>
+#include <unistd.h>
 
 #define MODULE "IMP_SYSTEM"
 
@@ -19,6 +20,29 @@ bool read_int_from_file(const char *path, int &value_out) {
   }
   value_out = value;
   return true;
+}
+
+bool wait_for_sensor_resolution(int max_retries = 10, int delay_ms = 50) {
+  constexpr const char *kSensorWidthPath = "/proc/jz/sensor/width";
+  constexpr const char *kSensorHeightPath = "/proc/jz/sensor/height";
+
+  for (int i = 0; i < max_retries; ++i) {
+    int width = 0, height = 0;
+    if (read_int_from_file(kSensorWidthPath, width) &&
+        read_int_from_file(kSensorHeightPath, height) &&
+        width > 0 && height > 0) {
+      LOG_DEBUG("Sensor resolution detected: " << width << "x" << height << " (attempt " << (i + 1) << ")");
+      return true;
+    }
+
+    if (i < max_retries - 1) {
+      LOG_DEBUG("Waiting for sensor resolution to be available (attempt " << (i + 1) << "/" << max_retries << ")");
+      usleep(delay_ms * 1000); // usleep takes microseconds
+    }
+  }
+
+  LOG_ERROR("Sensor resolution not detected after " << max_retries << " attempts");
+  return false;
 }
 
 void refresh_sensor_properties_from_proc() {
@@ -151,13 +175,13 @@ IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name) {
   out.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
   strcpy(out.i2c.type, cfg->sensor.model);
   out.i2c.addr = cfg->sensor.i2c_address;
+  out.i2c.i2c_adapter_id = cfg->sensor.i2c_bus;
+  out.rst_gpio = cfg->sensor.gpio_reset;
+  out.pwdn_gpio = static_cast<unsigned short>(-1);
+  out.power_gpio = static_cast<unsigned short>(-1);
 
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   // Additional fields required for T40/T41 platforms
-  out.i2c.i2c_adapter_id = cfg->sensor.i2c_bus;
-  out.rst_gpio = cfg->sensor.gpio_reset;
-  out.pwdn_gpio = -1;
-  out.power_gpio = -1;
   out.sensor_id = 0;
   out.video_interface = static_cast<IMPSensorVinType>(cfg->sensor.video_interface);
   out.mclk = static_cast<IMPSensorMclk>(cfg->sensor.mclk);
@@ -202,6 +226,17 @@ int IMPSystem::init() {
 
   ret = hal::isp::enable_sensor(&sinfo);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::enable_sensor(&sinfo)");
+
+  // Wait for sensor to initialize and populate procfs files
+  // Some sensors (like sc3332) need time after enable before procfs is ready
+  if (!wait_for_sensor_resolution()) {
+    LOG_ERROR("Sensor failed to initialize properly - resolution is 0x0");
+    LOG_ERROR("This may indicate:");
+    LOG_ERROR("  1. Sensor driver not properly loaded");
+    LOG_ERROR("  2. Sensor hardware connection issue");
+    LOG_ERROR("  3. Incompatible sensor driver");
+    // Continue anyway in case sensor properties were set from config
+  }
 
   // Refresh sensor properties again after sensor is enabled
   // This updates actual_fps and max_fps based on the resolution mode selected by the sensor driver
