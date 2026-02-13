@@ -259,7 +259,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     if (mp4_audio_sample_rate > 0) {
       pts_ms = (mp4_audio_samples[ch] * 1000) / mp4_audio_sample_rate;
     }
-    
+
     if (frame_len > 0) {
       recorder.writeAudio(start, frame_len, pts_ms);
     }
@@ -276,13 +276,6 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
       if (global_audio[encChn]->onDataCallback)
         global_audio[encChn]->onDataCallback();
-      
-      // Check buffer utilization and warn if getting full
-      size_t buf_size = global_audio[encChn]->msgChannel->size();
-      if (buf_size >= static_cast<size_t>(cfg->audio.buffer_warn_frames)) {
-        LOG_WARN("Audio buffer high: " << buf_size << "/" << cfg->audio.buffer_cap_frames 
-                 << " frames - RTSP client may not be consuming fast enough");
-      }
     }
     std::vector<AudioTapEntry> taps_copy;
     {
