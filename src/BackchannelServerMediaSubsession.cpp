@@ -48,6 +48,7 @@ char const *BackchannelServerMediaSubsession::sdpLines(int /*addressFamily*/) {
     LOG_DEBUG("Generating SDP for " << formatName << " (Payload Type: " << payloadType << ")");
 
     std::string fmtpLine = "";
+#if defined(USE_AAC) && USE_AAC
     if (fFormat == IMPBackchannelFormat::AAC) {
       char fmtpBuf[150];
       snprintf(fmtpBuf, sizeof(fmtpBuf),
@@ -57,6 +58,7 @@ char const *BackchannelServerMediaSubsession::sdpLines(int /*addressFamily*/) {
                payloadType, frequency);
       fmtpLine = fmtpBuf;
     }
+#endif
 
     snprintf(fSDPLines, sdpLinesSize,
              "m=audio 0 RTP/AVP %d\r\n"
@@ -307,9 +309,11 @@ void BackchannelServerMediaSubsession::getRTPSinkandRTCP(void *streamToken, RTPS
 }
 
 int BackchannelServerMediaSubsession::estimatedBitrate() {
+#if defined(USE_AAC) && USE_AAC
   if (fFormat == IMPBackchannelFormat::AAC) {
     return cfg->audio.output_sample_rate / 667;
   }
+#endif
   return 64;
 }
 

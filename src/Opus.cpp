@@ -1,4 +1,6 @@
 #include "Opus.hpp"
+
+#if defined(USE_OPUS) && USE_OPUS
 #include "Config.hpp"
 #include "Logger.hpp"
 
@@ -59,3 +61,4 @@ int Opus::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
 
   return 0;
 }
+#endif

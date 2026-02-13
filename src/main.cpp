@@ -42,7 +42,9 @@
 #include <unistd.h>
 #include <time.h>
 #include <dlfcn.h>
+#if defined(HAS_BACKTRACE) && HAS_BACKTRACE
 #include <execinfo.h>
+#endif
 
 using namespace std::chrono;
 
@@ -287,7 +289,7 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
   }
 
   // Backtrace
-#if HAS_BACKTRACE
+#if defined(HAS_BACKTRACE) && HAS_BACKTRACE
   safe_write(crash_fd, "\nBacktrace:\n");
   void *backtrace_buffer[64];
   int frame_count = backtrace(backtrace_buffer, 64);

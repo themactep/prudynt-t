@@ -1,7 +1,11 @@
 #include "IMPAudio.hpp"
+#if defined(USE_AAC) && USE_AAC
 #include "AACEncoder.hpp"
+#endif
 #include "Config.hpp"
+#if defined(USE_OPUS) && USE_OPUS
 #include "Opus.hpp"
+#endif
 #include "imp_hal.hpp"
 #include <cctype>
 #include <cerrno>
@@ -48,13 +52,21 @@ int IMPAudio::init() {
   outChnCnt = cfg->audio.force_stereo ? 2 : 1;
 
   if (strcmp(cfg->audio.input_format, "OPUS") == 0) {
+#if defined(USE_OPUS) && USE_OPUS
     format = IMPAudioFormat::OPUS;
     bitrate = cfg->audio.input_bitrate;
     encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
+#else
+    LOG_ERROR("OPUS input_format requested but OPUS support is disabled at build time.");
+#endif
   } else if (strcmp(cfg->audio.input_format, "AAC") == 0) {
+#if defined(USE_AAC) && USE_AAC
     format = IMPAudioFormat::AAC;
     bitrate = cfg->audio.input_bitrate;
     encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);
+#else
+    LOG_ERROR("AAC input_format requested but AAC support is disabled at build time.");
+#endif
   } else if (strcmp(cfg->audio.input_format, "G711A") == 0) {
     outChnCnt = 1; // G711A is mono
     format = IMPAudioFormat::G711A;

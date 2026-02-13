@@ -2,6 +2,8 @@
 #define OPUS_ENCODER_HPP
 
 #include "IMPAudio.hpp"
+
+#if defined(USE_OPUS) && USE_OPUS
 #include <opus/opus.h>
 
 class Opus : public IMPAudioEncoder {
@@ -21,5 +23,6 @@ private:
   int numChn;
   OpusEncoder *encoder;
 };
+#endif
 
 #endif // OPUS_ENCODER_HPP

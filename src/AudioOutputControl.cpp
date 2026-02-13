@@ -32,9 +32,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#if defined(USE_AAC) && USE_AAC
 #include <aaccommon.h>
 #include <aacdec.h>
+#endif
 
+#if defined(USE_MP3) && USE_MP3
 #ifndef ARDUINO
 #define AUDIO_OUTPUT_CONTROL_DEFINED_ARDUINO
 #define ARDUINO
@@ -44,9 +47,15 @@
 #undef ARDUINO
 #undef AUDIO_OUTPUT_CONTROL_DEFINED_ARDUINO
 #endif
+#endif
 
+#if defined(USE_FLAC) && USE_FLAC
 #include <FLAC/stream_decoder.h>
+#endif
+
+#if defined(USE_OPUS) && USE_OPUS
 #include <opus/opus.h>
+#endif
 
 #define MODULE "AudioOutputControl"
 
@@ -337,6 +346,7 @@ bool readWavFile(const std::string &path, WavPayload &payload) {
   return !payload.samples.empty();
 }
 
+#if defined(USE_AAC) && USE_AAC
 struct AdtsHeader {
   int frameLength{0};
   int sampleRate{0};
@@ -522,7 +532,14 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples, int &
 
   return true;
 }
+#else
+bool decodeAacFile(const std::string &path, std::vector<int16_t> & /*samples*/, int & /*sampleRate*/) {
+  LOG_ERROR("AudioOutputControl: AAC support is disabled at build time (" << path << ")");
+  return false;
+}
+#endif
 
+#if defined(USE_MP3) && USE_MP3
 bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples, int &sampleRate) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {
@@ -642,6 +659,12 @@ bool decodeMp3File(const std::string &path, std::vector<int16_t> &samples, int &
 
   return true;
 }
+#else
+bool decodeMp3File(const std::string &path, std::vector<int16_t> & /*samples*/, int & /*sampleRate*/) {
+  LOG_ERROR("AudioOutputControl: MP3 support is disabled at build time (" << path << ")");
+  return false;
+}
+#endif
 
 AudioFileFormat inferFormatFromExtension(const std::string &path) {
   auto stripQuery = [](std::string value) {
@@ -695,6 +718,7 @@ bool fileLooksLikeWav(std::ifstream &file) {
   return std::memcmp(header.data(), "RIFF", 4) == 0 && std::memcmp(header.data() + 8, "WAVE", 4) == 0;
 }
 
+#if defined(USE_AAC) && USE_AAC
 bool fileLooksLikeAac(std::ifstream &file) {
   std::array<uint8_t, 7> header{};
   file.read(reinterpret_cast<char *>(header.data()), static_cast<std::streamsize>(header.size()));
@@ -704,7 +728,13 @@ bool fileLooksLikeAac(std::ifstream &file) {
   AdtsHeader adts{};
   return parseAdtsHeader(header.data(), header.size(), adts);
 }
+#else
+bool fileLooksLikeAac(std::ifstream & /*file*/) {
+  return false;
+}
+#endif
 
+#if defined(USE_OPUS) && USE_OPUS
 bool fileLooksLikeOpus(std::ifstream &file) {
   char capture[4];
   if (!file.read(capture, sizeof(capture))) {
@@ -764,7 +794,13 @@ bool fileLooksLikeOpus(std::ifstream &file) {
 
   return packet.size() >= 8 && std::memcmp(packet.data(), "OpusHead", 8) == 0;
 }
+#else
+bool fileLooksLikeOpus(std::ifstream & /*file*/) {
+  return false;
+}
+#endif
 
+#if defined(USE_MP3) && USE_MP3
 bool fileLooksLikeMp3(std::ifstream &file) {
   std::array<char, 3> signature{};
   file.read(signature.data(), static_cast<std::streamsize>(signature.size()));
@@ -785,7 +821,13 @@ bool fileLooksLikeMp3(std::ifstream &file) {
   }
   return MP3FindSyncWord(buffer.data(), static_cast<int>(readBytes)) >= 0;
 }
+#else
+bool fileLooksLikeMp3(std::ifstream & /*file*/) {
+  return false;
+}
+#endif
 
+#if defined(USE_FLAC) && USE_FLAC
 bool fileLooksLikeFlac(std::ifstream &file) {
   std::array<char, 4> marker{};
   file.read(marker.data(), static_cast<std::streamsize>(marker.size()));
@@ -794,6 +836,11 @@ bool fileLooksLikeFlac(std::ifstream &file) {
   }
   return std::memcmp(marker.data(), "fLaC", 4) == 0;
 }
+#else
+bool fileLooksLikeFlac(std::ifstream & /*file*/) {
+  return false;
+}
+#endif
 
 AudioFileFormat detectFormatFromContent(const std::string &path) {
   std::ifstream file(path, std::ios::binary);
@@ -847,6 +894,7 @@ bool bufferLooksLikeWav(const std::vector<uint8_t> &buffer) {
          std::memcmp(buffer.data() + 8, "WAVE", 4) == 0;
 }
 
+#if defined(USE_AAC) && USE_AAC
 bool bufferLooksLikeAac(const std::vector<uint8_t> &buffer) {
   if (buffer.size() < 7) {
     return false;
@@ -854,7 +902,13 @@ bool bufferLooksLikeAac(const std::vector<uint8_t> &buffer) {
   AdtsHeader header{};
   return parseAdtsHeader(buffer.data(), buffer.size(), header);
 }
+#else
+bool bufferLooksLikeAac(const std::vector<uint8_t> & /*buffer*/) {
+  return false;
+}
+#endif
 
+#if defined(USE_OPUS) && USE_OPUS
 bool bufferLooksLikeOpus(const std::vector<uint8_t> &buffer) {
   if (buffer.size() < 36) {
     return false;
@@ -870,11 +924,23 @@ bool bufferLooksLikeOpus(const std::vector<uint8_t> &buffer) {
   }
   return false;
 }
+#else
+bool bufferLooksLikeOpus(const std::vector<uint8_t> & /*buffer*/) {
+  return false;
+}
+#endif
 
+#if defined(USE_FLAC) && USE_FLAC
 bool bufferLooksLikeFlac(const std::vector<uint8_t> &buffer) {
   return buffer.size() >= 4 && std::memcmp(buffer.data(), "fLaC", 4) == 0;
 }
+#else
+bool bufferLooksLikeFlac(const std::vector<uint8_t> & /*buffer*/) {
+  return false;
+}
+#endif
 
+#if defined(USE_MP3) && USE_MP3
 bool bufferLooksLikeMp3(const std::vector<uint8_t> &buffer) {
   if (buffer.size() >= 3 && std::memcmp(buffer.data(), "ID3", 3) == 0) {
     return true;
@@ -886,6 +952,11 @@ bool bufferLooksLikeMp3(const std::vector<uint8_t> &buffer) {
   int sync = MP3FindSyncWord(const_cast<unsigned char *>(ptr), static_cast<int>(buffer.size()));
   return sync >= 0;
 }
+#else
+bool bufferLooksLikeMp3(const std::vector<uint8_t> & /*buffer*/) {
+  return false;
+}
+#endif
 
 std::optional<AudioFileFormat> detectFormatFromBuffer(const std::vector<uint8_t> &buffer) {
   if (bufferLooksLikeAac(buffer)) {
@@ -919,6 +990,7 @@ uint32_t readLe32(const unsigned char *data) {
          (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
 }
 
+#if defined(USE_FLAC) && USE_FLAC
 const char *flacInitStatusName(FLAC__StreamDecoderInitStatus status) {
   switch (status) {
   case FLAC__STREAM_DECODER_INIT_STATUS_OK:
@@ -1148,7 +1220,14 @@ bool decodeFlacFile(const std::string &path, std::vector<int16_t> &samples, int 
 
   return true;
 }
+#else
+bool decodeFlacFile(const std::string &path, std::vector<int16_t> & /*samples*/, int & /*sampleRate*/) {
+  LOG_ERROR("AudioOutputControl: FLAC support is disabled at build time (" << path << ")");
+  return false;
+}
+#endif
 
+#if defined(USE_OPUS) && USE_OPUS
 bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples, int &sampleRate) {
   constexpr int kOpusSampleRate = 48000;
   constexpr int kMaxOpusChannels = 2;
@@ -1349,6 +1428,12 @@ bool decodeOpusFile(const std::string &path, std::vector<int16_t> &samples, int 
 
   return true;
 }
+#else
+bool decodeOpusFile(const std::string &path, std::vector<int16_t> & /*samples*/, int & /*sampleRate*/) {
+  LOG_ERROR("AudioOutputControl: Opus support is disabled at build time (" << path << ")");
+  return false;
+}
+#endif
 
 std::vector<int16_t> resampleLinear(const std::vector<int16_t> &input, int inputRate, int outputRate) {
   if (inputRate == outputRate || input.empty()) {
@@ -1683,6 +1768,7 @@ private:
   std::vector<int16_t> decode_;
 };
 
+#if defined(USE_AAC) && USE_AAC
 class StreamingAacDecoder : public StreamingDecoder {
 public:
   explicit StreamingAacDecoder(AudioStreamSink &sink) : StreamingDecoder(sink) {
@@ -1817,7 +1903,9 @@ private:
   static constexpr size_t kMaxAacSamples = 8192;
   std::array<int16_t, kMaxAacSamples> decodeBuffer_{};
 };
+#endif
 
+#if defined(USE_MP3) && USE_MP3
 class StreamingMp3Decoder : public StreamingDecoder {
 public:
   explicit StreamingMp3Decoder(AudioStreamSink &sink) : StreamingDecoder(sink), decoder_(MP3InitDecoder()) {
@@ -1937,6 +2025,9 @@ private:
   int sampleRate_{0};
 };
 
+#endif
+
+#if defined(USE_OPUS) && USE_OPUS
 class StreamingOpusDecoder : public StreamingDecoder {
 public:
   explicit StreamingOpusDecoder(AudioStreamSink &sink) : StreamingDecoder(sink) {
@@ -2160,15 +2251,23 @@ private:
   std::vector<int16_t> downmix_;
 };
 
+#endif
+
 std::unique_ptr<StreamingDecoder> createStreamingDecoder(AudioFileFormat format, AudioStreamSink &sink,
                                                          const PlayCommandOptions &options) {
   switch (format) {
+#if defined(USE_AAC) && USE_AAC
   case AudioFileFormat::AAC:
     return std::make_unique<StreamingAacDecoder>(sink);
+#endif
+#if defined(USE_MP3) && USE_MP3
   case AudioFileFormat::MP3:
     return std::make_unique<StreamingMp3Decoder>(sink);
+#endif
+#if defined(USE_OPUS) && USE_OPUS
   case AudioFileFormat::OPUS:
     return std::make_unique<StreamingOpusDecoder>(sink);
+#endif
   case AudioFileFormat::PCM: {
     int streamRate = options.hasSampleRate ? options.sampleRate : 0;
     if (streamRate <= 0) {

@@ -351,7 +351,40 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
 std::vector<ConfigItem<const char *>> CFG::getCharItems() {
   const auto &encDefaults = hal::defaults::encoder();
   return {
-      {"audio.mic_format", audio.input_format, "OPUS", [](const char *v) { std::set<std::string> a = {"OPUS", "AAC", "PCM", "G711A", "G711U", "G726"}; return a.count(std::string(v)) == 1; }},
+#if defined(USE_OPUS) && USE_OPUS
+      {"audio.mic_format", audio.input_format, "OPUS", [](const char *v) {
+         std::set<std::string> a = {"PCM", "G711A", "G711U", "G726"};
+#if defined(USE_OPUS) && USE_OPUS
+         a.insert("OPUS");
+#endif
+#if defined(USE_AAC) && USE_AAC
+         a.insert("AAC");
+#endif
+         return a.count(std::string(v)) == 1;
+       }},
+#elif defined(USE_AAC) && USE_AAC
+      {"audio.mic_format", audio.input_format, "AAC", [](const char *v) {
+         std::set<std::string> a = {"PCM", "G711A", "G711U", "G726"};
+#if defined(USE_OPUS) && USE_OPUS
+         a.insert("OPUS");
+#endif
+#if defined(USE_AAC) && USE_AAC
+         a.insert("AAC");
+#endif
+         return a.count(std::string(v)) == 1;
+       }},
+#else
+      {"audio.mic_format", audio.input_format, "PCM", [](const char *v) {
+         std::set<std::string> a = {"PCM", "G711A", "G711U", "G726"};
+#if defined(USE_OPUS) && USE_OPUS
+         a.insert("OPUS");
+#endif
+#if defined(USE_AAC) && USE_AAC
+         a.insert("AAC");
+#endif
+         return a.count(std::string(v)) == 1;
+       }},
+#endif
       {"audio.tap_path", audio.tap_path, "/run/prudynt/audio_in.pcm", validateCharNotEmpty},
       {"daynight.script_path", daynight.script_path, "/sbin/daynight", validateCharNotEmpty},
       {"daynight.loglevel", daynight.loglevel, "", validateLogLevelString},

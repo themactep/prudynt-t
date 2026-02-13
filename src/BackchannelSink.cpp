@@ -19,7 +19,11 @@ BackchannelSink *BackchannelSink::createNew(UsageEnvironment &env, unsigned clie
 }
 
 BackchannelSink::BackchannelSink(UsageEnvironment &env, unsigned clientSessionId, IMPBackchannelFormat format)
-    : MediaSink(env), fRTPSource(nullptr), fReceiveBufferSize((format == IMPBackchannelFormat::AAC) ? 2048 : 1024),
+#if defined(USE_AAC) && USE_AAC
+  : MediaSink(env), fRTPSource(nullptr), fReceiveBufferSize((format == IMPBackchannelFormat::AAC) ? 2048 : 1024),
+#else
+  : MediaSink(env), fRTPSource(nullptr), fReceiveBufferSize(1024),
+#endif
       fIsActive(false), fAfterFunc(nullptr), fAfterClientData(nullptr), fClientSessionId(clientSessionId),
       fTimeoutTask(nullptr), fIsSending(false), fFormat(format), fCurrentTimeoutUs(BASE_TIMEOUT_US),
       fAvgInterFrameIntervalUs(static_cast<double>(BASE_TIMEOUT_US)), fHasLastPresentationTime(false) {

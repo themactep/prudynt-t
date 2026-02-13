@@ -3,13 +3,16 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 
+#if defined(USE_AAC) && USE_AAC
 #include <aaccommon.h>
 #include <aacdec.h>
+#endif
 
 #include <imp/imp_audio.h>
 
 #define MODULE "IMPBackchannel"
 
+#if defined(USE_AAC) && USE_AAC
 // Thread-local storage for the AAC decoder instance.
 thread_local HAACDecoder tl_aacDecoder = nullptr;
 thread_local _AACFrameInfo aacFrameInfo{};
@@ -130,6 +133,7 @@ static int aac_closeDecoder(void * /*pDecoder*/) {
   LOG_DEBUG("Thread-local AAC decoder closed successfully.");
   return 0;
 }
+#endif
 
 IMPBackchannel *IMPBackchannel::createNew() {
   return new IMPBackchannel();
@@ -155,6 +159,7 @@ int IMPBackchannel::init() {
   ret = IMP_ADEC_CreateChn(adChn_pcma, &adec_attr);
   LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_CreateChn(PCMA, " << adChn_pcma << ")");
 
+#if defined(USE_AAC) && USE_AAC
   // Register the custom AAC decoder callbacks with the IMP SDK if not already
   // done.
   if (aacDecoderHandle == -1) {
@@ -184,6 +189,7 @@ int IMPBackchannel::init() {
     ret = IMP_ADEC_CreateChn(adChn_aac, &adec_attr);
     LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_CreateChn(AAC, " << adChn_aac << ")");
   }
+#endif
 
   return 0;
 }
@@ -201,9 +207,11 @@ void IMPBackchannel::deinit() {
   X_FOREACH_BACKCHANNEL_FORMAT(DESTROY_ADEC)
 #undef DESTROY_ADEC
 
+#if defined(USE_AAC) && USE_AAC
   if (aacDecoderHandle != -1) {
     ret = IMP_ADEC_UnRegisterDecoder(&aacDecoderHandle);
     LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_UnRegisterDecoder(" << aacDecoderHandle << ")");
     aacDecoderHandle = -1;
   }
+#endif
 }

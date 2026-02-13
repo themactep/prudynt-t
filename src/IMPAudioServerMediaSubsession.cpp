@@ -1,5 +1,7 @@
 #include "IMPAudioServerMediaSubsession.hpp"
+#if defined(USE_AAC) && USE_AAC
 #include "AACSink.hpp"
+#endif
 #include "GroupsockHelper.hh"
 #include "IMPAudio.hpp"
 #include "IMPDeviceSource.hpp"
@@ -82,6 +84,7 @@ RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock
   case IMPAudioFormat::G726:
     rtpPayloadFormatName = "G726-16";
     break;
+#if defined(USE_OPUS) && USE_OPUS
   case IMPAudioFormat::OPUS:
     // Opus in RTP MUST advertise 48 kHz clock and 2 channels in SDP (rtpmap)
     rtpTimestampFrequency = 48000;
@@ -89,9 +92,12 @@ RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock
     allowMultipleFramesPerPacket = false;
     outChnCnt = 2; // always advertise stereo in SDP
     break;
+#endif
+#if defined(USE_AAC) && USE_AAC
   case IMPAudioFormat::AAC:
     return AACSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
                               /* numChannels */ outChnCnt);
+#endif
   }
 
   LOG_DEBUG("createNewRTPSink: " << rtpPayloadFormatName << ", " << rtpTimestampFrequency);

@@ -41,6 +41,80 @@ ifeq ($(USE_PREBUFFER),1)
 override CFLAGS        += -DPREBUFFER_ENABLED
 endif
 
+# Optional FLAC support
+# ----------------------
+USE_FLAC               ?= 1
+
+ifeq ($(USE_FLAC),1)
+FLAC_LIB_STATIC_LINE   = -l:libflac-lite.a
+FLAC_LIB_HYBRID_LINE   = -lflac-lite
+FLAC_LIB_DYNAMIC_LINE  = -lflac-lite
+else
+FLAC_LIB_STATIC_LINE   =
+FLAC_LIB_HYBRID_LINE   =
+FLAC_LIB_DYNAMIC_LINE  =
+endif
+
+# Optional MP3 support
+# ---------------------
+USE_MP3                ?= 1
+
+ifeq ($(USE_MP3),1)
+MP3_LIB_STATIC_LINE    = -l:libhelix-mp3.a
+MP3_LIB_HYBRID_LINE    = -lhelix-mp3
+MP3_LIB_DYNAMIC_LINE   = -lhelix-mp3
+else
+MP3_LIB_STATIC_LINE    =
+MP3_LIB_HYBRID_LINE    =
+MP3_LIB_DYNAMIC_LINE   =
+endif
+
+# Optional Opus support
+# ----------------------
+USE_OPUS               ?= 1
+
+ifeq ($(USE_OPUS),1)
+OPUS_LIB_STATIC_LINE   = -l:libopus.a
+OPUS_LIB_HYBRID_LINE   = -lopus
+OPUS_LIB_DYNAMIC_LINE  = -lopus
+else
+OPUS_LIB_STATIC_LINE   =
+OPUS_LIB_HYBRID_LINE   =
+OPUS_LIB_DYNAMIC_LINE  =
+endif
+
+# Optional AAC support
+# ---------------------
+USE_AAC                ?= 1
+
+ifeq ($(USE_AAC),1)
+FAAC_LIB_STATIC_LINE   = -l:libfaac.a
+FAAC_LIB_HYBRID_LINE   = -lfaac
+FAAC_LIB_DYNAMIC_LINE  = -lfaac
+AAC_LIB_STATIC_LINE    = -l:libhelix-aac.a
+AAC_LIB_HYBRID_LINE    = -lhelix-aac
+AAC_LIB_DYNAMIC_LINE   = -lhelix-aac
+else
+FAAC_LIB_STATIC_LINE   =
+FAAC_LIB_HYBRID_LINE   =
+FAAC_LIB_DYNAMIC_LINE  =
+AAC_LIB_STATIC_LINE    =
+AAC_LIB_HYBRID_LINE    =
+AAC_LIB_DYNAMIC_LINE   =
+endif
+
+# Export codec feature flags to C/C++
+override CFLAGS        += -DUSE_AAC=$(USE_AAC) -DUSE_OPUS=$(USE_OPUS) -DUSE_MP3=$(USE_MP3) -DUSE_FLAC=$(USE_FLAC)
+
+# Optional crash backtrace support (requires libexecinfo)
+# -------------------------------------------------------
+USE_EXECINFO           ?= 0
+
+ifeq ($(USE_EXECINFO),1)
+override CFLAGS        += -DHAS_BACKTRACE=1
+EXECINFO_LIB            = -lexecinfo
+endif
+
 ifeq ($(USE_WEBSOCKETS),1)
 WEBSOCKET_LIB_STATIC_LINE = -l:libwebsockets.a
 WEBSOCKET_LIB_HYBRID_LINE = -l:libwebsockets.so
@@ -85,11 +159,11 @@ LIBS                    = -l:libalog.a \
                           -l:libUsageEnvironment.a \
                           $(WEBSOCKET_LIB_STATIC_LINE) \
                           -l:libschrift.a \
-                          -l:libopus.a \
-                          -l:libfaac.a \
-                          -l:libhelix-aac.a \
-                          -l:libhelix-mp3.a \
-                          -l:libflac-lite.a \
+                          $(OPUS_LIB_STATIC_LINE) \
+                          $(FAAC_LIB_STATIC_LINE) \
+                          $(AAC_LIB_STATIC_LINE) \
+                          $(MP3_LIB_STATIC_LINE) \
+                          $(FLAC_LIB_STATIC_LINE) \
                           -l:libcurl.a \
                           -ljct \
                           -latomic
@@ -116,11 +190,11 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libUsageEnvironment.a \
                           -Wl,-Bdynamic \
                           -lschrift \
-                          -lopus \
-                          -lfaac \
-                          -lhelix-aac \
-                          -lhelix-mp3 \
-                          -lflac-lite \
+                          $(OPUS_LIB_HYBRID_LINE) \
+                          $(FAAC_LIB_HYBRID_LINE) \
+                          $(AAC_LIB_HYBRID_LINE) \
+                          $(MP3_LIB_HYBRID_LINE) \
+                          $(FLAC_LIB_HYBRID_LINE) \
                           -ljct \
                           -lcurl \
                           -latomic
@@ -148,11 +222,11 @@ LIBS                    = -limp \
                           -lBasicUsageEnvironment \
                           $(WEBSOCKET_LIB_DYNAMIC_LINE) \
                           -lschrift \
-                          -lopus \
-                          -lfaac \
-                          -lhelix-aac \
-                          -lhelix-mp3 \
-                          -lflac-lite \
+                          $(OPUS_LIB_DYNAMIC_LINE) \
+                          $(FAAC_LIB_DYNAMIC_LINE) \
+                          $(AAC_LIB_DYNAMIC_LINE) \
+                          $(MP3_LIB_DYNAMIC_LINE) \
+                          $(FLAC_LIB_DYNAMIC_LINE) \
                           -ljct \
                           -latomic \
                           -lcurl
@@ -170,6 +244,9 @@ endif
 else
 $(error No valid binary type defined in CFLAGS. Please specify -DBINARY_STATIC, -DBINARY_HYBRID, or -DBINARY_DYNAMIC)
 endif
+
+# Optional execinfo library for backtraces
+LIBS                   += $(EXECINFO_LIB)
 
 endif
 

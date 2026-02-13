@@ -37,11 +37,18 @@
 // Define the list of backchannel formats and their properties
 // X(EnumName, NameString, PayloadType, Frequency, MimeType)
 // https://www.rfc-editor.org/rfc/rfc3640.html
+#if defined(USE_AAC) && USE_AAC
 #define X_FOREACH_BACKCHANNEL_FORMAT(X)                                                                                \
   X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate, "audio/mpeg4-generic")                                    \
   X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                                                               \
   X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                                                               \
   /* Add new formats here */
+#else
+#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                                                                \
+  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                                                               \
+  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                                                               \
+  /* Add new formats here */
+#endif
 
 #define APPLY_ENUM(EnumName, NameString, PayloadType, Frequency, MimeType) EnumName,
 enum class IMPBackchannelFormat { UNKNOWN = -1, X_FOREACH_BACKCHANNEL_FORMAT(APPLY_ENUM) };

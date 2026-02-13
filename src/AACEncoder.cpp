@@ -1,4 +1,6 @@
 #include "AACEncoder.hpp"
+
+#if defined(USE_AAC) && USE_AAC
 #include "Config.hpp"
 #include "Logger.hpp"
 #include <cstdint>
@@ -64,6 +66,7 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
     LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " samples/frame, got " << frameSamples);
     LOG_WARN("Frame length: " << data->len << " bytes, channels: " << numChn);
   }
+  
   const int frameLen = faacEncEncode(handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
                                      reinterpret_cast<unsigned char *>(outbuf), 1024);
   *outLen = frameLen;
@@ -88,3 +91,4 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
 
   return 0;
 }
+#endif

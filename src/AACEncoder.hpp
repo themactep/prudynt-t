@@ -2,6 +2,8 @@
 #define AAC_ENCODER_HPP
 
 #include "IMPAudio.hpp"
+
+#if defined(USE_AAC) && USE_AAC
 #include <faac.h>
 
 class AACEncoder : public IMPAudioEncoder {
@@ -21,5 +23,6 @@ private:
   int sampleRate;
   int numChn;
 };
+#endif
 
 #endif // AAC_ENCODER_HPP
