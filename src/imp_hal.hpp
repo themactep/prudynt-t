@@ -31,6 +31,12 @@ struct IMPISPEVAttr {};
 #include <imp/imp_isp.h>
 #include <imp/imp_osd.h>
 
+// Compatibility shims for SDK variants where these prototypes are absent.
+extern "C" {
+int IMP_OSD_SetPoolSize(int size);
+int IMP_ISP_Tuning_GetAwbHist(IMPISPAWBHist *awb_hist);
+}
+
 struct _stream; // fwd decl
 
 namespace hal {
