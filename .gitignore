@@ -1,8 +1,7 @@
-bin/
-obj/
 .vscode/
 .trunk/
-include/*/version.hpp
 3rdparty/
+bin/
 buildroot-package/
-src_alt
+include/*/version.hpp
+obj/
