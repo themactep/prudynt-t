@@ -54,13 +54,15 @@ int AACEncoder::close() {
 
 int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
   if (!handle) {
-    LOG_ERROR("FAAC encoder not available");
+    LOG_ERROR("FAAC encoder not available - encoder may have failed to initialize");
+    LOG_ERROR("Check: sample rate=" << sampleRate << " channels=" << numChn << " bitrate=" << cfg->audio.input_bitrate);
     return -1;
   }
 
   const auto frameSamples = (data->len / sizeof(int16_t)) / numChn;
   if (frameSamples != inputSamples) {
-    LOG_WARN("FAAC was provided with " << frameSamples << " samples per frame.");
+    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " samples/frame, got " << frameSamples);
+    LOG_WARN("Frame length: " << data->len << " bytes, channels: " << numChn);
   }
   const int frameLen = faacEncEncode(handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
                                      reinterpret_cast<unsigned char *>(outbuf), 1024);
@@ -68,7 +70,10 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
   if (frameLen == 0) {
     LOG_INFO("FAAC buffered frame: " << data->seq);
   } else if (frameLen < 0) {
-    LOG_WARN("Encoding failed with error code: " << frameLen);
+    LOG_ERROR("FAAC encoding failed with error code: " << frameLen);
+    LOG_ERROR("Input: " << frameSamples << " samples (" << data->len << " bytes), expected: " << inputSamples);
+    LOG_ERROR("Audio config: rate=" << sampleRate << "Hz, channels=" << numChn << ", bitrate=" << cfg->audio.input_bitrate << "kbps");
+    LOG_ERROR("This usually indicates sample count mismatch or invalid audio configuration");
     return -1;
   }
 
