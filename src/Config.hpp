@@ -115,6 +115,11 @@ struct _daynight_controls {
   bool ir940{true};
   bool white{false};
 };
+struct _daynight_schedule {
+  bool enabled{false};
+  const char *start_at{nullptr};
+  const char *stop_at{nullptr};
+};
 struct _daynight {
   // User-configurable knobs
   bool enabled{true};
@@ -124,6 +129,9 @@ struct _daynight {
 
   // Hardware control toggles
   _daynight_controls controls;
+
+  // Time-based schedule
+  _daynight_schedule schedule;
 
   const char *loglevel{nullptr};
 

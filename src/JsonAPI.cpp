@@ -1090,6 +1090,53 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     out += "}";
   }
 
+  // Schedule (time-based restrictions)
+  if (JsonValue *schedule_obj = obj_get(obj, "schedule")) {
+    if (schedule_obj->type == JSON_OBJECT) {
+      add_key(out, s2, "schedule", "{");
+      bool s3 = false;
+      auto add_sched = [&](const char *key, const char *path, bool is_bool) {
+        if (JsonValue *v = obj_get(schedule_obj, key)) {
+          if (is_bool && v->type == JSON_BOOL) {
+            cfg->set<bool>(path, v->value.boolean);
+            add_key(out, s3, key);
+            add_bool(out, cfg->get<bool>(path));
+            wrote = true;
+          } else if (!is_bool && v->type == JSON_STRING) {
+            cfg->set<const char *>(path, strdup(v->value.string));
+            add_key(out, s3, key);
+            add_str(out, cfg->get<const char *>(path));
+            wrote = true;
+          } else if (v->type == JSON_NULL) {
+            // Read current value when null is provided
+            add_key(out, s3, key);
+            if (is_bool) {
+              add_bool(out, cfg->get<bool>(path));
+            } else {
+              add_str(out, cfg->get<const char *>(path));
+            }
+            wrote = true;
+          }
+        }
+      };
+      add_sched("enabled", "daynight.schedule.enabled", true);
+      add_sched("start_at", "daynight.schedule.start_at", false);
+      add_sched("stop_at", "daynight.schedule.stop_at", false);
+      out += "}";
+    }
+  } else {
+    // Read-only output of current schedule
+    add_key(out, s2, "schedule", "{");
+    bool s3 = false;
+    add_key(out, s3, "enabled");
+    add_bool(out, cfg->daynight.schedule.enabled);
+    add_key(out, s3, "start_at");
+    add_str(out, cfg->daynight.schedule.start_at);
+    add_key(out, s3, "stop_at");
+    add_str(out, cfg->daynight.schedule.stop_at);
+    out += "}";
+  }
+
   // Percentage thresholds (simple algorithm)
   add_int("switch_below_percent", "daynight.switch_below_percent");
   add_int("switch_above_percent", "daynight.switch_above_percent");

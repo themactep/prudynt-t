@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -209,6 +210,47 @@ static void export_brightness_value(int pct, const char *mode) {
   last_written_mode = mode_str;
 }
 
+// Helper to check if current time is within the photosensing schedule
+static bool is_within_schedule() {
+  if (!cfg || !cfg->daynight.schedule.enabled) {
+    return true; // Schedule disabled, always active
+  }
+
+  const char *start_at = cfg->daynight.schedule.start_at;
+  const char *stop_at = cfg->daynight.schedule.stop_at;
+
+  if (!start_at || !stop_at || std::strlen(start_at) == 0 || std::strlen(stop_at) == 0) {
+    return true; // No times configured, always active
+  }
+
+  // Parse HH:MM format
+  int start_hour = 0, start_min = 0, stop_hour = 0, stop_min = 0;
+  if (std::sscanf(start_at, "%d:%d", &start_hour, &start_min) != 2 ||
+      std::sscanf(stop_at, "%d:%d", &stop_hour, &stop_min) != 2) {
+    return true; // Invalid format, always active
+  }
+
+  // Get current time
+  std::time_t now = std::time(nullptr);
+  std::tm *local_time = std::localtime(&now);
+  int current_hour = local_time->tm_hour;
+  int current_min = local_time->tm_min;
+
+  // Convert to minutes since midnight for easier comparison
+  int start_mins = start_hour * 60 + start_min;
+  int stop_mins = stop_hour * 60 + stop_min;
+  int current_mins = current_hour * 60 + current_min;
+
+  // Handle overnight schedules (e.g., 22:00 to 06:00)
+  if (start_mins <= stop_mins) {
+    // Same day schedule (e.g., 06:00 to 22:00)
+    return current_mins >= start_mins && current_mins < stop_mins;
+  } else {
+    // Overnight schedule (e.g., 22:00 to 06:00)
+    return current_mins >= start_mins || current_mins < stop_mins;
+  }
+}
+
 static int read_ev(int &out_ev) {
   return hal::isp::get_ev(out_ev);
 }
@@ -237,10 +279,13 @@ static void apply_mode(DayNightAlgo::Mode m) {
       }
     }
 
-    int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
-    if (ret != 0) {
-      if (daynight_should_log(Logger::WARN)) {
-        LOG_WARN("SetISPRunningMode(DAY) failed: " << ret);
+    // Switch ISP running mode only if color control is enabled
+    if (cfg->daynight.controls.color) {
+      int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
+      if (ret != 0) {
+        if (daynight_should_log(Logger::WARN)) {
+          LOG_WARN("SetISPRunningMode(DAY) failed: " << ret);
+        }
       }
     }
     std::string cmd = std::string(script) + " day";
@@ -259,10 +304,13 @@ static void apply_mode(DayNightAlgo::Mode m) {
       }
     }
 
-    int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Night);
-    if (ret != 0) {
-      if (daynight_should_log(Logger::WARN)) {
-        LOG_WARN("SetISPRunningMode(NIGHT) failed: " << ret);
+    // Switch ISP running mode only if color control is enabled
+    if (cfg->daynight.controls.color) {
+      int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Night);
+      if (ret != 0) {
+        if (daynight_should_log(Logger::WARN)) {
+          LOG_WARN("SetISPRunningMode(NIGHT) failed: " << ret);
+        }
       }
     }
     std::string cmd = std::string(script) + " night";
@@ -588,18 +636,22 @@ void *thread_entry(void *arg) {
     cfg->daynight.live_brightness_percent.store(bright_pct, std::memory_order_relaxed);
 
     // Run the simple algorithm using total_gain (or EV fallback for T10/T20)
+    // Only run if within schedule window
+    bool within_schedule = is_within_schedule();
     auto dec = DayNightAlgo::simple_decide(simple_params, simple_state, total_gain, ev);
 
     if (daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG("DayNight: TotalGain=" << total_gain << " EV=" << ev << " AELuma=" << ae_luma
                                        << " nCnt=" << simple_state.night_count
                                        << " dCnt=" << simple_state.day_count
-                                       << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY") << " -> "
+                                       << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY")
+                                       << " schedule=" << (within_schedule ? "ACTIVE" : "INACTIVE") << " -> "
                                        << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
                                                       : "HOLD"));
     }
 
     // Apply initial mode if not set - infer from current sensor readings
+    // IMPORTANT: This happens regardless of schedule to ensure camera starts in correct mode
     if (!initial_mode_applied) {
       DayNightAlgo::Mode initial = DayNightAlgo::Mode::Unknown;
       
@@ -628,20 +680,27 @@ void *thread_entry(void *arg) {
                                       std::memory_order_relaxed);
         initial_mode_applied = true;
         if (daynight_should_log(Logger::INFO)) {
+          const char *schedule_status = within_schedule ? "within schedule" : "outside schedule";
           LOG_INFO("DayNight: applied initial mode " << (current == DayNightAlgo::Mode::Day ? "day" : "night")
-                   << " (total_gain=" << total_gain << ", ev=" << ev << ")");
+                   << " (total_gain=" << total_gain << ", ev=" << ev << ", " << schedule_status << ")");
         }
       }
     }
 
     // Handle mode switching with anti-flap cooldown
-    // ONLY run automatic switching if photosensing is enabled
-    bool photosensing_enabled = cfg->daynight.enabled;
+    // Schedule check ONLY applies to automatic switches, NOT to initial mode detection
+    // This ensures camera starts in correct mode even when booting outside schedule window
+    bool photosensing_enabled = cfg->daynight.enabled && within_schedule;
     if (dec.toggled && dec.target != current) {
-      if (!photosensing_enabled) {
-        // Photosensing is disabled - skip automatic switching
+      if (!cfg->daynight.enabled) {
+        // Photosensing is disabled globally - skip automatic switching
         if (daynight_should_log(Logger::DEBUG)) {
           LOG_DEBUG("DayNight: skipping automatic switch (photosensing disabled)");
+        }
+      } else if (!within_schedule) {
+        // Outside schedule window - skip automatic switching
+        if (daynight_should_log(Logger::DEBUG)) {
+          LOG_DEBUG("DayNight: skipping automatic switch (outside schedule window)");
         }
       } else if (anti_flap_cooldown > 0) {
         if (daynight_should_log(Logger::DEBUG)) {
