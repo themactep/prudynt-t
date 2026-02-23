@@ -8,6 +8,7 @@
 #include "IMPBackchannel.hpp"
 #include "IMPSystem.hpp"
 #include "ImagingControl.hpp"
+#include "imp_hal.hpp"
 #include "JPEGWorker.hpp"
 #include "Logger.hpp"
 #include "MP4ControlSocket.hpp"

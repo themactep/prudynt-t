@@ -16,7 +16,7 @@ namespace hal {
 
 static PlatformCaps g_caps = {
 // Encoder capabilities (must match struct order)
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
     .has_h265 = true,
     .has_capped_quality = true,
     .has_capped_vbr = true,
@@ -26,7 +26,7 @@ static PlatformCaps g_caps = {
     .has_smart_rc = true,
     .has_super_frm = true,
     .has_intra_refresh = true,
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T30)
+#elif defined(PLATFORM_T30)
     .has_h265 = true,
     .has_capped_quality = false,
     .has_capped_vbr = false,
@@ -55,8 +55,9 @@ static PlatformCaps g_caps = {
     .has_audio_aec_channel = false,
 #endif
 
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||                \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_C100)
     .has_audio_agc = true,
 #else
     .has_audio_agc = false,
@@ -68,8 +69,9 @@ static PlatformCaps g_caps = {
     .has_audio_alc = false,
 #endif
 
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||                \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_C100)
     .has_audio_hpf = true,
     .has_audio_ns = true,
 #else
@@ -119,8 +121,8 @@ static PlatformCaps g_caps = {
     .has_isp_backlight_comp = false,
 #endif
 
-#if defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) ||                \
-    defined(PLATFORM_C100)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
     .has_isp_highlight_depress = true,
 #else
     .has_isp_highlight_depress = false,
@@ -151,14 +153,14 @@ static PlatformCaps g_caps = {
     .has_isp_anti_flicker = true, // All platforms support anti-flicker
     .has_isp_wb = true,           // All platforms support white balance
 
-#if defined(PLATFORM_T41)
-    .has_isp_switch_bin = true,   // Bin switching only on T41 (T23 needs SDK 1.1.2+)
+#if defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    .has_isp_switch_bin = true,   // Bin switching on T40/T41 (T23 needs SDK 1.1.2+)
 #else
     .has_isp_switch_bin = false,
 #endif
 
 // OSD capabilities
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
     .has_osd_region_invert = true,
 #else
     .has_osd_region_invert = false,
@@ -195,10 +197,8 @@ const PlatformCaps &caps() {
 namespace defaults {
 
 const EncoderDefaults &encoder() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   static constexpr EncoderDefaults defaults{"FIXQP", "CAPPED_QUALITY", 4, 2};
-#elif defined(PLATFORM_T23)
-  static constexpr EncoderDefaults defaults{"SMART", "SMART", 2, 2};
 #else
   static constexpr EncoderDefaults defaults{"SMART", "SMART", 2, 2};
 #endif
@@ -207,7 +207,7 @@ const EncoderDefaults &encoder() {
 
 const DenoiseDefaults &denoise() {
   // Initializer order: {sinter_default, temper_default, sinter_min, sinter_max, temper_min, temper_max}
-#if defined(PLATFORM_C100) || defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   static constexpr DenoiseDefaults defaults{128, 128, 0, 255, 0, 255};
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
   static constexpr DenoiseDefaults defaults{14, 95, 0, 255, 0, 255};
@@ -228,7 +228,7 @@ void set_jpeg_quality_qtable(int encChn, int quality, const char *cpu_hint) {
     return;
   }
 
-#if !(defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41))
+#if !(defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41)) || defined(PLATFORM_C100)
   IMPEncoderJpegeQl pst{};
   if (cpu_hint && strncmp(cpu_hint, "T10", 3) == 0) {
     pst.user_ql_en = 0;
@@ -253,9 +253,8 @@ void set_jpeg_quality_qtable(int encChn, int quality, const char *cpu_hint) {
 int maybe_enable_bufshare(int jpegEncChn, int shareChn, bool allow_shared) {
   if (!allow_shared)
     return 0;
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-  // Call vendor API directly; dlsym fails in static builds (symbol not
-  // exported)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+  // Call vendor API directly; dlsym fails in static builds (symbol not exported)
   int ret = IMP_Encoder_SetbufshareChn(jpegEncChn, shareChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_SetbufshareChn(" << jpegEncChn << ", " << shareChn << ")");
   return ret;
@@ -266,7 +265,7 @@ int maybe_enable_bufshare(int jpegEncChn, int shareChn, bool allow_shared) {
 #endif
 }
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
 void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, IMPEncoderRcMode rcMode, const _stream &stream) {
   auto *rcAttr = &chnAttr.rcAttr;
   int qp_init = stream.qp_init;
@@ -723,7 +722,8 @@ int get_ev(int &out_ev) {
     out_ev = static_cast<int>(info.ExposureValue);
     return 0;
   }
-#elif defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T20) || defined(PLATFORM_C100)
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   IMPISPEVAttr ev{};
   if (IMP_ISP_Tuning_GetEVAttr(&ev) == 0) {
     out_ev = static_cast<int>(ev.ev);
@@ -743,8 +743,8 @@ int get_awb_weighted_gains(int &out_gr, int &out_gb) {
     out_gb = static_cast<int>(gw.statis_weight_gain.bgain);
     return 0;
   }
-#elif defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   IMPISPAWBHist awb{};
   int ret = IMP_ISP_Tuning_GetAwbHist(&awb);
   if (ret == 0) {
@@ -1072,14 +1072,14 @@ int set_highlight_depress(unsigned char val) {
     LOG_DEBUG("set_highlight_depress not supported on this platform");
     return 0;
   }
-#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41) && !defined(PLATFORM_T10) && !defined(PLATFORM_T20)
+#if !defined(PLATFORM_T10) && !defined(PLATFORM_T20) && !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
   return IMP_ISP_Tuning_SetHiLightDepress(val);
 #else
   return 0;
 #endif
 }
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
 int set_auto_zoom(const IMPISPAutoZoom &zoom) {
   IMPISPAutoZoom local = zoom;
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
@@ -1629,7 +1629,7 @@ int get_h265_nal_type(const IMPEncoderPack &pack) {
 }
 
 int set_bitrate(int channel, int bitrate) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_Encoder_SetChnBitRate(channel, bitrate, bitrate);
 #else
   (void)channel;
@@ -1639,7 +1639,7 @@ int set_bitrate(int channel, int bitrate) {
 }
 
 int set_gop_length(int channel, int length) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_Encoder_SetChnGopLength(channel, length);
 #else
   (void)channel;
@@ -1654,7 +1654,7 @@ int set_rc_mode(int channel, int mode) {
   (void)mode;
   LOG_DEBUG("set_rc_mode not supported on this platform");
   return -1;
-#elif defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)
+#elif defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_C100)
   IMPEncoderAttrRcMode rcModeCfg;
   int ret = IMP_Encoder_GetChnAttrRcMode(channel, &rcModeCfg);
   if (ret != 0)
@@ -1692,7 +1692,7 @@ int set_qp(int channel, int qp) {
 }
 
 int set_qp_bounds(int channel, int min_qp, int max_qp) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_Encoder_SetChnQpBounds(channel, min_qp, max_qp);
 #else
   (void)channel;
@@ -1718,7 +1718,7 @@ int set_qp_ip_delta(int channel, int delta) {
 }
 
 void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   // Newer SDK callers must fully populate chnAttr before creation.
   (void)chnAttr;
   (void)format;
@@ -1745,7 +1745,7 @@ void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, i
 }
 
 int get_encoder_rc_mode_smart() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_ENC_RC_MODE_CAPPED_QUALITY;
 #else
   return ENC_RC_MODE_SMART;
@@ -1753,7 +1753,7 @@ int get_encoder_rc_mode_smart() {
 }
 
 int get_encoder_profile_high(const char *format) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   if (strcmp(format, "H265") == 0) {
     return IMP_ENC_PROFILE_HEVC_MAIN;
   }
@@ -1770,8 +1770,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }
@@ -1780,7 +1780,7 @@ int get_encoder_type(const char *format) {
 }
 
 bool supports_jpeg_quality_table() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return hal::caps().has_jpeg_set_qtable;
 #else
   return !hal::caps().has_jpeg_set_qtable;
@@ -1803,8 +1803,8 @@ int set_ai_hpf(int enable) {
   if (!::hal::caps().has_audio_hpf)
     return -1;
 
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_AI_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1840,7 +1840,7 @@ int set_ai_echo_cancellation(int enable) {
 
 int set_ai_volume(int vol) {
 #if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   int audioDevId = 0;
   int aiChn = 0;
   return IMP_AI_SetVol(audioDevId, aiChn, vol);
@@ -1867,8 +1867,8 @@ int set_ai_alc(int level) {
 }
 
 int set_ao_hpf(int enable) {
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_AO_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1878,7 +1878,7 @@ int set_ao_hpf(int enable) {
 
 int set_ao_volume(int vol) {
 #if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   int audioDevId = 0;
   int aoChn = 0;
   return IMP_AO_SetVol(audioDevId, aoChn, vol);
@@ -1890,7 +1890,7 @@ int set_ao_volume(int vol) {
 
 int set_ao_gain(int gain) {
 #if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
-    defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+    defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   int audioDevId = 0;
   int aoChn = 0;
   return IMP_AO_SetGain(audioDevId, aoChn, gain);
@@ -1935,7 +1935,7 @@ int set_region_alpha(int handle, int alpha) {
   if (ret != 0)
     return ret;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   rgnAttr.fmt = PIX_FMT_BGRA;
 #else
   rgnAttr.fmt = PIX_FMT_MONOWHITE;
@@ -1994,7 +1994,7 @@ extern "C" int hal_isp_set_running_mode(int mode) {
 }
 
 void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   // T31/C100/T40/T41 use newer API - initialization handled by caller
   (void)chnAttr;
   (void)format;
@@ -2021,7 +2021,7 @@ void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, i
 }
 
 int get_encoder_rc_mode_smart() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return IMP_ENC_RC_MODE_CAPPED_QUALITY;
 #else
   return ENC_RC_MODE_SMART;
@@ -2029,7 +2029,7 @@ int get_encoder_rc_mode_smart() {
 }
 
 int get_encoder_profile_high(const char *format) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   if (strcmp(format, "H265") == 0) {
     return IMP_ENC_PROFILE_HEVC_MAIN;
   }
@@ -2046,8 +2046,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }
@@ -2056,7 +2056,7 @@ int get_encoder_type(const char *format) {
 }
 
 bool supports_jpeg_quality_table() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   return hal::caps().has_jpeg_set_qtable;
 #else
   return !hal::caps().has_jpeg_set_qtable;
