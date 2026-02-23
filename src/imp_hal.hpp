@@ -34,7 +34,9 @@ struct IMPISPEVAttr {};
 // Compatibility shims for SDK variants where these prototypes are absent.
 extern "C" {
 int IMP_OSD_SetPoolSize(int size);
+#if !defined(PLATFORM_T40) && !defined(PLATFORM_T41)
 int IMP_ISP_Tuning_GetAwbHist(IMPISPAWBHist *awb_hist);
+#endif
 }
 
 struct _stream; // fwd decl
