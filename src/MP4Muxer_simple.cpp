@@ -59,12 +59,13 @@ public:
   ~SimpleMP4Muxer() override = default;
 
   bool init(const InitParams &params) override {
+    is_hevc_ = params.is_hevc;
     video_.enabled = true;
     video_.track_id = 1;
     video_.timescale = 90000; // common video timescale
     video_.width = static_cast<uint32_t>(params.width);
     video_.height = static_cast<uint32_t>(params.height);
-    video_.codec_config = params.avcC;
+    video_.codec_config = is_hevc_ ? params.hvcC : params.avcC;
     if (params.fps > 0) {
       video_.default_duration = static_cast<uint32_t>(video_.timescale / params.fps);
     }
@@ -135,14 +136,24 @@ public:
 private:
   void write_ftyp(std::vector<uint8_t> &out) {
     std::vector<uint8_t> payload;
-    // major_brand 'iso5'
-    payload.insert(payload.end(), {'i', 's', 'o', '5'});
-    // minor_version
-    write_u32(payload, 0x00000200u);
-    // compatible_brands: iso5, iso6, mp41
-    payload.insert(payload.end(), {'i', 's', 'o', '5'});
-    payload.insert(payload.end(), {'i', 's', 'o', '6'});
-    payload.insert(payload.end(), {'m', 'p', '4', '1'});
+    if (is_hevc_) {
+      // major brand 'iso5' with HEVC compatible brands
+      payload.insert(payload.end(), {'i', 's', 'o', '5'});
+      write_u32(payload, 0x00000200u);
+      payload.insert(payload.end(), {'i', 's', 'o', '5'});
+      payload.insert(payload.end(), {'i', 's', 'o', '6'});
+      payload.insert(payload.end(), {'h', 'v', 'c', '1'});
+      payload.insert(payload.end(), {'m', 'p', '4', '1'});
+    } else {
+      // major_brand 'iso5'
+      payload.insert(payload.end(), {'i', 's', 'o', '5'});
+      // minor_version
+      write_u32(payload, 0x00000200u);
+      // compatible_brands: iso5, iso6, mp41
+      payload.insert(payload.end(), {'i', 's', 'o', '5'});
+      payload.insert(payload.end(), {'i', 's', 'o', '6'});
+      payload.insert(payload.end(), {'m', 'p', '4', '1'});
+    }
     write_box(out, "ftyp", payload);
   }
 
@@ -329,33 +340,63 @@ private:
       write_u32(stsd, 1); // entry_count
 
       if (is_video) {
-        // avc1 sample entry
-        std::vector<uint8_t> avc1;
-        write_u32(avc1, 0); // reserved (first 4 bytes)
-        write_u16(avc1, 0); // reserved (next 2 bytes)
-        write_u16(avc1, 1); // data_reference_index
-        write_u16(avc1, 0); // pre_defined
-        write_u16(avc1, 0); // reserved
-        for (int i = 0; i < 3; ++i)
-          write_u32(avc1, 0);
-        write_u16(avc1, static_cast<uint16_t>(t.width));
-        write_u16(avc1, static_cast<uint16_t>(t.height));
-        write_u32(avc1, 0x00480000u); // horizresolution 72 dpi
-        write_u32(avc1, 0x00480000u); // vertresolution
-        write_u32(avc1, 0);           // reserved
-        write_u16(avc1, 1);           // frame_count
-        // compressorname (32 bytes)
-        write_u8(avc1, 0);
-        for (int i = 0; i < 31; ++i)
+        if (is_hevc_) {
+          // hvc1 sample entry
+          std::vector<uint8_t> hvc1;
+          write_u32(hvc1, 0); // reserved (first 4 bytes)
+          write_u16(hvc1, 0); // reserved (next 2 bytes)
+          write_u16(hvc1, 1); // data_reference_index
+          write_u16(hvc1, 0); // pre_defined
+          write_u16(hvc1, 0); // reserved
+          for (int i = 0; i < 3; ++i)
+            write_u32(hvc1, 0);
+          write_u16(hvc1, static_cast<uint16_t>(t.width));
+          write_u16(hvc1, static_cast<uint16_t>(t.height));
+          write_u32(hvc1, 0x00480000u); // horizresolution 72 dpi
+          write_u32(hvc1, 0x00480000u); // vertresolution
+          write_u32(hvc1, 0);           // reserved
+          write_u16(hvc1, 1);           // frame_count
+          // compressorname (32 bytes)
+          write_u8(hvc1, 0);
+          for (int i = 0; i < 31; ++i)
+            write_u8(hvc1, 0);
+          write_u16(hvc1, 0x0018); // depth
+          write_u16(hvc1, 0xFFFF); // pre_defined
+
+          // hvcC box with HEVCDecoderConfigurationRecord
+          std::vector<uint8_t> hvcC = t.codec_config;
+          write_box(hvc1, "hvcC", hvcC);
+
+          write_box(stsd, "hvc1", hvc1);
+        } else {
+          // avc1 sample entry
+          std::vector<uint8_t> avc1;
+          write_u32(avc1, 0); // reserved (first 4 bytes)
+          write_u16(avc1, 0); // reserved (next 2 bytes)
+          write_u16(avc1, 1); // data_reference_index
+          write_u16(avc1, 0); // pre_defined
+          write_u16(avc1, 0); // reserved
+          for (int i = 0; i < 3; ++i)
+            write_u32(avc1, 0);
+          write_u16(avc1, static_cast<uint16_t>(t.width));
+          write_u16(avc1, static_cast<uint16_t>(t.height));
+          write_u32(avc1, 0x00480000u); // horizresolution 72 dpi
+          write_u32(avc1, 0x00480000u); // vertresolution
+          write_u32(avc1, 0);           // reserved
+          write_u16(avc1, 1);           // frame_count
+          // compressorname (32 bytes)
           write_u8(avc1, 0);
-        write_u16(avc1, 0x0018); // depth
-        write_u16(avc1, 0xFFFF); // pre_defined
+          for (int i = 0; i < 31; ++i)
+            write_u8(avc1, 0);
+          write_u16(avc1, 0x0018); // depth
+          write_u16(avc1, 0xFFFF); // pre_defined
 
-        // avcC box with codec config
-        std::vector<uint8_t> avcC = t.codec_config;
-        write_box(avc1, "avcC", avcC);
+          // avcC box with codec config
+          std::vector<uint8_t> avcC = t.codec_config;
+          write_box(avc1, "avcC", avcC);
 
-        write_box(stsd, "avc1", avc1);
+          write_box(stsd, "avc1", avc1);
+        }
       } else {
         // mp4a sample entry
         std::vector<uint8_t> mp4a;
@@ -577,6 +618,7 @@ private:
 
   TrackState video_;
   TrackState audio_;
+  bool is_hevc_ = false;
   uint32_t next_seq_ = 1;
   bool audio_warn_no_track_reported_ = false;
   bool audio_warn_empty_sample_reported_ = false;

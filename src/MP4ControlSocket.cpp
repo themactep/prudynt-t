@@ -280,7 +280,8 @@ std::shared_ptr<video_stream> wait_for_video_channel(int channel, std::chrono::m
   return global_video[channel];
 }
 
-bool snapshot_codec_config(std::vector<uint8_t> &sps, std::vector<uint8_t> &pps, int channel = -1) {
+bool snapshot_codec_config(std::vector<uint8_t> &vps, std::vector<uint8_t> &sps, std::vector<uint8_t> &pps,
+                           int channel = -1) {
   auto snapshot_from_channel = [&](int ch) -> bool {
     if (ch < 0 || ch >= NUM_VIDEO_CHANNELS) {
       return false;
@@ -291,6 +292,7 @@ bool snapshot_codec_config(std::vector<uint8_t> &sps, std::vector<uint8_t> &pps,
     }
     std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
     if (vs->have_sps && vs->have_pps && !vs->latest_sps.empty() && !vs->latest_pps.empty()) {
+      vps = vs->latest_vps; // may be empty for H.264; that's fine
       sps = vs->latest_sps;
       pps = vs->latest_pps;
       return true;
@@ -310,11 +312,11 @@ bool snapshot_codec_config(std::vector<uint8_t> &sps, std::vector<uint8_t> &pps,
   return false;
 }
 
-bool wait_for_codec_config(std::vector<uint8_t> &sps, std::vector<uint8_t> &pps, std::chrono::milliseconds timeout,
-                           int channel = -1) {
+bool wait_for_codec_config(std::vector<uint8_t> &vps, std::vector<uint8_t> &sps, std::vector<uint8_t> &pps,
+                           std::chrono::milliseconds timeout, int channel = -1) {
   auto deadline = std::chrono::steady_clock::now() + timeout;
   while (std::chrono::steady_clock::now() < deadline) {
-    if (snapshot_codec_config(sps, pps, channel)) {
+    if (snapshot_codec_config(vps, sps, pps, channel)) {
       return true;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -345,6 +347,117 @@ bool build_avcc(const std::vector<uint8_t> &sps, const std::vector<uint8_t> &pps
   avcC.push_back(static_cast<uint8_t>((pps_len >> 8) & 0xFF));
   avcC.push_back(static_cast<uint8_t>(pps_len & 0xFF));
   avcC.insert(avcC.end(), pps.begin(), pps.end());
+  return true;
+}
+
+// Build an HEVCDecoderConfigurationRecord (hvcC) from VPS, SPS, PPS NAL units.
+// The NAL unit bytes include the 2-byte HEVC NAL header.
+// The SPS RBSP (starting at byte 2) must be at least 15 bytes long so we can
+// extract profile/level fields; if too short we fall back to safe defaults.
+bool build_hvcc(const std::vector<uint8_t> &vps, const std::vector<uint8_t> &sps, const std::vector<uint8_t> &pps,
+                std::vector<uint8_t> &hvcC) {
+  if (sps.size() < 4 || pps.empty()) {
+    return false;
+  }
+
+  // Extract profile/level from SPS RBSP (offset 2 from start of NAL, which
+  // includes 2-byte NAL header).
+  // Layout after 2-byte NAL header:
+  //   byte[2]: sps_vps_id(4)|max_sub_layers(3)|temporal_nested(1)
+  //   byte[3]: profile_space(2)|tier_flag(1)|profile_idc(5)
+  //   byte[4..7]: profile_compatibility_flags
+  //   byte[8..13]: constraint_indicator_flags
+  //   byte[14]: level_idc
+  uint8_t general_profile_space = 0;
+  uint8_t general_tier_flag = 0;
+  uint8_t general_profile_idc = 0;
+  uint8_t general_profile_compat[4] = {0, 0, 0, 0};
+  uint8_t general_constraint[6] = {0, 0, 0, 0, 0, 0};
+  uint8_t general_level_idc = 0;
+  uint8_t num_temporal_layers = 1;
+  uint8_t temporal_id_nested = 0;
+
+  if (sps.size() >= 3) {
+    num_temporal_layers = (((sps[2] >> 1) & 0x07) + 1);
+    temporal_id_nested = sps[2] & 0x01;
+  }
+  if (sps.size() >= 4) {
+    general_profile_space = (sps[3] >> 6) & 0x03;
+    general_tier_flag     = (sps[3] >> 5) & 0x01;
+    general_profile_idc   = sps[3] & 0x1F;
+  }
+  if (sps.size() >= 8) {
+    for (int i = 0; i < 4; ++i) general_profile_compat[i] = sps[4 + i];
+  }
+  if (sps.size() >= 14) {
+    for (int i = 0; i < 6; ++i) general_constraint[i] = sps[8 + i];
+  }
+  if (sps.size() >= 15) {
+    general_level_idc = sps[14];
+  }
+
+  hvcC.clear();
+
+  // configurationVersion
+  hvcC.push_back(0x01);
+  // general_profile_space | general_tier_flag | general_profile_idc
+  hvcC.push_back(static_cast<uint8_t>((general_profile_space << 6) | (general_tier_flag << 5) | general_profile_idc));
+  // general_profile_compatibility_flags (32 bits)
+  for (int i = 0; i < 4; ++i) hvcC.push_back(general_profile_compat[i]);
+  // general_constraint_indicator_flags (48 bits)
+  for (int i = 0; i < 6; ++i) hvcC.push_back(general_constraint[i]);
+  // general_level_idc
+  hvcC.push_back(general_level_idc);
+  // reserved(4 bits=0xF) | min_spatial_segmentation_idc(12 bits=0)
+  hvcC.push_back(0xF0);
+  hvcC.push_back(0x00);
+  // reserved(6 bits=0x3F) | parallelismType(2 bits=0)
+  hvcC.push_back(0xFC);
+  // reserved(6 bits=0x3F) | chromaFormat(2 bits=1 -> 4:2:0)
+  hvcC.push_back(0xFD);
+  // reserved(5 bits=0x1F) | bitDepthLumaMinus8(3 bits=0)
+  hvcC.push_back(0xF8);
+  // reserved(5 bits=0x1F) | bitDepthChromaMinus8(3 bits=0)
+  hvcC.push_back(0xF8);
+  // avgFrameRate (0 = unspecified)
+  hvcC.push_back(0x00);
+  hvcC.push_back(0x00);
+  // constantFrameRate(2)|numTemporalLayers(3)|temporalIdNested(1)|lengthSizeMinusOne(2=3, i.e. 4-byte lengths)
+  hvcC.push_back(static_cast<uint8_t>((0 << 6) | ((num_temporal_layers & 0x07) << 3) | (temporal_id_nested << 2) | 0x03));
+
+  // Build NAL unit array entries: VPS (32), SPS (33), PPS (34)
+  struct NalEntry {
+    uint8_t nal_type;
+    const std::vector<uint8_t> *data;
+  };
+  NalEntry entries[3] = {
+    {32, &vps},
+    {33, &sps},
+    {34, &pps},
+  };
+
+  // Count non-empty entries
+  uint8_t num_arrays = 0;
+  for (auto &e : entries) {
+    if (!e.data->empty()) ++num_arrays;
+  }
+  hvcC.push_back(num_arrays);
+
+  for (auto &e : entries) {
+    if (e.data->empty()) continue;
+    // array_completeness(1)=1 | reserved(1)=0 | NAL_unit_type(6)
+    hvcC.push_back(static_cast<uint8_t>(0x80 | (e.nal_type & 0x3F)));
+    // numNalus = 1
+    hvcC.push_back(0x00);
+    hvcC.push_back(0x01);
+    // nalUnitLength
+    uint16_t nal_len = static_cast<uint16_t>(e.data->size());
+    hvcC.push_back(static_cast<uint8_t>(nal_len >> 8));
+    hvcC.push_back(static_cast<uint8_t>(nal_len & 0xFF));
+    // nalUnit
+    hvcC.insert(hvcC.end(), e.data->begin(), e.data->end());
+  }
+
   return true;
 }
 
@@ -460,9 +573,10 @@ bool start_recording(const std::string &path, int target_channel) {
     }
   }
 
+  std::vector<uint8_t> vps;
   std::vector<uint8_t> sps;
   std::vector<uint8_t> pps;
-  if (!wait_for_codec_config(sps, pps, std::chrono::milliseconds(1500), target_channel)) {
+  if (!wait_for_codec_config(vps, sps, pps, std::chrono::milliseconds(1500), target_channel)) {
     LOG_ERROR("MP4ControlSocket: timed out waiting for SPS/PPS before START");
     reset_wait_state();
     disable_force_if_idle();
@@ -507,11 +621,29 @@ bool start_recording(const std::string &path, int target_channel) {
     }
   }
 
-  if (!build_avcc(sps, pps, init.avcC)) {
-    LOG_ERROR("MP4ControlSocket: failed to build avcC from SPS/PPS");
-    reset_wait_state();
-    disable_force_if_idle();
-    return false;
+  // Determine codec type from stream config and build the appropriate
+  // decoder configuration record for the MP4 container.
+  const bool stream_is_h265 =
+      stream_cfg && stream_cfg->format && std::strcmp(stream_cfg->format, "H265") == 0;
+  init.is_hevc = stream_is_h265;
+
+  if (stream_is_h265) {
+    if (!build_hvcc(vps, sps, pps, init.hvcC)) {
+      LOG_ERROR("MP4ControlSocket: failed to build hvcC from VPS/SPS/PPS");
+      reset_wait_state();
+      disable_force_if_idle();
+      return false;
+    }
+    LOG_INFO("MP4ControlSocket: H.265 stream detected, hvcC built ("
+             << init.hvcC.size() << " bytes, vps=" << vps.size() << " sps=" << sps.size()
+             << " pps=" << pps.size() << ")");
+  } else {
+    if (!build_avcc(sps, pps, init.avcC)) {
+      LOG_ERROR("MP4ControlSocket: failed to build avcC from SPS/PPS");
+      reset_wait_state();
+      disable_force_if_idle();
+      return false;
+    }
   }
 
   // Calculate prebuffer offset BEFORE starting recorder to prevent race condition
@@ -531,56 +663,56 @@ bool start_recording(const std::string &path, int target_channel) {
           break;
         }
       }
-      
+
       // Calculate prebuffer duration from first keyframe to last frame
       int64_t timestamp_base = prebuffer_frames[first_keyframe_idx].timestamp_us;
       int64_t last_prebuffer_ts = prebuffer_frames.back().timestamp_us;
       int64_t prebuffer_duration_us = last_prebuffer_ts - timestamp_base;
       prebuffer_offset_ms = prebuffer_duration_us / 1000;
-      
+
       // Add one frame duration to ensure no overlap
       int fps = (video->stream) ? video->stream->fps : 30;
       prebuffer_offset_ms += (1000 / fps);
-      
+
     }
   }
-  
+
   // Set the prebuffer offset BEFORE starting the recorder
   // This ensures VideoWorker uses the correct offset from the first frame
   video->mp4_prebuffer_offset_ms.store(prebuffer_offset_ms, std::memory_order_relaxed);
-  
+
   // Block live frame writing while we flush prebuffer
   if (!prebuffer_frames.empty()) {
     video->mp4_prebuffer_flushing.store(true, std::memory_order_release);
   }
 #endif
-  
+
   bool ok = recorder.start(path.c_str(), init);
   if (ok) {
     global_mp4_active_recorders.fetch_add(1, std::memory_order_relaxed);
     LOG_INFO("MP4ControlSocket: recorder started with avcC payload size=" << init.avcC.size() << " on channel "
                                                                           << target_channel);
-    
+
 #ifdef PREBUFFER_ENABLED
     // Now flush prebuffer frames (recorder is active, VideoWorker will use the offset we set)
     if (!prebuffer_frames.empty()) {
       size_t frames_to_write = prebuffer_frames.size() - first_keyframe_idx;
       LOG_INFO("MP4ControlSocket: flushing " << frames_to_write << " prebuffer frames (skipping "
                << first_keyframe_idx << " frames before first keyframe)");
-      
+
       // Calculate timestamp base from first keyframe
       int64_t timestamp_base = prebuffer_frames[first_keyframe_idx].timestamp_us;
-      
+
       for (size_t i = first_keyframe_idx; i < prebuffer_frames.size(); ++i) {
         const auto& frame = prebuffer_frames[i];
         // Calculate relative timestamp starting from 0
         int64_t relative_ts = frame.timestamp_us - timestamp_base;
         int64_t pts_ms = relative_ts / 1000;
-        
+
         // Write prebuffer frame to MP4
         recorder.writeVideo(frame.data.data(), frame.data.size(), pts_ms, frame.is_keyframe);
       }
-      
+
       // Allow live frames to be written now
       video->mp4_prebuffer_flushing.store(false, std::memory_order_release);
     }
@@ -605,7 +737,7 @@ void stop_recording(int channel) {
   recorder.stop();
   if (global_video[channel]) {
     global_video[channel]->mp4_waiting_for_idr.store(false);
-    
+
 #ifdef PREBUFFER_ENABLED
     // Clear prebuffer frames when recording stops (but keep buffer enabled)
     if (global_video[channel]->prebuffer) {

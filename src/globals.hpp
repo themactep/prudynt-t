@@ -221,8 +221,10 @@ struct video_stream {
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
   std::mutex codec_config_mutex;
+  std::vector<uint8_t> latest_vps;
   std::vector<uint8_t> latest_sps;
   std::vector<uint8_t> latest_pps;
+  bool have_vps;
   bool have_sps;
   bool have_pps;
   std::mutex tap_mutex;
@@ -230,7 +232,7 @@ struct video_stream {
   std::mutex privacy_mutex;
   std::shared_ptr<VideoPrivacyMask> privacy_mask;
   std::atomic<bool> privacy_requested{false};
-  
+
 #ifdef PREBUFFER_ENABLED
   // Pre-trigger buffer for MP4 recording
   std::unique_ptr<PreTriggerBuffer> prebuffer;
@@ -241,7 +243,7 @@ struct video_stream {
         imp_framesource(nullptr), msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
         mp4_required_idr_ts{-1}, mp4_last_idr_ts{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},
-        mp4_prebuffer_flushing{false}, have_sps(false), have_pps(false) {
+        mp4_prebuffer_flushing{false}, have_vps(false), have_sps(false), have_pps(false) {
   }
 };
 

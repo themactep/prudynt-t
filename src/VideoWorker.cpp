@@ -47,14 +47,14 @@ void VideoWorker::run() {
   int64_t mp4_sample_ts_base = -1;
   bool mp4_waiting_frame_end = false;
   bool mp4_inserted_codec_config = false;
-  
+
 #ifdef PREBUFFER_ENABLED
   // Prebuffer frame accumulation (similar to mp4_sample)
   std::vector<uint8_t> prebuffer_sample;
   bool prebuffer_sample_is_key = false;
   int64_t prebuffer_sample_ts = -1;
 #endif
-  
+
   // Queue for frames that arrive during prebuffer flush
   struct PendingFrame {
     std::vector<uint8_t> data;
@@ -77,20 +77,20 @@ void VideoWorker::run() {
     mp4_waiting_frame_end = false;
     mp4_inserted_codec_config = false;
   };
-  
+
 #ifdef PREBUFFER_ENABLED
   auto reset_prebuffer_sample = [&]() {
     prebuffer_sample.clear();
     prebuffer_sample_is_key = false;
     prebuffer_sample_ts = -1;
   };
-  
+
   auto flush_prebuffer_sample = [&]() {
     if (prebuffer_sample.empty() || !global_video[encChn]->prebuffer) {
       reset_prebuffer_sample();
       return;
     }
-    
+
     global_video[encChn]->prebuffer->addFrame(
       prebuffer_sample.data(),
       prebuffer_sample.size(),
@@ -108,7 +108,7 @@ void VideoWorker::run() {
 
   auto flush_mp4_sample = [&](bool recorder_active) {
     static bool was_recorder_active = false;
-    
+
     if (!recorder_active) {
       if (was_recorder_active) {
 #ifdef PREBUFFER_ENABLED
@@ -120,12 +120,12 @@ void VideoWorker::run() {
       return;
     }
     was_recorder_active = true;
-    
+
     if (mp4_sample.empty()) {
       reset_mp4_sample();
       return;
     }
-    
+
 #ifdef PREBUFFER_ENABLED
     // Queue frames while prebuffer is being flushed (instead of skipping)
     if (video_state && video_state->mp4_prebuffer_flushing.load(std::memory_order_acquire)) {
@@ -135,17 +135,17 @@ void VideoWorker::run() {
       pf.timestamp = mp4_sample_ts;
       pf.is_keyframe = mp4_sample_is_key;
       pending_frames_during_flush.push_back(std::move(pf));
-      
+
       reset_mp4_sample();
       mp4_sample_ts_base = -1;  // Reset timestamp base so we recalculate after flush
       return;
     }
-    
+
     // If we have pending frames from during the flush, write them first
     if (!pending_frames_during_flush.empty()) {
-      
+
       int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
-      
+
       // Find the first keyframe in pending frames to establish timestamp base
       int64_t pending_ts_base = -1;
       for (const auto& pf : pending_frames_during_flush) {
@@ -158,7 +158,7 @@ void VideoWorker::run() {
       if (pending_ts_base < 0 && !pending_frames_during_flush.empty()) {
         pending_ts_base = pending_frames_during_flush.front().timestamp;
       }
-      
+
       for (const auto& pf : pending_frames_during_flush) {
         int64_t relative_ts = pf.timestamp;
         if (pending_ts_base >= 0) {
@@ -166,15 +166,15 @@ void VideoWorker::run() {
         }
         if (relative_ts < 0) relative_ts = 0;
         int64_t pts_ms = relative_ts / 1000 + prebuffer_offset;
-        
+
         channel_recorder.writeVideo(pf.data.data(), pf.data.size(), pts_ms, pf.is_keyframe);
       }
-      
+
       // Update timestamp base for subsequent live frames
       if (!pending_frames_during_flush.empty()) {
         mp4_sample_ts_base = pending_frames_during_flush.back().timestamp;
       }
-      
+
       pending_frames_during_flush.clear();
     }
 #endif
@@ -207,7 +207,7 @@ void VideoWorker::run() {
         relative_ts = 0;
       }
       pts_ms = relative_ts / 1000;
-      
+
       // Add prebuffer offset so live frames continue after prebuffer frames
       int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
       if (prebuffer_offset > 0) {
@@ -308,6 +308,7 @@ void VideoWorker::run() {
           size_t payload_len = static_cast<size_t>(raw_payload_len);
           const uint8_t *payload_ptr = start + 4;
 
+          bool nal_is_vps = false;
           bool nal_is_sps = false;
           bool nal_is_pps = false;
           bool nal_is_idr = false;
@@ -345,6 +346,7 @@ void VideoWorker::run() {
           }
 
           if (stream_is_h265) {
+            nal_is_vps = (h265_nal == 32);
             nal_is_sps = (h265_nal == 33);
             nal_is_pps = (h265_nal == 34);
             nal_is_hevc_idr = (h265_nal >= 16 && h265_nal <= 21);
@@ -354,9 +356,12 @@ void VideoWorker::run() {
             nal_is_idr = (h264_nal == 5);
           }
 
-          if (nal_is_sps || nal_is_pps) {
+          if (nal_is_vps || nal_is_sps || nal_is_pps) {
             std::lock_guard<std::mutex> lock(global_video[encChn]->codec_config_mutex);
-            if (nal_is_sps) {
+            if (nal_is_vps) {
+              global_video[encChn]->latest_vps.assign(start + 4, end);
+              global_video[encChn]->have_vps = true;
+            } else if (nal_is_sps) {
               global_video[encChn]->latest_sps.assign(start + 4, end);
               global_video[encChn]->have_sps = true;
             } else {
@@ -369,7 +374,7 @@ void VideoWorker::run() {
             video_state->mp4_last_idr_ts.store(stream.pack[i].timestamp, std::memory_order_relaxed);
           }
 
-          if (recorder_accepts_samples && payload_len > 0 && !(nal_is_sps || nal_is_pps)) {
+          if (recorder_accepts_samples && payload_len > 0 && !(nal_is_vps || nal_is_sps || nal_is_pps)) {
             int64_t pack_ts = stream.pack[i].timestamp;
             bool pack_frame_end = stream.pack[i].frameEnd;
 
@@ -400,12 +405,18 @@ void VideoWorker::run() {
             bool waiting_for_idr_flag =
                 video_state ? video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed) : false;
             if (mp4_sample.empty() && waiting_for_idr_flag && !mp4_inserted_codec_config && video_state) {
+              std::vector<uint8_t> vps_copy;
               std::vector<uint8_t> sps_copy;
               std::vector<uint8_t> pps_copy;
               {
                 std::lock_guard<std::mutex> lock(video_state->codec_config_mutex);
+                vps_copy = video_state->latest_vps;
                 sps_copy = video_state->latest_sps;
                 pps_copy = video_state->latest_pps;
+              }
+              // For H.265, prepend VPS before SPS
+              if (!vps_copy.empty()) {
+                append_length_prefixed_nal_vec(vps_copy);
               }
               append_length_prefixed_nal_vec(sps_copy);
               append_length_prefixed_nal_vec(pps_copy);
@@ -464,7 +475,7 @@ void VideoWorker::run() {
                 if (global_video[encChn]->onDataCallback)
                   global_video[encChn]->onDataCallback();
               } catch (const std::exception& e) {
-                LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id 
+                LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id
                          << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
                          << " - Failed to queue: " << e.what());
                 delivered = false;
@@ -503,24 +514,24 @@ void VideoWorker::run() {
             }
 #endif
           }
-          
+
 #ifdef PREBUFFER_ENABLED
           // Capture frame for prebuffer if enabled
           // This is OUTSIDE the hasDataCallback block so prebuffer works without RTSP clients
           // Accumulate all NAL units (except SPS/PPS) into prebuffer_sample, flush on frameEnd
           if (global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled()) {
-            // Skip SPS/PPS for prebuffer (they're in the avcC)
-            if (!(nal_is_sps || nal_is_pps) && payload_len > 0) {
+            // Skip VPS/SPS/PPS for prebuffer (they're in the avcC/hvcC)
+            if (!(nal_is_vps || nal_is_sps || nal_is_pps) && payload_len > 0) {
               // Set timestamp from first NAL unit of frame
               if (prebuffer_sample_ts == -1) {
                 prebuffer_sample_ts = stream.pack[i].timestamp;
               }
-              
+
               // Mark as keyframe if any NAL is IDR
               if (nal_is_idr || nal_is_hevc_idr) {
                 prebuffer_sample_is_key = true;
               }
-              
+
               // Append length-prefixed NAL unit (same format as MP4)
               size_t write_offset = prebuffer_sample.size();
               prebuffer_sample.resize(write_offset + 4 + payload_len);
@@ -531,7 +542,7 @@ void VideoWorker::run() {
               dst[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
               dst[3] = static_cast<uint8_t>(be_len & 0xFF);
               std::memcpy(dst + 4, start + 4, payload_len);
-              
+
               // Flush on frame end
               if (stream.pack[i].frameEnd) {
                 flush_prebuffer_sample();

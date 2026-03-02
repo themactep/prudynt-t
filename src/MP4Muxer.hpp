@@ -13,8 +13,12 @@ public:
     int fps = 0;
     int sampleRate = 48000;
     int channels = 1;
-    // avcC (AVCDecoderConfigurationRecord) and AAC AudioSpecificConfig
+    bool is_hevc = false;
+    // avcC (AVCDecoderConfigurationRecord) for H.264,
+    // hvcC (HEVCDecoderConfigurationRecord) for H.265,
+    // and AAC AudioSpecificConfig
     std::vector<uint8_t> avcC;
+    std::vector<uint8_t> hvcC;
     std::vector<uint8_t> aacConfig;
   };
 
