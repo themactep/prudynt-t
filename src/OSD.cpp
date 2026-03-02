@@ -742,20 +742,6 @@ void OSD::init() {
   stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
   stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
 
-  // Calculate realistic OSD pool size based on stream resolution
-  // Estimate: ~10% of screen area for OSD elements (text, logos, etc.)
-  // Formula: (width * height * 4 bytes * 0.1) / 1024 + safety margin
-  int estimated_usage = (stream_width * stream_height * 4 * 0.1) / 1024; // 10% screen coverage
-  int safety_margin = 256;                                               // 256KB safety margin
-  int calculated_pool_size = estimated_usage + safety_margin;
-
-  // Use calculated size per stream instead of global config
-  int actual_pool_size = calculated_pool_size;
-
-  ret = IMP_OSD_SetPoolSize(actual_pool_size * 1024);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << actual_pool_size << "KB) for " << stream_width << "x" << stream_height 
-                     << " (calculated: " << calculated_pool_size << "KB)");
-
   LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: " << stream_width << "x" << stream_height);
 
   ret = IMP_OSD_CreateGroup(osdGrp);
