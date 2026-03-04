@@ -190,7 +190,7 @@ void Motion::detect() {
   exit();
   remove_motion_detection_state_file();
 
-  LOG_DEBUG("Exit motion detect thread.");
+  LOG_INFO("Exit motion detection thread.");
 }
 
 int Motion::init() {
