@@ -29,6 +29,11 @@ private:
   std::shared_ptr<Stream> stream;
   std::string name; // for printing
   EventTriggerId eventTriggerId;
+
+  // Monotonic counter for audio PTS (avoids gettimeofday jitter for AAC)
+  bool audioFirstFrame{true};
+  struct timeval audioStartTime{};
+  uint64_t audioFrameCount{0};
 };
 
 #endif

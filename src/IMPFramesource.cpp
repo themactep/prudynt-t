@@ -1,8 +1,22 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
+#include <algorithm>
+#include <cstdio>
 #include <dlfcn.h>
 
 #define MODULE "IMP_FRAMESOURCE"
+
+// Returns total system RAM in bytes, read once from /proc/meminfo.
+static long get_total_ram_bytes() {
+  static long cached = 0;
+  if (cached > 0) return cached;
+  FILE *f = fopen("/proc/meminfo", "r");
+  if (!f) return 64 * 1024 * 1024; // conservative fallback
+  long kb = 0;
+  if (fscanf(f, "MemTotal: %ld kB", &kb) == 1) cached = kb * 1024L;
+  fclose(f);
+  return cached > 0 ? cached : 64 * 1024 * 1024;
+}
 
 IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor, int chnNr) {
   return new IMPFramesource(stream, sensor, chnNr);
@@ -30,8 +44,22 @@ int IMPFramesource::init() {
   chnAttr.pixFmt = PIX_FMT_NV12;
   chnAttr.outFrmRateNum = stream->fps;
   chnAttr.outFrmRateDen = 1;
-  // Keep buffers as configured; default to 2 if unset, to remain memory-friendly on low-RAM devices
-  chnAttr.nrVBs = (stream->buffers > 0 ? stream->buffers : 2);
+  // Auto-calculate buffer count based on fps when set to -1.
+  // Scale with fps for pipeline headroom, then cap to keep framesource
+  // buffers within ~15% of total RAM (protects 64MB devices).
+  int auto_buffers = std::max(2, (stream->fps + 7) / 8);
+  long frame_bytes = static_cast<long>(stream->width) * stream->height * 3 / 2; // NV12
+  long ram_budget  = get_total_ram_bytes() * 15 / 100;
+  int  mem_cap     = static_cast<int>(ram_budget / frame_bytes);
+  auto_buffers     = std::max(2, std::min(auto_buffers, mem_cap));
+  if (stream->buffers > 0) {
+    chnAttr.nrVBs = stream->buffers;
+  } else {
+    LOG_INFO("Channel " << chnNr << ": auto buffers=" << auto_buffers
+             << " (fps=" << stream->fps << ", frame=" << frame_bytes/1024 << "KB"
+             << ", RAM=" << get_total_ram_bytes()/1024/1024 << "MB)");
+    chnAttr.nrVBs = auto_buffers;
+  }
   chnAttr.type = FS_PHY_CHANNEL;
 
   chnAttr.crop.enable = 0;

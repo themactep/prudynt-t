@@ -560,7 +560,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.ip_delta", stream0.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.pb_delta", stream0.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.max_bitrate", stream0.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
-      {"stream0.buffers", stream0.buffers, encDefaults.stream0_buffers, [](const int &v) { return v >= 1 && v <= 8; }},
+      {"stream0.buffers", stream0.buffers, -1, [](const int &v) { return v == -1 || (v >= 1 && v <= 8); }},
       // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream0.fps", stream0.fps, 25, validateInt120},
       {"stream0.gop", stream0.gop, 20, validateIntGe0},
@@ -597,7 +597,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.ip_delta", stream1.ip_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.pb_delta", stream1.pb_delta, -1, [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.max_bitrate", stream1.max_bitrate, 0, [](const int &v) { return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000); }},
-      {"stream1.buffers", stream1.buffers, encDefaults.stream1_buffers, [](const int &v) { return v >= 1 && v <= 8; }},
+      {"stream1.buffers", stream1.buffers, -1, [](const int &v) { return v == -1 || (v >= 1 && v <= 8); }},
       // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream1.fps", stream1.fps, 25, validateInt120},
       {"stream1.gop", stream1.gop, 20, validateIntGe0},
