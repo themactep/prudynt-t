@@ -286,6 +286,12 @@ static void apply_mode(DayNightAlgo::Mode m) {
         if (daynight_should_log(Logger::WARN)) {
           LOG_WARN("SetISPRunningMode(DAY) failed: " << ret);
         }
+      } else {
+        // Keep cfg->image.running_mode in sync so the web UI reflects the
+        // actual ISP state immediately. The shell script's imp-control call
+        // duplicates this via HTTP, but that runs async and can fail at boot
+        // if the HTTP server is not yet ready.
+        cfg->image.running_mode = static_cast<int>(hal::isp::RunningMode::Day);
       }
     }
     std::string cmd = std::string(script) + " day";
@@ -311,6 +317,8 @@ static void apply_mode(DayNightAlgo::Mode m) {
         if (daynight_should_log(Logger::WARN)) {
           LOG_WARN("SetISPRunningMode(NIGHT) failed: " << ret);
         }
+      } else {
+        cfg->image.running_mode = static_cast<int>(hal::isp::RunningMode::Night);
       }
     }
     std::string cmd = std::string(script) + " night";
