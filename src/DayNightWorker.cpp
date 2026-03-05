@@ -581,6 +581,17 @@ void *thread_entry(void *arg) {
   DayNightAlgo::Mode current = DayNightAlgo::Mode::Unknown;
   bool initial_mode_applied = false;
 
+  // Require 2 consecutive same-direction readings before committing to an
+  // initial mode. Prevents a single under-settled AE sample (TC-2) from
+  // locking the wrong mode at boot.
+  int initial_night_confirm = 0;
+  int initial_day_confirm   = 0;
+
+  // If initial mode cannot be determined within this many samples (gain stays
+  // in the hysteresis zone), default to Night — the safe fallback for the
+  // pitch-black startup case (TC-4).
+  int initial_mode_fallback_countdown = simple_params.night_count_threshold * 3;
+
   // Anti-flapping cooldown
   int anti_flap_cooldown = 0;
   const int anti_flap_iterations = 30; // ~30 seconds minimum between switches
@@ -654,36 +665,70 @@ void *thread_entry(void *arg) {
     // IMPORTANT: This happens regardless of schedule to ensure camera starts in correct mode
     if (!initial_mode_applied) {
       DayNightAlgo::Mode initial = DayNightAlgo::Mode::Unknown;
-      
+
       // Infer initial mode from sensor readings to avoid black screen on boot in dark conditions
       if (total_gain >= 0) {
-        // Use total_gain if available
         if (total_gain > simple_params.total_gain_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
         } else if (total_gain < simple_params.total_gain_day_threshold) {
           initial = DayNightAlgo::Mode::Day;
         }
       } else if (ev >= 0) {
-        // Fallback to EV for platforms without total_gain
         if (ev > simple_params.ev_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
         } else if (ev < simple_params.ev_day_threshold) {
           initial = DayNightAlgo::Mode::Day;
         }
       }
-      
-      if (initial != DayNightAlgo::Mode::Unknown) {
+
+      // Require 2 consecutive same-direction readings before committing.
+      // A single under-settled AE sample can read low (<300) even in pitch
+      // black; the confirm step prevents that from locking in the wrong mode.
+      bool commit = false;
+      if (initial == DayNightAlgo::Mode::Night) {
+        initial_day_confirm = 0;
+        commit = (++initial_night_confirm >= 2);
+      } else if (initial == DayNightAlgo::Mode::Day) {
+        initial_night_confirm = 0;
+        commit = (++initial_day_confirm >= 2);
+      } else {
+        // Hysteresis zone — tick down the fallback countdown
+        initial_night_confirm = 0;
+        initial_day_confirm   = 0;
+        --initial_mode_fallback_countdown;
+      }
+
+      if (commit) {
         apply_mode(initial);
         current = initial;
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
         cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
                                       std::memory_order_relaxed);
+        // Protect initial Night from an immediate bright-burst flip (TC-8b):
+        // the anti_flap path only fires on counter-triggered switches, so set
+        // it explicitly here when starting in Night.
+        if (current == DayNightAlgo::Mode::Night)
+          anti_flap_cooldown = anti_flap_iterations / 2;
         initial_mode_applied = true;
         if (daynight_should_log(Logger::INFO)) {
-          const char *schedule_status = within_schedule ? "within schedule" : "outside schedule";
           LOG_INFO("DayNight: applied initial mode " << (current == DayNightAlgo::Mode::Day ? "day" : "night")
-                   << " (total_gain=" << total_gain << ", ev=" << ev << ", " << schedule_status << ")");
+                   << " (total_gain=" << total_gain << ", ev=" << ev
+                   << ", confirm=" << (current == DayNightAlgo::Mode::Night ? initial_night_confirm : initial_day_confirm)
+                   << ", " << (within_schedule ? "within schedule" : "outside schedule") << ")");
         }
+      } else if (initial_mode_fallback_countdown <= 0) {
+        // Gain has been stuck in the hysteresis zone long enough that the
+        // normal confirm path will never fire. Default to Night — the camera
+        // is almost certainly in a dark environment (bright scenes produce a
+        // clear day reading well below the 300 threshold within 1-2 samples).
+        apply_mode(DayNightAlgo::Mode::Night);
+        current = DayNightAlgo::Mode::Night;
+        simple_state.is_night = true;
+        cfg->daynight.live_mode.store("night", std::memory_order_relaxed);
+        anti_flap_cooldown = anti_flap_iterations / 2;
+        initial_mode_applied = true;
+        LOG_WARN("DayNight: initial detection timeout, defaulting to Night"
+                 " (gain stuck in hysteresis zone, total_gain=" << total_gain << ")");
       }
     }
 

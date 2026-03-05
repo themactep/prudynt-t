@@ -187,10 +187,11 @@ inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_g
         }
       }
     }
-    // In between thresholds - reset counters (hysteresis zone)
+    // In between thresholds - decay counters slowly to tolerate brief AE oscillation.
+    // A hard reset would block detection if gain bounces through the zone during settling.
     else {
-      s.night_count = 0;
-      s.day_count = 0;
+      if (s.night_count > 0) --s.night_count;
+      if (s.day_count > 0) --s.day_count;
     }
   }
   // Fallback to EV-based algorithm for platforms without total_gain (T10, T20)
@@ -217,10 +218,10 @@ inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_g
         }
       }
     }
-    // In between thresholds - reset counters (hysteresis zone)
+    // In between thresholds - decay counters slowly to tolerate brief AE oscillation.
     else {
-      s.night_count = 0;
-      s.day_count = 0;
+      if (s.night_count > 0) --s.night_count;
+      if (s.day_count > 0) --s.day_count;
     }
   }
   // No valid sensor data - hold current state
