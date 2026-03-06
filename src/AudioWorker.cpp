@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <string>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -183,10 +184,27 @@ AudioWorker::~AudioWorker() {
 }
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
-  int64_t audio_ts = frame.timeStamp;
+  // Anchor the IMP boot-relative timestamp to wall clock on first call.
+  // The IMP counter is typically 32-bit (wraps at 2^32 µs ≈ 71.6 min), so we
+  // detect wraps by checking for large backwards deltas and compensate with
+  // +2^32 µs. This keeps fPresentationTime a valid Unix timeval so that
+  // live555's RTCP sender reports carry a correct NTP↔RTP mapping.
+  if (!hw_ts_initialized) {
+    gettimeofday(&wall_ts_base, nullptr);
+    hw_ts_base = frame.timeStamp;
+    hw_ts_initialized = true;
+  }
+
+  int64_t delta_us = frame.timeStamp - hw_ts_base;
+  // A delta more than 1 s negative means the 32-bit hardware counter wrapped.
+  if (delta_us < -1000000LL)
+    delta_us += (1LL << 32);
+
+  int64_t abs_us = static_cast<int64_t>(wall_ts_base.tv_sec) * 1000000LL
+                   + wall_ts_base.tv_usec + delta_us;
   struct timeval encoder_time;
-  encoder_time.tv_sec = audio_ts / 1000000;
-  encoder_time.tv_usec = audio_ts % 1000000;
+  encoder_time.tv_sec  = static_cast<time_t>(abs_us / 1000000LL);
+  encoder_time.tv_usec = static_cast<suseconds_t>(abs_us % 1000000LL);
 
   AudioFrame af;
   af.time = encoder_time;

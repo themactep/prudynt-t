@@ -47,7 +47,7 @@ int IMPFramesource::init() {
   // Auto-calculate buffer count based on fps when set to -1.
   // Scale with fps for pipeline headroom, then cap to keep framesource
   // buffers within ~15% of total RAM (protects 64MB devices).
-  int auto_buffers = std::max(2, (stream->fps + 7) / 8);
+  int auto_buffers = std::max(2, (stream->fps + 9) / 10);
   long frame_bytes = static_cast<long>(stream->width) * stream->height * 3 / 2; // NV12
   long ram_budget  = get_total_ram_bytes() * 15 / 100;
   int  mem_cap     = static_cast<int>(ram_budget / frame_bytes);
