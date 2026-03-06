@@ -275,12 +275,10 @@ void VideoWorker::run() {
           continue;
         }
 
-        /* timestamp fix, can be removed if solved
         int64_t nal_ts = stream.pack[stream.packCount - 1].timestamp;
         struct timeval encoder_time;
         encoder_time.tv_sec = nal_ts / 1000000;
         encoder_time.tv_usec = nal_ts % 1000000;
-        */
 
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
@@ -439,10 +437,8 @@ void VideoWorker::run() {
           if (global_video[encChn]->hasDataCallback) {
             H264NALUnit nalu;
 
-            /* timestamp fix, can be removed if solved
             nalu.imp_ts = stream.pack[i].timestamp;
             nalu.time = encoder_time;
-            */
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.

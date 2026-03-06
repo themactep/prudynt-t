@@ -76,10 +76,8 @@ struct H264NALUnit {
   uint32_t packet_index = 0;        // Position within frame (0-based)
   uint32_t packet_count = 0;        // Total NAL units in frame
 
-  /* timestamp fix, can be removed if solved
-  struct timeval time;
-  int64_t imp_ts;
-  */
+  struct timeval time{0, 0};
+  int64_t imp_ts{0};
 };
 
 struct BackchannelFrame {

@@ -11,7 +11,12 @@
 static void assignPresentationTime(const AudioFrame &, struct timeval &tv) {
   gettimeofday(&tv, nullptr);
 }
-static void assignPresentationTime(const H264NALUnit &, struct timeval &tv) {
+static void assignPresentationTime(const H264NALUnit &nal, struct timeval &tv) {
+  if (nal.time.tv_sec != 0 || nal.time.tv_usec != 0) {
+    tv = nal.time;
+    return;
+  }
+
   gettimeofday(&tv, nullptr);
 }
 
