@@ -42,7 +42,7 @@ void AudioReframer::getReframedFrame(uint8_t *frameData, int64_t &timestamp) {
 
   timestamp = currentTimestamp;
   if (inputSampleRate > 0) {
-    currentTimestamp += (static_cast<int64_t>(outputSamplesPerFrame) * 1000000LL) / inputSampleRate;
+    currentTimestamp += (outputSamplesPerFrame * 1000) / inputSampleRate;
   } // else: keep currentTimestamp stable if misconfigured
 }
 
