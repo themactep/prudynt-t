@@ -51,7 +51,9 @@ int IMPFramesource::init() {
   long frame_bytes = static_cast<long>(stream->width) * stream->height * 3 / 2; // NV12
   long ram_budget  = get_total_ram_bytes() * 15 / 100;
   int  mem_cap     = static_cast<int>(ram_budget / frame_bytes);
-  auto_buffers     = std::max(2, std::min(auto_buffers, mem_cap));
+  // Allow minimum of 1 buffer when memory-constrained (e.g. T31L 64MB devices
+  // where MemTotal is ~34MB after ISP/rmem reservation).
+  auto_buffers     = std::max(1, std::min(auto_buffers, mem_cap));
   if (stream->buffers > 0) {
     chnAttr.nrVBs = stream->buffers;
   } else {
