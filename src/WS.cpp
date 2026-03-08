@@ -104,6 +104,7 @@ enum {
   PNT_RTSP_EST_BITRATE,
   PNT_RTSP_OUT_BUFFER_SIZE,
   PNT_RTSP_SEND_BUFFER_SIZE,
+  PNT_RTSP_SEND_TIMEOUT,
   PNT_RTSP_AUTH_REQUIRED,
   PNT_RTSP_NAME,
   PNT_RTSP_USERNAME,
@@ -111,7 +112,7 @@ enum {
 };
 
 static const char *const rtsp_keys[] = {"port",          "est_bitrate", "out_buffer_size", "send_buffer_size",
-                                        "auth_required", "name",        "username",        "password"};
+                                        "send_timeout",  "auth_required", "name",        "username",        "password"};
 
 /* SENSOR */
 enum { PNT_SENSOR_MODEL = 1, PNT_SENSOR_FPS, PNT_SENSOR_WIDTH, PNT_SENSOR_HEIGHT, PNT_SENSOR_I2C_ADDRESS };

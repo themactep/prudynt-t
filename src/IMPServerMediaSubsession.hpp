@@ -26,6 +26,9 @@ protected:
   virtual RTPSink *createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                     FramedSource *inputSource);
 
+  // Override sdpLines to refresh SDP when encoder SPS/PPS change
+  virtual char const *sdpLines(int addressFamily) override;
+
   virtual void startStream(unsigned clientSessionId, void *streamToken, TaskFunc *rtcpRRHandler,
                            void *rtcpRRHandlerClientData, unsigned short &rtpSeqNum, unsigned &rtpTimestamp,
                            ServerRequestAlternativeByteHandler *serverRequestAlternativeByteHandler,
@@ -54,6 +57,11 @@ private:
   H264NALUnit sps;
   H264NALUnit pps;
   int encChn;
+
+  // Track whether codec config has changed since last SDP generation
+  std::vector<uint8_t> lastKnownSps;
+  std::vector<uint8_t> lastKnownPps;
+  std::vector<uint8_t> lastKnownVps;
 };
 
 #endif

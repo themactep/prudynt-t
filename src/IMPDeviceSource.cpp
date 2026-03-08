@@ -88,7 +88,28 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
         gettimeofday(&fPresentationTime, NULL);
       }
     } else {
-      gettimeofday(&fPresentationTime, NULL);
+      // Video: use encoder timestamps for stable, jitter-free PTS.
+      // The IMP encoder provides a monotonic microsecond timestamp per NAL.
+      // We anchor it to wall-clock at the first frame, then derive all
+      // subsequent presentation times from the encoder's own clock.
+      if (videoFirstFrame) {
+        gettimeofday(&videoBaseTime, NULL);
+        videoFirstImpTs = nal.imp_ts;
+        videoFirstFrame = false;
+      }
+      int64_t delta_us = nal.imp_ts - videoFirstImpTs;
+      if (delta_us < 0) {
+        // Encoder timestamp wrapped or reset — re-anchor
+        gettimeofday(&videoBaseTime, NULL);
+        videoFirstImpTs = nal.imp_ts;
+        delta_us = 0;
+      }
+      fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
+      fPresentationTime.tv_usec = videoBaseTime.tv_usec + static_cast<suseconds_t>(delta_us % 1000000LL);
+      if (fPresentationTime.tv_usec >= 1000000) {
+        fPresentationTime.tv_sec++;
+        fPresentationTime.tv_usec -= 1000000;
+      }
     }
 
     memcpy(fTo, &nal.data[0], fFrameSize);

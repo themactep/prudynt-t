@@ -275,12 +275,10 @@ void VideoWorker::run() {
           continue;
         }
 
-        /* timestamp fix, can be removed if solved
         int64_t nal_ts = stream.pack[stream.packCount - 1].timestamp;
         struct timeval encoder_time;
         encoder_time.tv_sec = nal_ts / 1000000;
         encoder_time.tv_usec = nal_ts % 1000000;
-        */
 
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
@@ -439,10 +437,7 @@ void VideoWorker::run() {
           if (global_video[encChn]->hasDataCallback) {
             H264NALUnit nalu;
 
-            /* timestamp fix, can be removed if solved
             nalu.imp_ts = stream.pack[i].timestamp;
-            nalu.time = encoder_time;
-            */
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
@@ -467,13 +462,21 @@ void VideoWorker::run() {
 
             if (global_video[encChn]->idr == true) {
               bool delivered = false;
-              // Use write_wait() to apply backpressure instead of silent drops
+              // Use non-blocking write() to avoid stalling encoder on slow clients
+              // (go2rtc-inspired: drop oldest frame rather than block producer)
               try {
-                global_video[encChn]->msgChannel->write_wait(nalu);
-                delivered = true;
-                std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
-                if (global_video[encChn]->onDataCallback)
-                  global_video[encChn]->onDataCallback();
+                delivered = global_video[encChn]->msgChannel->write(nalu);
+                if (delivered) {
+                  std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+                  if (global_video[encChn]->onDataCallback)
+                    global_video[encChn]->onDataCallback();
+                } else {
+                  LOG_DDEBUG("video channel:" << encChn << " msgChannel full, dropped oldest NAL");
+                  // Still notify so consumer processes queued data
+                  std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+                  if (global_video[encChn]->onDataCallback)
+                    global_video[encChn]->onDataCallback();
+                }
               } catch (const std::exception& e) {
                 LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id
                          << ", packet:" << nalu.packet_index << "/" << nalu.packet_count

@@ -8,6 +8,7 @@
 #include "IMPDeviceSource.hpp"
 #include <iostream>
 #include <memory>
+#include <sys/socket.h>
 
 // Modify method to accept pointers for the NAL units
 IMPServerMediaSubsession *IMPServerMediaSubsession::createNew(UsageEnvironment &env,
@@ -48,6 +49,15 @@ FramedSource *IMPServerMediaSubsession::createNewStreamSource(unsigned clientSes
 RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                                     FramedSource *fs) {
   increaseSendBufferTo(envir(), rtpGroupsock->socketNum(), cfg->rtsp.send_buffer_size);
+
+  // Set send timeout to detect and disconnect stalled RTSP clients
+  // (inspired by go2rtc which uses a 5s write deadline on TCP sockets)
+  if (cfg->rtsp.send_timeout > 0) {
+    struct timeval tv;
+    tv.tv_sec = cfg->rtsp.send_timeout;
+    tv.tv_usec = 0;
+    setsockopt(rtpGroupsock->socketNum(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  }
   // Use VPS only if it's available (non-nullptr, and we are in H265 mode)
   if (vps) {
     return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &vps->data[0],
@@ -62,4 +72,37 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, uns
   // enabling this allows stream resolution changes
   // not only the first sdp is used
   // delete[] fSDPLines; fSDPLines = NULL;
+}
+
+char const *IMPServerMediaSubsession::sdpLines(int addressFamily) {
+  // Check if encoder codec config (SPS/PPS/VPS) has changed since last SDP.
+  // If so, update our copies and invalidate cached SDP so live555 regenerates it.
+  // This enables dynamic resolution/profile changes without RTSP server restart.
+  if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS && global_video[encChn]) {
+    std::lock_guard<std::mutex> lock(global_video[encChn]->codec_config_mutex);
+    bool changed = false;
+
+    if (global_video[encChn]->have_sps && global_video[encChn]->latest_sps != lastKnownSps) {
+      sps.data = global_video[encChn]->latest_sps;
+      lastKnownSps = global_video[encChn]->latest_sps;
+      changed = true;
+    }
+    if (global_video[encChn]->have_pps && global_video[encChn]->latest_pps != lastKnownPps) {
+      pps.data = global_video[encChn]->latest_pps;
+      lastKnownPps = global_video[encChn]->latest_pps;
+      changed = true;
+    }
+    if (vps && global_video[encChn]->have_vps && global_video[encChn]->latest_vps != lastKnownVps) {
+      vps->data = global_video[encChn]->latest_vps;
+      lastKnownVps = global_video[encChn]->latest_vps;
+      changed = true;
+    }
+
+    if (changed) {
+      delete[] fSDPLines;
+      fSDPLines = NULL;
+    }
+  }
+
+  return OnDemandServerMediaSubsession::sdpLines(addressFamily);
 }

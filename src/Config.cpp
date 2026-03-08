@@ -536,9 +536,10 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"recorder.prebuffer_max_memory_mb", recorder.prebuffer_max_memory_mb, 2, [](const int &v) { return v >= 1 && v <= 8; }},
 #endif
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
-      {"rtsp.out_buffer_size", rtsp.out_buffer_size, 500000, validateIntGe0},
+      {"rtsp.out_buffer_size", rtsp.out_buffer_size, 1048576, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},
       {"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, validateIntGe0},
+      {"rtsp.send_timeout", rtsp.send_timeout, 5, validateIntGe0},
       {"rtsp.session_reclaim", rtsp.session_reclaim, 65, validateIntGe0},
       {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false, "/proc/jz/sensor/i2c_bus"},
       // TODO: set default fps to the maximum supported by the SoC via HAL

@@ -34,6 +34,11 @@ private:
   bool audioFirstFrame{true};
   struct timeval audioStartTime{};
   uint64_t audioFrameCount{0};
+
+  // Video encoder timestamp tracking (avoids gettimeofday jitter)
+  bool videoFirstFrame{true};
+  int64_t videoFirstImpTs{0};
+  struct timeval videoBaseTime{};
 };
 
 #endif
