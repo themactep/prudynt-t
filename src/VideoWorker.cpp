@@ -437,7 +437,10 @@ void VideoWorker::run() {
           if (global_video[encChn]->hasDataCallback) {
             H264NALUnit nalu;
 
-            nalu.imp_ts = stream.pack[i].timestamp;
+            // Use the frame-level timestamp (from last pack) for all NALs
+            // in this GetStream() call.  SPS/PPS packs may carry timestamp=0
+            // which would cause a DTS discontinuity in the RTP stream.
+            nalu.imp_ts = nal_ts;
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
