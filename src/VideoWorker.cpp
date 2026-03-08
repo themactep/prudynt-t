@@ -49,19 +49,31 @@ void VideoWorker::run() {
           continue;
         }
 
-        // SINGLE SOURCE OF TRUTH: Use TimestampManager (which uses IMP hardware
-        // timestamps)
-        struct timeval monotonic_time;
-        TimestampManager::getInstance().getTimestamp(&monotonic_time);
-
-        // TIMESTAMP DEBUG: Log video frame processing (use first pack
-        // timestamp)
-        int64_t pack_timestamp =
+        // Use the encoder-provided frame timestamp as the presentation time
+        // for every NAL that belongs to this encoded frame. This keeps video
+        // timestamps aligned to the hardware encoder timeline instead of the
+        // wall-clock moment when we happened to poll the frame.
+        int64_t frame_timestamp =
             (stream.packCount > 0) ? stream.pack[0].timestamp : -1;
-        LOG_DEBUG("VIDEO_TIMESTAMP_1_PROCESS: pack_timestamp="
-                  << pack_timestamp
-                  << " monotonic_time.tv_sec=" << monotonic_time.tv_sec
-                  << " monotonic_time.tv_usec=" << monotonic_time.tv_usec);
+        if (frame_timestamp < 0) {
+          frame_timestamp = TimestampManager::getInstance().getTimestampUs();
+        }
+
+        struct timeval frame_time;
+        frame_time.tv_sec = frame_timestamp / 1000000;
+        frame_time.tv_usec = frame_timestamp % 1000000;
+
+        unsigned frame_duration_us = 0;
+        if (global_video[encChn]->stream->fps > 0) {
+          frame_duration_us =
+              1000000 / static_cast<unsigned>(global_video[encChn]->stream->fps);
+        }
+
+        LOG_DEBUG("VIDEO_TIMESTAMP_1_PROCESS: frame_timestamp="
+                  << frame_timestamp << " frame_time.tv_sec="
+                  << frame_time.tv_sec << " frame_time.tv_usec="
+                  << frame_time.tv_usec << " duration_us="
+                  << frame_duration_us);
 
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           fps++;
@@ -80,7 +92,9 @@ void VideoWorker::run() {
 #endif
 
             H264NALUnit nalu;
-            nalu.time = monotonic_time;
+            nalu.time = frame_time;
+            nalu.durationInMicroseconds = frame_duration_us;
+            nalu.endsAccessUnit = stream.pack[i].frameEnd;
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             //'startcodes' at the beginning of each NAL. Live555 complains
