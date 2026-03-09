@@ -502,10 +502,16 @@ void VideoWorker::run() {
                 }
               }
               if (!delivered) {
-                LOG_ERROR("video channel:" << encChn << ", "
-                                           << "frame_id:" << nalu.frame_id << ", "
-                                           << "package:" << i << " of " << stream.packCount << ", "
-                                           << "packageSize:" << nalu.data.size() << " - msgChannel sink clogged!");
+                static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
+                static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
+                clog_count[encChn]++;
+                uint64_t now_ms = monotonic_ms();
+                if (now_ms - clog_last_log_ms[encChn] >= 5000) {
+                  LOG_WARN("video channel:" << encChn << " - msgChannel sink clogged, "
+                                            << clog_count[encChn] << " frames dropped in last 5s");
+                  clog_count[encChn] = 0;
+                  clog_last_log_ms[encChn] = now_ms;
+                }
               }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)

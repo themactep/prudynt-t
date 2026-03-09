@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <string>
@@ -309,11 +310,18 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       }
     }
     if (!delivered) {
-#if defined(USE_AUDIO_STREAM_REPLICATOR)
-      LOG_DDEBUG("audio encChn:" << encChn << ", size:" << af.data.size() << " clogged!");
-#else
-      LOG_ERROR("audio encChn:" << encChn << ", size:" << af.data.size() << " clogged!");
-#endif
+      static uint32_t clog_count = 0;
+      static uint64_t clog_last_log_ms = 0;
+      clog_count++;
+      uint64_t now_ms = static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now().time_since_epoch()).count());
+      if (now_ms - clog_last_log_ms >= 5000) {
+        LOG_WARN("audio encChn:" << encChn << " - msgChannel sink clogged, "
+                                 << clog_count << " frames dropped in last 5s");
+        clog_count = 0;
+        clog_last_log_ms = now_ms;
+      }
     }
   }
 
