@@ -291,6 +291,7 @@ struct _rtsp {
   int est_bitrate;
   int out_buffer_size;
   int send_buffer_size;
+  int send_timeout;
   int session_reclaim;
   bool auth_required;
   const char *username;

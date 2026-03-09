@@ -275,12 +275,10 @@ void VideoWorker::run() {
           continue;
         }
 
-        /* timestamp fix, can be removed if solved
         int64_t nal_ts = stream.pack[stream.packCount - 1].timestamp;
         struct timeval encoder_time;
         encoder_time.tv_sec = nal_ts / 1000000;
         encoder_time.tv_usec = nal_ts % 1000000;
-        */
 
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
@@ -439,10 +437,10 @@ void VideoWorker::run() {
           if (global_video[encChn]->hasDataCallback) {
             H264NALUnit nalu;
 
-            /* timestamp fix, can be removed if solved
-            nalu.imp_ts = stream.pack[i].timestamp;
-            nalu.time = encoder_time;
-            */
+            // Use the frame-level timestamp (from last pack) for all NALs
+            // in this GetStream() call.  SPS/PPS packs may carry timestamp=0
+            // which would cause a DTS discontinuity in the RTP stream.
+            nalu.imp_ts = nal_ts;
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
@@ -467,13 +465,21 @@ void VideoWorker::run() {
 
             if (global_video[encChn]->idr == true) {
               bool delivered = false;
-              // Use write_wait() to apply backpressure instead of silent drops
+              // Use non-blocking write() to avoid stalling encoder on slow clients
+              // (go2rtc-inspired: drop oldest frame rather than block producer)
               try {
-                global_video[encChn]->msgChannel->write_wait(nalu);
-                delivered = true;
-                std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
-                if (global_video[encChn]->onDataCallback)
-                  global_video[encChn]->onDataCallback();
+                delivered = global_video[encChn]->msgChannel->write(nalu);
+                if (delivered) {
+                  std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+                  if (global_video[encChn]->onDataCallback)
+                    global_video[encChn]->onDataCallback();
+                } else {
+                  LOG_DDEBUG("video channel:" << encChn << " msgChannel full, dropped oldest NAL");
+                  // Still notify so consumer processes queued data
+                  std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+                  if (global_video[encChn]->onDataCallback)
+                    global_video[encChn]->onDataCallback();
+                }
               } catch (const std::exception& e) {
                 LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id
                          << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
@@ -496,10 +502,16 @@ void VideoWorker::run() {
                 }
               }
               if (!delivered) {
-                LOG_ERROR("video channel:" << encChn << ", "
-                                           << "frame_id:" << nalu.frame_id << ", "
-                                           << "package:" << i << " of " << stream.packCount << ", "
-                                           << "packageSize:" << nalu.data.size() << " - msgChannel sink clogged!");
+                static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
+                static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
+                clog_count[encChn]++;
+                uint64_t now_ms = monotonic_ms();
+                if (now_ms - clog_last_log_ms[encChn] >= 5000) {
+                  LOG_WARN("video channel:" << encChn << " - msgChannel sink clogged, "
+                                            << clog_count[encChn] << " frames dropped in last 5s");
+                  clog_count[encChn] = 0;
+                  clog_last_log_ms[encChn] = now_ms;
+                }
               }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)

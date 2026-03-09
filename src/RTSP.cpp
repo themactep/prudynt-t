@@ -72,17 +72,23 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     LOG_INFO("Audio stream " << chnNr << " added to session");
   }
 
-  if (cfg->audio.output_enabled && stream.audio_enabled) {
-#define ADD_BACKCHANNEL_SUBSESSION(EnumName, NameString, PayloadType, Frequency, MimeType)                             \
+  // ONVIF backchannel: add backchannel subsessions to the primary stream (ch0)
+  // with a require tag so they only appear in the SDP when the client sends
+  // "Require: www.onvif.org/ver20/backchannel" in the DESCRIBE request.
+  // Per ONVIF Streaming Spec Section 5.3, backchannel tracks must be part of
+  // the main media session, not a separate endpoint.
+  if (chnNr == 0 && cfg->audio.output_enabled) {
+#define ADD_BC_SUBSESSION_CH0(EnumName, NameString, PayloadType, Frequency, MimeType)                                  \
   {                                                                                                                    \
-    BackchannelServerMediaSubsession *backchannelSub =                                                                 \
+    BackchannelServerMediaSubsession *bcSub =                                                                          \
         BackchannelServerMediaSubsession::createNew(*env, IMPBackchannelFormat::EnumName);                             \
-    sms->addSubsession(backchannelSub);                                                                                \
-    LOG_INFO("Backchannel stream " << NameString << " added to session");                                              \
+    bcSub->setRequireTag("www.onvif.org/ver20/backchannel");                                                           \
+    sms->addSubsession(bcSub);                                                                                         \
+    LOG_INFO("Backchannel (" << NameString << ") added to ch0 (conditional on Require header)");                       \
   }
 
-    X_FOREACH_BACKCHANNEL_FORMAT(ADD_BACKCHANNEL_SUBSESSION)
-#undef ADD_BACKCHANNEL_SUBSESSION
+    X_FOREACH_BACKCHANNEL_FORMAT(ADD_BC_SUBSESSION_CH0)
+#undef ADD_BC_SUBSESSION_CH0
   }
 
   rtspServer->addServerMediaSession(sms);
