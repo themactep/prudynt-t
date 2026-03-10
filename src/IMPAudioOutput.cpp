@@ -85,8 +85,35 @@ void IMPAudioOutput::deinit() {
   initialized = false;
 }
 
-bool IMPAudioOutput::configureHardware() {
-  const int sampleRate = samplerateFromConfig();
+bool IMPAudioOutput::reconfigure(int newRateHz) {
+  if (newRateHz <= 0) {
+    return false;
+  }
+  if (initialized && newRateHz == configuredSampleRate) {
+    return true; // already at this rate
+  }
+
+  int savedVolume = currentVolume;
+  int savedGain = currentGain;
+  bool savedMute = currentMute;
+
+  deinit();
+
+  if (!configureHardwareAtRate(newRateHz)) {
+    LOG_ERROR("AO reconfigure to " << newRateHz << " Hz failed");
+    return false;
+  }
+
+  setVolume(savedVolume);
+  setGain(savedGain);
+  setMute(savedMute);
+
+  initialized = true;
+  LOG_INFO("AO reconfigured to " << configuredSampleRate << " Hz");
+  return true;
+}
+
+bool IMPAudioOutput::configureHardwareAtRate(int sampleRate) {
   auto aoSampleRate = toImpSampleRate(sampleRate);
 
   IMPAudioIOAttr attr{};
@@ -109,6 +136,15 @@ bool IMPAudioOutput::configureHardware() {
     return false;
   }
 
+  int actualRate = static_cast<int>(attr.samplerate);
+  if (actualRate > 0 && actualRate != sampleRate) {
+    LOG_WARN("AO sample rate adjusted by hardware: requested "
+             << sampleRate << " Hz, got " << actualRate
+             << " Hz (shared CODEC clock?)");
+    int newNumPerFrm = std::max(actualRate / (1000 / kFrameDurationMs), 1);
+    maxFrameBytes = newNumPerFrm * static_cast<int>(sizeof(int16_t));
+  }
+
   if (IMP_AO_Enable(devId) != 0) {
     LOG_ERROR("IMP_AO_Enable failed");
     return false;
@@ -120,8 +156,15 @@ bool IMPAudioOutput::configureHardware() {
     return false;
   }
 
-  configuredSampleRate = sampleRate;
+  configuredSampleRate = (actualRate > 0) ? actualRate : sampleRate;
+  LOG_INFO("AO initialised: device=" << devId << " channel=" << channelId
+           << " rate=" << configuredSampleRate << " Hz"
+           << " maxFrameBytes=" << maxFrameBytes);
   return true;
+}
+
+bool IMPAudioOutput::configureHardware() {
+  return configureHardwareAtRate(samplerateFromConfig());
 }
 
 bool IMPAudioOutput::setVolume(int volume) {

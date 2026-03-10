@@ -181,6 +181,21 @@ int defaultSampleRate() {
   return (sr > 0) ? sr : 16000;
 }
 
+/// Return the sample rate that the AO hardware is actually running at.
+/// On platforms where the CODEC clock is shared between AI and AO
+/// (T10/T20/T21), the hardware rate may differ from the configured
+/// output_sample_rate.  Falls back to defaultSampleRate() when the
+/// hardware rate has not been published yet.
+int effectiveOutputSampleRate() {
+  if (global_audio_output) {
+    int hw = global_audio_output->hardwareSampleRate.load(std::memory_order_acquire);
+    if (hw > 0) {
+      return hw;
+    }
+  }
+  return defaultSampleRate();
+}
+
 int clampLoopCount(int value) {
   if (value < 1) {
     return 1;
@@ -1563,7 +1578,7 @@ private:
 class AudioStreamSink {
 public:
   AudioStreamSink(const PlayCommandOptions &options, std::atomic<bool> &stopFlag)
-      : options_(options), stopRequested_(stopFlag), targetRate_(defaultSampleRate()) {
+      : options_(options), stopRequested_(stopFlag), targetRate_(effectiveOutputSampleRate()) {
   }
 
   bool prepare() {
@@ -1603,6 +1618,21 @@ public:
     }
 
     int actualSourceRate = (sourceRate > 0) ? sourceRate : targetRate_;
+
+    // On first push with a known source rate that differs from the current
+    // AO rate, try to reconfigure AO to avoid resampling artefacts on
+    // platforms where the DAC may not support the configured rate.
+    if (!reconfigureAttempted_ && actualSourceRate != targetRate_ && !options_.append) {
+      reconfigureAttempted_ = true;
+      if (AudioOutputWorker::reconfigureRate(actualSourceRate)) {
+        targetRate_ = effectiveOutputSampleRate();
+        reconfigured_ = true;
+        resampler_.reset();
+        currentSourceRate_ = 0;
+        LOG_DEBUG("AudioStreamSink: reconfigured AO to " << targetRate_ << " Hz");
+      }
+    }
+
     convertBuffer_.clear();
 
     if (actualSourceRate != targetRate_) {
@@ -1653,6 +1683,14 @@ public:
 
     if (!options_.append) {
       AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(0), true, kStreamingTailSilence);
+
+      // Restore AO to the configured default rate after streaming ends.
+      if (reconfigured_) {
+        int defaultRate = defaultSampleRate();
+        if (effectiveOutputSampleRate() != defaultRate) {
+          AudioOutputWorker::reconfigureRate(defaultRate);
+        }
+      }
     }
 
     return true;
@@ -1684,6 +1722,8 @@ private:
   int targetRate_{0};
   bool pendingVolume_{false};
   bool pendingGain_{false};
+  bool reconfigureAttempted_{false};
+  bool reconfigured_{false};
   std::unique_ptr<StreamingLinearResampler> resampler_;
   int currentSourceRate_{0};
   std::vector<int16_t> convertBuffer_;
@@ -2500,7 +2540,7 @@ void enqueueSamples(const std::vector<int16_t> &samples, bool setVolume, int vol
     return;
   }
 
-  int targetRate = defaultSampleRate();
+  int targetRate = effectiveOutputSampleRate();
   size_t chunk = static_cast<size_t>(std::max(targetRate / 50, 1));
   bool firstChunk = true;
   for (size_t offset = 0; offset < samples.size(); offset += chunk) {
@@ -2607,7 +2647,26 @@ void handlePlay(const PlayCommandOptions &options) {
     return;
   }
 
-  int targetRate = defaultSampleRate();
+  int targetRate = effectiveOutputSampleRate();
+
+  // If the source and AO rates differ, try to reconfigure AO to the source
+  // rate instead of resampling.  On some platforms (T10/T20/T21) the hardware
+  // DAC may not run at the configured rate, so resampling to that rate
+  // produces audio played at the wrong speed.  Reconfiguring to the source
+  // rate avoids resampling entirely and lets the hardware run at a rate it
+  // actually supports.
+  bool reconfigured = false;
+  if (sourceRate > 0 && sourceRate != targetRate && !options.append) {
+    if (AudioOutputWorker::reconfigureRate(sourceRate)) {
+      targetRate = effectiveOutputSampleRate();
+      reconfigured = true;
+      LOG_DEBUG("AudioOutputControl: reconfigured AO to " << targetRate << " Hz to match source");
+    } else {
+      LOG_DEBUG("AudioOutputControl: AO reconfigure to " << sourceRate
+                << " Hz failed, falling back to resampling");
+    }
+  }
+
   if (sourceRate != targetRate) {
     samples = resampleLinear(samples, sourceRate, targetRate);
   }
@@ -2658,6 +2717,16 @@ void handlePlay(const PlayCommandOptions &options) {
     if (!AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds(remainingMs), true, kTailSilence)) {
       LOG_WARN("AudioOutputControl: failed to wait for playback completion; "
                "audio queue may still be busy");
+    }
+
+    // Restore AO to the configured default rate so that backchannel
+    // and other audio paths get the expected sample rate.
+    if (reconfigured) {
+      int defaultRate = defaultSampleRate();
+      if (effectiveOutputSampleRate() != defaultRate) {
+        AudioOutputWorker::reconfigureRate(defaultRate);
+        LOG_DEBUG("AudioOutputControl: restored AO to " << effectiveOutputSampleRate() << " Hz");
+      }
     }
   }
 }

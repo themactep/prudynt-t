@@ -13,6 +13,10 @@ public:
   bool init();
   void deinit();
 
+  /// Reconfigure AO to a different sample rate (deinit + reinit).
+  /// Preserves current volume/gain/mute settings.
+  bool reconfigure(int newRateHz);
+
   bool setVolume(int volume);
   bool setGain(int gain);
   bool setMute(bool mute);
@@ -27,6 +31,11 @@ public:
   int getGain() const {
     return currentGain;
   }
+  /// Return the actual sample rate that the hardware is running at.
+  /// May differ from the configured rate on shared-CODEC platforms.
+  int getPlaybackSampleRate() const {
+    return playbackSampleRate();
+  }
 
 private:
   bool initialized;
@@ -39,6 +48,7 @@ private:
   int configuredSampleRate;
 
   bool configureHardware();
+  bool configureHardwareAtRate(int sampleRate);
   int samplerateFromConfig() const;
   int playbackSampleRate() const;
 };
