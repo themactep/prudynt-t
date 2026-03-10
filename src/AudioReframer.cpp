@@ -5,7 +5,7 @@
 AudioReframer::AudioReframer(unsigned int inputSampleRate, unsigned int inputSamplesPerFrame,
                              unsigned int outputSamplesPerFrame)
     : inputSampleRate(inputSampleRate), inputSamplesPerFrame(inputSamplesPerFrame),
-      outputSamplesPerFrame(outputSamplesPerFrame), currentTimestamp(0), samplesAccumulated(0),
+      outputSamplesPerFrame(outputSamplesPerFrame), currentTimestamp(0), timestampRemainder(0), samplesAccumulated(0),
       buffer(2 * std::max(inputSamplesPerFrame, outputSamplesPerFrame) * sizeof(uint16_t)) {
   if (inputSamplesPerFrame == 0 || outputSamplesPerFrame == 0) {
     throw std::invalid_argument("Number of samples per frame must be greater than zero.");
@@ -22,6 +22,7 @@ void AudioReframer::addFrame(const uint8_t *frameData, int64_t timestamp) {
 
   if (samplesAccumulated == 0) {
     currentTimestamp = timestamp; // Initialize timestamp with the first frame
+    timestampRemainder = 0;
   }
 
   samplesAccumulated += inputSamplesPerFrame;
@@ -42,7 +43,14 @@ void AudioReframer::getReframedFrame(uint8_t *frameData, int64_t &timestamp) {
 
   timestamp = currentTimestamp;
   if (inputSampleRate > 0) {
-    currentTimestamp += (outputSamplesPerFrame * 1000) / inputSampleRate;
+    // Timestamp is in microseconds; preserve fractional precision between frames.
+    int64_t numer = static_cast<int64_t>(outputSamplesPerFrame) * 1000000LL + timestampRemainder;
+    int64_t step_us = numer / static_cast<int64_t>(inputSampleRate);
+    timestampRemainder = numer % static_cast<int64_t>(inputSampleRate);
+    if (step_us < 1) {
+      step_us = 1;
+    }
+    currentTimestamp += step_us;
   } // else: keep currentTimestamp stable if misconfigured
 }
 

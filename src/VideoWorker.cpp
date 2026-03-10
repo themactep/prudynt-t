@@ -70,6 +70,12 @@ void VideoWorker::run() {
   int last_mp4_fps = (video_state && video_state->stream) ? video_state->stream->fps : 0;
   int64_t mp4_frame_switch_threshold = compute_frame_switch_threshold(last_mp4_fps);
 
+  int64_t ts_last_nonzero = 0;
+  int64_t ts_last_frame = 0;
+  int64_t ts_last_rtp = 0;
+  int64_t ts_current_frame = 0;
+  bool ts_have_current_frame = false;
+
   auto reset_mp4_sample = [&]() {
     mp4_sample.clear();
     mp4_sample_is_key = false;
@@ -275,10 +281,18 @@ void VideoWorker::run() {
           continue;
         }
 
-        int64_t nal_ts = stream.pack[stream.packCount - 1].timestamp;
-        struct timeval encoder_time;
-        encoder_time.tv_sec = nal_ts / 1000000;
-        encoder_time.tv_usec = nal_ts % 1000000;
+        if (stream.packCount == 0) {
+          IMP_Encoder_ReleaseStream(encChn, &stream);
+          continue;
+        }
+
+        int64_t nominal_frame_step_us = 33333;
+        if (video_state && video_state->stream && video_state->stream->fps > 0) {
+          nominal_frame_step_us = 1000000LL / video_state->stream->fps;
+        }
+        if (nominal_frame_step_us < 1000) {
+          nominal_frame_step_us = 1000;
+        }
 
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
@@ -296,6 +310,67 @@ void VideoWorker::run() {
           uint8_t *start = hal::encoder::get_pack_data_start(stream, i);
           uint32_t length = hal::encoder::get_pack_data_length(stream, i);
           uint8_t *end = start + length;
+          bool frame_start = (i == 0) || stream.pack[i - 1].frameEnd;
+          if (frame_start) {
+            uint32_t frame_end_idx = i;
+            while (frame_end_idx + 1 < stream.packCount && !stream.pack[frame_end_idx].frameEnd) {
+              ++frame_end_idx;
+            }
+
+            int64_t frame_ts = 0;
+            for (uint32_t j = i; j <= frame_end_idx; ++j) {
+              if (stream.pack[j].timestamp > 0) {
+                frame_ts = stream.pack[j].timestamp;
+              }
+            }
+
+            if (frame_ts > 0) {
+              if (frame_ts > ts_last_nonzero) {
+                ts_last_nonzero = frame_ts;
+              } else {
+                frame_ts = ts_last_nonzero;
+              }
+            } else if (ts_last_nonzero > 0) {
+              frame_ts = ts_last_nonzero;
+            } else if (ts_last_frame > 0) {
+              frame_ts = ts_last_frame + nominal_frame_step_us;
+            }
+
+            if (ts_last_frame > 0 && frame_ts <= ts_last_frame) {
+              frame_ts = ts_last_frame + nominal_frame_step_us;
+            }
+            if (frame_ts <= 0) {
+              frame_ts = (ts_last_frame > 0) ? (ts_last_frame + nominal_frame_step_us) : nominal_frame_step_us;
+            }
+
+            ts_current_frame = frame_ts;
+            ts_have_current_frame = true;
+          }
+
+          int64_t pack_ts = stream.pack[i].timestamp;
+          if (pack_ts > ts_last_nonzero) {
+            ts_last_nonzero = pack_ts;
+          }
+          if (ts_have_current_frame && ts_current_frame > 0) {
+            pack_ts = ts_current_frame;
+          } else if (pack_ts <= 0 && ts_last_nonzero > 0) {
+            pack_ts = ts_last_nonzero;
+          }
+
+          if (stream.pack[i].frameEnd && pack_ts > 0) {
+            ts_last_frame = pack_ts;
+          }
+
+          int64_t rtsp_ts = pack_ts;
+          if (rtsp_ts <= 0) {
+            rtsp_ts = (ts_last_rtp > 0) ? (ts_last_rtp + nominal_frame_step_us) : nominal_frame_step_us;
+          }
+          constexpr int64_t kMinRtpStepUs = 12;
+          if (ts_last_rtp > 0 && rtsp_ts <= ts_last_rtp) {
+            rtsp_ts = ts_last_rtp + kMinRtpStepUs;
+          }
+          ts_last_rtp = rtsp_ts;
+
           uint32_t h264_nal = hal::encoder::get_h264_nal_type(stream.pack[i]);
           uint32_t h265_nal = hal::encoder::get_h265_nal_type(stream.pack[i]);
 
@@ -369,11 +444,10 @@ void VideoWorker::run() {
           }
 
           if ((nal_is_idr || nal_is_hevc_idr) && video_state) {
-            video_state->mp4_last_idr_ts.store(stream.pack[i].timestamp, std::memory_order_relaxed);
+            video_state->mp4_last_idr_ts.store(pack_ts, std::memory_order_relaxed);
           }
 
           if (recorder_accepts_samples && payload_len > 0 && !(nal_is_vps || nal_is_sps || nal_is_pps)) {
-            int64_t pack_ts = stream.pack[i].timestamp;
             bool pack_frame_end = stream.pack[i].frameEnd;
 
             if (mp4_sample_ts != -1 && !mp4_sample.empty()) {
@@ -437,10 +511,9 @@ void VideoWorker::run() {
           if (global_video[encChn]->hasDataCallback) {
             H264NALUnit nalu;
 
-            // Use the frame-level timestamp (from last pack) for all NALs
-            // in this GetStream() call.  SPS/PPS packs may carry timestamp=0
-            // which would cause a DTS discontinuity in the RTP stream.
-            nalu.imp_ts = nal_ts;
+            nalu.imp_ts = rtsp_ts;
+            nalu.time.tv_sec = static_cast<time_t>(rtsp_ts / 1000000LL);
+            nalu.time.tv_usec = static_cast<suseconds_t>(rtsp_ts % 1000000LL);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
@@ -448,13 +521,13 @@ void VideoWorker::run() {
 
             // Add frame boundary metadata for complete frame detection
             static uint32_t frame_counter = 0;
-            if (i == 0) {
+            if (frame_start) {
               frame_counter++;  // New frame starting
             }
             nalu.frame_id = frame_counter;
             nalu.packet_index = i;
             nalu.packet_count = stream.packCount;
-            nalu.is_frame_start = (i == 0);
+            nalu.is_frame_start = frame_start;
             nalu.is_frame_end = stream.pack[i].frameEnd;
 
             if (global_video[encChn]->idr == false) {

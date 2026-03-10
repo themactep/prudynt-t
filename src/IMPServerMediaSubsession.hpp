@@ -33,14 +33,19 @@ protected:
                            void *rtcpRRHandlerClientData, unsigned short &rtpSeqNum, unsigned &rtpTimestamp,
                            ServerRequestAlternativeByteHandler *serverRequestAlternativeByteHandler,
                            void *serverRequestAlternativeByteHandlerClientData) override {
-    OnDemandServerMediaSubsession::startStream(clientSessionId, streamToken, rtcpRRHandler, rtcpRRHandlerClientData,
-                                               rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler,
-                                               serverRequestAlternativeByteHandlerClientData);
-
-    global_rtsp_clients.fetch_add(1, std::memory_order_relaxed);
+    // Drop any stale queued NAL units so a new client starts from a fresh IDR
+    // timeline and does not see pre-flush timestamp history.
+    if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS && global_video[encChn] && global_video[encChn]->msgChannel) {
+      global_video[encChn]->msgChannel->clear();
+    }
     // request idr frame every second for the next x seconds
     global_video[encChn]->idr_fix = 5;
     IMPEncoder::flush(encChn);
+
+    OnDemandServerMediaSubsession::startStream(clientSessionId, streamToken, rtcpRRHandler, rtcpRRHandlerClientData,
+                                               rtpSeqNum, rtpTimestamp, serverRequestAlternativeByteHandler,
+                                               serverRequestAlternativeByteHandlerClientData);
+    global_rtsp_clients.fetch_add(1, std::memory_order_relaxed);
   }
 
   virtual void deleteStream(unsigned clientSessionId, void *&streamToken) override {
