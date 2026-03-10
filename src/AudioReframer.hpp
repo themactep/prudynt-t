@@ -20,6 +20,7 @@ private:
   unsigned int inputSamplesPerFrame;
   unsigned int outputSamplesPerFrame;
   int64_t currentTimestamp;
+  int64_t timestampRemainder;
   size_t samplesAccumulated;
 
   RingBuffer buffer;

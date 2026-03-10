@@ -1,7 +1,31 @@
 #include "IMPDeviceSource.hpp"
 #include "GroupsockHelper.hh"
+#include <cstring>
 #include <iostream>
 #include <type_traits>
+
+static inline int64_t tv_to_us(const struct timeval &tv) {
+  return static_cast<int64_t>(tv.tv_sec) * 1000000LL + static_cast<int64_t>(tv.tv_usec);
+}
+
+static inline struct timeval us_to_tv(int64_t us) {
+  struct timeval tv;
+  tv.tv_sec = static_cast<time_t>(us / 1000000LL);
+  tv.tv_usec = static_cast<suseconds_t>(us % 1000000LL);
+  if (tv.tv_usec < 0) {
+    tv.tv_sec -= 1;
+    tv.tv_usec += 1000000;
+  }
+  return tv;
+}
+
+static inline bool is_plausible_wallclock_tv(const struct timeval &tv) {
+  if (tv.tv_usec < 0 || tv.tv_usec >= 1000000) {
+    return false;
+  }
+  constexpr time_t kMinUnixTime = 946684800; // 2000-01-01
+  return tv.tv_sec >= kMinUnixTime;
+}
 
 // explicit instantiation
 template class IMPDeviceSource<H264NALUnit, video_stream>;
@@ -56,7 +80,7 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
   }
 
   FrameType nal;
-  if (stream->msgChannel->read(&nal)) {
+  while (stream->msgChannel->read(&nal)) {
     if (nal.data.size() > fMaxSize) {
       fFrameSize = fMaxSize;
       fNumTruncatedBytes = nal.data.size() - fMaxSize;
@@ -68,15 +92,40 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
        steady +1024 RTP PTS increments and avoid gettimeofday jitter. */
     if constexpr (std::is_same_v<FrameType, AudioFrame>) {
       auto *imp_audio = global_audio[encChn]->imp_audio;
-      if (imp_audio && imp_audio->format == IMPAudioFormat::AAC) {
+      bool use_aac_clock = false;
+      int sampleRate = 16000;
+      if (cfg && cfg->audio.input_sample_rate > 0) {
+        sampleRate = cfg->audio.input_sample_rate;
+      }
+      if (imp_audio) {
+        use_aac_clock = (imp_audio->format == IMPAudioFormat::AAC);
+        if (imp_audio->sample_rate > 0) {
+          sampleRate = imp_audio->sample_rate;
+        }
+      } else if (cfg && cfg->audio.input_format && std::strcmp(cfg->audio.input_format, "AAC") == 0) {
+        // During transient audio restarts, keep AAC timing behavior stable.
+        use_aac_clock = true;
+      }
+
+      bool has_audio_time = is_plausible_wallclock_tv(nal.time);
+      if (has_audio_time) {
+        fPresentationTime = nal.time;
+      } else if (use_aac_clock) {
         if (audioFirstFrame) {
           gettimeofday(&audioStartTime, NULL);
           audioFrameCount = 0;
+          audioClockSampleRate = sampleRate;
           audioFirstFrame = false;
+        } else if (audioClockSampleRate <= 0 && sampleRate > 0) {
+          audioClockSampleRate = sampleRate;
         }
-        int sampleRate = (imp_audio->sample_rate > 0) ? imp_audio->sample_rate : 16000;
+        int effectiveSampleRate = (audioClockSampleRate > 0) ? audioClockSampleRate : sampleRate;
+        if (effectiveSampleRate <= 0) {
+          effectiveSampleRate = 16000;
+        }
         constexpr uint64_t kSamplesPerFrame = 1024;
-        uint64_t usec_offset = (audioFrameCount * kSamplesPerFrame * 1000000ULL) / static_cast<uint64_t>(sampleRate);
+        uint64_t usec_offset =
+            (audioFrameCount * kSamplesPerFrame * 1000000ULL) / static_cast<uint64_t>(effectiveSampleRate);
         fPresentationTime.tv_sec  = audioStartTime.tv_sec  + static_cast<time_t>(usec_offset / 1000000ULL);
         fPresentationTime.tv_usec = audioStartTime.tv_usec + static_cast<suseconds_t>(usec_offset % 1000000ULL);
         if (fPresentationTime.tv_usec >= 1000000) {
@@ -87,53 +136,96 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       } else {
         gettimeofday(&fPresentationTime, NULL);
       }
+
+      int64_t pts_us = tv_to_us(fPresentationTime);
+      int rate_for_tick = sampleRate > 0 ? sampleRate : 16000;
+      int64_t min_audio_step_us = (1000000LL + rate_for_tick - 1) / rate_for_tick;
+      if (use_aac_clock) {
+        min_audio_step_us = (1024LL * 1000000LL + rate_for_tick - 1) / rate_for_tick;
+      }
+      if (min_audio_step_us < 1) {
+        min_audio_step_us = 1;
+      }
+      if (audioLastPtsUs >= 0) {
+        int64_t delta_pts_us = pts_us - audioLastPtsUs;
+        int64_t max_forward_jump_us = 1000000LL;
+        if (use_aac_clock && min_audio_step_us > 0) {
+          int64_t aac_jump_limit = min_audio_step_us * 120;
+          if (aac_jump_limit > max_forward_jump_us) {
+            max_forward_jump_us = aac_jump_limit;
+          }
+        }
+        if (delta_pts_us <= 0 || delta_pts_us > max_forward_jump_us) {
+          pts_us = audioLastPtsUs + min_audio_step_us;
+          fPresentationTime = us_to_tv(pts_us);
+        }
+      }
+      audioLastPtsUs = pts_us;
     } else {
-      // Video: use encoder timestamps for stable, jitter-free PTS.
-      // The IMP encoder provides a monotonic microsecond timestamp per NAL.
-      // We anchor it to wall-clock at the first frame, then derive all
-      // subsequent presentation times from the encoder's own clock.
-      if (videoFirstFrame) {
-        gettimeofday(&videoBaseTime, NULL);
-        videoFirstImpTs = nal.imp_ts;
-        videoFirstFrame = false;
+      if (is_plausible_wallclock_tv(nal.time)) {
+        fPresentationTime = nal.time;
+      } else {
+        // Video fallback path for sources that don't provide explicit timeval.
+        int64_t nominal_step_us = 33333;
+        if (stream && stream->stream && stream->stream->fps > 0) {
+          nominal_step_us = 1000000LL / stream->stream->fps;
+        }
+        if (nominal_step_us < 12) {
+          nominal_step_us = 12;
+        }
+        if (videoFirstFrame) {
+          gettimeofday(&videoBaseTime, NULL);
+          videoFirstImpTs = nal.imp_ts;
+          videoFirstFrame = false;
+        }
+
+        int64_t delta_us = nal.imp_ts - videoFirstImpTs;
+
+        bool needs_reanchor = delta_us < 0;
+        if (!needs_reanchor && videoLastDelta >= 0) {
+          int64_t step = delta_us - videoLastDelta;
+          needs_reanchor = (step > 2000000LL) || (step < -500000LL);
+        }
+        if (needs_reanchor) {
+          int64_t target_delta = (videoLastDelta >= 0) ? (videoLastDelta + nominal_step_us) : 0;
+          videoFirstImpTs = nal.imp_ts - target_delta;
+          delta_us = target_delta;
+        } else if (videoLastDelta >= 0 && delta_us <= videoLastDelta) {
+          delta_us = videoLastDelta + 12;
+        }
+        videoLastDelta = delta_us;
+        fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
+        fPresentationTime.tv_usec = videoBaseTime.tv_usec + static_cast<suseconds_t>(delta_us % 1000000LL);
+        if (fPresentationTime.tv_usec >= 1000000) {
+          fPresentationTime.tv_sec++;
+          fPresentationTime.tv_usec -= 1000000;
+        }
       }
-      int64_t delta_us = nal.imp_ts - videoFirstImpTs;
-      // Re-anchor on negative delta (wrap/reset) or any step > 2s relative to
-      // the previous frame — forward (encoder uptime jump) or backward (encoder
-      // counter reset that doesn't go below the anchor).
-      bool needs_reanchor = delta_us < 0;
-      if (!needs_reanchor && videoLastDelta >= 0) {
-        int64_t step = delta_us - videoLastDelta;
-        needs_reanchor = (step > 2000000LL) || (step < -500000LL);
+
+      int64_t pts_us = tv_to_us(fPresentationTime);
+      int64_t min_video_step_us = 12;
+      if (stream && stream->stream && stream->stream->fps > 0) {
+        min_video_step_us = 1000000LL / stream->stream->fps;
+        if (min_video_step_us < 12) {
+          min_video_step_us = 12;
+        }
       }
-      if (needs_reanchor) {
-        gettimeofday(&videoBaseTime, NULL);
-        videoFirstImpTs = nal.imp_ts;
-        delta_us = 0;
-      } else if (videoLastDelta >= 0 && delta_us <= videoLastDelta) {
-        // Clamp small backward jitter (<500ms) to keep PTS strictly
-        // monotonically increasing.  The <= also handles the SPS/PPS/IDR
-        // triplet where all three NALs share the same imp_ts (delta_us ==
-        // videoLastDelta): each gets nudged forward by one 90 kHz tick
-        // (≈11 µs) so the RTP sender never emits two packets with the
-        // same timestamp.
-        delta_us = videoLastDelta + 12;
+      if (videoLastPtsUs >= 0) {
+        int64_t delta_pts_us = pts_us - videoLastPtsUs;
+        if (delta_pts_us <= 0 || delta_pts_us > 2000000LL) {
+          pts_us = videoLastPtsUs + min_video_step_us;
+          fPresentationTime = us_to_tv(pts_us);
+        }
       }
-      videoLastDelta = delta_us;
-      fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
-      fPresentationTime.tv_usec = videoBaseTime.tv_usec + static_cast<suseconds_t>(delta_us % 1000000LL);
-      if (fPresentationTime.tv_usec >= 1000000) {
-        fPresentationTime.tv_sec++;
-        fPresentationTime.tv_usec -= 1000000;
-      }
+      videoLastPtsUs = pts_us;
     }
 
     memcpy(fTo, &nal.data[0], fFrameSize);
 
     if (fFrameSize > 0) {
       FramedSource::afterGetting(this);
+      return;
     }
-  } else {
-    fFrameSize = 0;
   }
+  fFrameSize = 0;
 }

@@ -39,7 +39,6 @@ IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, const
 void IMPEncoder::flush(int encChn) {
   LOG_DDEBUG("flush(" << encChn << ")");
   IMP_Encoder_RequestIDR(encChn);
-  IMP_Encoder_FlushStream(encChn);
 }
 
 void MakeTables(int q, uint8_t *lqt, uint8_t *cqt) {

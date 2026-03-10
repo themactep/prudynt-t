@@ -29,6 +29,9 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
     return nullptr;
   }
 
+  if (global_audio[audioChn]->msgChannel) {
+    global_audio[audioChn]->msgChannel->clear();
+  }
   FramedSource *audioSourceReplica = replicator->createStreamReplica();
   if (audioSourceReplica) {
     global_audio[audioChn]->rtsp_client_count.fetch_add(1, std::memory_order_relaxed);

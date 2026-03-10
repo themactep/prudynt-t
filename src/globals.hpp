@@ -23,7 +23,7 @@
 #include <mutex>
 #include <vector>
 
-#define MSG_CHANNEL_SIZE 20
+#define MSG_CHANNEL_SIZE 200
 #define BACKCHANNEL_QUEUE_SIZE 200
 #define AUDIO_OUTPUT_QUEUE_SIZE 64
 #define NUM_AUDIO_CHANNELS 1
@@ -76,6 +76,7 @@ struct H264NALUnit {
   uint32_t packet_index = 0;        // Position within frame (0-based)
   uint32_t packet_count = 0;        // Total NAL units in frame
 
+  struct timeval time{0, 0};
   // Encoder timestamp in microseconds (from IMP encoder, monotonic)
   int64_t imp_ts = 0;
 };
