@@ -529,16 +529,10 @@ int main(int argc, const char *argv[]) {
 
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     global_restart = true;
-    if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
-      int ret = pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, nullptr);
-      LOG_DEBUG_OR_ERROR(ret, "create audio output thread");
-    }
-
-    if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
-      int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
-      LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
-    }
-
+    // Start audio INPUT first so that the CODEC clock is configured
+    // before the audio output thread initialises.  On platforms with a
+    // shared AI/AO CODEC clock (T10/T20/T21) the AO's
+    // IMP_AO_GetPubAttr will then return the actual running rate.
     if (cfg->audio.input_enabled && (global_restart_audio || startup)) {
       StartHelper sh{0};
       int ret = pthread_create(&global_audio[0]->thread, nullptr, AudioWorker::thread_entry, static_cast<void *>(&sh));
@@ -546,6 +540,22 @@ int main(int argc, const char *argv[]) {
       // wait for initialization done
       sh.has_started.acquire();
     }
+
+    if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
+      StartHelper ao_sh{0};
+      int ret = pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, static_cast<void *>(&ao_sh));
+      LOG_DEBUG_OR_ERROR(ret, "create audio output thread");
+      // Wait for AO hardware init to complete before starting video.
+      // The IMP SDK shares internal state between AO and encoder
+      // subsystems; concurrent init causes memory corruption.
+      ao_sh.has_started.acquire();
+    }
+
+    if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
+      int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
+      LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
+    }
+
     if (global_restart_video || startup) {
       if (cfg->stream0.enabled) {
         if (cfg->stream0.video_enabled) {

@@ -711,6 +711,14 @@ void *VideoWorker::thread_entry(void *arg) {
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StartRecvPic(" << encChn << ")");
   if (ret != 0)
     return 0;
+  // Flush immediately after starting the encoder so the ring buffer contains
+  // only a fresh IDR with consistent timestamps.  Without this, the IMP
+  // encoder begins with a relative counter (starting at 0) and transitions to
+  // absolute system uptime at the first GOP boundary (~4 s), causing a large
+  // forward timestamp jump visible to the first RTSP client that connects.
+  IMP_Encoder_RequestIDR(encChn);
+  IMP_Encoder_FlushStream(encChn);
+  LOG_DEBUG("IMPEncoder flush after StartRecvPic(" << encChn << ") to clear startup timestamp transition");
 
   /* 'active' indicates, the thread is activly polling and grabbing images
    * 'running' describes the runlevel of the thread, if this value is set to

@@ -26,13 +26,18 @@ public:
 
   static bool clearQueue(bool waitForFlush = false);
 
+  /// Reconfigure AO hardware to the given sample rate.  Blocks until
+  /// the worker thread has completed the reconfiguration.
+  /// Returns true if AO is now running at newRateHz.
+  static bool reconfigureRate(int newRateHz);
+
   static bool waitForPlaybackCompletion(std::chrono::milliseconds waitDuration, bool flushAfterWait,
                                         std::chrono::milliseconds silencePadding = std::chrono::milliseconds(0));
 
   static void signalShutdown();
 
 private:
-  void run();
+  void run(struct StartHelper *sh = nullptr);
 };
 
 #endif // AUDIO_OUTPUT_WORKER_HPP

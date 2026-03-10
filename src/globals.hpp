@@ -101,11 +101,13 @@ struct AudioTapEntry {
   std::function<void(void)> notify;
 };
 
-enum class AudioPlaybackJobType { PCM, CLEAR, STOP, WAIT };
+enum class AudioPlaybackJobType { PCM, CLEAR, STOP, WAIT, RECONFIGURE };
 
 struct AudioPlaybackJob {
   AudioPlaybackJobType type{AudioPlaybackJobType::PCM};
   std::vector<int16_t> samples;
+  /// Desired AO sample rate for RECONFIGURE jobs, or 0 to keep current.
+  int sampleRate{0};
   bool hasVolume{false};
   int volume{0};
   bool hasGain{false};
@@ -269,6 +271,10 @@ struct audio_output_stream {
   int current_volume{0};
   int current_gain{0};
   bool current_mute{false};
+  /// Actual hardware sample rate after IMP_AO_GetPubAttr. May differ from
+  /// the configured output_sample_rate on platforms where the CODEC clock
+  /// is shared between AI and AO (T10/T20/T21).
+  std::atomic<int> hardwareSampleRate{0};
 
   audio_output_stream() : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(AUDIO_OUTPUT_QUEUE_SIZE)) {
   }

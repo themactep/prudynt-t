@@ -103,9 +103,18 @@ bool BackchannelWorker::processFrame(const BackchannelFrame &frame) {
     return true; // Nothing to process
   }
 
-  // Resample only if necessary
+  // Resample only if necessary.  Use the actual hardware rate published
+  // by AudioOutputWorker — on platforms with a shared CODEC clock
+  // (T10/T20/T21) the hardware may run at a different rate than the
+  // configured output_sample_rate.
   int input_rate = IMPBackchannel::getFormatFrequency(frame.format);
   int target_rate = cfg->audio.output_sample_rate;
+  if (global_audio_output) {
+    int hw = global_audio_output->hardwareSampleRate.load(std::memory_order_acquire);
+    if (hw > 0) {
+      target_rate = hw;
+    }
+  }
   std::vector<int16_t> pcm_to_send;
   if (input_rate != target_rate) {
     pcm_to_send = resampleLinear(decoded_pcm, input_rate, target_rate);

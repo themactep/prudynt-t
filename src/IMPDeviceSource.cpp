@@ -98,13 +98,26 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
         videoFirstFrame = false;
       }
       int64_t delta_us = nal.imp_ts - videoFirstImpTs;
-      // Guard against timestamp wrap/reset (negative delta) or
-      // impossible forward jumps (> 2s in one frame = encoder restart).
-      if (delta_us < 0 || (delta_us > 0 && videoLastDelta >= 0 &&
-          (delta_us - videoLastDelta) > 2000000LL)) {
+      // Re-anchor on negative delta (wrap/reset) or any step > 2s relative to
+      // the previous frame — forward (encoder uptime jump) or backward (encoder
+      // counter reset that doesn't go below the anchor).
+      bool needs_reanchor = delta_us < 0;
+      if (!needs_reanchor && videoLastDelta >= 0) {
+        int64_t step = delta_us - videoLastDelta;
+        needs_reanchor = (step > 2000000LL) || (step < -500000LL);
+      }
+      if (needs_reanchor) {
         gettimeofday(&videoBaseTime, NULL);
         videoFirstImpTs = nal.imp_ts;
         delta_us = 0;
+      } else if (videoLastDelta >= 0 && delta_us <= videoLastDelta) {
+        // Clamp small backward jitter (<500ms) to keep PTS strictly
+        // monotonically increasing.  The <= also handles the SPS/PPS/IDR
+        // triplet where all three NALs share the same imp_ts (delta_us ==
+        // videoLastDelta): each gets nudged forward by one 90 kHz tick
+        // (≈11 µs) so the RTP sender never emits two packets with the
+        // same timestamp.
+        delta_us = videoLastDelta + 12;
       }
       videoLastDelta = delta_us;
       fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
