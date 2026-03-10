@@ -110,10 +110,14 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
         gettimeofday(&videoBaseTime, NULL);
         videoFirstImpTs = nal.imp_ts;
         delta_us = 0;
-      } else if (videoLastDelta >= 0 && delta_us < videoLastDelta) {
-        // Clamp small backward jitter (<500ms) to keep PTS monotonically
-        // non-decreasing without re-anchoring the wall-clock base.
-        delta_us = videoLastDelta;
+      } else if (videoLastDelta >= 0 && delta_us <= videoLastDelta) {
+        // Clamp small backward jitter (<500ms) to keep PTS strictly
+        // monotonically increasing.  The <= also handles the SPS/PPS/IDR
+        // triplet where all three NALs share the same imp_ts (delta_us ==
+        // videoLastDelta): each gets nudged forward by one 90 kHz tick
+        // (≈11 µs) so the RTP sender never emits two packets with the
+        // same timestamp.
+        delta_us = videoLastDelta + 12;
       }
       videoLastDelta = delta_us;
       fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
