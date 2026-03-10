@@ -98,13 +98,22 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
         videoFirstFrame = false;
       }
       int64_t delta_us = nal.imp_ts - videoFirstImpTs;
-      // Guard against timestamp wrap/reset (negative delta) or
-      // impossible forward jumps (> 2s in one frame = encoder restart).
-      if (delta_us < 0 || (delta_us > 0 && videoLastDelta >= 0 &&
-          (delta_us - videoLastDelta) > 2000000LL)) {
+      // Re-anchor on negative delta (wrap/reset) or any step > 2s relative to
+      // the previous frame — forward (encoder uptime jump) or backward (encoder
+      // counter reset that doesn't go below the anchor).
+      bool needs_reanchor = delta_us < 0;
+      if (!needs_reanchor && videoLastDelta >= 0) {
+        int64_t step = delta_us - videoLastDelta;
+        needs_reanchor = (step > 2000000LL) || (step < -500000LL);
+      }
+      if (needs_reanchor) {
         gettimeofday(&videoBaseTime, NULL);
         videoFirstImpTs = nal.imp_ts;
         delta_us = 0;
+      } else if (videoLastDelta >= 0 && delta_us < videoLastDelta) {
+        // Clamp small backward jitter (<500ms) to keep PTS monotonically
+        // non-decreasing without re-anchoring the wall-clock base.
+        delta_us = videoLastDelta;
       }
       videoLastDelta = delta_us;
       fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
