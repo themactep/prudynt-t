@@ -1266,6 +1266,46 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     wrote = true;
   }
 
+  // Cached history - ring buffer with latest day/night samples
+  if (obj_get(obj, "history")) {
+    add_key(out, s2, "history", "[");
+    auto samples = global_daynight_history.snapshot();
+    bool first = true;
+    for (const auto &sample : samples) {
+      if (!first) {
+        out.push_back(',');
+      }
+      first = false;
+      out.push_back('{');
+      bool hs = false;
+      add_key(out, hs, "time_now");
+      add_num(out, static_cast<int>(sample.time_now));
+      add_key(out, hs, "ev");
+      add_num(out, sample.ev);
+      add_key(out, hs, "gb");
+      add_num(out, sample.gb);
+      add_key(out, hs, "gr");
+      add_num(out, sample.gr);
+      add_key(out, hs, "total_gain");
+      add_num(out, sample.total_gain);
+      add_key(out, hs, "ae_luma");
+      add_num(out, sample.ae_luma);
+      add_key(out, hs, "awb_color_temp");
+      add_num(out, sample.awb_color_temp);
+      add_key(out, hs, "daynight_brightness");
+      add_num(out, sample.daynight_brightness);
+      add_key(out, hs, "total_gain_night_threshold");
+      add_num(out, sample.total_gain_night_threshold);
+      add_key(out, hs, "total_gain_day_threshold");
+      add_num(out, sample.total_gain_day_threshold);
+      add_key(out, hs, "daynight_mode");
+      add_str(out, sample.daynight_mode.c_str());
+      out.push_back('}');
+    }
+    out.push_back(']');
+    wrote = true;
+  }
+
   if (!wrote) {
     out.resize(section_start);
     sep = prev_sep;

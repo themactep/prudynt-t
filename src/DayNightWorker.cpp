@@ -780,6 +780,20 @@ void *thread_entry(void *arg) {
     cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
     export_brightness_value(bright_pct, mode_str);
 
+    DayNightHistorySample sample;
+    sample.time_now = static_cast<int64_t>(std::time(nullptr));
+    sample.ev = ev;
+    sample.gb = gb;
+    sample.gr = gr;
+    sample.total_gain = total_gain;
+    sample.ae_luma = ae_luma;
+    sample.awb_color_temp = awb_ct;
+    sample.daynight_brightness = bright_pct;
+    sample.total_gain_night_threshold = cfg->daynight.total_gain_night_threshold;
+    sample.total_gain_day_threshold = cfg->daynight.total_gain_day_threshold;
+    sample.daynight_mode = mode_str;
+    global_daynight_history.push(sample);
+
     std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
   }
 

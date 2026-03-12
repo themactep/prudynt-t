@@ -591,19 +591,38 @@ int IPCServer::handle_client(int fd) {
   if (starts_with(req, "EVENTS")) {
     // Stream newline-delimited JSON events until client closes
     while (running_) {
-      // Build a compact stats object
-      char line[256];
+      // Build compact stats + daynight live payload for SSE consumers.
+      char line[1024];
       int fps0 = cfg->stream0.stats.fps;
       int bps0 = cfg->stream0.stats.bps;
       int fps1 = cfg->stream1.stats.fps;
       int bps1 = cfg->stream1.stats.bps;
       int fps2 = cfg->stream2.stats.fps;
       int bps2 = cfg->stream2.stats.bps;
+      int live_brightness = cfg->daynight.live_brightness_percent.load();
+      int live_ev = cfg->daynight.live_ev.load();
+      int live_gb = cfg->daynight.live_gb.load();
+      int live_gr = cfg->daynight.live_gr.load();
+      int live_total_gain = cfg->daynight.live_total_gain.load();
+      int live_ae_luma = cfg->daynight.live_ae_luma.load();
+      int live_awb_ct = cfg->daynight.live_awb_color_temp.load();
+      const char *mode_ptr = cfg->daynight.live_mode.load();
+      const char *mode = (mode_ptr && mode_ptr[0] != '\0') ? mode_ptr : "unknown";
+      long now = static_cast<long>(time(NULL));
       int n = snprintf(line, sizeof(line),
-                       "{\"ts\":%ld,\"stats\":{\"stream0\":{\"fps\":%d,"
+                       "{\"ts\":%ld,\"time_now\":%ld,\"stats\":{\"stream0\":{\"fps\":%d,"
                        "\"Bps\":%d},\"stream1\":{\"fps\":%d,\"Bps\":%d},"
-                       "\"stream2\":{\"fps\":%d,\"Bps\":%d}}}\n",
-                       (long)time(NULL), fps0, bps0, fps1, bps1, fps2, bps2);
+                       "\"stream2\":{\"fps\":%d,\"Bps\":%d}},"
+                       "\"ev\":%d,\"gb_gain\":%d,\"gr_gain\":%d,\"daynight_brightness\":%d,"
+                       "\"total_gain\":%d,\"ae_luma\":%d,\"awb_color_temp\":%d,"
+                       "\"total_gain_night_threshold\":%d,\"total_gain_day_threshold\":%d,"
+                       "\"daynight_mode\":\"%s\"}\n",
+                       now, now, fps0, bps0, fps1, bps1, fps2, bps2,
+                       live_ev, live_gb, live_gr, live_brightness,
+                       live_total_gain, live_ae_luma, live_awb_ct,
+                       cfg->daynight.total_gain_night_threshold,
+                       cfg->daynight.total_gain_day_threshold,
+                       mode);
       ssize_t w = write(fd, line, n);
       if (w <= 0)
         break; // client closed
