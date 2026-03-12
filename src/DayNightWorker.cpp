@@ -582,6 +582,12 @@ void *thread_entry(void *arg) {
   simple_params.ev_night_threshold = cfg->get<int>("daynight.ev_night_threshold");
   simple_params.ev_day_threshold = cfg->get<int>("daynight.ev_day_threshold");
 
+  if (simple_params.total_gain_day_threshold >= simple_params.total_gain_night_threshold) {
+    LOG_WARN("DayNight: day_threshold (" << simple_params.total_gain_day_threshold
+             << ") >= night_threshold (" << simple_params.total_gain_night_threshold
+             << ") — hysteresis zone is inverted, automatic switching will not work");
+  }
+
   int interval_ms = cfg->get<int>("daynight.sample_interval_ms");
   if (interval_ms <= 0)
     interval_ms = 1000;
