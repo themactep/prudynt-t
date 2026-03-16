@@ -158,7 +158,7 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const std::string &path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER) {
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
       }
       add_key(sect, s2, key);
       add_num(sect, cfg->get<int>(path));
@@ -268,7 +268,7 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const char *path, auto setter) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER) {
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
         if (setter)
           setter();
       }
@@ -323,7 +323,7 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
   if (JsonValue *rm = obj_get(obj, "running_mode")) {
     if (rm->type == JSON_NUMBER) {
-      int mode = (int)rm->value.number;
+      int mode = (int)rm->value.number.integer;
       cfg->set<int>("image.running_mode", mode);
       hal::isp::set_running_mode(cfg->image.running_mode);
 
@@ -371,13 +371,13 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
   // WB bundle
   if (JsonValue *wbmode = obj_get(obj, "core_wb_mode"); wbmode && wbmode->type == JSON_NUMBER) {
-    cfg->set<int>("image.core_wb_mode", (int)wbmode->value.number);
+    cfg->set<int>("image.core_wb_mode", (int)wbmode->value.number.integer);
   }
   if (JsonValue *rg = obj_get(obj, "wb_rgain"); rg && rg->type == JSON_NUMBER) {
-    cfg->set<int>("image.wb_rgain", (int)rg->value.number);
+    cfg->set<int>("image.wb_rgain", (int)rg->value.number.integer);
   }
   if (JsonValue *bg = obj_get(obj, "wb_bgain"); bg && bg->type == JSON_NUMBER) {
-    cfg->set<int>("image.wb_bgain", (int)bg->value.number);
+    cfg->set<int>("image.wb_bgain", (int)bg->value.number.integer);
   }
   if (obj_get(obj, "core_wb_mode") || obj_get(obj, "wb_rgain") || obj_get(obj, "wb_bgain")) {
     hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
@@ -404,7 +404,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
   auto add_int = [&](const char *key, const std::string &path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
       add_key(sect, s2, key);
       add_num(sect, cfg->get<int>(path));
       wrote = true;
@@ -449,7 +449,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *rotation = obj_get(node, "rotation")) {
       if (rotation->type == JSON_NUMBER)
-        cfg->set<int>(base + "rotation", (int)rotation->value.number);
+        cfg->set<int>(base + "rotation", (int)rotation->value.number.integer);
     }
     if (JsonValue *fill = obj_get(node, "fill_color")) {
       if (fill->type == JSON_STRING && fill->value.string)
@@ -509,19 +509,19 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *width = obj_get(node, "width")) {
       if (width->type == JSON_NUMBER)
-        cfg->set<int>(base + "width", (int)width->value.number);
+        cfg->set<int>(base + "width", (int)width->value.number.integer);
     }
     if (JsonValue *height = obj_get(node, "height")) {
       if (height->type == JSON_NUMBER)
-        cfg->set<int>(base + "height", (int)height->value.number);
+        cfg->set<int>(base + "height", (int)height->value.number.integer);
     }
     if (JsonValue *rotation = obj_get(node, "rotation")) {
       if (rotation->type == JSON_NUMBER)
-        cfg->set<int>(base + "rotation", (int)rotation->value.number);
+        cfg->set<int>(base + "rotation", (int)rotation->value.number.integer);
     }
     if (JsonValue *transparency = obj_get(node, "transparency")) {
       if (transparency->type == JSON_NUMBER)
-        cfg->set<int>(base + "transparency", (int)transparency->value.number);
+        cfg->set<int>(base + "transparency", (int)transparency->value.number.integer);
     }
   };
 
@@ -573,15 +573,15 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *rotation = obj_get(node, "rotation")) {
       if (rotation->type == JSON_NUMBER)
-        cfg->set<int>(base + "rotation", (int)rotation->value.number);
+        cfg->set<int>(base + "rotation", (int)rotation->value.number.integer);
     }
     if (JsonValue *font_size = obj_get(node, "font_size")) {
       if (font_size->type == JSON_NUMBER)
-        cfg->set<int>(base + "font_size", (int)font_size->value.number);
+        cfg->set<int>(base + "font_size", (int)font_size->value.number.integer);
     }
     if (JsonValue *stroke_size = obj_get(node, "stroke_size")) {
       if (stroke_size->type == JSON_NUMBER)
-        cfg->set<int>(base + "stroke_size", (int)stroke_size->value.number);
+        cfg->set<int>(base + "stroke_size", (int)stroke_size->value.number.integer);
     }
     if (JsonValue *fill = obj_get(node, "fill_color")) {
       if (fill->type == JSON_STRING && fill->value.string)
@@ -597,19 +597,19 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *image_width = obj_get(node, "image_width")) {
       if (image_width->type == JSON_NUMBER)
-        cfg->set<int>(base + "image_width", (int)image_width->value.number);
+        cfg->set<int>(base + "image_width", (int)image_width->value.number.integer);
     }
     if (JsonValue *image_height = obj_get(node, "image_height")) {
       if (image_height->type == JSON_NUMBER)
-        cfg->set<int>(base + "image_height", (int)image_height->value.number);
+        cfg->set<int>(base + "image_height", (int)image_height->value.number.integer);
     }
     if (JsonValue *layer = obj_get(node, "layer")) {
       if (layer->type == JSON_NUMBER)
-        cfg->set<int>(base + "layer", (int)layer->value.number);
+        cfg->set<int>(base + "layer", (int)layer->value.number.integer);
     }
     if (JsonValue *opacity = obj_get(node, "opacity")) {
       if (opacity->type == JSON_NUMBER)
-        cfg->set<int>(base + "opacity", (int)opacity->value.number);
+        cfg->set<int>(base + "opacity", (int)opacity->value.number.integer);
     }
   };
 
@@ -678,7 +678,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const char *path, bool restart_audio) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER) {
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
         if (restart_audio)
           global_restart_audio = true;
       }
@@ -721,7 +721,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   // mic_vol - apply immediately without restart
   if (JsonValue *v = obj_get(obj, "mic_vol")) {
     if (v->type == JSON_NUMBER) {
-      int vol = (int)v->value.number;
+      int vol = (int)v->value.number.integer;
       if (cfg->set<int>("audio.mic_vol", vol)) {
         // Apply to hardware immediately like WS.cpp does
         for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
@@ -739,7 +739,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   // mic_gain - apply immediately without restart
   if (JsonValue *v = obj_get(obj, "mic_gain")) {
     if (v->type == JSON_NUMBER) {
-      int gain = (int)v->value.number;
+      int gain = (int)v->value.number.integer;
       if (cfg->set<int>("audio.mic_gain", gain)) {
         // Apply to hardware immediately like WS.cpp does
         for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
@@ -761,7 +761,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   if (hal::caps().has_audio_alc) {
     if (JsonValue *v = obj_get(obj, "mic_alc_gain")) {
       if (v->type == JSON_NUMBER) {
-        int alc_gain = (int)v->value.number;
+        int alc_gain = (int)v->value.number.integer;
         if (cfg->set<int>("audio.mic_alc_gain", alc_gain)) {
           // Apply to hardware immediately like WS.cpp does
           hal::audio::set_ai_alc(alc_gain);
@@ -814,7 +814,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   // spk_vol - apply immediately without restart
   if (JsonValue *v = obj_get(obj, "spk_vol")) {
     if (v->type == JSON_NUMBER) {
-      int vol = (int)v->value.number;
+      int vol = (int)v->value.number.integer;
       if (cfg->set<int>("audio.spk_vol", vol)) {
         // Apply to hardware immediately via AudioOutputWorker
         AudioOutputWorker::applyVolumeGain(true, vol, false, 0);
@@ -828,7 +828,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   // spk_gain - apply immediately without restart
   if (JsonValue *v = obj_get(obj, "spk_gain")) {
     if (v->type == JSON_NUMBER) {
-      int gain = (int)v->value.number;
+      int gain = (int)v->value.number.integer;
       if (cfg->set<int>("audio.spk_gain", gain)) {
         // Apply to hardware immediately via AudioOutputWorker
         AudioOutputWorker::applyVolumeGain(false, 0, true, gain);
@@ -856,7 +856,7 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
       add_key(out, s2, key);
       add_num(out, cfg->get<int>(path));
       wrote = true;
@@ -938,7 +938,7 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
           for (JsonArrayItem *jt = sub->value.array_head; jt && j < 4; jt = jt->next, ++j) {
             JsonValue *jv = jt->value;
             if (jv && jv->type == JSON_NUMBER)
-              vals[j] = (int)jv->value.number;
+              vals[j] = (int)jv->value.number.integer;
           }
           cfg->motion.rois[i].p0_x = vals[0];
           cfg->motion.rois[i].p0_y = vals[1];
@@ -1011,7 +1011,7 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
       add_key(out, s2, key);
       add_num(out, cfg->get<int>(path));
       wrote = true;
@@ -1336,7 +1336,7 @@ void handle_action(JsonValue *obj, std::string &out, bool &sep) {
   bool s2 = false;
   bool wrote = false;
   if (JsonValue *rst = obj_get(obj, "restart_thread"); rst && rst->type == JSON_NUMBER) {
-    int mask = (int)rst->value.number;
+    int mask = (int)rst->value.number.integer;
     if (mask & 1)
       global_restart_rtsp = true;
     if (mask & 2)
@@ -1373,7 +1373,7 @@ void handle_rtsp(JsonValue *obj, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
       add_key(out, s2, key);
       add_num(out, cfg->get<int>(path));
       wrote = true;
@@ -1470,7 +1470,7 @@ void handle_stream2(JsonValue *obj, std::string &out, bool &sep) {
   auto add_int = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number);
+        cfg->set<int>(path, (int)v->value.number.integer);
       add_key(out, s2, key);
       add_num(out, cfg->get<int>(path));
       wrote = true;
@@ -1520,7 +1520,7 @@ void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
       int channel = 0;
       JsonValue *ch = obj_get(start, "channel");
       if (ch && ch->type == JSON_NUMBER) {
-        channel = (int)ch->value.number;
+        channel = (int)ch->value.number.integer;
       }
 
       if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {
@@ -1554,7 +1554,7 @@ void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
         // Use duration from config or JSON for segment length
         JsonValue *dur = obj_get(start, "duration");
         if (dur && dur->type == JSON_NUMBER) {
-          fifo_cmd += " dur=" + std::to_string((int)dur->value.number);
+          fifo_cmd += " dur=" + std::to_string((int)dur->value.number.integer);
         } else if (cfg && cfg->recorder.duration > 0) {
           fifo_cmd += " dur=" + std::to_string(cfg->recorder.duration);
         }
@@ -1591,7 +1591,7 @@ void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
       int channel = -1;
       JsonValue *ch = obj_get(stop, "channel");
       if (ch && ch->type == JSON_NUMBER) {
-        channel = (int)ch->value.number;
+        channel = (int)ch->value.number.integer;
       }
 
       if (channel >= 0 && channel < NUM_VIDEO_CHANNELS) {

@@ -795,8 +795,8 @@ template <typename T> void handleConfigItem(JsonValue *jsonConfig, ConfigItem<T>
         item.value = jsonValueToNumber<int>(valueObj, item.defaultValue);
         readFromConfig = true;
       } else if constexpr (std::is_same_v<T, unsigned int>) {
-        if (valueObj->type == JSON_NUMBER && valueObj->value.number >= 0) {
-          item.value = static_cast<unsigned int>(valueObj->value.number);
+        if (valueObj->type == JSON_NUMBER && valueObj->value.number.integer >= 0) {
+          item.value = static_cast<unsigned int>(valueObj->value.number.integer);
           readFromConfig = true;
         } else if (valueObj->type == JSON_STRING && valueObj->value.string) {
           // Check if this is an OSD color field that might be in hex format
@@ -935,7 +935,10 @@ std::string jsonValueToString(JsonValue *value) {
   case JSON_STRING:
     return value->value.string ? std::string(value->value.string) : "";
   case JSON_NUMBER:
-    return std::to_string(value->value.number);
+    if (value->value.number.kind == JSON_NUMBER_INT)
+      return std::to_string(value->value.number.integer);
+    else
+      return std::to_string(value->value.number.real);
   case JSON_BOOL:
     return value->value.boolean ? "true" : "false";
   case JSON_NULL:
@@ -951,7 +954,11 @@ template <typename T> T jsonValueToNumber(JsonValue *value, T defaultValue) {
     return defaultValue;
 
   if (value->type == JSON_NUMBER) {
-    return static_cast<T>(value->value.number);
+    if constexpr (std::is_integral_v<T>) {
+      return static_cast<T>(value->value.number.integer);
+    } else {
+      return static_cast<T>(value->value.number.real);
+    }
   } else if (value->type == JSON_STRING && value->value.string) {
     try {
       if constexpr (std::is_integral_v<T>) {
@@ -977,7 +984,10 @@ bool jsonValueToBool(JsonValue *value, bool defaultValue) {
     std::string str = value->value.string;
     return str == "true" || str == "1";
   } else if (value->type == JSON_NUMBER) {
-    return value->value.number != 0.0;
+    if (value->value.number.kind == JSON_NUMBER_INT)
+      return value->value.number.integer != 0;
+    else
+      return value->value.number.real != 0.0;
   }
   return defaultValue;
 }
