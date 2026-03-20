@@ -206,13 +206,29 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   if (last_hw_delta_us >= 0) {
     int64_t step_us = delta_us - last_hw_delta_us;
     if (step_us > 1000000LL) {
-      // Re-anchor to current wall clock
       gettimeofday(&wall_ts_base, nullptr);
       hw_ts_base_us = frame.timeStamp;
       delta_us = 0;
     }
   }
   last_hw_delta_us = delta_us;
+
+  // Detect NTP clock steps: if gettimeofday() has diverged from our
+  // computed wallclock by more than 2 seconds, re-anchor wall_ts_base.
+  // Without this, live555's RTP timestamp computation (u32 arithmetic on
+  // tv_sec * sampleRate) wraps differently between old and new clock
+  // domains, causing ~24h PTS jumps on the next RTSP session.
+  struct timeval now;
+  gettimeofday(&now, nullptr);
+  int64_t expected_us = static_cast<int64_t>(wall_ts_base.tv_sec) * 1000000LL
+                        + wall_ts_base.tv_usec + delta_us;
+  int64_t actual_us = static_cast<int64_t>(now.tv_sec) * 1000000LL + now.tv_usec;
+  int64_t drift_us = actual_us - expected_us;
+  if (drift_us > 2000000LL || drift_us < -2000000LL) {
+    wall_ts_base = now;
+    hw_ts_base_us = frame.timeStamp;
+    delta_us = 0;
+  }
 
   int64_t abs_us = static_cast<int64_t>(wall_ts_base.tv_sec) * 1000000LL
                    + wall_ts_base.tv_usec + delta_us;
