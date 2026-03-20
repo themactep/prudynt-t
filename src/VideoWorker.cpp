@@ -336,6 +336,16 @@ void VideoWorker::run() {
               frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
             }
 
+            // Guard against IMP encoder timestamp domain transitions
+            // (relative→rebased) which cause large forward jumps.
+            if (ts_last_frame_us > 0 && frame_ts_us > ts_last_frame_us) {
+              int64_t fwd_step = frame_ts_us - ts_last_frame_us;
+              if (fwd_step > 2 * nominal_frame_step_us) {
+                frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
+                ts_last_nonzero_us = frame_ts_us;
+              }
+            }
+
             if (ts_last_frame_us > 0 && frame_ts_us <= ts_last_frame_us) {
               frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
             }
