@@ -72,7 +72,7 @@ void Motion::detect() {
   auto motorSettleWindow = std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
   auto lastMotorEventTime = startTime - motorSettleWindow;
   while (global_motion_thread_signal) {
-    ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout);
+    ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout_ms);
     if (ret < 0) {
       LOG_WARN("IMP_IVS_PollingResult error: " << ret);
       continue;
@@ -111,20 +111,20 @@ void Motion::detect() {
                                                                                            << ", since_last_ms="
                                                                                            << sinceLastMotor.count()
                                                                                            << ", cooldown_s="
-                                                                                           << cfg->motion.cooldown_time
+                                                                                           << cfg->motion.cooldown_time_s
                                                                                            << ")");
       isInCooldown = true;
       cooldownEndTime = steady_clock::now();
     }
     motorMovementActive = motorActiveOrSettling;
 
-    if (ignoreInitialPeriod && elapsedTime.count() < cfg->motion.init_time) {
+    if (ignoreInitialPeriod && elapsedTime.count() < cfg->motion.init_time_s) {
       continue;
     } else {
       ignoreInitialPeriod = false;
     }
 
-    if (isInCooldown && duration_cast<seconds>(currentTime - cooldownEndTime).count() < cfg->motion.cooldown_time) {
+    if (isInCooldown && duration_cast<seconds>(currentTime - cooldownEndTime).count() < cfg->motion.cooldown_time_s) {
       continue;
     } else {
       isInCooldown = false;
@@ -137,7 +137,7 @@ void Motion::detect() {
           motionDetected = true;
           LOG_INFO("Active motion detected in region " << i);
           debounce++;
-          if (debounce >= cfg->motion.debounce_time) {
+          if (debounce >= cfg->motion.debounce_time_s) {
             if (!moving.load()) {
               moving = true;
               LOG_INFO("Motion Start");
@@ -163,7 +163,7 @@ void Motion::detect() {
     if (!motionDetected) {
       debounce = 0;
       auto duration = duration_cast<seconds>(currentTime - motionEndTime).count();
-      if (moving && duration >= cfg->motion.min_time && duration >= cfg->motion.post_time) {
+      if (moving && duration >= cfg->motion.min_time_s && duration >= cfg->motion.post_time_s) {
         LOG_INFO("End of Motion");
         remove_motion_detected_state_file();
         char cmd[128];

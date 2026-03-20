@@ -2023,12 +2023,12 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
       // set prview pending flag
       u_ctx->flag |= PNT_FLAG_WS_PREVIEW_PENDING;
 
-      /* 'first_request_delay'
+      /* 'first_request_delay_us'
        * first request after thread sleep should be a bit delayed, because the
        * first images after wakup can be incomplete or having osd missed a
        * default of 100 milliseconds should delay ~3 images
        */
-      int first_request_delay = 0;
+      int first_request_delay_us = 0;
       u_ctx->snapshot.r++;
 
       {
@@ -2039,7 +2039,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
          * must been started
          */
         if (!global_jpeg[0]->active) {
-          first_request_delay = cfg->websocket.first_image_delay * 1000;
+          first_request_delay_us = cfg->websocket.first_image_delay_ms * 1000;
           global_jpeg[0]->should_grab_frames.notify_all();
           global_jpeg[0]->is_activated.acquire();
         }
@@ -2067,8 +2067,8 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
         LOG_DDEBUG("RPS: " << u_ctx->snapshot.rps << " " << u_ctx->snapshot.throttle << " " << dur);
       }
 
-      int delay =
-          (LWS_USEC_PER_SEC / (global_jpeg[0]->stream->stats.fps + u_ctx->snapshot.throttle)) + first_request_delay;
+      int delay_us =
+          (LWS_USEC_PER_SEC / (global_jpeg[0]->stream->stats.fps + u_ctx->snapshot.throttle)) + first_request_delay_us;
       LOG_DDEBUG("shedule preview image. id:" << u_ctx->id << " delay:" << delay);
       lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->snapshot_timer.sul, send_snapshot, delay);
 
@@ -2180,7 +2180,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
            * sleep usleep is a bad choice, but lws_sul_schedule won't work as
            * expected here hopfully we find a better solution later
            */
-          usleep(cfg->websocket.first_image_delay * 1000);
+          usleep(cfg->websocket.first_image_delay_ms * 1000);
         }
 
         lws_callback_on_writable(wsi);

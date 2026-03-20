@@ -34,7 +34,7 @@
 #define OSD_AUTO_VALUE 16384
 #define IVS_AUTO_VALUE 16384
 
-#define THREAD_SLEEP 100000
+#define THREAD_SLEEP_US 100000
 #define GET_STREAM_BLOCKING false
 
 struct roi {
@@ -169,7 +169,7 @@ struct _daynight {
 struct _general {
   const char *loglevel;
   int osd_pool_size;
-  int imp_polling_timeout;
+  int imp_polling_timeout_ms;
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
 };
@@ -209,13 +209,13 @@ struct _image {
 };
 struct _motion {
   int monitor_stream;
-  int debounce_time;
-  int post_time;
-  int cooldown_time;
+  int debounce_time_s;
+  int post_time_s;
+  int cooldown_time_s;
   int motor_settle_ms;
-  int init_time;
-  int min_time;
-  int ivs_polling_timeout;
+  int init_time_s;
+  int min_time_s;
+  int ivs_polling_timeout_ms;
   int sensitivity;
   int skip_frame_count;
   int frame_width;
@@ -245,7 +245,7 @@ struct _osd {
   int logo_transparency;
   int logo_rotation;
   int brightness_rotation;
-  int start_delay;
+  int start_delay_ms;
   bool enabled;
   bool time_enabled;
   bool usertext_enabled;
@@ -277,7 +277,7 @@ struct _recorder {
   const char *mount;
   const char *device_path;
   const char *filename;
-  int duration;
+  int duration_s;
   int channel;
 #ifdef PREBUFFER_ENABLED
   bool prebuffer_enabled;
@@ -291,7 +291,7 @@ struct _rtsp {
   int est_bitrate;
   int out_buffer_size;
   int send_buffer_size;
-  int send_timeout;
+  int send_timeout_s;
   int session_reclaim;
   bool auth_required;
   const char *username;
@@ -366,7 +366,7 @@ struct _websocket {
   bool ws_secured;
   bool http_secured;
   int port;
-  int first_image_delay;
+  int first_image_delay_ms;
   const char *name;
   const char *token{"auto"};
 };

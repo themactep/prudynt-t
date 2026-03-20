@@ -216,8 +216,8 @@ struct video_stream {
   bool run_for_jpeg;                 // see comment in audio_stream
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
   std::atomic<bool> mp4_waiting_for_idr;
-  std::atomic<int64_t> mp4_required_idr_ts;
-  std::atomic<int64_t> mp4_last_idr_ts;
+  std::atomic<int64_t> mp4_required_idr_ts_us;
+  std::atomic<int64_t> mp4_last_idr_ts_us;
   std::atomic<uint64_t> mp4_last_idr_request_ms;
   std::atomic<int64_t> mp4_prebuffer_offset_ms;  // Offset for live frames when prebuffer is used
   std::atomic<bool> mp4_prebuffer_flushing;      // True while prebuffer frames are being written
@@ -246,7 +246,7 @@ struct video_stream {
       : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0), imp_encoder(nullptr),
         imp_framesource(nullptr), msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
-        mp4_required_idr_ts{-1}, mp4_last_idr_ts{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},
+        mp4_required_idr_ts_us{-1}, mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},
         mp4_prebuffer_flushing{false}, have_vps(false), have_sps(false), have_pps(false) {
   }
 };

@@ -35,7 +35,7 @@ private:
   // deltas from there, so fPresentationTime is always a valid Unix timeval and
   // RTCP sender reports carry correct NTP↔RTP mappings.
   bool hw_ts_initialized{false};
-  int64_t hw_ts_base{0};        // IMP timestamp of the first frame (µs)
+  int64_t hw_ts_base_us{0};        // IMP timestamp of the first frame (µs)
   struct timeval wall_ts_base{0, 0}; // gettimeofday() at the first frame
 };
 

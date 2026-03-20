@@ -54,7 +54,7 @@ public:
   static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t height, const uint16_t max_width,
                       const uint16_t max_height);
   static uint16_t get_abs_pos(const uint16_t max, const uint16_t size, const int pos);
-  int startup_delay{0};
+  int startup_delay_ticks{0};
   bool is_started = false;
 
 private:

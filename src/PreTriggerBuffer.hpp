@@ -23,7 +23,7 @@ public:
     bool init(int duration_seconds, int fps, int max_memory_mb, bool keyframe_only);
     
     // Add frame to circular buffer
-    void addFrame(const uint8_t* data, size_t size, int64_t timestamp, bool is_keyframe);
+    void addFrame(const uint8_t* data, size_t size, int64_t timestamp_us, bool is_keyframe);
     
     // Get all buffered frames for recording (oldest first)
     std::vector<PreTriggerFrame> getFrames();
@@ -54,7 +54,7 @@ private:
     std::atomic<size_t> peak_memory_usage_;
     
     void enforceMemoryLimit();
-    void enforceTimeLimit(int64_t newest_timestamp);
+    void enforceTimeLimit(int64_t newest_timestamp_us);
     void reduceBufferSize();
 };
 

@@ -154,7 +154,7 @@ void JPEGWorker::run() {
           global_jpeg[jpgChn]->reconfig.store(false);
         }
 
-        if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn, cfg->general.imp_polling_timeout) == 0) {
+        if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn, cfg->general.imp_polling_timeout_ms) == 0) {
           IMPEncoderStream stream;
           if (IMP_Encoder_GetStream(global_jpeg[jpgChn]->encChn, &stream, GET_STREAM_BLOCKING) == 0) {
             fps++;

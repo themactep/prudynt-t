@@ -47,7 +47,7 @@ struct TrackState {
   uint32_t width = 0;
   uint32_t height = 0;
   uint16_t channels = 0;
-  uint32_t default_duration = 0;
+  uint32_t default_duration_ticks = 0;
   std::vector<uint8_t> codec_config; // avcC or AudioSpecificConfig
   uint64_t last_pts = 0;
   bool have_last_pts = false;
@@ -67,7 +67,7 @@ public:
     video_.height = static_cast<uint32_t>(params.height);
     video_.codec_config = is_hevc_ ? params.hvcC : params.avcC;
     if (params.fps > 0) {
-      video_.default_duration = static_cast<uint32_t>(video_.timescale / params.fps);
+      video_.default_duration_ticks = static_cast<uint32_t>(video_.timescale / params.fps);
     }
 
     if (!params.aacConfig.empty()) {
@@ -76,7 +76,7 @@ public:
       audio_.timescale = static_cast<uint32_t>(params.sampleRate);
       audio_.codec_config = params.aacConfig;
       audio_.channels = static_cast<uint16_t>(params.channels);
-      audio_.default_duration = 1024; // AAC-LC frame size in samples
+      audio_.default_duration_ticks = 1024; // AAC-LC frame size in samples
       LOG_INFO("SimpleMP4Muxer: audio enabled sample_rate=" << audio_.timescale << "Hz channels=" << audio_.channels
                                                             << " config_bytes=" << audio_.codec_config.size());
     } else {
@@ -485,9 +485,9 @@ private:
     uint64_t pts = (pts_ms <= 0) ? 0 : static_cast<uint64_t>(pts_ms) * t.timescale / 1000ull;
     const uint64_t prev_pts = t.last_pts;
 
-    uint32_t sample_duration = 0;
+    uint32_t sample_duration_ticks = 0;
     bool duration_was_clamped = false;
-    bool used_default_duration = false;
+    bool used_default_duration_ticks = false;
     bool forced_min_duration = false;
     bool pts_regressed = (t.have_last_pts && pts <= prev_pts);
 
@@ -497,17 +497,17 @@ private:
         delta = 0xFFFFFFFFull;
         duration_was_clamped = true;
       }
-      sample_duration = static_cast<uint32_t>(delta);
+      sample_duration_ticks = static_cast<uint32_t>(delta);
     }
-    if (sample_duration == 0) {
-      sample_duration = t.default_duration;
-      used_default_duration = (sample_duration != 0);
+    if (sample_duration_ticks == 0) {
+      sample_duration_ticks = t.default_duration_ticks;
+      used_default_duration_ticks = (sample_duration_ticks != 0);
     }
-    if (sample_duration == 0) {
-      sample_duration = isVideo ? (t.timescale / 30) : (t.timescale / 50);
+    if (sample_duration_ticks == 0) {
+      sample_duration_ticks = isVideo ? (t.timescale / 30) : (t.timescale / 50);
       forced_min_duration = true;
-      if (sample_duration == 0) {
-        sample_duration = 1;
+      if (sample_duration_ticks == 0) {
+        sample_duration_ticks = 1;
       }
     }
 
@@ -520,14 +520,14 @@ private:
         LOG_WARN("SimpleMP4Muxer(audio): clamped sample duration to 0xFFFFFFFF");
         ++audio_duration_clamp_warnings_;
       }
-      if (used_default_duration && audio_duration_fallback_warnings_ < 5) {
-        LOG_INFO("SimpleMP4Muxer(audio): using default duration=" << sample_duration);
+      if (used_default_duration_ticks && audio_duration_fallback_warnings_ < 5) {
+        LOG_INFO("SimpleMP4Muxer(audio): using default duration=" << sample_duration_ticks);
         ++audio_duration_fallback_warnings_;
       }
       if (forced_min_duration && audio_forced_duration_warnings_ < 5) {
         LOG_WARN("SimpleMP4Muxer(audio): synthesized duration due to missing "
                  "timing -> "
-                 << sample_duration);
+                 << sample_duration_ticks);
         ++audio_forced_duration_warnings_;
       }
     }
@@ -573,7 +573,7 @@ private:
       // data_offset placeholder (patched later)
       write_u32(trun, 0);
 
-      write_u32(trun, sample_duration);
+      write_u32(trun, sample_duration_ticks);
       write_u32(trun, static_cast<uint32_t>(size));
       uint32_t flags = isVideo ? (isKey ? 0x02000000u : 0x01010000u) : 0x00000000u;
       write_u32(trun, flags);

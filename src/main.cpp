@@ -373,14 +373,14 @@ bool timesync_wait() {
   // I don't really have a better way to do this than
   // a no-earlier-than time. The most common sync failure
   // is time() == 0
-  int timeout = 0;
+  int timeout_s = 0;
   while (time(NULL) < 1647489843) {
     if (global_shutdown_requested.load(std::memory_order_relaxed)) {
       return false;
     }
     std::this_thread::sleep_for(seconds(1));
-    ++timeout;
-    if (timeout == 60)
+    ++timeout_s;
+    if (timeout_s == 60)
       return false;
   }
   return true;
@@ -613,7 +613,7 @@ int main(int argc, const char *argv[]) {
      * and running, additionally we add the timespan which is configured as
      * OSD startup delay.
      */
-    usleep(250000 + (cfg->stream0.osd.start_delay * 1000) + cfg->stream1.osd.start_delay * 1000);
+    usleep(250000 + (cfg->stream0.osd.start_delay_ms * 1000) + cfg->stream1.osd.start_delay_ms * 1000);
 
     LOG_DEBUG("main thread is going to sleep");
     std::unique_lock lck(mutex_main);

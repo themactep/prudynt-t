@@ -43,8 +43,8 @@ void VideoWorker::run() {
   auto video_state = global_video[encChn];
   std::vector<uint8_t> mp4_sample;
   bool mp4_sample_is_key = false;
-  int64_t mp4_sample_ts = -1;
-  int64_t mp4_sample_ts_base = -1;
+  int64_t mp4_sample_ts_us = -1;
+  int64_t mp4_sample_ts_base_us = -1;
   bool mp4_waiting_frame_end = false;
   bool mp4_inserted_codec_config = false;
 
@@ -52,13 +52,13 @@ void VideoWorker::run() {
   // Prebuffer frame accumulation (similar to mp4_sample)
   std::vector<uint8_t> prebuffer_sample;
   bool prebuffer_sample_is_key = false;
-  int64_t prebuffer_sample_ts = -1;
+  int64_t prebuffer_sample_ts_us = -1;
 #endif
 
   // Queue for frames that arrive during prebuffer flush
   struct PendingFrame {
     std::vector<uint8_t> data;
-    int64_t timestamp;
+    int64_t timestamp_us;
     bool is_keyframe;
   };
   std::vector<PendingFrame> pending_frames_during_flush;
@@ -68,18 +68,18 @@ void VideoWorker::run() {
     return std::max<int64_t>(frame_period / 2, 2000LL);
   };
   int last_mp4_fps = (video_state && video_state->stream) ? video_state->stream->fps : 0;
-  int64_t mp4_frame_switch_threshold = compute_frame_switch_threshold(last_mp4_fps);
+  int64_t mp4_frame_switch_threshold_us = compute_frame_switch_threshold(last_mp4_fps);
 
-  int64_t ts_last_nonzero = 0;
-  int64_t ts_last_frame = 0;
-  int64_t ts_last_rtp = 0;
-  int64_t ts_current_frame = 0;
+  int64_t ts_last_nonzero_us = 0;
+  int64_t ts_last_frame_us = 0;
+  int64_t ts_last_rtp_us = 0;
+  int64_t ts_current_frame_us = 0;
   bool ts_have_current_frame = false;
 
   auto reset_mp4_sample = [&]() {
     mp4_sample.clear();
     mp4_sample_is_key = false;
-    mp4_sample_ts = -1;
+    mp4_sample_ts_us = -1;
     mp4_waiting_frame_end = false;
     mp4_inserted_codec_config = false;
   };
@@ -88,7 +88,7 @@ void VideoWorker::run() {
   auto reset_prebuffer_sample = [&]() {
     prebuffer_sample.clear();
     prebuffer_sample_is_key = false;
-    prebuffer_sample_ts = -1;
+    prebuffer_sample_ts_us = -1;
   };
 
   auto flush_prebuffer_sample = [&]() {
@@ -100,7 +100,7 @@ void VideoWorker::run() {
     global_video[encChn]->prebuffer->addFrame(
       prebuffer_sample.data(),
       prebuffer_sample.size(),
-      prebuffer_sample_ts,
+      prebuffer_sample_ts_us,
       prebuffer_sample_is_key
     );
     reset_prebuffer_sample();
@@ -109,7 +109,7 @@ void VideoWorker::run() {
 
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
-    mp4_sample_ts_base = -1;
+    mp4_sample_ts_base_us = -1;
   };
 
   auto flush_mp4_sample = [&](bool recorder_active) {
@@ -138,12 +138,12 @@ void VideoWorker::run() {
       // Queue this frame for later
       PendingFrame pf;
       pf.data = std::move(mp4_sample);
-      pf.timestamp = mp4_sample_ts;
+      pf.timestamp_us = mp4_sample_ts_us;
       pf.is_keyframe = mp4_sample_is_key;
       pending_frames_during_flush.push_back(std::move(pf));
 
       reset_mp4_sample();
-      mp4_sample_ts_base = -1;  // Reset timestamp base so we recalculate after flush
+      mp4_sample_ts_base_us = -1;  // Reset timestamp base so we recalculate after flush
       return;
     }
 
@@ -153,32 +153,32 @@ void VideoWorker::run() {
       int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
 
       // Find the first keyframe in pending frames to establish timestamp base
-      int64_t pending_ts_base = -1;
+      int64_t pending_ts_base_us = -1;
       for (const auto& pf : pending_frames_during_flush) {
         if (pf.is_keyframe) {
-          pending_ts_base = pf.timestamp;
+          pending_ts_base_us = pf.timestamp_us;
           break;
         }
       }
       // If no keyframe, use first frame's timestamp
-      if (pending_ts_base < 0 && !pending_frames_during_flush.empty()) {
-        pending_ts_base = pending_frames_during_flush.front().timestamp;
+      if (pending_ts_base_us < 0 && !pending_frames_during_flush.empty()) {
+        pending_ts_base_us = pending_frames_during_flush.front().timestamp_us;
       }
 
       for (const auto& pf : pending_frames_during_flush) {
-        int64_t relative_ts = pf.timestamp;
-        if (pending_ts_base >= 0) {
-          relative_ts -= pending_ts_base;
+        int64_t relative_ts_us = pf.timestamp_us;
+        if (pending_ts_base_us >= 0) {
+          relative_ts_us -= pending_ts_base_us;
         }
-        if (relative_ts < 0) relative_ts = 0;
-        int64_t pts_ms = relative_ts / 1000 + prebuffer_offset;
+        if (relative_ts_us < 0) relative_ts_us = 0;
+        int64_t pts_ms = relative_ts_us / 1000 + prebuffer_offset;
 
         channel_recorder.writeVideo(pf.data.data(), pf.data.size(), pts_ms, pf.is_keyframe);
       }
 
       // Update timestamp base for subsequent live frames
       if (!pending_frames_during_flush.empty()) {
-        mp4_sample_ts_base = pending_frames_during_flush.back().timestamp;
+        mp4_sample_ts_base_us = pending_frames_during_flush.back().timestamp_us;
       }
 
       pending_frames_during_flush.clear();
@@ -192,8 +192,8 @@ void VideoWorker::run() {
         reset_mp4_state();
         return;
       }
-      int64_t required_ts = video_state ? video_state->mp4_required_idr_ts.load(std::memory_order_relaxed) : -1;
-      if (required_ts >= 0 && mp4_sample_ts <= required_ts) {
+      int64_t required_ts = video_state ? video_state->mp4_required_idr_ts_us.load(std::memory_order_relaxed) : -1;
+      if (required_ts >= 0 && mp4_sample_ts_us <= required_ts) {
         // Reset full state including timestamp base so next frame starts fresh
         reset_mp4_state();
         return;
@@ -204,15 +204,15 @@ void VideoWorker::run() {
     }
 
     int64_t pts_ms = 0;
-    if (mp4_sample_ts >= 0) {
-      int64_t relative_ts = mp4_sample_ts;
-      if (mp4_sample_ts_base >= 0) {
-        relative_ts -= mp4_sample_ts_base;
+    if (mp4_sample_ts_us >= 0) {
+      int64_t relative_ts_us = mp4_sample_ts_us;
+      if (mp4_sample_ts_base_us >= 0) {
+        relative_ts_us -= mp4_sample_ts_base_us;
       }
-      if (relative_ts < 0) {
-        relative_ts = 0;
+      if (relative_ts_us < 0) {
+        relative_ts_us = 0;
       }
-      pts_ms = relative_ts / 1000;
+      pts_ms = relative_ts_us / 1000;
 
       // Add prebuffer offset so live frames continue after prebuffer frames
       int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
@@ -221,8 +221,8 @@ void VideoWorker::run() {
       }
     }
     if (mp4_sample_is_key && video_state) {
-      video_state->mp4_last_idr_ts.store(mp4_sample_ts, std::memory_order_relaxed);
-      video_state->mp4_required_idr_ts.store(mp4_sample_ts, std::memory_order_relaxed);
+      video_state->mp4_last_idr_ts_us.store(mp4_sample_ts_us, std::memory_order_relaxed);
+      video_state->mp4_required_idr_ts_us.store(mp4_sample_ts_us, std::memory_order_relaxed);
     }
     channel_recorder.writeVideo(mp4_sample.data(), mp4_sample.size(), pts_ms, mp4_sample_is_key);
     reset_mp4_sample();
@@ -271,9 +271,9 @@ void VideoWorker::run() {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
-        mp4_frame_switch_threshold = compute_frame_switch_threshold(last_mp4_fps);
+        mp4_frame_switch_threshold_us = compute_frame_switch_threshold(last_mp4_fps);
       }
-      if (IMP_Encoder_PollingStream(encChn, cfg->general.imp_polling_timeout) == 0) {
+      if (IMP_Encoder_PollingStream(encChn, cfg->general.imp_polling_timeout_ms) == 0) {
         IMPEncoderStream stream;
         if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) != 0) {
           LOG_ERROR("IMP_Encoder_GetStream(" << encChn << ") failed");
@@ -297,11 +297,11 @@ void VideoWorker::run() {
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
-          if ((!recorder_active || !recorder_accepts_samples) && mp4_sample_ts != -1) {
+          if ((!recorder_active || !recorder_accepts_samples) && mp4_sample_ts_us != -1) {
             reset_mp4_state();
           }
           if (!recorder_accepts_samples) {
-            mp4_sample_ts_base = -1;
+            mp4_sample_ts_base_us = -1;
           }
 
           fps++;
@@ -317,59 +317,59 @@ void VideoWorker::run() {
               ++frame_end_idx;
             }
 
-            int64_t frame_ts = 0;
+            int64_t frame_ts_us = 0;
             for (uint32_t j = i; j <= frame_end_idx; ++j) {
               if (stream.pack[j].timestamp > 0) {
-                frame_ts = stream.pack[j].timestamp;
+                frame_ts_us = stream.pack[j].timestamp;
               }
             }
 
-            if (frame_ts > 0) {
-              if (frame_ts > ts_last_nonzero) {
-                ts_last_nonzero = frame_ts;
+            if (frame_ts_us > 0) {
+              if (frame_ts_us > ts_last_nonzero_us) {
+                ts_last_nonzero_us = frame_ts_us;
               } else {
-                frame_ts = ts_last_nonzero;
+                frame_ts_us = ts_last_nonzero_us;
               }
-            } else if (ts_last_nonzero > 0) {
-              frame_ts = ts_last_nonzero;
-            } else if (ts_last_frame > 0) {
-              frame_ts = ts_last_frame + nominal_frame_step_us;
+            } else if (ts_last_nonzero_us > 0) {
+              frame_ts_us = ts_last_nonzero_us;
+            } else if (ts_last_frame_us > 0) {
+              frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
             }
 
-            if (ts_last_frame > 0 && frame_ts <= ts_last_frame) {
-              frame_ts = ts_last_frame + nominal_frame_step_us;
+            if (ts_last_frame_us > 0 && frame_ts_us <= ts_last_frame_us) {
+              frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
             }
-            if (frame_ts <= 0) {
-              frame_ts = (ts_last_frame > 0) ? (ts_last_frame + nominal_frame_step_us) : nominal_frame_step_us;
+            if (frame_ts_us <= 0) {
+              frame_ts_us = (ts_last_frame_us > 0) ? (ts_last_frame_us + nominal_frame_step_us) : nominal_frame_step_us;
             }
 
-            ts_current_frame = frame_ts;
+            ts_current_frame_us = frame_ts_us;
             ts_have_current_frame = true;
           }
 
-          int64_t pack_ts = stream.pack[i].timestamp;
-          if (pack_ts > ts_last_nonzero) {
-            ts_last_nonzero = pack_ts;
+          int64_t pack_ts_us = stream.pack[i].timestamp;
+          if (pack_ts_us > ts_last_nonzero_us) {
+            ts_last_nonzero_us = pack_ts_us;
           }
-          if (ts_have_current_frame && ts_current_frame > 0) {
-            pack_ts = ts_current_frame;
-          } else if (pack_ts <= 0 && ts_last_nonzero > 0) {
-            pack_ts = ts_last_nonzero;
-          }
-
-          if (stream.pack[i].frameEnd && pack_ts > 0) {
-            ts_last_frame = pack_ts;
+          if (ts_have_current_frame && ts_current_frame_us > 0) {
+            pack_ts_us = ts_current_frame_us;
+          } else if (pack_ts_us <= 0 && ts_last_nonzero_us > 0) {
+            pack_ts_us = ts_last_nonzero_us;
           }
 
-          int64_t rtsp_ts = pack_ts;
-          if (rtsp_ts <= 0) {
-            rtsp_ts = (ts_last_rtp > 0) ? (ts_last_rtp + nominal_frame_step_us) : nominal_frame_step_us;
+          if (stream.pack[i].frameEnd && pack_ts_us > 0) {
+            ts_last_frame_us = pack_ts_us;
+          }
+
+          int64_t rtsp_ts_us = pack_ts_us;
+          if (rtsp_ts_us <= 0) {
+            rtsp_ts_us = (ts_last_rtp_us > 0) ? (ts_last_rtp_us + nominal_frame_step_us) : nominal_frame_step_us;
           }
           constexpr int64_t kMinRtpStepUs = 12;
-          if (ts_last_rtp > 0 && rtsp_ts <= ts_last_rtp) {
-            rtsp_ts = ts_last_rtp + kMinRtpStepUs;
+          if (ts_last_rtp_us > 0 && rtsp_ts_us <= ts_last_rtp_us) {
+            rtsp_ts_us = ts_last_rtp_us + kMinRtpStepUs;
           }
-          ts_last_rtp = rtsp_ts;
+          ts_last_rtp_us = rtsp_ts_us;
 
           uint32_t h264_nal = hal::encoder::get_h264_nal_type(stream.pack[i]);
           uint32_t h265_nal = hal::encoder::get_h265_nal_type(stream.pack[i]);
@@ -444,29 +444,29 @@ void VideoWorker::run() {
           }
 
           if ((nal_is_idr || nal_is_hevc_idr) && video_state) {
-            video_state->mp4_last_idr_ts.store(pack_ts, std::memory_order_relaxed);
+            video_state->mp4_last_idr_ts_us.store(pack_ts_us, std::memory_order_relaxed);
           }
 
           if (recorder_accepts_samples && payload_len > 0 && !(nal_is_vps || nal_is_sps || nal_is_pps)) {
             bool pack_frame_end = stream.pack[i].frameEnd;
 
-            if (mp4_sample_ts != -1 && !mp4_sample.empty()) {
+            if (mp4_sample_ts_us != -1 && !mp4_sample.empty()) {
               if (mp4_waiting_frame_end) {
-                if (pack_ts != mp4_sample_ts) {
+                if (pack_ts_us != mp4_sample_ts_us) {
                   flush_mp4_sample(recorder_active);
                 }
               } else {
-                int64_t delta = pack_ts - mp4_sample_ts;
-                if (delta <= 0 || delta >= mp4_frame_switch_threshold) {
+                int64_t delta = pack_ts_us - mp4_sample_ts_us;
+                if (delta <= 0 || delta >= mp4_frame_switch_threshold_us) {
                   flush_mp4_sample(recorder_active);
                 }
               }
             }
 
-            if (mp4_sample_ts == -1) {
-              mp4_sample_ts = pack_ts;
-              if (mp4_sample_ts_base == -1) {
-                mp4_sample_ts_base = pack_ts;
+            if (mp4_sample_ts_us == -1) {
+              mp4_sample_ts_us = pack_ts_us;
+              if (mp4_sample_ts_base_us == -1) {
+                mp4_sample_ts_base_us = pack_ts_us;
               }
             }
 
@@ -511,9 +511,9 @@ void VideoWorker::run() {
           if (global_video[encChn]->hasDataCallback) {
             H264NALUnit nalu;
 
-            nalu.imp_ts = rtsp_ts;
-            nalu.time.tv_sec = static_cast<time_t>(rtsp_ts / 1000000LL);
-            nalu.time.tv_usec = static_cast<suseconds_t>(rtsp_ts % 1000000LL);
+            nalu.imp_ts = rtsp_ts_us;
+            nalu.time.tv_sec = static_cast<time_t>(rtsp_ts_us / 1000000LL);
+            nalu.time.tv_usec = static_cast<suseconds_t>(rtsp_ts_us % 1000000LL);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
@@ -608,8 +608,8 @@ void VideoWorker::run() {
             // Skip VPS/SPS/PPS for prebuffer (they're in the avcC/hvcC)
             if (!(nal_is_vps || nal_is_sps || nal_is_pps) && payload_len > 0) {
               // Set timestamp from first NAL unit of frame
-              if (prebuffer_sample_ts == -1) {
-                prebuffer_sample_ts = stream.pack[i].timestamp;
+              if (prebuffer_sample_ts_us == -1) {
+                prebuffer_sample_ts_us = stream.pack[i].timestamp;
               }
 
               // Mark as keyframe if any NAL is IDR
@@ -681,7 +681,7 @@ void VideoWorker::run() {
         }
       } else {
         error_count++;
-        LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout << ") timeout !");
+        LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout_ms << ") timeout !");
       }
     } else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
                !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active) {

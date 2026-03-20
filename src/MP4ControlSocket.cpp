@@ -73,7 +73,7 @@ struct StartCommandOptions {
   std::string mount;
   std::string directory;
   std::string nameTemplate;
-  int durationSeconds{0};
+  int duration_s{0};
   int channel{0};
   bool loop{false};
   bool durationProvided{false};
@@ -87,7 +87,7 @@ struct RecordingLoopParams {
   std::string mount;
   std::string directory;
   std::string nameTemplate;
-  int durationSeconds{0};
+  int duration_s{0};
   int channel{0};
 };
 
@@ -563,8 +563,8 @@ bool start_recording(const std::string &path, int target_channel) {
     bool is_target = (i == target_channel);
     worker->mp4_waiting_for_idr.store(is_target, std::memory_order_relaxed);
     if (is_target) {
-      int64_t last_idr = worker->mp4_last_idr_ts.load(std::memory_order_relaxed);
-      worker->mp4_required_idr_ts.store(last_idr, std::memory_order_relaxed);
+      int64_t last_idr = worker->mp4_last_idr_ts_us.load(std::memory_order_relaxed);
+      worker->mp4_required_idr_ts_us.store(last_idr, std::memory_order_relaxed);
       auto now_ms =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
               .count();
@@ -849,9 +849,9 @@ std::string default_string(const char *value, const char *fallback) {
   return fallback;
 }
 
-int default_recorder_duration() {
-  if (cfg && cfg->recorder.duration > 0) {
-    return cfg->recorder.duration;
+int default_recorder_duration_s() {
+  if (cfg && cfg->recorder.duration_s > 0) {
+    return cfg->recorder.duration_s;
   }
   return 60;
 }
@@ -891,12 +891,12 @@ RecordingLoopParams build_loop_params(const StartCommandOptions &options, bool *
   if (params.channel < 0 || params.channel >= NUM_VIDEO_CHANNELS) {
     params.channel = default_recorder_channel();
   }
-  params.durationSeconds =
-      (options.durationProvided && options.durationSeconds > 0) ? options.durationSeconds : default_recorder_duration();
+  params.duration_s =
+      (options.durationProvided && options.duration_s > 0) ? options.duration_s : default_recorder_duration_s();
   params.mount = options.mountProvided ? options.mount : default_recorder_mount();
   params.directory = options.directoryProvided ? options.directory : default_recorder_directory();
   params.nameTemplate = options.nameTemplateProvided ? options.nameTemplate : default_recorder_template();
-  if (params.durationSeconds <= 0) {
+  if (params.duration_s <= 0) {
     ok = false;
   }
   if (params.mount.empty()) {
@@ -1051,9 +1051,9 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
       break;
     }
 
-    int segment_duration_seconds = state->params.durationSeconds;
-    if (segment_duration_seconds < kShortClipSeconds) {
-      segment_duration_seconds = kShortClipSeconds;
+    int segment_duration_s = state->params.duration_s;
+    if (segment_duration_s < kShortClipSeconds) {
+      segment_duration_s = kShortClipSeconds;
     }
 
     auto now = std::chrono::system_clock::now();
@@ -1063,7 +1063,7 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
       continue;
     }
 
-    if (!begin_segment(target, channel, segment_duration_seconds)) {
+    if (!begin_segment(target, channel, segment_duration_s)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
       continue;
     }
@@ -1081,7 +1081,7 @@ void start_loop_for_channel(const RecordingLoopParams &params) {
     LOG_ERROR("MP4ControlSocket: invalid loop channel " << params.channel);
     return;
   }
-  if (params.durationSeconds <= 0) {
+  if (params.duration_s <= 0) {
     LOG_ERROR("MP4ControlSocket: loop duration must be > 0");
     return;
   }
@@ -1107,8 +1107,8 @@ bool handle_loop_start(const StartCommandOptions &options) {
     LOG_ERROR("MP4ControlSocket: loop START rejected for mount '" << params.mount << "': " << reason);
     return false;
   }
-  if ((params.durationSeconds % 60) != 0) {
-    LOG_WARN("MP4ControlSocket: loop duration " << params.durationSeconds
+  if ((params.duration_s % 60) != 0) {
+    LOG_WARN("MP4ControlSocket: loop duration " << params.duration_s
                                                 << "s is not a multiple of 60s; minute alignment may add padding");
   }
   start_loop_for_channel(params);
@@ -1178,7 +1178,7 @@ void MP4ControlSocket::run() {
           int parsed_value = 0;
           if (key == "dur" || key == "duration") {
             if (parse_int_token(value, parsed_value)) {
-              options.durationSeconds = parsed_value;
+              options.duration_s = parsed_value;
               options.durationProvided = true;
             } else {
               LOG_WARN("MP4ControlSocket: invalid duration token '" << token << "'");
@@ -1225,10 +1225,10 @@ void MP4ControlSocket::run() {
         if (!positional.empty() && options.path.empty()) {
           options.path = positional[0];
         }
-        if (positional.size() > 1 && options.durationSeconds == 0) {
+        if (positional.size() > 1 && options.duration_s == 0) {
           int parsed_value = 0;
           if (parse_int_token(positional[1], parsed_value)) {
-            options.durationSeconds = parsed_value;
+            options.duration_s = parsed_value;
             options.durationProvided = true;
           }
         }
@@ -1257,13 +1257,13 @@ void MP4ControlSocket::run() {
           if (single_ok) {
             path = build_loop_target_path(params);
             channel = params.channel;
-            if (options.durationSeconds == 0) {
-              options.durationSeconds = params.durationSeconds;
+            if (options.duration_s == 0) {
+              options.duration_s = params.duration_s;
             }
           }
         }
 
-        int duration_seconds = options.durationSeconds;
+        int duration_seconds = options.duration_s;
         if (duration_seconds < 0) {
           duration_seconds = 0;
         }

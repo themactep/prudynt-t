@@ -983,8 +983,8 @@ void OSD::init() {
     IMP_OSD_SetGrpRgnAttr(osdLogo.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
-  if (osd.start_delay)
-    startup_delay = (int)(osd.start_delay * 1000) / THREAD_SLEEP;
+  if (osd.start_delay_ms)
+    startup_delay_ticks = (int)(osd.start_delay_ms * 1000) / THREAD_SLEEP_US;
 }
 
 int OSD::start() {
@@ -1138,8 +1138,8 @@ void *OSD::thread_entry(void *arg) {
             if (v->imp_encoder->osd->is_started) {
               v->imp_encoder->osd->updateDisplayEverySecond();
             } else {
-              if (v->imp_encoder->osd->startup_delay) {
-                v->imp_encoder->osd->startup_delay--;
+              if (v->imp_encoder->osd->startup_delay_ticks) {
+                v->imp_encoder->osd->startup_delay_ticks--;
               } else {
                 v->imp_encoder->osd->start();
               }
@@ -1148,7 +1148,7 @@ void *OSD::thread_entry(void *arg) {
         }
       }
     }
-    usleep(THREAD_SLEEP);
+    usleep(THREAD_SLEEP_US);
   }
 
   LOG_DEBUG("exit osd update thread.");

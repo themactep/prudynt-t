@@ -51,7 +51,7 @@ bool PreTriggerBuffer::init(int duration_seconds, int fps, int max_memory_mb, bo
     return true;
 }
 
-void PreTriggerBuffer::addFrame(const uint8_t* data, size_t size, int64_t timestamp, bool is_keyframe) {
+void PreTriggerBuffer::addFrame(const uint8_t* data, size_t size, int64_t timestamp_us, bool is_keyframe) {
     if (!enabled_.load() || !data || size == 0) {
         return;
     }
@@ -66,7 +66,7 @@ void PreTriggerBuffer::addFrame(const uint8_t* data, size_t size, int64_t timest
     // Create new frame
     PreTriggerFrame frame;
     frame.data.assign(data, data + size);
-    frame.timestamp_us = timestamp;
+    frame.timestamp_us = timestamp_us;
     frame.is_keyframe = is_keyframe;
     frame.frame_size = size;
     
@@ -84,7 +84,7 @@ void PreTriggerBuffer::addFrame(const uint8_t* data, size_t size, int64_t timest
     }
     
     // Enforce time limit (evict frames older than duration_us_)
-    enforceTimeLimit(timestamp);
+    enforceTimeLimit(timestamp_us);
     
     // Enforce memory limit
     enforceMemoryLimit();
@@ -170,7 +170,7 @@ void PreTriggerBuffer::enforceMemoryLimit() {
     }
 }
 
-void PreTriggerBuffer::enforceTimeLimit(int64_t newest_timestamp) {
+void PreTriggerBuffer::enforceTimeLimit(int64_t newest_timestamp_us) {
     // This method is called with buffer_mutex_ already locked
     
     if (duration_us_ <= 0 || frames_.empty()) {
@@ -178,7 +178,7 @@ void PreTriggerBuffer::enforceTimeLimit(int64_t newest_timestamp) {
     }
     
     // Calculate cutoff timestamp
-    int64_t cutoff_ts = newest_timestamp - duration_us_;
+    int64_t cutoff_ts = newest_timestamp_us - duration_us_;
     
     // Remove frames older than cutoff
     size_t removed_count = 0;

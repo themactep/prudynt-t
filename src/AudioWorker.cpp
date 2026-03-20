@@ -192,11 +192,11 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   // live555's RTCP sender reports carry a correct NTP↔RTP mapping.
   if (!hw_ts_initialized) {
     gettimeofday(&wall_ts_base, nullptr);
-    hw_ts_base = frame.timeStamp;
+    hw_ts_base_us = frame.timeStamp;
     hw_ts_initialized = true;
   }
 
-  int64_t delta_us = frame.timeStamp - hw_ts_base;
+  int64_t delta_us = frame.timeStamp - hw_ts_base_us;
   // A delta more than 1 s negative means the 32-bit hardware counter wrapped.
   if (delta_us < -1000000LL)
     delta_us += (1LL << 32);
@@ -239,7 +239,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     if (IMP_AENC_SendFrame(global_audio[encChn]->aeChn, &frame) != 0) {
       LOG_ERROR("IMP_AENC_SendFrame(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                       << ") failed");
-    } else if (IMP_AENC_PollingStream(global_audio[encChn]->aeChn, cfg->general.imp_polling_timeout) != 0) {
+    } else if (IMP_AENC_PollingStream(global_audio[encChn]->aeChn, cfg->general.imp_polling_timeout_ms) != 0) {
       LOG_ERROR("IMP_AENC_PollingStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                           << ") failed");
     } else if (IMP_AENC_GetStream(global_audio[encChn]->aeChn, &stream, IMPBlock::BLOCK) != 0) {
@@ -424,7 +424,7 @@ void AudioWorker::run() {
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn,
-                              cfg->general.imp_polling_timeout) == 0) {
+                              cfg->general.imp_polling_timeout_ms) == 0) {
         IMPAudioFrame frame;
         if (IMP_AI_GetFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn, &frame, IMPBlock::BLOCK) != 0) {
           LOG_ERROR("IMP_AI_GetFrame(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aiChn
@@ -437,13 +437,13 @@ void AudioWorker::run() {
           while (reframer->hasMoreFrames()) {
             size_t frameLen = 1024 * sizeof(uint16_t) * global_audio[encChn]->imp_audio->outChnCnt;
             std::vector<uint8_t> frameData(frameLen, 0);
-            int64_t audio_ts;
-            reframer->getReframedFrame(frameData.data(), audio_ts);
+            int64_t audio_ts_us;
+            reframer->getReframedFrame(frameData.data(), audio_ts_us);
             IMPAudioFrame reframed = {.bitwidth = frame.bitwidth,
                                       .soundmode = frame.soundmode,
                                       .virAddr = reinterpret_cast<uint32_t *>(frameData.data()),
                                       .phyAddr = frame.phyAddr,
-                                      .timeStamp = audio_ts,
+                                      .timeStamp = audio_ts_us,
                                       .seq = frame.seq,
                                       .len = static_cast<int>(frameLen)};
             process_frame(reframed);

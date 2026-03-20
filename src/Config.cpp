@@ -478,7 +478,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"daynight.total_gain_night_threshold", daynight.total_gain_night_threshold, 3000, [](const int &v) { return v >= 0; }},
       {"daynight.total_gain_day_threshold", daynight.total_gain_day_threshold, 300, [](const int &v) { return v >= 0; }},
       {"daynight.sample_interval_ms", daynight.sample_interval_ms, 1000, [](const int &v) { return v >= 100 && v <= 60000; }},
-      {"general.imp_polling_timeout", general.imp_polling_timeout, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
+      {"general.imp_polling_timeout", general.imp_polling_timeout_ms, 500, [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, -1, [](const int &v) { return (v == -1) || (v >= 0 && v <= 65535); }},
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
       /* Expert overrides preserved for backward compatibility */
@@ -512,12 +512,12 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [min = denoiseDefaults.temper_min, max = denoiseDefaults.temper_max](const int &v) { return v >= min && v <= max; }},
       {"image.wb_bgain", image.wb_bgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
       {"image.wb_rgain", image.wb_rgain, 0, [](const int &v) { return v >= 0 && v <= 34464; }},
-      {"motion.debounce_time", motion.debounce_time, 0, validateIntGe0},
-      {"motion.post_time", motion.post_time, 0, validateIntGe0},
-      {"motion.ivs_polling_timeout", motion.ivs_polling_timeout, 1000, [](const int &v) { return v >= 100 && v <= 10000; }},
-      {"motion.cooldown_time", motion.cooldown_time, 5, validateIntGe0},
-      {"motion.init_time", motion.init_time, 5, validateIntGe0},
-      {"motion.min_time", motion.min_time, 1, validateIntGe0},
+      {"motion.debounce_time", motion.debounce_time_s, 0, validateIntGe0},
+      {"motion.post_time", motion.post_time_s, 0, validateIntGe0},
+      {"motion.ivs_polling_timeout", motion.ivs_polling_timeout_ms, 1000, [](const int &v) { return v >= 100 && v <= 10000; }},
+      {"motion.cooldown_time", motion.cooldown_time_s, 5, validateIntGe0},
+      {"motion.init_time", motion.init_time_s, 5, validateIntGe0},
+      {"motion.min_time", motion.min_time_s, 1, validateIntGe0},
       {"motion.motor_settle_ms", motion.motor_settle_ms, 1200, [](const int &v) { return v >= 0 && v <= 10000; }},
       {"motion.sensitivity", motion.sensitivity, 1, validateIntGe0},
       {"motion.skip_frame_count", motion.skip_frame_count, 5, validateIntGe0},
@@ -530,7 +530,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"motion.roi_1_y", motion.roi_1_y, IVS_AUTO_VALUE, validateIntGe0},
       {"motion.roi_count", motion.roi_count, 1, [](const int &v) { return v >= 1 && v <= 52; }},
       {"recorder.channel", recorder.channel, 0, [](const int &v) { return v == 0 || v == 1; }},
-      {"recorder.duration", recorder.duration, 60, [](const int &v) { return v > 0 && v <= 3600; }},
+      {"recorder.duration", recorder.duration_s, 60, [](const int &v) { return v > 0 && v <= 3600; }},
 #ifdef PREBUFFER_ENABLED
       {"recorder.prebuffer_seconds", recorder.prebuffer_seconds, 3, [](const int &v) { return v >= 1 && v <= 10; }},
       {"recorder.prebuffer_max_memory_mb", recorder.prebuffer_max_memory_mb, 2, [](const int &v) { return v >= 1 && v <= 8; }},
@@ -539,7 +539,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"rtsp.out_buffer_size", rtsp.out_buffer_size, 1048576, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},
       {"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, validateIntGe0},
-      {"rtsp.send_timeout", rtsp.send_timeout, 5, validateIntGe0},
+      {"rtsp.send_timeout", rtsp.send_timeout_s, 5, validateIntGe0},
       {"rtsp.session_reclaim", rtsp.session_reclaim, 65, validateIntGe0},
       {"sensor.i2c_bus", sensor.i2c_bus, 0, validateIntGe0, false, "/proc/jz/sensor/i2c_bus"},
       // TODO: set default fps to the maximum supported by the SoC via HAL
@@ -574,7 +574,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.osd.logo.rotation", stream0.osd.logo_rotation, 0, validateInt360},
       {"stream0.osd.logo.transparency", stream0.osd.logo_transparency, 255, validateInt255},
       {"stream0.osd.logo.width", stream0.osd.logo_width, 100, validateIntGe0},
-      {"stream0.osd.start_delay", stream0.osd.start_delay, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
+      {"stream0.osd.start_delay", stream0.osd.start_delay_ms, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
       {"stream0.osd.time.rotation", stream0.osd.time_rotation, 0, validateInt360},
       {"stream0.osd.uptime.rotation", stream0.osd.uptime_rotation, 0, validateInt360},
       {"stream0.osd.usertext.rotation", stream0.osd.usertext_rotation, 0, validateInt360},
@@ -611,7 +611,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.osd.logo.rotation", stream1.osd.logo_rotation, 0, validateInt360},
       {"stream1.osd.logo.transparency", stream1.osd.logo_transparency, 255, validateInt255},
       {"stream1.osd.logo.width", stream1.osd.logo_width, 100, validateIntGe0},
-      {"stream1.osd.start_delay", stream1.osd.start_delay, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
+      {"stream1.osd.start_delay", stream1.osd.start_delay_ms, 0, [](const int &v) { return v >= 0 && v <= 5000; }},
       {"stream1.osd.time.rotation", stream1.osd.time_rotation, 0, validateInt360},
       {"stream1.osd.uptime.rotation", stream1.osd.uptime_rotation, 0, validateInt360},
       {"stream1.osd.usertext.rotation", stream1.osd.usertext_rotation, 0, validateInt360},
@@ -641,7 +641,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream3.jpeg_idle_fps", stream3.jpeg_idle_fps, 1, [](const int &v) { return v >= 0 && v <= 30; }},
 #if defined(WEBSOCKET_ENABLED)
       {"websocket.port", websocket.port, 8089, validateInt65535},
-      {"websocket.first_image_delay", websocket.first_image_delay, 100, validateInt65535},
+      {"websocket.first_image_delay", websocket.first_image_delay_ms, 100, validateInt65535},
 #endif
   };
 };

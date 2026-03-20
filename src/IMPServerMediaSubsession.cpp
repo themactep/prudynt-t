@@ -52,9 +52,9 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, uns
 
   // Set send timeout to detect and disconnect stalled RTSP clients
   // (inspired by go2rtc which uses a 5s write deadline on TCP sockets)
-  if (cfg->rtsp.send_timeout > 0) {
+  if (cfg->rtsp.send_timeout_s > 0) {
     struct timeval tv;
-    tv.tv_sec = cfg->rtsp.send_timeout;
+    tv.tv_sec = cfg->rtsp.send_timeout_s;
     tv.tv_usec = 0;
     setsockopt(rtpGroupsock->socketNum(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
   }

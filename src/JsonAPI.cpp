@@ -657,7 +657,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
 
   add_int("font_size", std::string(root) + ".font_size");
   add_int("stroke_size", std::string(root) + ".stroke_size");
-  add_int("start_delay", std::string(root) + ".start_delay");
+  add_int("start_delay_ms", std::string(root) + ".start_delay_ms");
 
   add_boolk("enabled", std::string(root) + ".enabled");
   add_strs("font_path", std::string(root) + ".font_path");
@@ -885,13 +885,13 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   };
 
   add_int("monitor_stream", "motion.monitor_stream");
-  add_int("debounce_time", "motion.debounce_time");
-  add_int("post_time", "motion.post_time");
-  add_int("cooldown_time", "motion.cooldown_time");
+  add_int("debounce_time_s", "motion.debounce_time_s");
+  add_int("post_time_s", "motion.post_time_s");
+  add_int("cooldown_time_s", "motion.cooldown_time_s");
   add_int("motor_settle_ms", "motion.motor_settle_ms");
-  add_int("init_time", "motion.init_time");
-  add_int("min_time", "motion.min_time");
-  add_int("ivs_polling_timeout", "motion.ivs_polling_timeout");
+  add_int("init_time_s", "motion.init_time_s");
+  add_int("min_time_s", "motion.min_time_s");
+  add_int("ivs_polling_timeout_ms", "motion.ivs_polling_timeout_ms");
   add_int("sensitivity", "motion.sensitivity");
   add_int("skip_frame_count", "motion.skip_frame_count");
   add_int("frame_width", "motion.frame_width");
@@ -1555,8 +1555,8 @@ void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
         JsonValue *dur = obj_get(start, "duration");
         if (dur && dur->type == JSON_NUMBER) {
           fifo_cmd += " dur=" + std::to_string((int)dur->value.number.integer);
-        } else if (cfg && cfg->recorder.duration > 0) {
-          fifo_cmd += " dur=" + std::to_string(cfg->recorder.duration);
+        } else if (cfg && cfg->recorder.duration_s > 0) {
+          fifo_cmd += " dur=" + std::to_string(cfg->recorder.duration_s);
         }
 
         // Write to mp4ctl FIFO
