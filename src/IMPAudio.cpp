@@ -15,16 +15,9 @@
 
 static thread_local IMPAudioEncoder *encoder = nullptr;
 
-static int openEncoder(void *attr, void *enc) {
-  return encoder ? encoder->open() : -1;
-}
-
-static int encodeFrame(void *enc, IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
-  return encoder ? encoder->encode(data, outbuf, outLen) : -1;
-}
-
-static int closeEncoder(void *enc) {
-  return encoder ? encoder->close() : -1;
+int IMPAudio::encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf, int *outLen) {
+  if (!encoder) return -1;
+  return encoder->encode(frame, outbuf, outLen);
 }
 
 IMPAudio *IMPAudio::createNew(int devId, int inChn, int aeChn) {
@@ -104,17 +97,17 @@ int IMPAudio::init() {
   ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
 
   if (encoder) {
-    IMPAudioEncEncoder enc;
-    enc.maxFrmLen = 1024; // Maximum code stream length
-    std::snprintf(enc.name, sizeof(enc.name), "%s", cfg->audio.input_format);
-    enc.openEncoder = openEncoder;
-    enc.encoderFrm = encodeFrame;
-    enc.closeEncoder = closeEncoder;
-
-    ret = IMP_AENC_RegisterEncoder(&handle, &enc);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_RegisterEncoder(&handle, &enc)");
-
-    encattr.type = static_cast<IMPAudioPalyloadType>(handle);
+    // Custom encoders (AAC/OPUS): bypass IMP_AENC entirely.
+    // IMP_AENC's internal ring buffer corrupts adjacent heap allocations
+    // (including the encoder handle) due to a bug in its buffer management.
+    // We open the encoder directly and call it from AudioWorker.
+    directEncode = true;
+    ret = encoder->open();
+    if (ret != 0) {
+      LOG_ERROR("Failed to open " << cfg->audio.input_format << " encoder directly");
+      return ret;
+    }
+    LOG_DEBUG("Opened " << cfg->audio.input_format << " encoder directly (bypassing IMP_AENC)");
   }
 
   if (encattr.type > IMPAudioPalyloadType::PT_PCM) {
@@ -246,15 +239,19 @@ int IMPAudio::deinit() {
   }
 
   if (encoder) {
-    ret = IMP_AENC_UnRegisterEncoder(&handle);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_UnRegisterEncoder(&handle)");
+    if (directEncode) {
+      encoder->close();
+    } else {
+      ret = IMP_AENC_UnRegisterEncoder(&handle);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_UnRegisterEncoder(&handle)");
+    }
 
     delete encoder;
     encoder = nullptr;
     handle = 0;
   }
 
-  if (format != IMPAudioFormat::PCM) {
+  if (!directEncode && format != IMPAudioFormat::PCM) {
     ret = IMP_AENC_DestroyChn(aeChn);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_DestroyChn(" << aeChn << ")");
   }

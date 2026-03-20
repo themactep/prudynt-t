@@ -27,6 +27,7 @@ public:
 class IMPAudio {
 public:
   static IMPAudio *createNew(int devId, int inChn, int aeChn);
+  static int encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf, int *outLen);
 
   IMPAudio(int devId, int inChn, int aeChn) : devId(devId), inChn(inChn), aeChn(aeChn) {
     if (init() != 0) {
@@ -44,6 +45,7 @@ public:
   int bitrate; // computed during setup, in Kbps
   int sample_rate;
   IMPAudioFormat format;
+  bool directEncode = false;
 
   int devId{};
   int inChn{};

@@ -17,8 +17,11 @@ public:
   int encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) override;
   int close() override;
 
+  unsigned long getMaxOutputBytes() const { return maxOutputBytes; }
+
 private:
   unsigned long inputSamples;
+  unsigned long maxOutputBytes = 0;
   faacEncHandle handle = nullptr;
   int sampleRate;
   int numChn;

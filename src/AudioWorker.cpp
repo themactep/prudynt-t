@@ -226,7 +226,16 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   }
 
   IMPAudioStream stream;
-  if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM) {
+  bool got_stream = false;
+  if (global_audio[encChn]->imp_audio->directEncode) {
+    // Direct encoding — bypass IMP_AENC to avoid its heap corruption bug
+    int outLen = 0;
+    if (IMPAudio::encodeDirect(&frame, directEncBuf.data(), &outLen) == 0 && outLen > 0) {
+      start = directEncBuf.data();
+      end = start + outLen;
+    }
+  } else if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM) {
+    // IMP_AENC path for built-in codecs (G711A, G711U, G726)
     if (IMP_AENC_SendFrame(global_audio[encChn]->aeChn, &frame) != 0) {
       LOG_ERROR("IMP_AENC_SendFrame(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                       << ") failed");
@@ -237,6 +246,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       LOG_ERROR("IMP_AENC_GetStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                       << ") failed");
     } else {
+      got_stream = true;
       start = (uint8_t *)stream.stream;
       end = start + stream.len;
     }
@@ -325,7 +335,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     }
   }
 
-  if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM &&
+  if (got_stream &&
       IMP_AENC_ReleaseStream(global_audio[encChn]->aeChn, &stream) < 0) {
     LOG_ERROR("IMP_AENC_ReleaseStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                         << ", &stream) failed");
@@ -397,6 +407,12 @@ void AudioWorker::run() {
     LOG_DEBUG("AudioReframer created for channel " << encChn);
   } else {
     LOG_DEBUG("AudioReframer not needed or imp_audio not ready for channel " << encChn);
+  }
+
+  // Pre-allocate output buffer for direct encoding (AAC/OPUS bypass IMP_AENC)
+  if (global_audio[encChn]->imp_audio->directEncode) {
+    directEncBuf.resize(8192);
+    LOG_DEBUG("Direct encode buffer allocated (8192 bytes) for channel " << encChn);
   }
 
   while (global_audio[encChn]->running) {

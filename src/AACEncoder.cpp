@@ -24,6 +24,9 @@ int AACEncoder::open() {
     return -1;
   }
 
+  maxOutputBytes = outputBufferSize;
+  LOG_INFO("FAAC maxOutputBytes=" << maxOutputBytes);
+
   faacEncConfigurationPtr config = faacEncGetCurrentConfiguration(handle);
   config->aacObjectType = LOW;
   config->bandWidth = sampleRate;
@@ -56,35 +59,24 @@ int AACEncoder::close() {
 
 int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
   if (!handle) {
-    LOG_ERROR("FAAC encoder not available - encoder may have failed to initialize");
-    LOG_ERROR("Check: sample rate=" << sampleRate << " channels=" << numChn << " bitrate=" << cfg->audio.input_bitrate);
+    LOG_ERROR("FAAC encoder not available");
     return -1;
   }
 
   const auto frameSamples = (data->len / sizeof(int16_t)) / numChn;
   if (frameSamples != inputSamples) {
-    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " samples/frame, got " << frameSamples);
-    LOG_WARN("Frame length: " << data->len << " bytes, channels: " << numChn);
+    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " got " << frameSamples);
   }
-  
-  const int frameLen = faacEncEncode(handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
-                                     reinterpret_cast<unsigned char *>(outbuf), 1024);
-  *outLen = frameLen;
-  if (frameLen == 0) {
-    LOG_INFO("FAAC buffered frame: " << data->seq);
-  } else if (frameLen < 0) {
-    LOG_ERROR("FAAC encoding failed with error code: " << frameLen);
-    LOG_ERROR("Input: " << frameSamples << " samples (" << data->len << " bytes), expected: " << inputSamples);
-    LOG_ERROR("Audio config: rate=" << sampleRate << "Hz, channels=" << numChn << ", bitrate=" << cfg->audio.input_bitrate << "kbps");
-    LOG_ERROR("This usually indicates sample count mismatch or invalid audio configuration");
 
-    // Attempt recovery: reinitialize encoder
-    LOG_WARN("Attempting to reinitialize AAC encoder...");
+  const int frameLen = faacEncEncode(handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
+                                     reinterpret_cast<unsigned char *>(outbuf), maxOutputBytes);
+  *outLen = frameLen;
+
+  if (frameLen < 0) {
+    LOG_ERROR("FAAC encoding failed: " << frameLen);
     close();
     if (open() == 0) {
-      LOG_INFO("AAC encoder successfully reinitialized");
-    } else {
-      LOG_ERROR("Failed to reinitialize AAC encoder - audio encoding will fail");
+      LOG_INFO("AAC encoder reinitialized");
     }
     return -1;
   }

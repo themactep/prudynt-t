@@ -27,6 +27,7 @@ private:
   std::vector<int64_t> mp4_audio_samples;
   int mp4_audio_sample_rate = 0;
   std::unique_ptr<AudioTap> tap;
+  std::vector<uint8_t> directEncBuf;
 
   // Wall-clock anchor for IMP hardware timestamp conversion.
   // The IMP timeStamp is a boot-relative µs counter that can wrap at 2^32 µs
