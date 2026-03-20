@@ -43,6 +43,10 @@ private:
   int64_t videoLastDelta{-1};
   int64_t videoLastPtsUs{-1};
   struct timeval videoBaseTime{};
+
+  // Per-frame grouping: all NALs in the same access unit share one RTP timestamp
+  uint32_t videoLastFrameId{0};
+  struct timeval videoFramePresentationTime{};
 };
 
 #endif

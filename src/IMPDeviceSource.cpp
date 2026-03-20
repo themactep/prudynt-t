@@ -172,67 +172,76 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       }
       audioLastPtsUs = pts_us;
     } else {
-      bool vid_plausible = is_plausible_wallclock_tv(nal.time);
-      if (vid_plausible) {
-        fPresentationTime = nal.time;
+      // All NALs in the same video frame (access unit) MUST share one RTP timestamp.
+      // Reuse the presentation time computed for the first NAL of this frame.
+      if (nal.frame_id != 0 && nal.frame_id == videoLastFrameId) {
+        fPresentationTime = videoFramePresentationTime;
       } else {
-        // Video fallback path for sources that don't provide explicit timeval.
-        int64_t nominal_step_us = 33333;
+        bool vid_plausible = is_plausible_wallclock_tv(nal.time);
+        if (vid_plausible) {
+          fPresentationTime = nal.time;
+        } else {
+          // Video fallback path for sources that don't provide explicit timeval.
+          int64_t nominal_step_us = 33333;
+          if (stream && stream->stream && stream->stream->fps > 0) {
+            nominal_step_us = 1000000LL / stream->stream->fps;
+          }
+          if (nominal_step_us < 12) {
+            nominal_step_us = 12;
+          }
+          if (videoFirstFrame) {
+            gettimeofday(&videoBaseTime, NULL);
+            videoFirstImpTs = nal.imp_ts;
+            videoFirstFrame = false;
+          }
+
+          int64_t delta_us = nal.imp_ts - videoFirstImpTs;
+
+          bool needs_reanchor = delta_us < 0;
+          if (!needs_reanchor && videoLastDelta >= 0) {
+            int64_t step = delta_us - videoLastDelta;
+            needs_reanchor = (step > 2000000LL) || (step < -500000LL);
+          }
+          if (needs_reanchor) {
+            int64_t target_delta = (videoLastDelta >= 0) ? (videoLastDelta + nominal_step_us) : 0;
+            videoFirstImpTs = nal.imp_ts - target_delta;
+            delta_us = target_delta;
+          } else if (videoLastDelta >= 0 && delta_us <= videoLastDelta) {
+            delta_us = videoLastDelta + nominal_step_us;
+          }
+          videoLastDelta = delta_us;
+          fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
+          fPresentationTime.tv_usec = videoBaseTime.tv_usec + static_cast<suseconds_t>(delta_us % 1000000LL);
+          if (fPresentationTime.tv_usec >= 1000000) {
+            fPresentationTime.tv_sec++;
+            fPresentationTime.tv_usec -= 1000000;
+          }
+        }
+
+        int64_t pts_us = tv_to_us(fPresentationTime);
+        int64_t min_video_step_us = 12;
         if (stream && stream->stream && stream->stream->fps > 0) {
-          nominal_step_us = 1000000LL / stream->stream->fps;
+          min_video_step_us = 1000000LL / stream->stream->fps;
+          if (min_video_step_us < 12) {
+            min_video_step_us = 12;
+          }
         }
-        if (nominal_step_us < 12) {
-          nominal_step_us = 12;
+        if (videoLastPtsUs >= 0) {
+          int64_t delta_pts_us = pts_us - videoLastPtsUs;
+          if (delta_pts_us <= 0) {
+            pts_us = videoLastPtsUs + min_video_step_us;
+            fPresentationTime = us_to_tv(pts_us);
+          } else if (delta_pts_us > 2000000LL) {
+            // Large forward jump (new RTSP session or discontinuity) — re-anchor
+            videoFirstFrame = true;
+            videoLastDelta = -1;
+          }
         }
-        if (videoFirstFrame) {
-          gettimeofday(&videoBaseTime, NULL);
-          videoFirstImpTs = nal.imp_ts;
-          videoFirstFrame = false;
-        }
+        videoLastPtsUs = pts_us;
 
-        int64_t delta_us = nal.imp_ts - videoFirstImpTs;
-
-        bool needs_reanchor = delta_us < 0;
-        if (!needs_reanchor && videoLastDelta >= 0) {
-          int64_t step = delta_us - videoLastDelta;
-          needs_reanchor = (step > 2000000LL) || (step < -500000LL);
-        }
-        if (needs_reanchor) {
-          int64_t target_delta = (videoLastDelta >= 0) ? (videoLastDelta + nominal_step_us) : 0;
-          videoFirstImpTs = nal.imp_ts - target_delta;
-          delta_us = target_delta;
-        } else if (videoLastDelta >= 0 && delta_us <= videoLastDelta) {
-          delta_us = videoLastDelta + 12;
-        }
-        videoLastDelta = delta_us;
-        fPresentationTime.tv_sec  = videoBaseTime.tv_sec  + static_cast<time_t>(delta_us / 1000000LL);
-        fPresentationTime.tv_usec = videoBaseTime.tv_usec + static_cast<suseconds_t>(delta_us % 1000000LL);
-        if (fPresentationTime.tv_usec >= 1000000) {
-          fPresentationTime.tv_sec++;
-          fPresentationTime.tv_usec -= 1000000;
-        }
+        videoLastFrameId = nal.frame_id;
+        videoFramePresentationTime = fPresentationTime;
       }
-
-      int64_t pts_us = tv_to_us(fPresentationTime);
-      int64_t min_video_step_us = 12;
-      if (stream && stream->stream && stream->stream->fps > 0) {
-        min_video_step_us = 1000000LL / stream->stream->fps;
-        if (min_video_step_us < 12) {
-          min_video_step_us = 12;
-        }
-      }
-      if (videoLastPtsUs >= 0) {
-        int64_t delta_pts_us = pts_us - videoLastPtsUs;
-        if (delta_pts_us <= 0) {
-          pts_us = videoLastPtsUs + min_video_step_us;
-          fPresentationTime = us_to_tv(pts_us);
-        } else if (delta_pts_us > 2000000LL) {
-          // Large forward jump (new RTSP session or discontinuity) — re-anchor
-          videoFirstFrame = true;
-          videoLastDelta = -1;
-        }
-      }
-      videoLastPtsUs = pts_us;
     }
 
     memcpy(fTo, &nal.data[0], fFrameSize);
