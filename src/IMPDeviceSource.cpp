@@ -3,6 +3,9 @@
 #include <cstring>
 #include <iostream>
 #include <type_traits>
+#include "Logger.hpp"
+
+#define MODULE "IMPDeviceSource"
 
 static inline int64_t tv_to_us(const struct timeval &tv) {
   return static_cast<int64_t>(tv.tv_sec) * 1000000LL + static_cast<int64_t>(tv.tv_usec);
@@ -139,9 +142,14 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
 
       int64_t pts_us = tv_to_us(fPresentationTime);
       int rate_for_tick = sampleRate > 0 ? sampleRate : 16000;
-      int64_t min_audio_step_us = (1000000LL + rate_for_tick - 1) / rate_for_tick;
+      int64_t min_audio_step_us;
       if (use_aac_clock) {
         min_audio_step_us = (1024LL * 1000000LL + rate_for_tick - 1) / rate_for_tick;
+      } else {
+        // Non-AAC (Opus, PCM, etc.): use actual frame duration.
+        // IMP audio uses 40ms frames (e.g., Opus at 48kHz = 1920 samples/frame).
+        int samples_per_frame = static_cast<int>(rate_for_tick * 0.040);
+        min_audio_step_us = (static_cast<int64_t>(samples_per_frame) * 1000000LL + rate_for_tick - 1) / rate_for_tick;
       }
       if (min_audio_step_us < 1) {
         min_audio_step_us = 1;
@@ -155,14 +163,17 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
             max_forward_jump_us = aac_jump_limit;
           }
         }
-        if (delta_pts_us <= 0 || delta_pts_us > max_forward_jump_us) {
+        if (delta_pts_us <= 0) {
           pts_us = audioLastPtsUs + min_audio_step_us;
           fPresentationTime = us_to_tv(pts_us);
+        } else if (delta_pts_us > max_forward_jump_us) {
+          // Large forward jump (new RTSP session or discontinuity) — re-anchor
         }
       }
       audioLastPtsUs = pts_us;
     } else {
-      if (is_plausible_wallclock_tv(nal.time)) {
+      bool vid_plausible = is_plausible_wallclock_tv(nal.time);
+      if (vid_plausible) {
         fPresentationTime = nal.time;
       } else {
         // Video fallback path for sources that don't provide explicit timeval.
@@ -212,9 +223,13 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       }
       if (videoLastPtsUs >= 0) {
         int64_t delta_pts_us = pts_us - videoLastPtsUs;
-        if (delta_pts_us <= 0 || delta_pts_us > 2000000LL) {
+        if (delta_pts_us <= 0) {
           pts_us = videoLastPtsUs + min_video_step_us;
           fPresentationTime = us_to_tv(pts_us);
+        } else if (delta_pts_us > 2000000LL) {
+          // Large forward jump (new RTSP session or discontinuity) — re-anchor
+          videoFirstFrame = true;
+          videoLastDelta = -1;
         }
       }
       videoLastPtsUs = pts_us;
