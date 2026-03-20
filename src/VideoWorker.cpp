@@ -522,8 +522,7 @@ void VideoWorker::run() {
             H264NALUnit nalu;
 
             nalu.imp_ts = rtsp_ts_us;
-            nalu.time.tv_sec = static_cast<time_t>(rtsp_ts_us / 1000000LL);
-            nalu.time.tv_usec = static_cast<suseconds_t>(rtsp_ts_us % 1000000LL);
+            gettimeofday(&nalu.time, nullptr);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.

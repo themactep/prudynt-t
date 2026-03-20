@@ -29,15 +29,7 @@ private:
   std::unique_ptr<AudioTap> tap;
   std::vector<uint8_t> directEncBuf;
 
-  // Wall-clock anchor for IMP hardware timestamp conversion.
-  // The IMP timeStamp is a boot-relative µs counter that can wrap at 2^32 µs
-  // (~71.6 min). We pin it to real wall clock time on the first frame and use
-  // deltas from there, so fPresentationTime is always a valid Unix timeval and
-  // RTCP sender reports carry correct NTP↔RTP mappings.
-  bool hw_ts_initialized{false};
-  int64_t hw_ts_base_us{0};        // IMP timestamp of the first frame (µs)
-  int64_t last_hw_delta_us{-1};    // last delta for domain transition detection
-  struct timeval wall_ts_base{0, 0}; // gettimeofday() at the first frame
+  // No timestamp state needed — we use CLOCK_MONOTONIC directly per frame.
 };
 
 #endif // AUDIO_WORKER_HPP
