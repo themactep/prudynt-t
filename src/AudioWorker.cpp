@@ -201,6 +201,19 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   if (delta_us < -1000000LL)
     delta_us += (1LL << 32);
 
+  // Guard against IMP audio timestamp domain transitions
+  // (relative→rebased) which cause large forward jumps.
+  if (last_hw_delta_us >= 0) {
+    int64_t step_us = delta_us - last_hw_delta_us;
+    if (step_us > 1000000LL) {
+      // Re-anchor to current wall clock
+      gettimeofday(&wall_ts_base, nullptr);
+      hw_ts_base_us = frame.timeStamp;
+      delta_us = 0;
+    }
+  }
+  last_hw_delta_us = delta_us;
+
   int64_t abs_us = static_cast<int64_t>(wall_ts_base.tv_sec) * 1000000LL
                    + wall_ts_base.tv_usec + delta_us;
   struct timeval encoder_time;
