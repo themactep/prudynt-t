@@ -307,8 +307,26 @@ void VideoWorker::run() {
           fps++;
           bps += stream.pack[i].length;
 
-          uint8_t *start = hal::encoder::get_pack_data_start(stream, i);
-          uint32_t length = hal::encoder::get_pack_data_length(stream, i);
+          // Use get_pack_slices so ring-buffer wrap-around on T31/T40/T41/C100
+          // (where pack.offset + pack.length can exceed streamSize) is handled
+          // correctly. When the pack wraps, copy both slices into a contiguous
+          // temporary buffer; the rest of the loop sees a plain [start, end).
+          auto slices = hal::encoder::get_pack_slices(stream, i);
+          std::vector<uint8_t> wrap_buf;
+          uint8_t *start;
+          uint32_t length;
+          if (slices.second_len > 0) {
+            LOG_DDEBUG("video ch" << encChn << " pack[" << i << "] ring-buffer wrap: "
+                       << slices.first_len << "+" << slices.second_len << " bytes");
+            wrap_buf.resize(slices.first_len + slices.second_len);
+            std::memcpy(wrap_buf.data(), slices.first_ptr, slices.first_len);
+            std::memcpy(wrap_buf.data() + slices.first_len, slices.second_ptr, slices.second_len);
+            start = wrap_buf.data();
+            length = static_cast<uint32_t>(wrap_buf.size());
+          } else {
+            start = slices.first_ptr;
+            length = slices.first_len;
+          }
           uint8_t *end = start + length;
           bool frame_start = (i == 0) || stream.pack[i - 1].frameEnd;
           if (frame_start) {
@@ -522,8 +540,7 @@ void VideoWorker::run() {
             H264NALUnit nalu;
 
             nalu.imp_ts = rtsp_ts_us;
-            nalu.time.tv_sec = static_cast<time_t>(rtsp_ts_us / 1000000LL);
-            nalu.time.tv_usec = static_cast<suseconds_t>(rtsp_ts_us % 1000000LL);
+            gettimeofday(&nalu.time, nullptr);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
