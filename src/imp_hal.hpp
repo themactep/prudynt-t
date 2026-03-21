@@ -73,6 +73,11 @@ struct PlatformCaps {
   bool has_audio_alc;
   bool has_audio_hpf;
   bool has_audio_ns;
+  // T10/T20/T21/T30 share a single CODEC clock between AI and AO.
+  // Reconfiguring AO to a different rate shifts the hardware clock and
+  // silently changes the AI capture rate, causing pitch/speed corruption.
+  // On these platforms the software resampler must be used instead.
+  bool has_shared_audio_clock;
 
   // ISP capabilities
   bool has_isp_sinter;

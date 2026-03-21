@@ -188,6 +188,13 @@ static PlatformCaps g_caps = {
     .uses_xburst2 = false,
     .uses_kernel_4 = false,
 #endif
+
+// Audio clock topology
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+    .has_shared_audio_clock = true,
+#else
+    .has_shared_audio_clock = false,
+#endif
 };
 
 const PlatformCaps &caps() {

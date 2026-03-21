@@ -4,6 +4,7 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1622,7 +1623,11 @@ public:
     // On first push with a known source rate that differs from the current
     // AO rate, try to reconfigure AO to avoid resampling artefacts on
     // platforms where the DAC may not support the configured rate.
-    if (!reconfigureAttempted_ && actualSourceRate != targetRate_ && !options_.append) {
+    // Skip on platforms with a shared AI/AO CODEC clock (T10/T20/T21/T30):
+    // changing the AO clock also shifts the AI capture rate, causing the
+    // microphone stream to play back at the wrong pitch/speed.
+    if (!reconfigureAttempted_ && actualSourceRate != targetRate_ && !options_.append
+        && !hal::caps().has_shared_audio_clock) {
       reconfigureAttempted_ = true;
       if (AudioOutputWorker::reconfigureRate(actualSourceRate)) {
         targetRate_ = effectiveOutputSampleRate();
@@ -2655,8 +2660,12 @@ void handlePlay(const PlayCommandOptions &options) {
   // produces audio played at the wrong speed.  Reconfiguring to the source
   // rate avoids resampling entirely and lets the hardware run at a rate it
   // actually supports.
+  // Skip on platforms with a shared AI/AO CODEC clock (T10/T20/T21/T30):
+  // changing the AO clock also shifts the AI capture rate, causing the
+  // microphone stream to play back at the wrong pitch/speed.
   bool reconfigured = false;
-  if (sourceRate > 0 && sourceRate != targetRate && !options.append) {
+  if (sourceRate > 0 && sourceRate != targetRate && !options.append
+      && !hal::caps().has_shared_audio_clock) {
     if (AudioOutputWorker::reconfigureRate(sourceRate)) {
       targetRate = effectiveOutputSampleRate();
       reconfigured = true;
