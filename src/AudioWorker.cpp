@@ -185,59 +185,11 @@ AudioWorker::~AudioWorker() {
 }
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
-  // Anchor the IMP boot-relative timestamp to wall clock on first call.
-  // The IMP counter is typically 32-bit (wraps at 2^32 µs ≈ 71.6 min), so we
-  // detect wraps by checking for large backwards deltas and compensate with
-  // +2^32 µs. This keeps fPresentationTime a valid Unix timeval so that
-  // live555's RTCP sender reports carry a correct NTP↔RTP mapping.
-  if (!hw_ts_initialized) {
-    gettimeofday(&wall_ts_base, nullptr);
-    hw_ts_base_us = frame.timeStamp;
-    hw_ts_initialized = true;
-  }
-
-  int64_t delta_us = frame.timeStamp - hw_ts_base_us;
-  // A delta more than 1 s negative means the 32-bit hardware counter wrapped.
-  if (delta_us < -1000000LL)
-    delta_us += (1LL << 32);
-
-  // Guard against IMP audio timestamp domain transitions
-  // (relative→rebased) which cause large forward jumps.
-  if (last_hw_delta_us >= 0) {
-    int64_t step_us = delta_us - last_hw_delta_us;
-    if (step_us > 1000000LL) {
-      gettimeofday(&wall_ts_base, nullptr);
-      hw_ts_base_us = frame.timeStamp;
-      delta_us = 0;
-    }
-  }
-  last_hw_delta_us = delta_us;
-
-  // Detect NTP clock steps: if gettimeofday() has diverged from our
-  // computed wallclock by more than 2 seconds, re-anchor wall_ts_base.
-  // Without this, live555's RTP timestamp computation (u32 arithmetic on
-  // tv_sec * sampleRate) wraps differently between old and new clock
-  // domains, causing ~24h PTS jumps on the next RTSP session.
-  struct timeval now;
-  gettimeofday(&now, nullptr);
-  int64_t expected_us = static_cast<int64_t>(wall_ts_base.tv_sec) * 1000000LL
-                        + wall_ts_base.tv_usec + delta_us;
-  int64_t actual_us = static_cast<int64_t>(now.tv_sec) * 1000000LL + now.tv_usec;
-  int64_t drift_us = actual_us - expected_us;
-  if (drift_us > 2000000LL || drift_us < -2000000LL) {
-    wall_ts_base = now;
-    hw_ts_base_us = frame.timeStamp;
-    delta_us = 0;
-  }
-
-  int64_t abs_us = static_cast<int64_t>(wall_ts_base.tv_sec) * 1000000LL
-                   + wall_ts_base.tv_usec + delta_us;
-  struct timeval encoder_time;
-  encoder_time.tv_sec  = static_cast<time_t>(abs_us / 1000000LL);
-  encoder_time.tv_usec = static_cast<suseconds_t>(abs_us % 1000000LL);
-
+  // Use gettimeofday() as the frame timestamp so that fPresentationTime
+  // is always in the same clock domain as live555's internal timestamps.
+  // NTP steps affect both equally, so RTP delta arithmetic stays consistent.
   AudioFrame af;
-  af.time = encoder_time;
+  gettimeofday(&af.time, nullptr);
 
   uint8_t *start = (uint8_t *)frame.virAddr;
   uint8_t *end = start + frame.len;

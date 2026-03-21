@@ -37,11 +37,6 @@ protected:
     // timeline and does not see pre-flush timestamp history.
     if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS && global_video[encChn] && global_video[encChn]->msgChannel) {
       global_video[encChn]->msgChannel->clear();
-      // Reset the IDR gate so VideoWorker skips P-frames until the next
-      // SPS/PPS/IDR arrives. Without this, stale P-frames (undecodable
-      // without a preceding IDR) leak to the client, causing "No video PTS"
-      // errors in players.
-      global_video[encChn]->idr = false;
     }
     // request idr frame every second for the next x seconds
     global_video[encChn]->idr_fix = 5;
