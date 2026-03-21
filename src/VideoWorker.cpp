@@ -275,6 +275,7 @@ void VideoWorker::run() {
       }
       if (IMP_Encoder_PollingStream(encChn, cfg->general.imp_polling_timeout_ms) == 0) {
         IMPEncoderStream stream;
+        memset(&stream, 0, sizeof(stream));
         if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) != 0) {
           LOG_ERROR("IMP_Encoder_GetStream(" << encChn << ") failed");
           error_count++;
