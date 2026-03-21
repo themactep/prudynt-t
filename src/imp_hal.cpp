@@ -79,6 +79,13 @@ static PlatformCaps g_caps = {
     .has_audio_ns = false,
 #endif
 
+// Audio clock topology: T10/T20/T21/T30 share one CODEC clock for AI and AO.
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
+    .has_shared_audio_clock = true,
+#else
+    .has_shared_audio_clock = false,
+#endif
+
 // ISP capabilities (must match struct order)
 #if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
     defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
@@ -187,13 +194,6 @@ static PlatformCaps g_caps = {
 #else
     .uses_xburst2 = false,
     .uses_kernel_4 = false,
-#endif
-
-// Audio clock topology
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T30)
-    .has_shared_audio_clock = true,
-#else
-    .has_shared_audio_clock = false,
 #endif
 };
 
