@@ -7,7 +7,6 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
-#include <type_traits>
 
 /* Implementation of the MsgChannel API, except that it keeps
  * the most recent bsize elements in the queue.
@@ -21,9 +20,7 @@ public:
     std::unique_lock<std::mutex> lck(cv_mtx);
     msg_buffer.push_front(std::move(msg));
     if (msg_buffer.size() > buffer_size) {
-      drop_oldest_entry();
-      write_cv.notify_all();
-      space_cv.notify_all();
+      msg_buffer.pop_back();
       return false;
     }
     write_cv.notify_all();
@@ -81,31 +78,6 @@ public:
   }
 
 private:
-  static constexpr bool has_frame_markers =
-      requires(const T &msg) { msg.is_frame_end; };
-
-  void drop_oldest_entry() {
-    if constexpr (has_frame_markers) {
-      drop_oldest_frame();
-    } else {
-      msg_buffer.pop_back();
-    }
-  }
-
-  void drop_oldest_frame() {
-    if (msg_buffer.empty()) {
-      return;
-    }
-
-    do {
-      bool frame_end = msg_buffer.back().is_frame_end;
-      msg_buffer.pop_back();
-      if (frame_end) {
-        break;
-      }
-    } while (!msg_buffer.empty());
-  }
-
   bool can_read() {
     return !msg_buffer.empty();
   }
