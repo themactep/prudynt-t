@@ -746,5 +746,11 @@ int main(int argc, const char *argv[]) {
   ipc_server.stop();
 
   ImagingControl::stop();
+
+  if (imp_system) {
+    delete imp_system;
+    imp_system = nullptr;
+  }
+
   return 0;
 }
