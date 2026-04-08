@@ -37,7 +37,7 @@ BackchannelSink::BackchannelSink(UsageEnvironment &env, unsigned clientSessionId
 }
 
 BackchannelSink::~BackchannelSink() {
-  sendBackchannelStopFrame();
+  stopPlaying();
   delete[] fReceiveBuffer;
 }
 
