@@ -139,6 +139,28 @@ dedicated branch and integration tests before merging.
 
 ---
 
+---
+
+## Current Status
+
+**Completed:** Phases 1, 2, 3, and 3.5 are implemented and building successfully.
+The binary starts cleanly, runs without crashes, and exits quickly.
+
+**Next Steps:**
+
+1. **Hardware Validation** — Run the validation checklist below on target hardware
+   to confirm Phases 1-3.5 are working correctly in production. Monitor for:
+   - Clean startup/shutdown without crashes
+   - Correct timestamps in RTSP streams (no negative DTS/PTS)
+   - Stable multi-client RTSP connections
+   - MP4 recording integrity
+
+2. **Phase 4 Implementation** — After validation passes, create a separate branch
+   (`phase4-streamcore`) to implement the StreamCore pub-sub refactoring. This is
+   a high-impact change that requires careful integration testing before merging.
+
+---
+
 ## Validation Checklist
 
 After each phase, verify with the target hardware:
