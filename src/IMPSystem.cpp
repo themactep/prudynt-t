@@ -307,23 +307,30 @@ int IMPSystem::init() {
   ret = hal::isp::set_max_again(static_cast<unsigned char>(cfg->image.max_again));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_again(" << cfg->image.max_again << ")");
 
+  LOG_DEBUG("IMPSystem init: entering hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
   ret = hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->image.max_dgain));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
 
+  LOG_DEBUG("IMPSystem init: entering hal::isp::set_wb(mode=" << cfg->image.core_wb_mode
+            << ", rgain=" << cfg->image.wb_rgain << ", bgain=" << cfg->image.wb_bgain << ")");
   ret = hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain="
                                                     << cfg->image.wb_rgain << ", bgain=" << cfg->image.wb_bgain
                                                     << ")");
 
+  LOG_DEBUG("IMPSystem init: entering hal::isp::set_hue(" << cfg->image.hue << ")");
   ret = hal::isp::set_hue(static_cast<unsigned char>(cfg->image.hue));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_hue(" << cfg->image.hue << ")");
 
+  LOG_DEBUG("IMPSystem init: entering hal::isp::set_defog_strength(" << cfg->image.defog_strength << ")");
   ret = hal::isp::set_defog_strength(static_cast<uint8_t>(cfg->image.defog_strength));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_defog_strength(" << cfg->image.defog_strength << ")");
 
+  LOG_DEBUG("IMPSystem init: entering hal::isp::set_dpc_strength(" << cfg->image.dpc_strength << ")");
   ret = hal::isp::set_dpc_strength(static_cast<unsigned char>(cfg->image.dpc_strength));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_dpc_strength(" << cfg->image.dpc_strength << ")");
 
+  LOG_DEBUG("IMPSystem init: entering hal::isp::set_drc_strength(" << cfg->image.drc_strength << ")");
   ret = hal::isp::set_drc_strength(static_cast<unsigned char>(cfg->image.drc_strength));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_drc_strength(" << cfg->image.drc_strength << ")");
 
@@ -331,11 +338,13 @@ int IMPSystem::init() {
   const bool highlight_requested = cfg->image.highlight_depress > 0;
   bool applied_backlight = false;
   if (backlight_requested) {
+    LOG_DEBUG("IMPSystem init: entering hal::isp::set_backlight_comp(" << cfg->image.backlight_compensation << ")");
     ret = hal::isp::set_backlight_comp(static_cast<unsigned char>(cfg->image.backlight_compensation));
     LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_backlight_comp(" << cfg->image.backlight_compensation << ")");
     applied_backlight = (ret == 0);
   }
   if ((!applied_backlight || !hal::caps().has_isp_backlight_comp) && highlight_requested) {
+    LOG_DEBUG("IMPSystem init: entering hal::isp::set_highlight_depress(" << cfg->image.highlight_depress << ")");
     ret = hal::isp::set_highlight_depress(static_cast<unsigned char>(cfg->image.highlight_depress));
     LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_highlight_depress(" << cfg->image.highlight_depress << ")");
   }

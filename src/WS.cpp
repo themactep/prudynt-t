@@ -2069,8 +2069,8 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 
       int delay_us =
           (LWS_USEC_PER_SEC / (global_jpeg[0]->stream->stats.fps + u_ctx->snapshot.throttle)) + first_request_delay_us;
-      LOG_DDEBUG("shedule preview image. id:" << u_ctx->id << " delay:" << delay);
-      lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->snapshot_timer.sul, send_snapshot, delay);
+      LOG_DDEBUG("shedule preview image. id:" << u_ctx->id << " delay:" << delay_us);
+      lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->snapshot_timer.sul, send_snapshot, delay_us);
 
       // send response for the image request
       u_ctx->tx_message.append(u_ctx->message);
@@ -2441,6 +2441,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 }
 
 void WS::start() {
+  stop_requested.store(false, std::memory_order_relaxed);
   char *ip = NULL;
 
   // create websocket authentication token and write it into /run/prudynt/
@@ -2491,7 +2492,11 @@ void WS::start() {
 
   // Hook libwebsockets logging into our logger for visibility
   auto lws_emit = [](int /*level*/, const char *line) {
-    Logger::log(Logger::DEBUG, FILENAME, LogMsg() << "[lws] " << std::string(line ? line : ""));
+    std::string msg = line ? line : "";
+    while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) {
+      msg.pop_back();
+    }
+    Logger::log(Logger::DEBUG, FILENAME, LogMsg() << "[lws] " << msg);
   };
 
   uint32_t lmask = LLL_ERR;
@@ -2539,13 +2544,23 @@ void WS::start() {
 
   LOG_INFO("Server started on port " << cfg->websocket.port);
 
-  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
+  while (!global_shutdown_requested.load(std::memory_order_relaxed) &&
+         !stop_requested.load(std::memory_order_relaxed)) {
     lws_service(context, 50);
   }
 
   LOG_INFO("Server stopped.");
 
   lws_context_destroy(context);
+  context = nullptr;
+}
+
+void WS::stop() {
+  stop_requested.store(true, std::memory_order_relaxed);
+  if (context) {
+    LOG_DEBUG("WS::stop: cancelling libwebsockets service loop");
+    lws_cancel_service(context);
+  }
 }
 
 void *WS::run(void *arg) {

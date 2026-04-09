@@ -266,6 +266,8 @@ void BackchannelServerMediaSubsession::startStream(
     ServerRequestAlternativeByteHandler *serverRequestAlternativeByteHandler,
     void *serverRequestAlternativeByteHandlerClientData) {
   BackchannelStreamState *state = (BackchannelStreamState *)streamToken;
+  LOG_DEBUG("startStream: session=" << static_cast<unsigned>(clientSessionId)
+            << " streamToken_addr=" << reinterpret_cast<uintptr_t>(streamToken));
 
   if (state == nullptr) {
     LOG_DEBUG("Client setup/probe initiated (NULL streamToken) for session " << static_cast<unsigned>(clientSessionId));
@@ -287,14 +289,20 @@ void BackchannelServerMediaSubsession::startStream(
     rtpSeqNum =
         rtpSource->curPacketMarkerBit() ? (rtpSource->curPacketRTPSeqNum() + 1) : rtpSource->curPacketRTPSeqNum();
   }
+  LOG_DEBUG("startStream: session=" << static_cast<unsigned>(clientSessionId)
+            << " rtpSeqNum=" << rtpSeqNum << " rtpTimestamp=" << rtpTimestamp
+            << " rtpSource_addr=" << reinterpret_cast<uintptr_t>(rtpSource));
 }
 
 void BackchannelServerMediaSubsession::deleteStream(unsigned clientSessionId, void *&streamToken) {
   BackchannelStreamState *state = (BackchannelStreamState *)streamToken;
+  LOG_DEBUG("deleteStream: session=" << static_cast<unsigned>(clientSessionId)
+            << " streamToken_addr=" << reinterpret_cast<uintptr_t>(streamToken));
   if (state != nullptr) {
     // Deleting the state object triggers its destructor for cleanup
     delete state;
     streamToken = nullptr;
+    LOG_DEBUG("deleteStream: session=" << static_cast<unsigned>(clientSessionId) << " completed");
   }
 }
 

@@ -57,11 +57,14 @@ IMPDeviceSource<FrameType, Stream>::IMPDeviceSource(UsageEnvironment &env, int e
 
 template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, Stream>::deinit() {
   std::lock_guard lock_stream{mutex_main};
+  LOG_DEBUG("IMPDeviceSource " << name << " deinit begin, encoder channel:" << encChn
+            << " eventTriggerId=" << eventTriggerId
+            << " stream_addr=" << reinterpret_cast<uintptr_t>(stream.get()));
   std::lock_guard lock_callback{stream->onDataCallbackLock};
   envir().taskScheduler().deleteEventTrigger(eventTriggerId);
   stream->hasDataCallback = false;
   stream->onDataCallback = nullptr;
-  LOG_DEBUG("IMPDeviceSource " << name << " destructed, encoder channel:" << encChn);
+  LOG_DEBUG("IMPDeviceSource " << name << " deinit complete, encoder channel:" << encChn);
 }
 
 template <typename FrameType, typename Stream> IMPDeviceSource<FrameType, Stream>::~IMPDeviceSource() {

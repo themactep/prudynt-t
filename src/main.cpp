@@ -731,6 +731,7 @@ int main(int argc, const char *argv[]) {
 
 #if defined(WEBSOCKET_ENABLED)
   if (cfg->websocket.enabled) {
+    ws.stop();
     int ret = pthread_join(ws_thread, nullptr);
     LOG_DEBUG_OR_ERROR(ret, "join websocket thread");
   }

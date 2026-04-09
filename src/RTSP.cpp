@@ -17,8 +17,17 @@ static bool wait_for_parameter_sets(int chnNr, bool is_h265,
                                     H264NALUnit &sps_out, H264NALUnit &pps_out,
                                     H264NALUnit *&vps_out) {
   using namespace std::chrono_literals;
+  LOG_DEBUG("wait_for_parameter_sets: entering for ch" << chnNr << " h265=" << is_h265);
+
   auto *vs = global_video[chnNr].get();
+  if (!vs) {
+    LOG_ERROR("wait_for_parameter_sets: global_video[" << chnNr << "] is null!");
+    return false;
+  }
+
   std::unique_lock<std::mutex> lock(vs->parameterCache.mutex);
+  LOG_DEBUG("wait_for_parameter_sets: ch" << chnNr << " lock acquired, have_sps="
+            << vs->parameterCache.have_sps << " have_pps=" << vs->parameterCache.have_pps);
 
   const auto ready = [&] {
     if (!vs->parameterCache.have_sps || !vs->parameterCache.have_pps)
@@ -37,11 +46,15 @@ static bool wait_for_parameter_sets(int chnNr, bool is_h265,
 
   sps_out = vs->parameterCache.sps;
   pps_out = vs->parameterCache.pps;
+  LOG_DEBUG("wait_for_parameter_sets: ch" << chnNr << " got sps.size=" << sps_out.data.size()
+            << " pps.size=" << pps_out.data.size());
   if (is_h265) {
     if (!vps_out)
       vps_out = new H264NALUnit;
     *vps_out = vs->parameterCache.vps;
+    LOG_DEBUG("wait_for_parameter_sets: ch" << chnNr << " vps.size=" << vps_out->data.size());
   }
+  LOG_DEBUG("wait_for_parameter_sets: ch" << chnNr << " returning true");
   return true;
 }
 
@@ -70,6 +83,7 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
       // determine frame rate without relying on RTSP SDP signaling. This
       // prevents negative DTS/PTS at startup with ffprobe, ffmpeg, and VLC.
       if (!is_h265 && stream.fps > 0) {
+        LOG_DEBUG("Applying H264 SPS timing patch for ch" << chnNr << " sps.size=" << sps.data.size() << " fps=" << stream.fps);
         if (!patch_h264_sps_timing(sps.data, stream.fps)) {
           LOG_WARN("H264 SPS timing patch failed for stream " << chnNr << " — using unpatched SPS");
         } else {
@@ -77,6 +91,8 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
         }
       }
 
+      LOG_DEBUG("Creating IMPServerMediaSubsession for ch" << chnNr
+                << " sps.size=" << sps.data.size() << " pps.size=" << pps.data.size());
       IMPServerMediaSubsession *sub =
           IMPServerMediaSubsession::createNew(*env, (is_h265 ? vps : nullptr), sps, pps, chnNr);
       sms->addSubsession(sub);

@@ -1,5 +1,6 @@
-#include <iostream>
+#include <cstdio>
 #include <memory>
+#include <sys/time.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -14,6 +15,28 @@
 #include "Logger.hpp"
 
 const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"};
+
+namespace {
+void current_timestamp(char *out, size_t out_size) {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+
+  time_t now = tv.tv_sec;
+  struct tm local_tm;
+  if (localtime_r(&now, &local_tm) == nullptr) {
+    snprintf(out, out_size, "1970-01-01 00:00:00.000");
+    return;
+  }
+
+  char time_buf[32];
+  if (strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &local_tm) == 0) {
+    snprintf(out, out_size, "1970-01-01 00:00:00.000");
+    return;
+  }
+
+  snprintf(out, out_size, "%s.%03ld", time_buf, static_cast<long>(tv.tv_usec / 1000));
+}
+} // namespace
 
 Logger::Level Logger::parseLevel(const std::string &levelStr) {
   if (levelStr == "EMERGENCY")
@@ -61,6 +84,8 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
     return; // skip both syslog and console for TRACE when not enabled
   }
   std::unique_lock<std::mutex> lck(log_mtx);
+  char timestamp[40];
+  current_timestamp(timestamp, sizeof(timestamp));
 
   // Log to syslog
   // Filter based on the configured log level
@@ -102,9 +127,8 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
   }
 
   // Log to console
-  std::stringstream fmt;
-  fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str << std::endl;
-  std::cout << fmt.str();
+  std::fprintf(stdout, "%s [%s:%s]: %s\n", timestamp, text_levels[lvl], module.c_str(), msg.log_str.c_str());
+  std::fflush(stdout);
 }
 
 // Remember to close the syslog
