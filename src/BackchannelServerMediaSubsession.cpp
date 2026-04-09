@@ -8,8 +8,11 @@
 #include "globals.hpp"
 
 #include <GroupsockHelper.hh>
+#include <stdlib.h>
 
 #define MODULE "BackchannelSubsession"
+
+static char const *kBackchannelRequireEnvVar = "PRUDYNT_RTSP_DESCRIBE_REQUIRE_BACKCHANNEL";
 
 BackchannelServerMediaSubsession *BackchannelServerMediaSubsession::createNew(UsageEnvironment &env,
                                                                               IMPBackchannelFormat format) {
@@ -35,6 +38,12 @@ BackchannelServerMediaSubsession::~BackchannelServerMediaSubsession() {
 }
 
 char const *BackchannelServerMediaSubsession::sdpLines(int /*addressFamily*/) {
+  if (fRequireTag != nullptr) {
+    char const *enabled = getenv(kBackchannelRequireEnvVar);
+    if (enabled == nullptr || enabled[0] != '1' || enabled[1] != '\0')
+      return nullptr;
+  }
+
   if (fSDPLines == nullptr) {
     unsigned int sdpLinesSize = 400;
     fSDPLines = new char[sdpLinesSize];

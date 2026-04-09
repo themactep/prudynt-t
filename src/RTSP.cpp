@@ -2,6 +2,7 @@
 #include "BackchannelServerMediaSubsession.hpp"
 #include "H264TimingPatch.hpp"
 #include "IMPBackchannel.hpp"
+#include "PrudyntRTSPServer.hpp"
 #include <stdlib.h>
 
 #undef MODULE
@@ -139,9 +140,9 @@ void RTSP::start() {
   if (cfg->rtsp.auth_required) {
     UserAuthenticationDatabase *auth = new UserAuthenticationDatabase;
     auth->addUserRecord(cfg->rtsp.username, cfg->rtsp.password);
-    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, auth, cfg->rtsp.session_reclaim);
+    rtspServer = PrudyntRTSPServer::createNew(*env, cfg->rtsp.port, auth, cfg->rtsp.session_reclaim);
   } else {
-    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, nullptr, cfg->rtsp.session_reclaim);
+    rtspServer = PrudyntRTSPServer::createNew(*env, cfg->rtsp.port, nullptr, cfg->rtsp.session_reclaim);
   }
   if (rtspServer == NULL) {
     LOG_ERROR("Failed to create RTSP server: " << env->getResultMsg() << "\n");
