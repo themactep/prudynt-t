@@ -11,14 +11,10 @@ static inline int64_t tv_to_us(const struct timeval &tv) {
   return static_cast<int64_t>(tv.tv_sec) * 1000000LL + static_cast<int64_t>(tv.tv_usec);
 }
 
-static inline struct timeval us_to_tv(int64_t us) {
+static inline struct timeval us_to_tv(uint64_t us) {
   struct timeval tv;
-  tv.tv_sec = static_cast<time_t>(us / 1000000LL);
-  tv.tv_usec = static_cast<suseconds_t>(us % 1000000LL);
-  if (tv.tv_usec < 0) {
-    tv.tv_sec -= 1;
-    tv.tv_usec += 1000000;
-  }
+  tv.tv_sec = us / 1000000ULL;
+  tv.tv_usec = us % 1000000ULL;
   return tv;
 }
 
@@ -189,18 +185,36 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     fPresentationTime = us_to_tv(presentation_us);
     fDurationInMicroseconds = duration_us;
 
-    // Debug: Log first few timestamps
+    // Debug: Log first few timestamps AND log any huge jumps
     static int log_count = 0;
-    if (log_count < 5) {
+    static uint64_t last_logged_source = 0;
+    bool should_log = (log_count < 10);  // Log first 10 frames
+    
+    // Also log if there's a huge jump (> 1 second) indicating a problem
+    if (last_logged_source > 0 && source_frame_us > last_logged_source) {
+      uint64_t delta = source_frame_us - last_logged_source;
+      if (delta > 1000000ULL) {  // More than 1 second jump
+        should_log = true;
+        if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+          LOG_WARN("Video HUGE JUMP: delta=" << delta << "us source=" << source_frame_us 
+                   << " nal.time.tv_sec=" << nal.time.tv_sec << " nal.time.tv_usec=" << nal.time.tv_usec);
+        }
+      }
+    }
+    
+    if (should_log) {
       if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        LOG_DEBUG("Video: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
-                  << " presentation=" << presentation_us << " duration=" << duration_us);
+        LOG_DEBUG("Video[" << log_count << "]: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
+                  << " presentation=" << presentation_us << " duration=" << duration_us
+                  << " fPresentationTime=" << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec);
       } else {
-        LOG_DEBUG("Audio: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
-                  << " presentation=" << presentation_us << " duration=" << duration_us);
+        LOG_DEBUG("Audio[" << log_count << "]: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
+                  << " presentation=" << presentation_us << " duration=" << duration_us
+                  << " fPresentationTime=" << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec);
       }
       log_count++;
     }
+    last_logged_source = source_frame_us;
 
     memcpy(fTo, &nal.data[0], fFrameSize);
 
