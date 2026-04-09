@@ -334,6 +334,7 @@ void VideoWorker::run() {
     }
     run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
     bool video_clients_active = global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+    bool bootstrap_requested = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
     if (video_clients_active && !had_video_clients) {
       IMP_Encoder_RequestIDR(encChn);
       int flush_ret = IMP_Encoder_FlushStream(encChn);
@@ -364,7 +365,8 @@ void VideoWorker::run() {
 #else
     bool prebuffer_active = false;
 #endif
-    if (video_clients_active || run_for_jpeg || global_force_video_active || prebuffer_active) {
+    if (video_clients_active || run_for_jpeg || bootstrap_requested ||
+        global_force_video_active || prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
@@ -783,11 +785,13 @@ void VideoWorker::run() {
         LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout_ms << ") timeout !");
       }
     } else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-               !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active) {
+               !global_video[encChn]->run_for_jpeg && !bootstrap_requested &&
+               !global_force_video_active && !prebuffer_active) {
       LOG_DDEBUG("VIDEO LOCK" << " channel:" << encChn
                               << " hasCallbackIsNull:" << (global_video[encChn]->onDataCallback == nullptr)
                               << " restartVideo:" << global_restart_video
-                              << " runForJpeg:" << global_video[encChn]->run_for_jpeg);
+                              << " runForJpeg:" << global_video[encChn]->run_for_jpeg
+                              << " bootstrapRequested:" << bootstrap_requested);
 
       global_video[encChn]->stream->stats.bps = 0;
       global_video[encChn]->stream->stats.fps = 0;
@@ -802,9 +806,13 @@ void VideoWorker::run() {
 #else
       bool prebuffer_active_inner = false;
 #endif
+      bool bootstrap_requested_inner = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
       while (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-             !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active_inner)
+             !global_video[encChn]->run_for_jpeg && !bootstrap_requested_inner &&
+             !global_force_video_active && !prebuffer_active_inner) {
         global_video[encChn]->should_grab_frames.wait(lock_stream);
+        bootstrap_requested_inner = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
+      }
 
       global_video[encChn]->active = true;
       global_video[encChn]->is_activated.release();

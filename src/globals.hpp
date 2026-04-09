@@ -277,6 +277,7 @@ struct video_stream {
   std::atomic<uint64_t> presentation_origin_us{0};
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg;                 // see comment in audio_stream
+  std::atomic<bool> bootstrap_requested{false};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
   std::atomic<bool> mp4_waiting_for_idr;
   std::atomic<int64_t> mp4_required_idr_ts_us;

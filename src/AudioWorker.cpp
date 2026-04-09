@@ -19,6 +19,22 @@
 
 #define MODULE "AudioWorker"
 
+static uint64_t pick_audio_anchor_us(uint64_t frame_duration_us) {
+  uint64_t anchor_us = frame_duration_us;
+
+  for (int video_ch = 0; video_ch < NUM_VIDEO_CHANNELS; ++video_ch) {
+    if (!global_video[video_ch]) {
+      continue;
+    }
+    uint64_t video_ts = global_video[video_ch]->last_timestamp_us.load(std::memory_order_relaxed);
+    if (video_ts > anchor_us) {
+      anchor_us = video_ts;
+    }
+  }
+
+  return anchor_us;
+}
+
 class AudioTap {
 public:
   AudioTap() = default;
@@ -214,7 +230,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   uint64_t presentation_origin_us =
       global_audio[encChn]->presentation_origin_us.load(std::memory_order_relaxed);
   if (presentation_origin_us == 0) {
-    const uint64_t fallback_origin_us = frame_duration_us;
+    const uint64_t fallback_origin_us = pick_audio_anchor_us(frame_duration_us);
     uint64_t expected = 0;
     if (global_audio[encChn]->presentation_origin_us.compare_exchange_strong(
             expected, fallback_origin_us, std::memory_order_relaxed)) {

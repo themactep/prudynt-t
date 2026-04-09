@@ -286,6 +286,72 @@ contributed SDP lines.
 
 ---
 
+## Phase 4.9: Bootstrap Parameter Warmup + IDR Retry 🔄 In Progress
+
+**Problem:** During RTSP startup, a stream can block waiting for SPS/PPS/VPS if the
+video worker has gone idle with no active subscriber callback yet.
+
+**SE parity target:** Keep the producer active during bootstrap and periodically
+request IDR until parameter sets are available.
+
+**Implementation started:**
+1. Add `video_stream.bootstrap_requested` and use it to keep `VideoWorker` polling
+   even without `hasDataCallback`.
+2. Toggle bootstrap-request state in `RTSP::addSubsession()` while waiting for
+   parameter sets.
+3. Upgrade `wait_for_parameter_sets()` to request IDR periodically while waiting.
+
+**Files touched (initial pass):**
+- `src/globals.hpp`
+- `src/VideoWorker.cpp`
+- `src/RTSP.cpp`
+
+---
+
+## Phase 5.0: Audio Startup Anchor Alignment 🔄 In Progress
+
+**Problem:** Audio timeline anchoring can still start too low when only audio has
+arrived, causing startup skew versus active video timelines.
+
+**SE parity target:** Anchor initial audio presentation origin against the current
+video timeline when available.
+
+**Implementation started:**
+1. Add a video-aware audio anchor helper in `AudioWorker`.
+2. Use that anchor for `presentation_origin_us` initialization instead of the
+   frame-duration-only fallback.
+
+**Files touched (initial pass):**
+- `src/AudioWorker.cpp`
+
+---
+
+## Phase 5.1: Native ch0/ch1 Binding Parity 📋 Planned
+
+**Target:** Port SE's `fsChn/sourceChn` and encoder-group binding model for robust
+dual-stream handling (shared/extended frame-source paths where needed).
+
+**Planned scope:**
+- `src/globals.hpp`
+- `src/main.cpp`
+- `src/IMPFramesource.hpp/.cpp`
+- `src/IMPEncoder.hpp/.cpp`
+
+---
+
+## Phase 5.2: Session-Aware RTSP Source Lifecycle 📋 Planned
+
+**Target:** Port SE's session-aware `IMPDeviceSource` startup gating (`clientSessionId`,
+session video-ready coordination, controlled capture enable/disable) to harden
+multi-client startup/connect/disconnect behavior.
+
+**Planned scope:**
+- `src/IMPDeviceSource.hpp/.cpp`
+- `src/IMPServerMediaSubsession.cpp`
+- `src/IMPAudioServerMediaSubsession.cpp`
+
+---
+
 ## Current Status
 
 **Completed:** All 4 phases plus runtime fixes (3.5), critical timestamp fixes (4.5),
@@ -293,6 +359,9 @@ RTCP discontinuity guard (4.6), subscriber/timeline hardening (4.7), and
 Require-gated backchannel SDP handling (4.8)
 are implemented and building successfully. The binary starts cleanly, runs without
 crashes, and exits quickly.
+
+**In progress:** Phase 4.9 (bootstrap warmup/IDR retry) and Phase 5.0 (audio
+startup anchor alignment) are now being implemented.
 
 **Next Steps:**
 

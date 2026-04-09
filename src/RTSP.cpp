@@ -39,11 +39,34 @@ static bool wait_for_parameter_sets(int chnNr, bool is_h265,
     return true;
   };
 
-  // Wait up to 10 s; VideoWorker normally delivers parameter sets within one
-  // GOP (< 2 s at 25 fps with keyint 50).
-  if (!vs->parameterCache.cv.wait_for(lock, 10s, ready)) {
-    LOG_ERROR("Timed out waiting for SPS/PPS for stream " << chnNr);
-    return false;
+  // Wait up to 10 s; while waiting, periodically request IDR so encoder emits
+  // fresh SPS/PPS (and VPS for H265) even when no client is active yet.
+  const auto deadline = std::chrono::steady_clock::now() + 10s;
+  auto next_idr_retry = std::chrono::steady_clock::now();
+  unsigned wait_timeout_count = 0;
+
+  while (!ready()) {
+    if (vs->parameterCache.cv.wait_for(lock, 500ms, ready)) {
+      break;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    if (now >= next_idr_retry) {
+      lock.unlock();
+      IMP_Encoder_RequestIDR(chnNr);
+      lock.lock();
+      next_idr_retry = now + 250ms;
+    }
+
+    if ((++wait_timeout_count % 4) == 0) {
+      LOG_WARN("Still waiting for bootstrap parameter sets on stream "
+               << chnNr << ", retrying IDR");
+    }
+
+    if (now >= deadline) {
+      LOG_ERROR("Timed out waiting for SPS/PPS for stream " << chnNr);
+      return false;
+    }
   }
 
   sps_out = vs->parameterCache.sps;
@@ -67,6 +90,12 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 
   // Add video subsession if enabled
   if (stream.video_enabled) {
+    auto *video_state = global_video[chnNr].get();
+    if (video_state) {
+      video_state->bootstrap_requested.store(true, std::memory_order_relaxed);
+      video_state->should_grab_frames.notify_one();
+    }
+
     H264NALUnit sps;
     H264NALUnit pps;
     H264NALUnit *vps = nullptr;
@@ -75,7 +104,13 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     // Wait for the parameter cache to be populated by VideoWorker.
     // Unlike the old msgChannel->wait_read() loop this does NOT consume any
     // live frames — they remain available for RTSP delivery.
-    if (!wait_for_parameter_sets(chnNr, is_h265, sps, pps, vps)) {
+    bool have_parameter_sets = wait_for_parameter_sets(chnNr, is_h265, sps, pps, vps);
+    if (video_state) {
+      video_state->bootstrap_requested.store(false, std::memory_order_relaxed);
+      video_state->should_grab_frames.notify_one();
+    }
+
+    if (!have_parameter_sets) {
       LOG_ERROR("Could not obtain SPS/PPS for stream " << chnNr << " — skipping subsession");
       if (vps) { delete vps; vps = nullptr; }
     } else {
