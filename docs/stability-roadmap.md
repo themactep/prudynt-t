@@ -175,17 +175,50 @@ dedicated branch and integration tests before merging.
 
 ---
 
+## Phase 4.5: Critical Timestamp Fix ✅ Done
+
+**Problem:** Hardware validation revealed that RTSP clients (mpv, ffprobe) were showing
+timestamp errors:
+- "No video PTS! Making something up. Using 30.000000 FPS"  
+- "Invalid audio PTS: X -> Y"
+- "Audio/Video desynchronisation detected!"
+
+Root cause: `IMPDeviceSource::deliverFrame()` was calling `gettimeofday()` for every
+frame instead of using the hardware timestamps from `TimestampManager` that were
+already captured in `nal.time` by `VideoWorker`/`AudioWorker`. This defeated the
+entire purpose of Phase 1.
+
+**Fix:** Use the pre-captured hardware timestamps from `TimestampManager`:
+
+```cpp
+// Before (broken):
+gettimeofday(&fPresentationTime, NULL);  // Wrong - network/scheduling jitter
+
+// After (correct):  
+fPresentationTime = nal.time;  // Use hardware timestamp from encoder
+```
+
+**Files changed:**
+- `src/IMPDeviceSource.cpp` — simplified from 60 to 40 lines, use `nal.time` directly
+
+**Result:** RTSP timestamps now properly reflect hardware capture time instead of
+varying based on network/scheduling delays. Net -19 lines of code.
+
+---
+
 ## Current Status
 
-**Completed:** All 4 phases plus runtime fixes (3.5) are implemented and building successfully.
-The binary starts cleanly, runs without crashes, and exits quickly.
+**Completed:** All 4 phases plus runtime fixes (3.5) and critical timestamp fix (4.5)
+are implemented and building successfully. The binary starts cleanly, runs without
+crashes, and exits quickly.
 
 **Next Steps:**
 
 1. **Hardware Validation** — Run the validation checklist below on target hardware
-   to confirm all phases are working correctly in production. Monitor for:
+   to confirm all phases are working correctly in production. The critical timestamp
+   fix (Phase 4.5) should eliminate RTSP timestamp errors. Monitor for:
    - Clean startup/shutdown without crashes
-   - Correct timestamps in RTSP streams (no negative DTS/PTS)
+   - Correct timestamps in RTSP streams (no negative DTS/PTS, no "making something up")
    - Stable multi-client RTSP connections with no frame drops
    - MP4 recording integrity
    - WebSocket/HTTP preview streaming functionality

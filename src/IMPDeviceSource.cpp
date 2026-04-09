@@ -129,6 +129,19 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     // Monotonicity check - ensure timestamps never go backwards
     int64_t pts_us = tv_to_us(fPresentationTime);
     
+    // Debug: Log first few timestamps to verify they're non-zero
+    static int log_count = 0;
+    if (log_count < 5) {
+      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+        LOG_DEBUG("Video frame timestamp: %ld.%06ld (%" PRId64 " us)", 
+                  fPresentationTime.tv_sec, fPresentationTime.tv_usec, pts_us);
+      } else {
+        LOG_DEBUG("Audio frame timestamp: %ld.%06ld (%" PRId64 " us)", 
+                  fPresentationTime.tv_sec, fPresentationTime.tv_usec, pts_us);
+      }
+      log_count++;
+    }
+    
     if constexpr (std::is_same_v<FrameType, AudioFrame>) {
       // For audio, also check for reasonable minimum step (1024 samples at 16kHz ~= 64ms)
       if (audioLastPtsUs >= 0 && pts_us <= audioLastPtsUs) {
