@@ -66,6 +66,7 @@ cd build
 # Configure the libhelix-aac build with CMake
 echo "Configuring libhelix-aac library..."
 cmake \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_SYSTEM_NAME=Linux \
     -DCMAKE_SYSTEM_PROCESSOR=mipsle \
     -DCMAKE_C_COMPILER=${CC} \

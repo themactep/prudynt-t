@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 OPUS_REPO="https://github.com/xiph/opus"
 OPUS_DIR="${BUILD_DIR}/opus"
-OPUS_VER="82ac57d9f1aaf575800cf17373348e45b7ce6c0d"
+OPUS_VER="ddbe48383984d56acd9e1ab6a090c54ca6b735a6"
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
@@ -58,6 +58,7 @@ cd build
 # Configure the Opus build with CMake
 echo "Configuring Opus library..."
 cmake \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_SYSTEM_NAME=Linux \
     -DCMAKE_SYSTEM_PROCESSOR=mipsle \
     -DCMAKE_C_COMPILER=${CC} \

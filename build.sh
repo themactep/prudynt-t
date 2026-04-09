@@ -1,11 +1,44 @@
 #!/bin/bash
 set -e
+
+# Capture whether PRUDYNT_CROSS was explicitly set before applying the default
+_PRUDYNT_CROSS_EXPLICIT=${PRUDYNT_CROSS+set}
 : "${PRUDYNT_CROSS:=ccache mipsel-linux-}"
-:
+
 TOP=$(pwd)
 NFS_SHARE="/nfs/"
 
+TOOLCHAIN_RELEASE="toolchain-x86_64"
+TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_xburst1_musl_gcc15-linux-mipsel.tar.gz"
+TOOLCHAIN_URL="https://github.com/themactep/thingino-firmware/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
+TOOLCHAIN_SDK="${TOP}/toolchain/mipsel-thingino-linux-musl_sdk-buildroot"
+
+ensure_toolchain() {
+	[[ -n "$_PRUDYNT_CROSS_EXPLICIT" ]] && return 0
+
+	if [[ ! -d "${TOOLCHAIN_SDK}/bin" ]]; then
+		echo "Thingino toolchain not found, downloading..."
+		mkdir -p "${TOP}/toolchain"
+		if command -v wget &>/dev/null; then
+			wget -q --show-progress "${TOOLCHAIN_URL}" -O "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
+		else
+			curl -L --progress-bar "${TOOLCHAIN_URL}" -o "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
+		fi
+		echo "Extracting toolchain to ${TOP}/toolchain/ ..."
+		tar -xf "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}" -C "${TOP}/toolchain"
+		rm -f "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
+		if [[ -x "${TOOLCHAIN_SDK}/relocate-sdk.sh" ]]; then
+			echo "Relocating SDK..."
+			"${TOOLCHAIN_SDK}/relocate-sdk.sh"
+		fi
+		echo "Toolchain ready."
+	fi
+
+	export PRUDYNT_CROSS="${TOOLCHAIN_SDK}/bin/mipsel-linux-"
+}
+
 prudynt() {
+	ensure_toolchain
 	echo "Build prudynt"
 
 	cd $TOP
@@ -79,6 +112,7 @@ prudynt() {
 }
 
 deps() {
+	ensure_toolchain
 	# Parse flags for dependency builds
 	CLEAN_ALL=0
 	STATIC_BUILD=0
@@ -105,6 +139,35 @@ deps() {
 	fi
 	cd ../
 
+	echo "Build libhelix-mp3"
+	LIBHELIX_DIR="$TOP/3rdparty/libhelix-aac"
+	MP3_SRC="$LIBHELIX_DIR/src/libhelix-mp3"
+	INSTALL_DIR="$TOP/3rdparty/install"
+	ARDUINO_COMPAT="$TOP/res/arduino_compat"
+	_CC="${PRUDYNT_CROSS#ccache }gcc"
+	mkdir -p /tmp/libhelix-mp3-build
+	for src in "$MP3_SRC"/*.c; do
+		obj="/tmp/libhelix-mp3-build/$(basename "${src%.c}").o"
+		"$_CC" -Os -I"$MP3_SRC" -I"$ARDUINO_COMPAT" \
+			-DUSE_DEFAULT_STDLIB -DARDUINO -c "$src" -o "$obj"
+	done
+	"${PRUDYNT_CROSS#ccache }ar" rcs "$INSTALL_DIR/lib/libhelix-mp3.a" /tmp/libhelix-mp3-build/*.o
+	find "$MP3_SRC" -maxdepth 1 -name '*.h' -exec cp {} "$INSTALL_DIR/include/" \;
+	rm -rf /tmp/libhelix-mp3-build
+
+	echo "Build libflac-lite"
+	FLAC_SRC="$LIBHELIX_DIR/src/libflac"
+	mkdir -p /tmp/libflac-build
+	for src in "$FLAC_SRC"/*.c; do
+		obj="/tmp/libflac-build/$(basename "${src%.c}").o"
+		"$_CC" -Os -I"$FLAC_SRC" -I"$ARDUINO_COMPAT" \
+			-DUSE_DEFAULT_STDLIB -c "$src" -o "$obj"
+	done
+	"${PRUDYNT_CROSS#ccache }ar" rcs "$INSTALL_DIR/lib/libflac-lite.a" /tmp/libflac-build/*.o
+	cp -r "$FLAC_SRC/FLAC" "$INSTALL_DIR/include/"
+	find "$FLAC_SRC" -maxdepth 1 -name '*.h' -exec cp {} "$INSTALL_DIR/include/" \;
+	rm -rf /tmp/libflac-build
+
 	echo "Build libwebsockets"
 	cd 3rdparty
 	if [[ $STATIC_BUILD -eq 1 ]]; then
@@ -126,15 +189,18 @@ deps() {
 	echo "Build libschrift"
 	cd 3rdparty
 
+	LIBSCHRIFT_VER="24737d2922b23df4a5692014f5ba03da0c296112"
+
 	# Smart libschrift handling
 	if [[ ! -d libschrift ]]; then
 		echo "Cloning libschrift..."
-		git clone --depth=1 https://github.com/tomolt/libschrift/
+		git clone https://github.com/tomolt/libschrift/
 		cd libschrift
 	else
 		echo "libschrift directory exists, using existing version..."
 		cd libschrift
 	fi
+	git checkout "$LIBSCHRIFT_VER"
 	# Apply local libschrift patches if present
 	if ls ../../res/libschrift/*.patch >/dev/null 2>&1; then
 		for p in ../../res/libschrift/*.patch; do
@@ -237,7 +303,7 @@ deps() {
 		fix_ar_space
 	fi
 
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make -j$(nproc)
+	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make
 	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make install
 	cd ../../
 
@@ -322,23 +388,70 @@ deps() {
 	fi
 	cd $TOP
 
+	echo "Build curl"
+	cd 3rdparty
+
+	CURL_VER="8.19.0"
+	CURL_TAR="curl-${CURL_VER}.tar.bz2"
+	CURL_URL="https://curl.se/download/${CURL_TAR}"
+
+	if [[ ! -d "curl-${CURL_VER}" ]]; then
+		echo "Downloading curl ${CURL_VER}..."
+		if command -v wget &>/dev/null; then
+			wget -q --show-progress "${CURL_URL}" -O "${CURL_TAR}"
+		else
+			curl -L --progress-bar "${CURL_URL}" -o "${CURL_TAR}"
+		fi
+		tar -xf "${CURL_TAR}"
+		rm -f "${CURL_TAR}"
+	fi
+
+	cd "curl-${CURL_VER}"
+	mkdir -p build-cross
+	cd build-cross
+
+	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+		CURL_ENABLE_SHARED="--disable-shared --enable-static"
+	else
+		CURL_ENABLE_SHARED="--enable-shared --disable-static"
+	fi
+
+	../configure \
+		--host=mipsel-linux \
+		CC="${PRUDYNT_CROSS}gcc" \
+		--prefix="$TOP/3rdparty/install" \
+		--without-ssl \
+		--without-libpsl \
+		--disable-dict --disable-file --disable-ftp \
+		--disable-gopher --disable-imap --disable-ldap \
+		--disable-pop3 --disable-rtsp --disable-smtp \
+		--disable-telnet --disable-tftp \
+		--disable-manual --disable-docs \
+		--without-zlib --without-brotli --without-zstd \
+		$CURL_ENABLE_SHARED \
+		--quiet
+	make -j$(nproc)
+	make install
+	cd $TOP
+
 	echo "Build faac"
 	cd 3rdparty
+
+	FAAC_VER="6d9b02edd268bd2f3377a388ed77dde4f34556c8"
 
 	# Smart faac handling
 	if [[ ! -d faac ]]; then
 		echo "Cloning faac..."
-		git clone --depth=1 https://github.com/knik0/faac.git
+		git clone https://github.com/knik0/faac.git
 		cd faac
-		sed -i 's/^#define MAX_CHANNELS 64/#define MAX_CHANNELS 2/' libfaac/coder.h
 	else
 		echo "faac directory exists, using existing version..."
 		cd faac
 	fi
-		# Ensure clean state and update, then apply local patches
 		git reset --hard HEAD 2>/dev/null || true
 		git clean -fd 2>/dev/null || true
-		git pull origin master 2>/dev/null || true
+		git fetch origin
+		git checkout "$FAAC_VER"
 		# Apply local FAAC patches (warnings/portability fixes)
 		if ls ../../res/faac/*.patch >/dev/null 2>&1; then
 			for p in ../../res/faac/*.patch; do
@@ -346,14 +459,37 @@ deps() {
 			done
 		fi
 
-	./bootstrap
+	# faac uses meson; create a cross-file for mipsel
+	cat > /tmp/faac-meson-cross.ini <<-CROSSFILE
+		[binaries]
+		c = '${PRUDYNT_CROSS}gcc'
+		cpp = '${PRUDYNT_CROSS}g++'
+		ar = '${PRUDYNT_CROSS}ar'
+		strip = '${PRUDYNT_CROSS}strip'
+		pkgconfig = 'pkg-config'
+
+		[host_machine]
+		system = 'linux'
+		cpu_family = 'mips'
+		cpu = 'mipsel'
+		endian = 'little'
+	CROSSFILE
+
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		CC="${PRUDYNT_CROSS}gcc" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install" --enable-static --disable-shared
+		FAAC_DEFAULT_LIB=static
 	else
-		CC="${PRUDYNT_CROSS}gcc" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install" --disable-static --enable-shared
+		FAAC_DEFAULT_LIB=shared
 	fi
-	make -j$(nproc)
-	make install
+
+	rm -rf builddir
+	CFLAGS="-ffast-math" meson setup builddir \
+		--cross-file /tmp/faac-meson-cross.ini \
+		--prefix="$TOP/3rdparty/install" \
+		--default-library="$FAAC_DEFAULT_LIB" \
+		-Dfloating-point=single \
+		-Dmax-channels=2
+	ninja -C builddir -j$(nproc)
+	ninja -C builddir install
 	cd ../../
 
 }

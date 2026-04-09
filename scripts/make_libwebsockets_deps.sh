@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 LWS_REPO="https://github.com/warmcat/libwebsockets"
 LWS_DIR="${BUILD_DIR}/libwebsockets"
-LWS_VER="b9c3ed4cd1032e9b14cda733a753aad868b5382b"
+LWS_VER="ab9df9cfc39de7a49967f18387b6b76310947442"
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
@@ -51,12 +51,17 @@ cd build
 
 # Configure and build libwebsockets library
 
+CCACHE_LAUNCHER=()
+if command -v ccache &>/dev/null; then
+    CCACHE_LAUNCHER=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
+
 echo "Configuring libwebsockets library..."
 cmake \
+-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 -DCMAKE_SYSTEM_NAME=Linux \
 -DCMAKE_SYSTEM_PROCESSOR=mipsle \
--DCMAKE_C_COMPILER_LAUNCHER=$(which ccache) \
--DCMAKE_CXX_COMPILER_LAUNCHER=$(which ccache) \
+"${CCACHE_LAUNCHER[@]}" \
 -DCMAKE_C_COMPILER=${CC} \
 -DCMAKE_CXX_COMPILER=${CXX} \
 -DCMAKE_BUILD_TYPE=RELEASE \
