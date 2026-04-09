@@ -262,10 +262,35 @@ next delivered timestamp jumped far ahead.
 
 ---
 
+## Phase 4.8: Require-Gated Backchannel SDP ✅ Done
+
+**Problem:** Generic RTSP clients (e.g. mpv) were listing backchannel audio tracks
+in DESCRIBE responses, even though backchannel should only be exposed to clients
+that explicitly request ONVIF backchannel support.
+
+**Root Cause:** `BackchannelServerMediaSubsession` stored a Require tag but SDP
+generation never consumed request headers, so the backchannel subsession always
+contributed SDP lines.
+
+**Fix:** Add DESCRIBE-time Require tracking and gate backchannel SDP lines:
+1. Parse `Require:` in a custom `PrudyntRTSPServer` client-connection override.
+2. Propagate backchannel-request state into SDP generation context via a scoped env flag.
+3. Return no SDP lines from backchannel subsession unless ONVIF backchannel was
+   required by the current DESCRIBE request.
+
+**Files changed:**
+- `src/PrudyntRTSPServer.hpp`
+- `src/PrudyntRTSPServer.cpp`
+- `src/RTSP.cpp`
+- `src/BackchannelServerMediaSubsession.cpp`
+
+---
+
 ## Current Status
 
 **Completed:** All 4 phases plus runtime fixes (3.5), critical timestamp fixes (4.5),
-RTCP discontinuity guard (4.6), and subscriber/timeline hardening (4.7)
+RTCP discontinuity guard (4.6), subscriber/timeline hardening (4.7), and
+Require-gated backchannel SDP handling (4.8)
 are implemented and building successfully. The binary starts cleanly, runs without
 crashes, and exits quickly.
 
