@@ -424,10 +424,9 @@ struct user_ctx {
   std::vector<unsigned char> http_stream_buf;   // pre-built buffer (with LWS_PRE headroom)
   std::vector<unsigned char> pending_fragments; // queued fragment bytes (with no LWS_PRE)
   std::mutex pending_mutex;
-  std::shared_ptr<MsgChannel<H264NALUnit>> preview_video_queue;
-  std::shared_ptr<MsgChannel<AudioFrame>> preview_audio_queue;
-  VideoTapEntry video_tap_entry;
-  AudioTapEntry audio_tap_entry;
+  // StreamCore cursors for preview (replaces tap mechanism)
+  StreamCore<H264NALUnit>::Cursor video_cursor;
+  StreamCore<AudioFrame>::Cursor audio_cursor;
   std::vector<uint8_t> preview_video_sample;
 
   user_ctx(const char *session_id, lws *wsi_handle)
@@ -446,26 +445,22 @@ struct user_ctx {
   }
 
   void teardown_stream_taps() {
-    if (video_tap_entry.id) {
-      unregister_video_tap(0, video_tap_entry.id);
-      video_tap_entry = {};
+    if (video_cursor.active) {
+      global_video[0]->videoCore->unregisterSubscriber(video_cursor);
     }
-    if (audio_tap_entry.id) {
-      unregister_audio_tap(0, audio_tap_entry.id);
-      audio_tap_entry = {};
+    if (audio_cursor.active) {
+      global_audio[0]->audioCore->unregisterSubscriber(audio_cursor);
     }
-    preview_video_queue.reset();
-    preview_audio_queue.reset();
     preview_video_sample.clear();
   }
 
   void pump_video_preview() {
-    if (!mp4_muxer || !preview_video_queue) {
+    if (!mp4_muxer || !video_cursor.active) {
       return;
     }
 
     H264NALUnit unit;
-    while (preview_video_queue->read(&unit)) {
+    while (global_video[0]->videoCore->read(video_cursor, &unit)) {
       if (unit.data.empty()) {
         continue;
       }
@@ -496,12 +491,12 @@ struct user_ctx {
   }
 
   void pump_audio_preview() {
-    if (!mp4_muxer || !preview_audio_queue) {
+    if (!mp4_muxer || !audio_cursor.active) {
       return;
     }
 
     AudioFrame af;
-    while (preview_audio_queue->read(&af)) {
+    while (global_audio[0]->audioCore->read(audio_cursor, &af)) {
       if (af.data.empty()) {
         continue;
       }
@@ -1793,32 +1788,21 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
   struct user_ctx *u_ctx = wrapper->owner;
   LOG_DDEBUG("process mp4 init schedule. id:" << u_ctx->id);
 
-  // Try to obtain SPS/PPS from global video channel (non-blocking reads)
+  // Get SPS/PPS from parameter cache
   std::vector<uint8_t> sps;
   std::vector<uint8_t> pps;
   bool have_sps = false;
   bool have_pps = false;
 
-  // Drain available messages until we find SPS/PPS or none left
-  while (true) {
-    H264NALUnit unit;
-    if (!global_video[0]->msgChannel->read(&unit)) {
-      break; // no more messages currently
-    }
-    if (unit.data.empty())
-      continue;
-    uint8_t nalType = (unit.data[0] & 0x1F);
-    if (nalType == 7) { // SPS
-      sps = unit.data;
+  {
+    std::lock_guard<std::mutex> lock(global_video[0]->parameterCache.mutex);
+    if (global_video[0]->parameterCache.have_sps && global_video[0]->parameterCache.have_pps) {
+      sps = global_video[0]->parameterCache.sps.data;
+      pps = global_video[0]->parameterCache.pps.data;
       have_sps = true;
-      LOG_DEBUG("Found SPS for MP4 init");
-    } else if (nalType == 8) { // PPS
-      pps = unit.data;
       have_pps = true;
-      LOG_DEBUG("Found PPS for MP4 init");
+      LOG_DEBUG("Got SPS/PPS from parameter cache for MP4 init");
     }
-    if (have_sps && have_pps)
-      break;
   }
 
   if (!have_sps || !have_pps) {
@@ -2358,16 +2342,16 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
           }
         }
 
-        // register dedicated taps so preview does not steal RTSP callbacks
+        // register StreamCore cursors for preview
         u_ctx->teardown_stream_taps();
-        u_ctx->preview_video_queue = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE);
-        u_ctx->video_tap_entry =
-            register_video_tap(0, u_ctx->preview_video_queue, [u_ctx]() { u_ctx->pump_video_preview(); });
+        u_ctx->video_cursor = global_video[0]->videoCore->registerSubscriber(
+            [u_ctx]() { u_ctx->pump_video_preview(); },
+            StreamStartPolicy::LatestSync);
 
         if (cfg->audio.input_enabled && strcmp(cfg->audio.input_format, "AAC") == 0) {
-          u_ctx->preview_audio_queue = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE);
-          u_ctx->audio_tap_entry =
-              register_audio_tap(0, u_ctx->preview_audio_queue, [u_ctx]() { u_ctx->pump_audio_preview(); });
+          u_ctx->audio_cursor = global_audio[0]->audioCore->registerSubscriber(
+              [u_ctx]() { u_ctx->pump_audio_preview(); },
+              StreamStartPolicy::LiveEdge);
         }
         // keep connection open; don't call lws_http_transaction_completed here
         u_ctx->http_stream_buf.clear();

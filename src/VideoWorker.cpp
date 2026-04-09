@@ -576,51 +576,20 @@ void VideoWorker::run() {
               bool delivered = false;
               // Use non-blocking write() to avoid stalling encoder on slow clients
               // (go2rtc-inspired: drop oldest frame rather than block producer)
+              // Publish to StreamCore (replaces msgChannel + tap mechanism)
               try {
-                delivered = global_video[encChn]->msgChannel->write(nalu);
-                if (delivered) {
-                  std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
-                  if (global_video[encChn]->onDataCallback)
-                    global_video[encChn]->onDataCallback();
-                } else {
-                  LOG_DDEBUG("video channel:" << encChn << " msgChannel full, dropped oldest NAL");
-                  // Still notify so consumer processes queued data
-                  std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
-                  if (global_video[encChn]->onDataCallback)
-                    global_video[encChn]->onDataCallback();
-                }
+                global_video[encChn]->videoCore->publish(nalu);
+                delivered = true;
+                
+                // Notify live555 callback if registered
+                std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+                if (global_video[encChn]->onDataCallback)
+                  global_video[encChn]->onDataCallback();
               } catch (const std::exception& e) {
                 LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id
                          << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
-                         << " - Failed to queue: " << e.what());
+                         << " - Failed to publish: " << e.what());
                 delivered = false;
-              }
-              std::vector<VideoTapEntry> taps_copy;
-              {
-                std::lock_guard<std::mutex> tap_lock(global_video[encChn]->tap_mutex);
-                taps_copy = global_video[encChn]->video_taps;
-              }
-              if (!taps_copy.empty()) {
-                for (auto &tap : taps_copy) {
-                  if (auto queue = tap.queue.lock()) {
-                    queue->write(nalu);
-                    if (tap.notify) {
-                      tap.notify();
-                    }
-                  }
-                }
-              }
-              if (!delivered) {
-                static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
-                static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
-                clog_count[encChn]++;
-                uint64_t now_ms = monotonic_ms();
-                if (now_ms - clog_last_log_ms[encChn] >= 5000) {
-                  LOG_WARN("video channel:" << encChn << " - msgChannel sink clogged, "
-                                            << clog_count[encChn] << " frames dropped in last 5s");
-                  clog_count[encChn] = 0;
-                  clog_last_log_ms[encChn] = now_ms;
-                }
               }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)

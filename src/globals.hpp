@@ -12,6 +12,7 @@
 #include "PreTriggerBuffer.hpp"
 #endif
 #include "liveMedia.hh"
+#include "StreamCore.hpp"
 
 #include <algorithm>
 #include <array>
@@ -91,6 +92,44 @@ struct BackchannelFrame {
   bool isShutdownSentinel{false};
 };
 
+/**
+ * StreamCoreTraits specializations for H264NALUnit and AudioFrame.
+ * These traits allow StreamCore to identify sync frames (keyframes/IDR).
+ */
+template <>
+struct StreamCoreTraits<H264NALUnit>
+{
+    static bool is_sync(const H264NALUnit &nalu)
+    {
+        if (nalu.data.size() < 1)
+            return false;
+        // NAL unit type is in bits 0-4 of first byte (strip start code if present)
+        size_t offset = 0;
+        while (offset + 2 < nalu.data.size() && nalu.data[offset] == 0 && nalu.data[offset + 1] == 0)
+        {
+            if (nalu.data[offset + 2] == 1)
+            {
+                offset += 3;
+                break;
+            }
+            offset++;
+        }
+        if (offset >= nalu.data.size())
+            return false;
+        uint8_t nalType = nalu.data[offset] & 0x1F;
+        return nalType == 5; // IDR slice
+    }
+};
+
+template <>
+struct StreamCoreTraits<AudioFrame>
+{
+    static bool is_sync(const AudioFrame &)
+    {
+        return false; // Audio frames are not sync frames
+    }
+};
+
 class VideoPrivacyMask;
 
 /**
@@ -115,18 +154,6 @@ struct video_parameter_cache {
   uint64_t last_idr_us{0}; // hardware timestamp (IMP µs) of last IDR
   uint8_t profile_idc{0};
   uint8_t level_idc{0};
-};
-
-struct VideoTapEntry {
-  uint64_t id{0};
-  std::weak_ptr<MsgChannel<H264NALUnit>> queue;
-  std::function<void(void)> notify;
-};
-
-struct AudioTapEntry {
-  uint64_t id{0};
-  std::weak_ptr<MsgChannel<AudioFrame>> queue;
-  std::function<void(void)> notify;
 };
 
 enum class AudioPlaybackJobType { PCM, CLEAR, STOP, WAIT, RECONFIGURE };
@@ -201,7 +228,8 @@ struct audio_stream {
   bool active{false};
   pthread_t thread;
   IMPAudio *imp_audio;
-  std::shared_ptr<MsgChannel<AudioFrame>> msgChannel;
+  // StreamCore replaces msgChannel + audio_taps mechanism
+  std::unique_ptr<StreamCore<AudioFrame>> audioCore;
   std::function<void(void)> onDataCallback;
   /* Check whether onDataCallback is not null in a data race free manner.
    * Use only for optimizations, i.e., to skip work if no data callback
@@ -215,12 +243,10 @@ struct audio_stream {
   StreamReplicator *streamReplicator = nullptr;
   std::atomic<int> rtsp_client_count{0};
 
-  std::mutex tap_mutex;
-  std::vector<AudioTapEntry> audio_taps;
-
   audio_stream(int devId, int aiChn, int aeChn)
       : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
-        msgChannel(nullptr), onDataCallback{nullptr}, hasDataCallback{false} {
+        audioCore(std::make_unique<StreamCore<AudioFrame>>(MSG_CHANNEL_SIZE)),
+        onDataCallback{nullptr}, hasDataCallback{false} {
   }
 };
 
@@ -235,7 +261,8 @@ struct video_stream {
   bool active{false};
   IMPEncoder *imp_encoder;
   IMPFramesource *imp_framesource;
-  std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
+  // StreamCore replaces msgChannel + video_taps mechanism
+  std::unique_ptr<StreamCore<H264NALUnit>> videoCore;
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg;                 // see comment in audio_stream
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
@@ -249,8 +276,6 @@ struct video_stream {
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
   video_parameter_cache parameterCache;
-  std::mutex tap_mutex;
-  std::vector<VideoTapEntry> video_taps;
   std::mutex privacy_mutex;
   std::shared_ptr<VideoPrivacyMask> privacy_mask;
   std::atomic<bool> privacy_requested{false};
@@ -262,7 +287,7 @@ struct video_stream {
 
   video_stream(int encChn, _stream *stream, const char *name)
       : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0), imp_encoder(nullptr),
-        imp_framesource(nullptr), msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
+        imp_framesource(nullptr), videoCore(std::make_unique<StreamCore<H264NALUnit>>(MSG_CHANNEL_SIZE)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
         mp4_required_idr_ts_us{-1}, mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},
         mp4_prebuffer_flushing{false} {
@@ -368,53 +393,5 @@ extern DayNightHistoryBuffer global_daynight_history;
 // so that a START command over the control FIFO does not require an
 // external streaming client.
 extern std::atomic<bool> global_force_video_active;
-
-inline VideoTapEntry register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
-                                        std::function<void(void)> notify = {}) {
-  static std::atomic<uint64_t> video_tap_seq{0};
-  VideoTapEntry entry;
-  entry.id = ++video_tap_seq;
-  entry.queue = queue;
-  entry.notify = std::move(notify);
-  if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS) {
-    std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
-    global_video[encChn]->video_taps.push_back(entry);
-  }
-  return entry;
-}
-
-inline void unregister_video_tap(int encChn, uint64_t tap_id) {
-  if (encChn < 0 || encChn >= NUM_VIDEO_CHANNELS) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
-  auto &taps = global_video[encChn]->video_taps;
-  taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const VideoTapEntry &v) { return v.id == tap_id; }),
-             taps.end());
-}
-
-inline AudioTapEntry register_audio_tap(int encChn, std::shared_ptr<MsgChannel<AudioFrame>> queue,
-                                        std::function<void(void)> notify = {}) {
-  static std::atomic<uint64_t> audio_tap_seq{0};
-  AudioTapEntry entry;
-  entry.id = ++audio_tap_seq;
-  entry.queue = queue;
-  entry.notify = std::move(notify);
-  if (encChn >= 0 && encChn < NUM_AUDIO_CHANNELS) {
-    std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
-    global_audio[encChn]->audio_taps.push_back(entry);
-  }
-  return entry;
-}
-
-inline void unregister_audio_tap(int encChn, uint64_t tap_id) {
-  if (encChn < 0 || encChn >= NUM_AUDIO_CHANNELS) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
-  auto &taps = global_audio[encChn]->audio_taps;
-  taps.erase(std::remove_if(taps.begin(), taps.end(), [&](const AudioTapEntry &v) { return v.id == tap_id; }),
-             taps.end());
-}
 
 #endif // GLOBALS_HPP

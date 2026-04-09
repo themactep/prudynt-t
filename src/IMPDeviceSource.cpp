@@ -47,6 +47,18 @@ IMPDeviceSource<FrameType, Stream>::IMPDeviceSource(UsageEnvironment &env, int e
     : FramedSource(env), encChn(encChn), stream{stream}, name{name}, eventTriggerId(0) {
   std::lock_guard lock_stream{mutex_main};
   std::lock_guard lock_callback{stream->onDataCallbackLock};
+  
+  // Register cursor with StreamCore (replaces msgChannel)
+  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+    cursor = stream->videoCore->registerSubscriber(
+        [this]() { this->on_data_available(); },
+        StreamStartPolicy::LatestSync);
+  } else {
+    cursor = stream->audioCore->registerSubscriber(
+        [this]() { this->on_data_available(); },
+        StreamStartPolicy::LiveEdge);
+  }
+  
   stream->onDataCallback = [this]() { this->on_data_available(); };
   stream->hasDataCallback = true;
 
@@ -61,6 +73,14 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
             << " eventTriggerId=" << eventTriggerId
             << " stream_addr=" << reinterpret_cast<uintptr_t>(stream.get()));
   std::lock_guard lock_callback{stream->onDataCallbackLock};
+  
+  // Unregister cursor from StreamCore
+  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+    stream->videoCore->unregisterSubscriber(cursor);
+  } else {
+    stream->audioCore->unregisterSubscriber(cursor);
+  }
+  
   envir().taskScheduler().deleteEventTrigger(eventTriggerId);
   stream->hasDataCallback = false;
   stream->onDataCallback = nullptr;
@@ -86,7 +106,15 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
   }
 
   FrameType nal;
-  while (stream->msgChannel->read(&nal)) {
+  // Use StreamCore cursor instead of msgChannel
+  bool hasFrame;
+  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+    hasFrame = stream->videoCore->read(cursor, &nal);
+  } else {
+    hasFrame = stream->audioCore->read(cursor, &nal);
+  }
+  
+  while (hasFrame) {
     if (nal.data.size() > fMaxSize) {
       fFrameSize = fMaxSize;
       fNumTruncatedBytes = nal.data.size() - fMaxSize;
@@ -159,6 +187,13 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     if (fFrameSize > 0) {
       FramedSource::afterGetting(this);
       return;
+    }
+    
+    // Try to read next frame
+    if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+      hasFrame = stream->videoCore->read(cursor, &nal);
+    } else {
+      hasFrame = stream->audioCore->read(cursor, &nal);
     }
   }
   fFrameSize = 0;

@@ -282,38 +282,16 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   }
 
   if (!af.data.empty() && global_audio[encChn]->hasDataCallback) {
-    bool delivered = global_audio[encChn]->msgChannel->write(af);
-    if (delivered) {
+    // Publish to StreamCore (replaces msgChannel + tap mechanism)
+    try {
+      global_audio[encChn]->audioCore->publish(af);
+      
+      // Notify live555 callback if registered
       std::unique_lock<std::mutex> lock_stream{global_audio[encChn]->onDataCallbackLock};
       if (global_audio[encChn]->onDataCallback)
         global_audio[encChn]->onDataCallback();
-    }
-    std::vector<AudioTapEntry> taps_copy;
-    {
-      std::lock_guard<std::mutex> tap_lock(global_audio[encChn]->tap_mutex);
-      taps_copy = global_audio[encChn]->audio_taps;
-    }
-    for (auto &tap : taps_copy) {
-      if (auto queue = tap.queue.lock()) {
-        queue->write(af);
-        if (tap.notify) {
-          tap.notify();
-        }
-      }
-    }
-    if (!delivered) {
-      static uint32_t clog_count = 0;
-      static uint64_t clog_last_log_ms = 0;
-      clog_count++;
-      uint64_t now_ms = static_cast<uint64_t>(
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-              std::chrono::steady_clock::now().time_since_epoch()).count());
-      if (now_ms - clog_last_log_ms >= 5000) {
-        LOG_WARN("audio encChn:" << encChn << " - msgChannel sink clogged, "
-                                 << clog_count << " frames dropped in last 5s");
-        clog_count = 0;
-        clog_last_log_ms = now_ms;
-      }
+    } catch (const std::exception& e) {
+      LOG_ERROR("audio encChn:" << encChn << " - Failed to publish: " << e.what());
     }
   }
 

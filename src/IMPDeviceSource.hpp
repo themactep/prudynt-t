@@ -30,6 +30,9 @@ private:
   std::string name; // for printing
   EventTriggerId eventTriggerId;
 
+  // StreamCore cursor for reading frames (replaces msgChannel)
+  typename StreamCore<FrameType>::Cursor cursor;
+
   // Monotonic counter for audio PTS (avoids gettimeofday jitter for AAC)
   bool audioFirstFrame{true};
   struct timeval audioStartTime{};
