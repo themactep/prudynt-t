@@ -82,6 +82,8 @@ struct H264NALUnit {
   struct timeval time{0, 0};
   // Encoder timestamp in microseconds (from IMP encoder, monotonic)
   int64_t imp_ts = 0;
+  // True for IDR frames and parameter sets (SPS/PPS/VPS) — safe to drop the rest under congestion
+  bool is_keyframe = false;
 };
 
 struct BackchannelFrame {

@@ -82,8 +82,37 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     return;
   }
 
+  // Detect TCP backpressure: if the queue is more than 25% full the RTSP/TCP
+  // sink is falling behind (shrinking window). In that state, drop non-keyframe
+  // NAL units so the client can re-sync on the next IDR without accumulating
+  // more lag. Only applies to video; audio is never dropped.
+  bool congested = false;
+  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+    size_t depth = stream->msgChannel->size();
+    size_t cap   = stream->msgChannel->capacity();
+    congested = (cap > 0 && depth * 4 > cap);
+    if (congested) {
+      static uint64_t last_log_ms[NUM_VIDEO_CHANNELS] = {};
+      static uint32_t drop_count[NUM_VIDEO_CHANNELS] = {};
+      drop_count[encChn]++;
+      uint64_t now_ms = static_cast<uint64_t>(::time(nullptr)) * 1000;
+      if (now_ms - last_log_ms[encChn] >= 5000) {
+        LOG_WARN("ch" << encChn << " RTSP queue " << depth << "/" << cap
+                 << " — congested, dropped " << drop_count[encChn]
+                 << " non-keyframes in last 5s");
+        drop_count[encChn] = 0;
+        last_log_ms[encChn] = now_ms;
+      }
+    }
+  }
+
   FrameType nal;
   while (stream->msgChannel->read(&nal)) {
+    if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+      if (congested && !nal.is_keyframe) {
+        continue; // consume from queue but do not deliver — reduces backlog
+      }
+    }
     if (nal.data.size() > fMaxSize) {
       fFrameSize = fMaxSize;
       fNumTruncatedBytes = nal.data.size() - fMaxSize;

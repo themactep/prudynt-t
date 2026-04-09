@@ -557,6 +557,7 @@ void VideoWorker::run() {
             nalu.packet_count = stream.packCount;
             nalu.is_frame_start = frame_start;
             nalu.is_frame_end = stream.pack[i].frameEnd;
+            nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr || nal_is_vps || nal_is_sps || nal_is_pps);
 
             if (global_video[encChn]->idr == false) {
               if (nal_is_sps || nal_is_pps || nal_is_idr || nal_is_hevc_idr) {
