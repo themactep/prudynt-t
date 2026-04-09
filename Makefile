@@ -151,7 +151,8 @@ ifneq ($(MAKECMDGOALS),clean)
 # ---------------------------
 ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
 override LDFLAGS       += -static -static-libgcc -static-libstdc++
-LIBS                    = -l:libalog.a \
+LIBS                    = -l:libimp.a \
+                          -l:libalog.a \
                           -l:libsysutils.a \
                           -l:libliveMedia.a \
                           -l:libgroupsock.a \
@@ -172,6 +173,9 @@ ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
 else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
 	# uClibc - no additional libraries needed
+else
+	# Default to musl - shim resolves uclibc ABI symbols in libimp.a/libalog.a/libsysutils.a
+LIBS                   += -l:libmuslshim.a
 endif
 
 # Hybrid Binary Configuration
