@@ -81,6 +81,34 @@ frames, so zero live frames are lost on startup.
 
 ---
 
+## Phase 3.5 — Runtime Stability Fixes ✅ Done
+
+**Problem:** On-device testing revealed several runtime crashes and performance issues:
+- Exit-time SIGSEGV in backchannel teardown due to incorrect destruction order
+- 26-second hang on exit waiting for websocket thread to stop
+- Missing timestamps in console logs made debugging timing issues difficult
+- Extra blank lines in libwebsockets log output
+
+**Fix:** Targeted runtime hardening based on on-device crash reports:
+- Fix `BackchannelStreamState` destructor order: close `mediaSink` before `rtpSource`
+- Add `WS::stop()` method with `lws_cancel_service()` to wake the service loop
+- Add timestamped console logging with millisecond precision
+- Trim trailing newlines from libwebsockets log bridge
+- Add diagnostic breadcrumbs in ISP init and RTSP/media-source setup paths
+
+**Files changed:**
+- `src/Logger.cpp` — add timestamp formatting using stack buffers + `fprintf`
+- `src/BackchannelStreamState.cpp` — fix teardown order
+- `src/WS.hpp` / `src/WS.cpp` — add `stop()` method and atomic stop flag
+- `src/main.cpp` — call `ws.stop()` before joining websocket thread
+- `src/IMPSystem.cpp` — add ISP init breadcrumbs for fault isolation
+- `src/RTSP.cpp`, `src/IMPServerMediaSubsession.cpp`, `src/IMPDeviceSource.cpp`,
+  `src/BackchannelServerMediaSubsession.cpp` — add diagnostic logging
+
+**Validation:** Binary now starts cleanly, runs without crashes, and exits fast (<1s).
+
+---
+
 ## Phase 4 — StreamCore Pub-Sub (Planned)
 
 **Problem:** The `VideoTapEntry` / `AudioTapEntry` tap mechanism uses
