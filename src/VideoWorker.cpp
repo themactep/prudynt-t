@@ -627,6 +627,16 @@ void VideoWorker::run() {
             nalu.imp_ts = rtsp_ts_us;
             // Use frame_timestamp_to_timeval for proper normalization
             nalu.time = frame_timestamp_to_timeval(*global_video[encChn], rtsp_ts_us);
+            
+            // Log raw vs normalized timestamps for debugging
+            static int logged_frames = 0;
+            if (logged_frames < 100 || (logged_frames % 100 == 0)) {
+              LOG_DEBUG("VideoWorker: frame=" << logged_frames 
+                        << " raw=" << rtsp_ts_us 
+                        << " norm=" << (nalu.time.tv_sec * 1000000ULL + nalu.time.tv_usec)
+                        << " nal_type=" << static_cast<int>(h264_nal));
+            }
+            logged_frames++;
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
