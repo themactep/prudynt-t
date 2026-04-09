@@ -151,8 +151,11 @@ ifneq ($(MAKECMDGOALS),clean)
 # ---------------------------
 ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
 override LDFLAGS       += -static -static-libgcc -static-libstdc++
-LIBS                    = -l:libalog.a \
+LIBS                    = -Wl,--start-group \
+                          -l:libimp.a \
+                          -l:libalog.a \
                           -l:libsysutils.a \
+                          -Wl,--end-group \
                           -l:libliveMedia.a \
                           -l:libgroupsock.a \
                           -l:libBasicUsageEnvironment.a \
@@ -172,6 +175,9 @@ ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
 else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
 	# uClibc - no additional libraries needed
+else
+	# Default to musl - shim provides glibc compat symbols (__assert, pthread cancel hooks)
+LIBS                   += -l:libmuslshim.a
 endif
 
 # Hybrid Binary Configuration
@@ -273,7 +279,7 @@ else ifneq (,$(findstring -DPLATFORM_T21,$(CFLAGS)))
 else ifneq (,$(findstring -DPLATFORM_T23,$(CFLAGS)))
     LIBIMP_PLATFORM        := T23
     LIBIMP_LANG            := zh
-    LIBIMP_DEFAULT_SDK_VERSION := 1.1.0
+    LIBIMP_DEFAULT_SDK_VERSION := 1.3.0
 else ifneq (,$(findstring -DPLATFORM_T30,$(CFLAGS)))
     LIBIMP_PLATFORM        := T30
     LIBIMP_LANG            := zh
@@ -289,7 +295,7 @@ else ifneq (,$(findstring -DPLATFORM_T40,$(CFLAGS)))
 else ifneq (,$(findstring -DPLATFORM_T41,$(CFLAGS)))
     LIBIMP_PLATFORM        := T41
     LIBIMP_LANG            := zh
-    LIBIMP_DEFAULT_SDK_VERSION := 1.2.0
+    LIBIMP_DEFAULT_SDK_VERSION := 1.2.5
 else
     LIBIMP_PLATFORM        := T31
     LIBIMP_LANG            := en
@@ -340,6 +346,7 @@ endif
 
 VERSION_FILE            = $(LIBIMP_INC_DIR)/version.hpp
 THIRDPARTY_INC_DIR      = ./3rdparty/install/include
+CXXFLAGS_FILE           = $(OBJ_DIR)/.cxxflags
 
 # Build Options
 # =============
@@ -358,9 +365,15 @@ $(VERSION_FILE): $(SRC_DIR)/version.tpl.hpp
 		sed 's/COMMIT_TAG/"$(commit_tag)"/g' $(SRC_DIR)/version.tpl.hpp > $(VERSION_FILE); \
 	fi
 
+# Compilation flags tracking - recompile all objects when CXXFLAGS changes
+# -------------------------------------------------------------------------
+$(CXXFLAGS_FILE): FORCE
+	@mkdir -p $(@D)
+	@[ -f "$@" ] && [ "$$(cat '$@')" = "$(CXXFLAGS)" ] || printf '%s' "$(CXXFLAGS)" > '$@'
+
 # C++ Object Compilation
 # ----------------------
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(VERSION_FILE)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(VERSION_FILE) $(CXXFLAGS_FILE)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) \
 		-I$(LIBIMP_INC_DIR) \
@@ -371,7 +384,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(VERSION_FILE)
 
 # C Object Compilation
 # --------------------
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(VERSION_FILE)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(VERSION_FILE) $(CXXFLAGS_FILE)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) \
 		-I$(LIBIMP_INC_DIR) \
@@ -394,7 +407,8 @@ $(PRUDYNTCTL_TARGET): $(PRUDYNTCTL_OBJECTS)
 # Phony Targets
 # =============================================================================
 
-.PHONY: all clean distclean
+.PHONY: all clean distclean FORCE
+FORCE:
 
 # Default Target
 # --------------
