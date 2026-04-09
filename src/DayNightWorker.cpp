@@ -749,7 +749,6 @@ void *thread_entry(void *arg) {
     // Handle mode switching with anti-flap cooldown
     // Schedule check ONLY applies to automatic switches, NOT to initial mode detection
     // This ensures camera starts in correct mode even when booting outside schedule window
-    bool photosensing_enabled = cfg->daynight.enabled && within_schedule;
     if (dec.toggled && dec.target != current) {
       if (!cfg->daynight.enabled) {
         // Photosensing is disabled globally - skip automatic switching

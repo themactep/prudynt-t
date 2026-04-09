@@ -48,9 +48,20 @@ prudynt() {
 	echo "Rebuilding live555 with latest changes..."
 	cd 3rdparty/live
 	if [[ -f Makefile ]]; then
+		# Apply local live555 patches if present
+		if ls ../../res/live555/*.patch >/dev/null 2>&1; then
+			for p in ../../res/live555/*.patch; do
+				patch -p1 -N < "$p" || true
+			done
+		fi
+
+		LIVE555_PREFIX="${TOP}/3rdparty/install"
+		LIVE555_LIBDIR="${LIVE555_PREFIX}/lib"
 		make clean
-		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make -j$(nproc)
-		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make install
+		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+			make -j$(nproc) PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
+		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+			make install PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
 		echo "live555 rebuilt successfully"
 	else
 		echo "Warning: live555 Makefile not found, skipping live555 rebuild"
@@ -303,53 +314,62 @@ deps() {
 		fix_ar_space
 	fi
 
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make install
+	LIVE555_PREFIX="${TOP}/3rdparty/install"
+	LIVE555_LIBDIR="${LIVE555_PREFIX}/lib"
+	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+		make PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
+	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+		make install PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
 	cd ../../
 
 	echo "import libimp"
 	cd 3rdparty
 	if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-lib; fi
 	if [[ ! -d ingenic-lib ]]; then
-	git clone --depth=1 https://github.com/gtxaspec/ingenic-lib
+		git clone --depth=1 https://github.com/gtxaspec/ingenic-lib
+	fi
 
+	INGENIC_LIB_SRC=""
 	case "$1" in
 		T10|T20)
 			echo "use T20 libs"
-			cp ingenic-lib/T20/lib/3.12.0/uclibc/4.7.2/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/T20/lib/3.12.0/uclibc/4.7.2"
 			;;
 		T21)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.0.33/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.0.33/uclibc/5.4.0"
 			;;
 		T23)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.1.0/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.1.0/uclibc/5.4.0"
 			;;
 		T30)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.0.5/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.0.5/uclibc/5.4.0"
 			;;
 		T31)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.1.6/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.1.6/uclibc/5.4.0"
 			;;
 		C100)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/2.1.0/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/2.1.0/uclibc/5.4.0"
 			;;
 		T40)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0"
 			;;
 		T41)
 			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0"
 			;;
 		*)
 			echo "Unsupported or unspecified SoC model."
 			;;
 	esac
+
+	if [[ -n "$INGENIC_LIB_SRC" ]]; then
+		cp -Pf "$INGENIC_LIB_SRC"/* "$TOP/3rdparty/install/lib/"
 	fi
 
 	cd ../
@@ -466,7 +486,7 @@ deps() {
 		cpp = '${PRUDYNT_CROSS}g++'
 		ar = '${PRUDYNT_CROSS}ar'
 		strip = '${PRUDYNT_CROSS}strip'
-		pkgconfig = 'pkg-config'
+		pkg-config = 'pkg-config'
 
 		[host_machine]
 		system = 'linux'

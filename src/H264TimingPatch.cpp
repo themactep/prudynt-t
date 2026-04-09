@@ -92,28 +92,6 @@ void write_bits(std::vector<uint8_t> &data, size_t bit_pos, uint32_t value, int 
     }
 }
 
-bool skip_hrd_parameters(BitReader &br)
-{
-    uint32_t cpb_cnt_minus1 = 0;
-    if (!br.read_ue(cpb_cnt_minus1))
-        return false;
-
-    uint32_t tmp = 0;
-    if (!br.read_bits(4, tmp) || !br.read_bits(4, tmp))
-        return false;
-
-    for (uint32_t sched_sel_idx = 0; sched_sel_idx <= cpb_cnt_minus1; ++sched_sel_idx)
-    {
-        if (!br.read_ue(tmp) || !br.read_ue(tmp))
-            return false;
-        if (!br.read_bits(1, tmp))
-            return false;
-    }
-
-    return br.read_bits(5, tmp) && br.read_bits(5, tmp)
-        && br.read_bits(5, tmp) && br.read_bits(5, tmp);
-}
-
 bool skip_scaling_list(BitReader &br, int size_of_list)
 {
     int32_t last_scale = 8;

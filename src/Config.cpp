@@ -454,7 +454,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
 };
 
 std::vector<ConfigItem<int>> CFG::getIntItems() {
-  const auto &encDefaults = hal::defaults::encoder();
   const auto &denoiseDefaults = hal::defaults::denoise();
   return {
       {"audio.mic_bitrate", audio.input_bitrate, 32, [](const int &v) { return v >= 6 && v <= 256; }},

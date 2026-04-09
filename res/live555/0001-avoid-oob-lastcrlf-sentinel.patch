@@ -1,0 +1,27 @@
+--- a/liveMedia/RTSPServer.cpp
++++ b/liveMedia/RTSPServer.cpp
+@@ -660,7 +660,7 @@ void RTSPServer::RTSPClientConnection::resetRequestBuffer() {
+ void RTSPServer::RTSPClientConnection::resetRequestBuffer() {
+   ClientConnection::resetRequestBuffer();
+   
+-  fLastCRLF = &fRequestBuffer[-3]; // hack: Ensures that we don't think we have end-of-msg if the data starts with <CR><LF>
++  fLastCRLF = NULL;
+   fBase64RemainderCount = 0;
+ }
+ 
+@@ -765,13 +765,12 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
+       fBase64RemainderCount = newBase64RemainderCount;
+     }
+     
+-    unsigned char* tmpPtr = fLastCRLF + 2;
++    unsigned char* tmpPtr = fLastCRLF == NULL ? fRequestBuffer : fLastCRLF + 2;
+     if (fBase64RemainderCount == 0) { // no more Base-64 bytes remain to be read/decoded
+       // Look for the end of the message: <CR><LF><CR><LF>
+-      if (tmpPtr < fRequestBuffer) tmpPtr = fRequestBuffer;
+       while (tmpPtr < &ptr[newBytesRead-1]) {
+ 	if (*tmpPtr == '\r' && *(tmpPtr+1) == '\n') {
+-	  if (tmpPtr - fLastCRLF == 2) { // This is it:
++	  if (fLastCRLF != NULL && tmpPtr - fLastCRLF == 2) { // This is it:
+ 	    endOfMsg = True;
+ 	    break;
+ 	  }
