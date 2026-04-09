@@ -33,19 +33,13 @@ private:
   // StreamCore cursor for reading frames (replaces msgChannel)
   typename StreamCore<FrameType>::Cursor cursor;
 
-  // Monotonic counter for audio PTS (avoids gettimeofday jitter for AAC)
-  bool audioFirstFrame{true};
-  struct timeval audioStartTime{};
-  uint64_t audioFrameCount{0};
-  int audioClockSampleRate{0};
-  int64_t audioLastPtsUs{-1};
-
-  // Video encoder timestamp tracking (avoids gettimeofday jitter)
-  bool videoFirstFrame{true};
-  int64_t videoFirstImpTs{0};
-  int64_t videoLastDelta{-1};
-  int64_t videoLastPtsUs{-1};
-  struct timeval videoBaseTime{};
+  // Presentation time normalization (from Prudynt-SE)
+  uint64_t presentationAnchorUs{0};      // Anchor point for timestamp normalization
+  uint64_t lastSourceFrameUs{0};         // Last raw source timestamp
+  uint64_t lastPresentationFrameUs{0};   // Last normalized presentation timestamp
+  
+  // Helper for timestamp normalization
+  uint64_t normalizePresentationTimeUs(uint64_t sourceFrameUs, uint64_t durationUs);
 };
 
 #endif

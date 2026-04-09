@@ -96,6 +96,55 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
 }
 
 template <typename FrameType, typename Stream>
+uint64_t IMPDeviceSource<FrameType, Stream>::normalizePresentationTimeUs(uint64_t sourceFrameUs,
+                                                                          uint64_t durationUs) {
+  const uint64_t fallbackDurationUs = std::max<uint64_t>(durationUs, 1);
+
+  // If source frame hasn't changed, return same presentation time
+  if (sourceFrameUs != 0 && lastSourceFrameUs != 0 &&
+      sourceFrameUs == lastSourceFrameUs && lastPresentationFrameUs != 0) {
+    return lastPresentationFrameUs;
+  }
+
+  uint64_t normalizedUs = 0;
+  if (sourceFrameUs != 0) {
+    // Establish anchor on first frame
+    if (presentationAnchorUs == 0) {
+      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+        presentationAnchorUs =
+            sourceFrameUs > fallbackDurationUs ? sourceFrameUs - fallbackDurationUs : 0;
+      } else {
+        // AAC demuxers commonly derive stream start_time as first_pts - frame_duration.
+        // Anchor audio one frame earlier so the first emitted packet lands at +duration,
+        // which yields a clean zero start_time instead of -0.064 on 16 kHz AAC.
+        presentationAnchorUs =
+            sourceFrameUs > fallbackDurationUs ? sourceFrameUs - fallbackDurationUs : 0;
+      }
+    }
+    
+    if (sourceFrameUs >= presentationAnchorUs) {
+      normalizedUs = sourceFrameUs - presentationAnchorUs;
+    } else {
+      // Source timestamp went backwards relative to anchor - use last + duration
+      normalizedUs = lastPresentationFrameUs != 0 
+          ? lastPresentationFrameUs + fallbackDurationUs 
+          : 0;
+      LOG_WARN("Source timestamp %" PRIu64 " < anchor %" PRIu64 ", forcing forward to %" PRIu64,
+               sourceFrameUs, presentationAnchorUs, normalizedUs);
+    }
+  } else {
+    // Zero source timestamp - synthesize from last presentation time
+    normalizedUs = lastPresentationFrameUs != 0
+        ? lastPresentationFrameUs + fallbackDurationUs
+        : 0;
+  }
+
+  lastSourceFrameUs = sourceFrameUs;
+  lastPresentationFrameUs = normalizedUs;
+  return normalizedUs;
+}
+
+template <typename FrameType, typename Stream>
 void IMPDeviceSource<FrameType, Stream>::deliverFrame0(void *clientData) {
   ((IMPDeviceSource<FrameType, Stream> *)clientData)->deliverFrame();
 }
@@ -122,58 +171,41 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       fFrameSize = nal.data.size();
     }
 
-    // Use the hardware timestamp from TimestampManager that was captured
-    // when the frame was encoded (stored in nal.time by VideoWorker/AudioWorker)
-    fPresentationTime = nal.time;
-    
-    // Monotonicity check - ensure timestamps never go backwards
-    int64_t pts_us = tv_to_us(fPresentationTime);
-    
-    // Debug: Log first few timestamps to verify they're non-zero
+    // Calculate source timestamp and duration
+    uint64_t source_frame_us = static_cast<uint64_t>(nal.time.tv_sec) * 1000000ULL +
+                               static_cast<uint64_t>(nal.time.tv_usec);
+    uint64_t duration_us = 0;
+
+    if (lastSourceFrameUs != 0 && source_frame_us > lastSourceFrameUs) {
+      duration_us = source_frame_us - lastSourceFrameUs;
+    } else if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+      const int fps = (stream && stream->stream && stream->stream->fps > 0)
+          ? stream->stream->fps : 25;
+      duration_us = 1000000ULL / static_cast<uint64_t>(fps);
+    } else if constexpr (std::is_same_v<FrameType, AudioFrame>) {
+      // AAC: 1024 samples at 16kHz = 64ms
+      auto *imp_audio = global_audio[encChn]->imp_audio;
+      int sampleRate = imp_audio ? imp_audio->sample_rate : 16000;
+      if (sampleRate <= 0) sampleRate = 16000;
+      duration_us = (1024ULL * 1000000ULL) / static_cast<uint64_t>(sampleRate);
+    }
+
+    // Normalize presentation time with anchoring
+    const uint64_t presentation_us = normalizePresentationTimeUs(source_frame_us, duration_us);
+    fPresentationTime = us_to_tv(presentation_us);
+    fDurationInMicroseconds = duration_us;
+
+    // Debug: Log first few timestamps to verify normalization
     static int log_count = 0;
     if (log_count < 5) {
       if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        LOG_DEBUG("Video frame timestamp: %ld.%06ld (%" PRId64 " us)", 
-                  fPresentationTime.tv_sec, fPresentationTime.tv_usec, pts_us);
+        LOG_DEBUG("Video: source=%" PRIu64 " anchor=%" PRIu64 " presentation=%" PRIu64 " duration=%" PRIu64,
+                  source_frame_us, presentationAnchorUs, presentation_us, duration_us);
       } else {
-        LOG_DEBUG("Audio frame timestamp: %ld.%06ld (%" PRId64 " us)", 
-                  fPresentationTime.tv_sec, fPresentationTime.tv_usec, pts_us);
+        LOG_DEBUG("Audio: source=%" PRIu64 " anchor=%" PRIu64 " presentation=%" PRIu64 " duration=%" PRIu64,
+                  source_frame_us, presentationAnchorUs, presentation_us, duration_us);
       }
       log_count++;
-    }
-    
-    if constexpr (std::is_same_v<FrameType, AudioFrame>) {
-      // For audio, also check for reasonable minimum step (1024 samples at 16kHz ~= 64ms)
-      if (audioLastPtsUs >= 0 && pts_us <= audioLastPtsUs) {
-        LOG_WARN("Audio timestamp went backwards or stalled: %" PRId64 " -> %" PRId64, audioLastPtsUs, pts_us);
-        // Force forward progress
-        auto *imp_audio = global_audio[encChn]->imp_audio;
-        int sampleRate = imp_audio ? imp_audio->sample_rate : 16000;
-        if (sampleRate <= 0) sampleRate = 16000;
-        int64_t min_audio_step_us = (1024LL * 1000000LL) / sampleRate;
-        pts_us = audioLastPtsUs + min_audio_step_us;
-        fPresentationTime = us_to_tv(pts_us);
-      }
-      audioLastPtsUs = pts_us;
-    } else {
-      // For video, check monotonicity and detect large jumps (session restarts)
-      if (videoLastPtsUs >= 0) {
-        int64_t delta_pts_us = pts_us - videoLastPtsUs;
-        if (delta_pts_us <= 0) {
-          LOG_WARN("Video timestamp went backwards or stalled: %" PRId64 " -> %" PRId64, videoLastPtsUs, pts_us);
-          // Force forward progress (assume 30fps)
-          int64_t min_video_step_us = stream && stream->stream && stream->stream->fps > 0 
-            ? 1000000LL / stream->stream->fps : 33333;
-          pts_us = videoLastPtsUs + min_video_step_us;
-          fPresentationTime = us_to_tv(pts_us);
-        } else if (delta_pts_us > 2000000LL) {
-          // Large forward jump (>2s) indicates new session or discontinuity
-          LOG_DEBUG("Video timestamp jump detected: %" PRId64 "us, re-anchoring", delta_pts_us);
-          videoFirstFrame = true;
-          videoLastDelta = -1;
-        }
-      }
-      videoLastPtsUs = pts_us;
     }
 
     memcpy(fTo, &nal.data[0], fFrameSize);
