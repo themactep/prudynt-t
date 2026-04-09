@@ -96,6 +96,48 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
 }
 
 template <typename FrameType, typename Stream>
+uint64_t IMPDeviceSource<FrameType, Stream>::normalizePresentationTimeUs(uint64_t sourceFrameUs,
+                                                                          uint64_t durationUs) {
+  const uint64_t fallbackDurationUs = std::max<uint64_t>(durationUs, 1);
+
+  // If source frame hasn't changed, return same presentation time
+  if (sourceFrameUs != 0 && lastSourceFrameUs != 0 &&
+      sourceFrameUs == lastSourceFrameUs && lastPresentationFrameUs != 0) {
+    return lastPresentationFrameUs;
+  }
+
+  uint64_t normalizedUs = 0;
+  if (sourceFrameUs != 0) {
+    // Establish anchor on first frame
+    if (presentationAnchorUs == 0) {
+      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+        presentationAnchorUs =
+            sourceFrameUs > fallbackDurationUs ? sourceFrameUs - fallbackDurationUs : 0;
+      } else {
+        // AAC demuxers commonly derive stream start_time as first_pts - frame_duration.
+        // Anchor audio one frame earlier so the first emitted packet lands at +duration,
+        // which yields a clean zero start_time instead of -0.064 on 16 kHz AAC.
+        presentationAnchorUs =
+            sourceFrameUs > fallbackDurationUs ? sourceFrameUs - fallbackDurationUs : 0;
+      }
+    }
+    
+    if (sourceFrameUs >= presentationAnchorUs) {
+      normalizedUs = sourceFrameUs - presentationAnchorUs;
+    }
+  }
+
+  // Monotonicity check
+  if (lastPresentationFrameUs != 0 && normalizedUs <= lastPresentationFrameUs) {
+    normalizedUs = lastPresentationFrameUs + fallbackDurationUs;
+  }
+
+  lastSourceFrameUs = sourceFrameUs;
+  lastPresentationFrameUs = normalizedUs;
+  return normalizedUs;
+}
+
+template <typename FrameType, typename Stream>
 void IMPDeviceSource<FrameType, Stream>::deliverFrame0(void *clientData) {
   ((IMPDeviceSource<FrameType, Stream> *)clientData)->deliverFrame();
 }
@@ -122,11 +164,9 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       fFrameSize = nal.data.size();
     }
 
-    // Timestamps are already normalized by VideoWorker/AudioWorker
-    // Just use them directly (like Prudynt-SE does)
-    fPresentationTime = nal.time;
-    
-    // Calculate duration from timestamp delta or use defaults
+    // Timestamps are already normalized by VideoWorker/AudioWorker, but we need to
+    // normalize AGAIN in IMPDeviceSource (like Prudynt-SE does) to establish a fresh
+    // anchor point per RTSP session/subscriber
     uint64_t source_frame_us = static_cast<uint64_t>(nal.time.tv_sec) * 1000000ULL +
                                static_cast<uint64_t>(nal.time.tv_usec);
     
@@ -145,18 +185,19 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       duration_us = (1024ULL * 1000000ULL) / static_cast<uint64_t>(sampleRate);
     }
     
+    const uint64_t presentation_us = normalizePresentationTimeUs(source_frame_us, duration_us);
+    fPresentationTime = us_to_tv(presentation_us);
     fDurationInMicroseconds = duration_us;
-    lastSourceFrameUs = source_frame_us;
 
     // Debug: Log first few timestamps
     static int log_count = 0;
     if (log_count < 5) {
       if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        LOG_DEBUG("Video PTS: " << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec 
-                  << " duration=" << duration_us << "us");
+        LOG_DEBUG("Video: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
+                  << " presentation=" << presentation_us << " duration=" << duration_us);
       } else {
-        LOG_DEBUG("Audio PTS: " << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec 
-                  << " duration=" << duration_us << "us");
+        LOG_DEBUG("Audio: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
+                  << " presentation=" << presentation_us << " duration=" << duration_us);
       }
       log_count++;
     }
