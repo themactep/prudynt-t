@@ -241,6 +241,9 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   af.time.tv_sec = ts_us / 1000000ULL;
   af.time.tv_usec = ts_us % 1000000ULL;
 
+  uint8_t *start = (uint8_t *)frame.virAddr;
+  uint8_t *end = start + frame.len;
+
   IMPAudioStream stream;
   bool got_stream = false;
   if (global_audio[encChn]->imp_audio->directEncode) {
