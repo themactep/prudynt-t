@@ -33,13 +33,8 @@ private:
   // StreamCore cursor for reading frames (replaces msgChannel)
   typename StreamCore<FrameType>::Cursor cursor;
 
-  // Presentation time normalization (from Prudynt-SE)
-  uint64_t presentationAnchorUs{0};      // Anchor point for timestamp normalization
-  uint64_t lastSourceFrameUs{0};         // Last raw source timestamp
-  uint64_t lastPresentationFrameUs{0};   // Last normalized presentation timestamp
-  
-  // Helper for timestamp normalization
-  uint64_t normalizePresentationTimeUs(uint64_t sourceFrameUs, uint64_t durationUs);
+  // Track last timestamp for duration calculation
+  uint64_t lastSourceFrameUs{0};
 };
 
 #endif

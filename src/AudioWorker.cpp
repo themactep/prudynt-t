@@ -186,14 +186,9 @@ AudioWorker::~AudioWorker() {
 }
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
-  // Use gettimeofday() as the frame timestamp so that fPresentationTime
-  // is always in the same clock domain as live555's internal timestamps.
-  // NTP steps affect both equally, so RTP delta arithmetic stays consistent.
   AudioFrame af;
-  TimestampManager::getInstance().getTimestamp(&af.time);
-
-  uint8_t *start = (uint8_t *)frame.virAddr;
-  uint8_t *end = start + frame.len;
+  
+  // Calculate frame duration
   int sample_size_bytes = frame.bitwidth / 8;
   int channels = (frame.soundmode == AUDIO_SOUND_MODE_MONO) ? 1 : 2;
   if (channels <= 0) {
@@ -206,6 +201,45 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   if (sample_size_bytes > 0) {
     frame_samples = frame.len / (sample_size_bytes * channels);
   }
+  
+  int sampleRate = global_audio[encChn]->imp_audio ? global_audio[encChn]->imp_audio->sample_rate : 16000;
+  if (sampleRate <= 0) sampleRate = 16000;
+  
+  uint64_t frame_duration_us = frame_samples > 0 
+      ? (frame_samples * 1000000ULL) / sampleRate 
+      : 64000ULL; // Default ~64ms for AAC
+  
+  // Normalize audio timestamp (similar to Prudynt-SE)
+  uint64_t presentation_origin_us =
+      global_audio[encChn]->presentation_origin_us.load(std::memory_order_relaxed);
+  if (presentation_origin_us == 0) {
+    const uint64_t fallback_origin_us = frame_duration_us;
+    uint64_t expected = 0;
+    if (global_audio[encChn]->presentation_origin_us.compare_exchange_strong(
+            expected, fallback_origin_us, std::memory_order_relaxed)) {
+      presentation_origin_us = fallback_origin_us;
+    } else {
+      presentation_origin_us = expected;
+    }
+  }
+
+  uint64_t last_ts = global_audio[encChn]->last_timestamp_us.load(std::memory_order_relaxed);
+  uint64_t ts_us = last_ts;
+  if (ts_us == 0) {
+    ts_us = presentation_origin_us;
+  } else {
+    ts_us += frame_duration_us;
+  }
+
+  // Monotonicity check
+  if (last_ts != 0 && ts_us <= last_ts) {
+    ts_us = last_ts + frame_duration_us;
+  }
+  
+  global_audio[encChn]->last_timestamp_us.store(ts_us, std::memory_order_relaxed);
+
+  af.time.tv_sec = ts_us / 1000000ULL;
+  af.time.tv_usec = ts_us % 1000000ULL;
 
   IMPAudioStream stream;
   bool got_stream = false;

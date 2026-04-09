@@ -17,6 +17,82 @@
 #undef MODULE
 #define MODULE "VideoWorker"
 
+namespace {
+
+struct timeval timeval_from_us(uint64_t ts_us) {
+  struct timeval tv;
+  tv.tv_sec = ts_us / 1000000ULL;
+  tv.tv_usec = ts_us % 1000000ULL;
+  return tv;
+}
+
+struct timeval frame_timestamp_to_timeval(video_stream &stream_state, uint64_t raw_ts) {
+  const uint64_t expected_frame_us =
+      (stream_state.stream && stream_state.stream->fps > 0)
+      ? (1000000ULL / static_cast<uint64_t>(stream_state.stream->fps))
+      : 40000ULL;
+
+  uint64_t step_us = 0;
+  const uint64_t last_raw =
+      stream_state.last_frame_timestamp_raw.load(std::memory_order_relaxed);
+  const uint64_t last_ts =
+      stream_state.last_timestamp_us.load(std::memory_order_relaxed);
+
+  if (raw_ts > 0 && last_raw != 0 && raw_ts == last_raw && last_ts != 0)
+    return timeval_from_us(last_ts);
+
+  if (raw_ts > 0) {
+    uint64_t origin_raw = stream_state.timestamp_origin_raw.load(std::memory_order_relaxed);
+    if (origin_raw == 0) {
+      uint64_t expected = 0;
+      if (stream_state.timestamp_origin_raw.compare_exchange_strong(
+              expected, raw_ts, std::memory_order_relaxed)) {
+        origin_raw = raw_ts;
+      } else {
+        origin_raw = expected;
+      }
+    }
+
+    if (last_raw != 0 && raw_ts > last_raw) {
+      step_us = raw_ts - last_raw;
+
+      // Preserve the encoder cadence. Only clamp obviously broken jumps.
+      if (step_us > (expected_frame_us * 10)) {
+        step_us = expected_frame_us;
+      }
+    }
+
+    stream_state.last_frame_timestamp_raw.store(raw_ts, std::memory_order_relaxed);
+  }
+
+  uint64_t presentation_origin_us =
+      stream_state.presentation_origin_us.load(std::memory_order_relaxed);
+  if (presentation_origin_us == 0) {
+    const uint64_t fallback_origin_us = expected_frame_us;
+    uint64_t expected = 0;
+    if (stream_state.presentation_origin_us.compare_exchange_strong(
+            expected, fallback_origin_us, std::memory_order_relaxed)) {
+      presentation_origin_us = fallback_origin_us;
+    } else {
+      presentation_origin_us = expected;
+    }
+  }
+
+  uint64_t ts_us = last_ts;
+  if (ts_us == 0) {
+    ts_us = presentation_origin_us;
+  } else {
+    if (step_us == 0)
+      step_us = expected_frame_us;
+    ts_us += step_us;
+  }
+
+  stream_state.last_timestamp_us.store(ts_us, std::memory_order_relaxed);
+  return timeval_from_us(ts_us);
+}
+
+} // namespace
+
 VideoWorker::VideoWorker(int chn) : encChn(chn) {
   LOG_DEBUG("VideoWorker created for channel " << encChn);
 }
@@ -549,7 +625,8 @@ void VideoWorker::run() {
             H264NALUnit nalu;
 
             nalu.imp_ts = rtsp_ts_us;
-            TimestampManager::getInstance().getTimestamp(&nalu.time);
+            // Use frame_timestamp_to_timeval for proper normalization
+            nalu.time = frame_timestamp_to_timeval(*global_video[encChn], rtsp_ts_us);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.

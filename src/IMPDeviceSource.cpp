@@ -96,55 +96,6 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
 }
 
 template <typename FrameType, typename Stream>
-uint64_t IMPDeviceSource<FrameType, Stream>::normalizePresentationTimeUs(uint64_t sourceFrameUs,
-                                                                          uint64_t durationUs) {
-  const uint64_t fallbackDurationUs = std::max<uint64_t>(durationUs, 1);
-
-  // If source frame hasn't changed, return same presentation time
-  if (sourceFrameUs != 0 && lastSourceFrameUs != 0 &&
-      sourceFrameUs == lastSourceFrameUs && lastPresentationFrameUs != 0) {
-    return lastPresentationFrameUs;
-  }
-
-  uint64_t normalizedUs = 0;
-  if (sourceFrameUs != 0) {
-    // Establish anchor on first frame
-    if (presentationAnchorUs == 0) {
-      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        presentationAnchorUs =
-            sourceFrameUs > fallbackDurationUs ? sourceFrameUs - fallbackDurationUs : 0;
-      } else {
-        // AAC demuxers commonly derive stream start_time as first_pts - frame_duration.
-        // Anchor audio one frame earlier so the first emitted packet lands at +duration,
-        // which yields a clean zero start_time instead of -0.064 on 16 kHz AAC.
-        presentationAnchorUs =
-            sourceFrameUs > fallbackDurationUs ? sourceFrameUs - fallbackDurationUs : 0;
-      }
-    }
-    
-    if (sourceFrameUs >= presentationAnchorUs) {
-      normalizedUs = sourceFrameUs - presentationAnchorUs;
-    } else {
-      // Source timestamp went backwards relative to anchor - use last + duration
-      normalizedUs = lastPresentationFrameUs != 0 
-          ? lastPresentationFrameUs + fallbackDurationUs 
-          : 0;
-      LOG_WARN("Source timestamp " << sourceFrameUs << " < anchor " << presentationAnchorUs 
-               << ", forcing forward to " << normalizedUs);
-    }
-  } else {
-    // Zero source timestamp - synthesize from last presentation time
-    normalizedUs = lastPresentationFrameUs != 0
-        ? lastPresentationFrameUs + fallbackDurationUs
-        : 0;
-  }
-
-  lastSourceFrameUs = sourceFrameUs;
-  lastPresentationFrameUs = normalizedUs;
-  return normalizedUs;
-}
-
-template <typename FrameType, typename Stream>
 void IMPDeviceSource<FrameType, Stream>::deliverFrame0(void *clientData) {
   ((IMPDeviceSource<FrameType, Stream> *)clientData)->deliverFrame();
 }
@@ -171,39 +122,41 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       fFrameSize = nal.data.size();
     }
 
-    // Calculate source timestamp and duration
+    // Timestamps are already normalized by VideoWorker/AudioWorker
+    // Just use them directly (like Prudynt-SE does)
+    fPresentationTime = nal.time;
+    
+    // Calculate duration from timestamp delta or use defaults
     uint64_t source_frame_us = static_cast<uint64_t>(nal.time.tv_sec) * 1000000ULL +
                                static_cast<uint64_t>(nal.time.tv_usec);
+    
     uint64_t duration_us = 0;
-
     if (lastSourceFrameUs != 0 && source_frame_us > lastSourceFrameUs) {
       duration_us = source_frame_us - lastSourceFrameUs;
     } else if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
       const int fps = (stream && stream->stream && stream->stream->fps > 0)
           ? stream->stream->fps : 25;
       duration_us = 1000000ULL / static_cast<uint64_t>(fps);
-    } else if constexpr (std::is_same_v<FrameType, AudioFrame>) {
+    } else {
       // AAC: 1024 samples at 16kHz = 64ms
       auto *imp_audio = global_audio[encChn]->imp_audio;
       int sampleRate = imp_audio ? imp_audio->sample_rate : 16000;
       if (sampleRate <= 0) sampleRate = 16000;
       duration_us = (1024ULL * 1000000ULL) / static_cast<uint64_t>(sampleRate);
     }
-
-    // Normalize presentation time with anchoring
-    const uint64_t presentation_us = normalizePresentationTimeUs(source_frame_us, duration_us);
-    fPresentationTime = us_to_tv(presentation_us);
+    
     fDurationInMicroseconds = duration_us;
+    lastSourceFrameUs = source_frame_us;
 
-    // Debug: Log first few timestamps to verify normalization
+    // Debug: Log first few timestamps
     static int log_count = 0;
     if (log_count < 5) {
       if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        LOG_DEBUG("Video: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
-                  << " presentation=" << presentation_us << " duration=" << duration_us);
+        LOG_DEBUG("Video PTS: " << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec 
+                  << " duration=" << duration_us << "us");
       } else {
-        LOG_DEBUG("Audio: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
-                  << " presentation=" << presentation_us << " duration=" << duration_us);
+        LOG_DEBUG("Audio PTS: " << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec 
+                  << " duration=" << duration_us << "us");
       }
       log_count++;
     }

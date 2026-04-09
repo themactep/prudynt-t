@@ -242,6 +242,11 @@ struct audio_stream {
 
   StreamReplicator *streamReplicator = nullptr;
   std::atomic<int> rtsp_client_count{0};
+  
+  // Timestamp normalization tracking (from Prudynt-SE)
+  std::atomic<uint64_t> last_timestamp_us{0};
+  std::atomic<uint64_t> timestamp_origin_raw{0};
+  std::atomic<uint64_t> presentation_origin_us{0};
 
   audio_stream(int devId, int aiChn, int aeChn)
       : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
@@ -263,6 +268,12 @@ struct video_stream {
   IMPFramesource *imp_framesource;
   // StreamCore replaces msgChannel + video_taps mechanism
   std::unique_ptr<StreamCore<H264NALUnit>> videoCore;
+  
+  // Timestamp normalization tracking (from Prudynt-SE)
+  std::atomic<uint64_t> timestamp_origin_raw{0};
+  std::atomic<uint64_t> last_frame_timestamp_raw{0};
+  std::atomic<uint64_t> last_timestamp_us{0};
+  std::atomic<uint64_t> presentation_origin_us{0};
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg;                 // see comment in audio_stream
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
