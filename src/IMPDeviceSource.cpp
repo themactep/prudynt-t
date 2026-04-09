@@ -49,14 +49,15 @@ IMPDeviceSource<FrameType, Stream>::IMPDeviceSource(UsageEnvironment &env, int e
     cursor = stream->videoCore->registerSubscriber(
         [this]() { this->on_data_available(); },
         StreamStartPolicy::LatestSync);
+    stream->hasDataCallback.store(stream->videoCore->subscriberCount() > 0, std::memory_order_relaxed);
   } else {
     cursor = stream->audioCore->registerSubscriber(
         [this]() { this->on_data_available(); },
         StreamStartPolicy::LiveEdge);
+    stream->hasDataCallback.store(stream->audioCore->subscriberCount() > 0, std::memory_order_relaxed);
   }
   
   stream->onDataCallback = [this]() { this->on_data_available(); };
-  stream->hasDataCallback = true;
 
   eventTriggerId = envir().taskScheduler().createEventTrigger(deliverFrame0);
   stream->should_grab_frames.notify_one();
@@ -73,12 +74,13 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
   // Unregister cursor from StreamCore
   if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
     stream->videoCore->unregisterSubscriber(cursor);
+    stream->hasDataCallback.store(stream->videoCore->subscriberCount() > 0, std::memory_order_relaxed);
   } else {
     stream->audioCore->unregisterSubscriber(cursor);
+    stream->hasDataCallback.store(stream->audioCore->subscriberCount() > 0, std::memory_order_relaxed);
   }
   
   envir().taskScheduler().deleteEventTrigger(eventTriggerId);
-  stream->hasDataCallback = false;
   stream->onDataCallback = nullptr;
   LOG_DEBUG("IMPDeviceSource " << name << " deinit complete, encoder channel:" << encChn);
 }
@@ -166,55 +168,50 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     uint64_t source_frame_us = static_cast<uint64_t>(nal.time.tv_sec) * 1000000ULL +
                                static_cast<uint64_t>(nal.time.tv_usec);
     
-    uint64_t duration_us = 0;
-    if (lastSourceFrameUs != 0 && source_frame_us > lastSourceFrameUs) {
-      duration_us = source_frame_us - lastSourceFrameUs;
-    } else if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+    uint64_t duration_hint_us = 0;
+    if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
       const int fps = (stream && stream->stream && stream->stream->fps > 0)
           ? stream->stream->fps : 25;
-      duration_us = 1000000ULL / static_cast<uint64_t>(fps);
+      duration_hint_us = 1000000ULL / static_cast<uint64_t>(fps);
     } else {
-      // AAC: 1024 samples at 16kHz = 64ms
-      auto *imp_audio = global_audio[encChn]->imp_audio;
-      int sampleRate = imp_audio ? imp_audio->sample_rate : 16000;
-      if (sampleRate <= 0) sampleRate = 16000;
-      duration_us = (1024ULL * 1000000ULL) / static_cast<uint64_t>(sampleRate);
+      duration_hint_us = nal.duration_us;
+      if (duration_hint_us == 0) {
+        // AAC: 1024 samples at 16kHz = 64ms
+        auto *imp_audio = global_audio[encChn]->imp_audio;
+        int sampleRate = imp_audio ? imp_audio->sample_rate : 16000;
+        if (sampleRate <= 0) sampleRate = 16000;
+        duration_hint_us = (1024ULL * 1000000ULL) / static_cast<uint64_t>(sampleRate);
+      }
+    }
+
+    uint64_t duration_us = duration_hint_us > 0 ? duration_hint_us : 1;
+    if (lastSourceFrameUs != 0) {
+      if constexpr (std::is_same_v<FrameType, AudioFrame>) {
+        if (duration_hint_us > 0) {
+          if (source_frame_us > lastSourceFrameUs) {
+            const uint64_t raw_delta = source_frame_us - lastSourceFrameUs;
+            if (raw_delta > duration_hint_us * 2) {
+              static unsigned audio_jump_logs = 0;
+              if (audio_jump_logs < 16) {
+                LOG_DEBUG("IMPDeviceSource audio timestamp jump: source_delta_us=" << raw_delta
+                          << " expected_us=" << duration_hint_us << " (using expected cadence)");
+                ++audio_jump_logs;
+              }
+            }
+          }
+          // Keep audio cadence stable per RTP packet duration, even if source
+          // timestamps jump due queue skips or producer resets.
+          source_frame_us = lastSourceFrameUs + duration_hint_us;
+          duration_us = duration_hint_us;
+        }
+      } else if (source_frame_us > lastSourceFrameUs) {
+        duration_us = source_frame_us - lastSourceFrameUs;
+      }
     }
     
     const uint64_t presentation_us = normalizePresentationTimeUs(source_frame_us, duration_us);
     fPresentationTime = us_to_tv(presentation_us);
     fDurationInMicroseconds = duration_us;
-
-    // Debug: Log first few timestamps AND log any huge jumps
-    static int log_count = 0;
-    static uint64_t last_logged_source = 0;
-    bool should_log = (log_count < 10);  // Log first 10 frames
-    
-    // Also log if there's a huge jump (> 1 second) indicating a problem
-    if (last_logged_source > 0 && source_frame_us > last_logged_source) {
-      uint64_t delta = source_frame_us - last_logged_source;
-      if (delta > 1000000ULL) {  // More than 1 second jump
-        should_log = true;
-        if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-          LOG_WARN("Video HUGE JUMP: delta=" << delta << "us source=" << source_frame_us 
-                   << " nal.time.tv_sec=" << nal.time.tv_sec << " nal.time.tv_usec=" << nal.time.tv_usec);
-        }
-      }
-    }
-    
-    if (should_log) {
-      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        LOG_DEBUG("Video[" << log_count << "]: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
-                  << " presentation=" << presentation_us << " duration=" << duration_us
-                  << " fPresentationTime=" << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec);
-      } else {
-        LOG_DEBUG("Audio[" << log_count << "]: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
-                  << " presentation=" << presentation_us << " duration=" << duration_us
-                  << " fPresentationTime=" << fPresentationTime.tv_sec << "." << fPresentationTime.tv_usec);
-      }
-      log_count++;
-    }
-    last_logged_source = source_frame_us;
 
     memcpy(fTo, &nal.data[0], fFrameSize);
 

@@ -152,6 +152,7 @@ void VideoWorker::run() {
   int64_t ts_last_rtp_us = 0;
   int64_t ts_current_frame_us = 0;
   bool ts_have_current_frame = false;
+  bool had_video_clients = false;
 
   auto reset_mp4_sample = [&]() {
     mp4_sample.clear();
@@ -332,6 +333,25 @@ void VideoWorker::run() {
       }
     }
     run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
+    bool video_clients_active = global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+    if (video_clients_active && !had_video_clients) {
+      IMP_Encoder_RequestIDR(encChn);
+      int flush_ret = IMP_Encoder_FlushStream(encChn);
+      if (flush_ret != 0) {
+        LOG_WARN("VideoWorker: IMP_Encoder_FlushStream(" << encChn
+                 << ") failed during subscriber startup");
+      }
+      global_video[encChn]->last_timestamp_us.store(0, std::memory_order_relaxed);
+      global_video[encChn]->timestamp_origin_raw.store(0, std::memory_order_relaxed);
+      global_video[encChn]->last_frame_timestamp_raw.store(0, std::memory_order_relaxed);
+      global_video[encChn]->presentation_origin_us.store(0, std::memory_order_relaxed);
+      ts_last_nonzero_us = 0;
+      ts_last_frame_us = 0;
+      ts_last_rtp_us = 0;
+      ts_current_frame_us = 0;
+      ts_have_current_frame = false;
+    }
+    had_video_clients = video_clients_active;
 
     /* now we need to verify that
      * 1. a client is connected (hasDataCallback)
@@ -344,7 +364,7 @@ void VideoWorker::run() {
 #else
     bool prebuffer_active = false;
 #endif
-    if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active || prebuffer_active) {
+    if (video_clients_active || run_for_jpeg || global_force_video_active || prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
@@ -627,16 +647,6 @@ void VideoWorker::run() {
             nalu.imp_ts = rtsp_ts_us;
             // Use frame_timestamp_to_timeval for proper normalization
             nalu.time = frame_timestamp_to_timeval(*global_video[encChn], rtsp_ts_us);
-            
-            // Log raw vs normalized timestamps for debugging
-            static int logged_frames = 0;
-            if (logged_frames < 100 || (logged_frames % 100 == 0)) {
-              LOG_DEBUG("VideoWorker: frame=" << logged_frames 
-                        << " raw=" << rtsp_ts_us 
-                        << " norm=" << (nalu.time.tv_sec * 1000000ULL + nalu.time.tv_usec)
-                        << " nal_type=" << static_cast<int>(h264_nal));
-            }
-            logged_frames++;
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
@@ -741,7 +751,7 @@ void VideoWorker::run() {
 
         IMP_Encoder_ReleaseStream(encChn, &stream);
 
-        ms = WorkerUtils::tDiffInMs(&global_video[encChn]->stream->stats.ts);
+        ms = WorkerUtils::getMonotonicTimeDiffInMs(&global_video[encChn]->stream->stats.ts);
         if (ms > 1000) {
           /* currently we write into osd and stream stats,
            * osd will be removed and redesigned in future
@@ -753,7 +763,7 @@ void VideoWorker::run() {
 
           fps = 0;
           bps = 0;
-          gettimeofday(&global_video[encChn]->stream->stats.ts, NULL);
+          WorkerUtils::getMonotonicTimeOfDay(&global_video[encChn]->stream->stats.ts);
           global_video[encChn]->stream->osd.stats.ts = global_video[encChn]->stream->stats.ts;
           /*
           IMPEncoderCHNStat encChnStats;

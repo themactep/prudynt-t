@@ -68,6 +68,7 @@ extern std::mutex mutex_main; // protects global_restart_rtsp and global_restart
 struct AudioFrame {
   std::vector<uint8_t> data;
   struct timeval time;
+  uint64_t duration_us{0};
 };
 
 struct H264NALUnit {

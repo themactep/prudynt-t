@@ -14,7 +14,7 @@ IMPAudioServerMediaSubsession *IMPAudioServerMediaSubsession::createNew(UsageEnv
 }
 
 IMPAudioServerMediaSubsession::IMPAudioServerMediaSubsession(UsageEnvironment &env, int audioChn)
-    : OnDemandServerMediaSubsession(env, true), audioChn(audioChn) {
+    : OnDemandServerMediaSubsession(env, false), audioChn(audioChn) {
   LOG_INFO("IMPAudioServerMediaSubsession init");
 }
 
@@ -95,14 +95,24 @@ RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock
 #endif
 #if defined(USE_AAC) && USE_AAC
   case IMPAudioFormat::AAC:
-    return AACSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
-                              /* numChannels */ outChnCnt);
+  {
+    RTPSink *sink = AACSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
+                                       /* numChannels */ outChnCnt);
+    if (sink != nullptr) {
+      sink->enableRTCPReports() = False;
+    }
+    return sink;
+  }
 #endif
   }
 
   LOG_DEBUG("createNewRTPSink: " << rtpPayloadFormatName << ", " << rtpTimestampFrequency);
 
-  return SimpleRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
-                                  /* sdpMediaTypeString*/ "audio", rtpPayloadFormatName,
-                                  /* numChannels */ outChnCnt, allowMultipleFramesPerPacket);
+  RTPSink *sink = SimpleRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
+                                           /* sdpMediaTypeString*/ "audio", rtpPayloadFormatName,
+                                           /* numChannels */ outChnCnt, allowMultipleFramesPerPacket);
+  if (sink != nullptr) {
+    sink->enableRTCPReports() = False;
+  }
+  return sink;
 }

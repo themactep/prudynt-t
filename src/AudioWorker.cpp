@@ -208,6 +208,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   uint64_t frame_duration_us = frame_samples > 0 
       ? (frame_samples * 1000000ULL) / sampleRate 
       : 64000ULL; // Default ~64ms for AAC
+  af.duration_us = frame_duration_us;
   
   // Normalize audio timestamp (similar to Prudynt-SE)
   uint64_t presentation_origin_us =
@@ -412,9 +413,28 @@ void AudioWorker::run() {
     LOG_DEBUG("Direct encode buffer allocated (8192 bytes) for channel " << encChn);
   }
 
+  auto reset_timeline_state = [&]() {
+    global_audio[encChn]->last_timestamp_us.store(0, std::memory_order_relaxed);
+    global_audio[encChn]->timestamp_origin_raw.store(0, std::memory_order_relaxed);
+    global_audio[encChn]->presentation_origin_us.store(0, std::memory_order_relaxed);
+
+    if (global_audio[encChn]->imp_audio &&
+        global_audio[encChn]->imp_audio->format == IMPAudioFormat::AAC) {
+      reframer = std::make_unique<AudioReframer>(global_audio[encChn]->imp_audio->sample_rate,
+                                                 /* inputSamplesPerFrame */
+                                                 global_audio[encChn]->imp_audio->sample_rate * 0.040,
+                                                 /* outputSamplesPerFrame */ 1024);
+    }
+  };
+  bool had_audio_clients = false;
+
   while (global_audio[encChn]->running) {
     bool recorder_needs_audio = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
-    bool audio_clients_active = global_audio[encChn]->hasDataCallback;
+    bool audio_clients_active = global_audio[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+    if (audio_clients_active && !had_audio_clients) {
+      reset_timeline_state();
+    }
+    had_audio_clients = audio_clients_active;
     bool tap_requests_audio = tap && tap->wantsCapture();
     bool should_capture_audio = cfg->audio.input_enabled &&
                                 (audio_clients_active || recorder_needs_audio || tap_requests_audio);
@@ -467,8 +487,9 @@ void AudioWorker::run() {
        */
       while (!global_restart_audio) {
         bool recorder_needed_now = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
-        bool audio_clients_active_now = global_audio[encChn]->hasDataCallback;
-        bool video_clients_active_now = global_video[0]->hasDataCallback || global_video[1]->hasDataCallback ||
+        bool audio_clients_active_now = global_audio[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+        bool video_clients_active_now = global_video[0]->hasDataCallback.load(std::memory_order_relaxed) ||
+                                        global_video[1]->hasDataCallback.load(std::memory_order_relaxed) ||
                                         global_force_video_active.load(std::memory_order_relaxed) ||
                                         recorder_needed_now;
         // Resume if audio clients are active (audio-only streams like /mic)

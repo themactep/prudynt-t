@@ -2,6 +2,7 @@
 #include "BackchannelServerMediaSubsession.hpp"
 #include "H264TimingPatch.hpp"
 #include "IMPBackchannel.hpp"
+#include <stdlib.h>
 
 #undef MODULE
 #define MODULE "RTSP"
@@ -147,6 +148,11 @@ void RTSP::start() {
     return;
   }
   OutPacketBuffer::maxSize = cfg->rtsp.out_buffer_size;
+
+  // Let each RTP sink keep its own timestamp base. Sharing one numeric base
+  // across different RTP clock domains (for example 90 kHz video and 16 kHz audio)
+  // is not required for A/V sync and can confuse downstream demuxers.
+  unsetenv("PRUDYNT_SHARED_TIMESTAMP_BASE");
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
   if (cfg->audio.input_enabled) {

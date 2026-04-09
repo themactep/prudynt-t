@@ -216,9 +216,56 @@ sample rate (audio). Net +26 lines.
 
 ---
 
+## Phase 4.6: RTCP Timestamp Discontinuity Guard ✅ Done
+
+**Problem:** Some clients (mpv/ffmpeg) intermittently reported large DTS jumps
+mid-stream (e.g. `... packet N with DTS X, packet N+1 with DTS Y`) after RTSP
+startup, even when frame delivery was otherwise stable.
+
+**Root Cause:** Unlike Prudynt-SE, prudynt-t was leaving RTCP sender reports
+enabled on video/audio RTP sinks. Certain client demuxers could re-anchor packet
+timing when SR data arrived, producing discontinuity warnings and playback
+instability.
+
+**Fix:** Match Prudynt-SE behavior by disabling RTCP reports on RTP sinks:
+- Video: H264/H265 sinks in `IMPServerMediaSubsession::createNewRTPSink()`
+- Audio: AAC + generic audio sinks in `IMPAudioServerMediaSubsession::createNewRTPSink()`
+
+**Files changed:**
+- `src/IMPServerMediaSubsession.cpp`
+- `src/IMPAudioServerMediaSubsession.cpp`
+
+---
+
+## Phase 4.7: Subscriber Timeline Reset + Audio Gap Clamp ✅ Done
+
+**Problem:** Intermittent client runs still showed invalid A/V PTS after reconnects
+or startup races, especially when source queues dropped old audio frames and the
+next delivered timestamp jumped far ahead.
+
+**Fixes:**
+1. Reset timestamp normalization state when the first RTSP subscriber appears
+   (audio and video workers), matching the SE pattern of re-anchoring timelines
+   at subscriber transitions.
+2. Add `duration_us` to `AudioFrame` and propagate it from `AudioWorker`.
+3. In `IMPDeviceSource`, use subscriber-count-based `hasDataCallback` updates and
+   clamp only large audio source timestamp deltas to the expected frame duration
+   before presentation-time normalization.
+4. Remove high-frequency timestamp debug logging in the hot path.
+
+**Files changed:**
+- `src/globals.hpp`
+- `src/AudioWorker.hpp`
+- `src/AudioWorker.cpp`
+- `src/VideoWorker.cpp`
+- `src/IMPDeviceSource.cpp`
+
+---
+
 ## Current Status
 
-**Completed:** All 4 phases plus runtime fixes (3.5) and critical timestamp fixes (4.5)
+**Completed:** All 4 phases plus runtime fixes (3.5), critical timestamp fixes (4.5),
+RTCP discontinuity guard (4.6), and subscriber/timeline hardening (4.7)
 are implemented and building successfully. The binary starts cleanly, runs without
 crashes, and exits quickly.
 

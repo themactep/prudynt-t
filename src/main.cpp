@@ -20,6 +20,7 @@
 #include "WS.hpp"
 #endif
 #include "WorkerUtils.hpp"
+#include "TimestampManager.hpp"
 #include "globals.hpp"
 #include "HTTPMJPEG.hpp"
 #include "IPCServer.hpp"
@@ -488,6 +489,12 @@ int main(int argc, const char *argv[]) {
 
   if (!imp_system) {
     imp_system = IMPSystem::createNew();
+  }
+
+  // Initialize the global timestamp manager after IMP system is ready
+  if (TimestampManager::getInstance().initialize() != 0) {
+      LOG_ERROR("Failed to initialize TimestampManager");
+      return 1;
   }
 
   bool mic_is_digital = cfg && cfg->audio.mic_is_digital;

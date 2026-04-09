@@ -22,7 +22,7 @@ IMPServerMediaSubsession *IMPServerMediaSubsession::createNew(UsageEnvironment &
 IMPServerMediaSubsession::IMPServerMediaSubsession(UsageEnvironment &env,
                                                    H264NALUnit *vps, // Change to pointer to make optional
                                                    H264NALUnit sps, H264NALUnit pps, int encChn)
-    : OnDemandServerMediaSubsession(env, true), vps(vps ? new H264NALUnit(*vps) : nullptr), // Copy if not nullptr
+    : OnDemandServerMediaSubsession(env, false), vps(vps ? new H264NALUnit(*vps) : nullptr), // Copy if not nullptr
       sps(sps), pps(pps), encChn(encChn) {
   LOG_DEBUG("IMPServerMediaSubsession ctor: ch=" << encChn
             << " sps.size=" << this->sps.data.size()
@@ -87,6 +87,9 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, uns
     RTPSink *sink = H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &vps->data[0],
                                                 vps->data.size(), // Now using pointer, check and dereference
                                                 &sps.data[0], sps.data.size(), &pps.data[0], pps.data.size());
+    if (sink != nullptr) {
+      sink->enableRTCPReports() = False;
+    }
     LOG_DEBUG("createNewRTPSink: created H265 sink_addr=" << reinterpret_cast<uintptr_t>(sink)
               << " for ch=" << encChn);
     return sink;
@@ -94,6 +97,9 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, uns
     // For H264 or other formats, VPS is not used
     RTPSink *sink = H264VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &sps.data[0],
                                                 sps.data.size(), &pps.data[0], pps.data.size());
+    if (sink != nullptr) {
+      sink->enableRTCPReports() = False;
+    }
     LOG_DEBUG("createNewRTPSink: created H264 sink_addr=" << reinterpret_cast<uintptr_t>(sink)
               << " for ch=" << encChn);
     return sink;

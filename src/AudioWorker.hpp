@@ -28,8 +28,6 @@ private:
   int mp4_audio_sample_rate = 0;
   std::unique_ptr<AudioTap> tap;
   std::vector<uint8_t> directEncBuf;
-
-  // No timestamp state needed — we use CLOCK_MONOTONIC directly per frame.
 };
 
 #endif // AUDIO_WORKER_HPP
