@@ -175,40 +175,50 @@ dedicated branch and integration tests before merging.
 
 ---
 
-## Phase 4.5: Critical Timestamp Fix ✅ Done
+## Phase 4.5: Critical Timestamp Fixes ✅ Done
 
-**Problem:** Hardware validation revealed that RTSP clients (mpv, ffprobe) were showing
+**Problem 1:** Hardware validation revealed that RTSP clients (mpv, ffprobe) were showing
 timestamp errors:
 - "No video PTS! Making something up. Using 30.000000 FPS"  
 - "Invalid audio PTS: X -> Y"
 - "Audio/Video desynchronisation detected!"
+- "Could not find codec parameters for stream 0 (Video: h264, none): unspecified size"
 
-Root cause: `IMPDeviceSource::deliverFrame()` was calling `gettimeofday()` for every
+**Root Cause 1:** `IMPDeviceSource::deliverFrame()` was calling `gettimeofday()` for every
 frame instead of using the hardware timestamps from `TimestampManager` that were
 already captured in `nal.time` by `VideoWorker`/`AudioWorker`. This defeated the
 entire purpose of Phase 1.
 
-**Fix:** Use the pre-captured hardware timestamps from `TimestampManager`:
+**Fix 1:** Use the pre-captured hardware timestamps from `TimestampManager` directly.
 
-```cpp
-// Before (broken):
-gettimeofday(&fPresentationTime, NULL);  // Wrong - network/scheduling jitter
+**Problem 2:** Even after using hardware timestamps, RTSP still showed "No video PTS!" errors.
 
-// After (correct):  
-fPresentationTime = nal.time;  // Use hardware timestamp from encoder
-```
+**Root Cause 2:** Missing presentation time normalization. RTSP/RTP requires presentation
+times to start near zero and progress monotonically, but we were sending raw wallclock
+timestamps without normalization or anchoring.
+
+**Fix 2:** Ported Prudynt-SE's presentation time normalization algorithm:
+1. Establish anchor point on first frame: `anchor = source_timestamp - frame_duration`
+2. Normalize all frames relative to anchor: `presentation = source - anchor`
+3. Calculate and set `fDurationInMicroseconds` for proper RTP timing
+4. Handle backwards jumps and zero timestamps gracefully
+
+This ensures streams start at PTS=0 and progress smoothly, which RTSP/RTP demuxers require.
 
 **Files changed:**
-- `src/IMPDeviceSource.cpp` — simplified from 60 to 40 lines, use `nal.time` directly
+- `src/IMPDeviceSource.hpp` — added normalization state and method declaration
+- `src/IMPDeviceSource.cpp` — implemented `normalizePresentationTimeUs()` and updated
+  `deliverFrame()` to calculate duration and normalize timestamps
 
-**Result:** RTSP timestamps now properly reflect hardware capture time instead of
-varying based on network/scheduling delays. Net -19 lines of code.
+**Result:** RTSP streams now have proper presentation times starting at zero with
+monotonic progression. Frame durations are calculated based on FPS (video) or
+sample rate (audio). Net +26 lines.
 
 ---
 
 ## Current Status
 
-**Completed:** All 4 phases plus runtime fixes (3.5) and critical timestamp fix (4.5)
+**Completed:** All 4 phases plus runtime fixes (3.5) and critical timestamp fixes (4.5)
 are implemented and building successfully. The binary starts cleanly, runs without
 crashes, and exits quickly.
 
@@ -216,7 +226,7 @@ crashes, and exits quickly.
 
 1. **Hardware Validation** — Run the validation checklist below on target hardware
    to confirm all phases are working correctly in production. The critical timestamp
-   fix (Phase 4.5) should eliminate RTSP timestamp errors. Monitor for:
+   fixes (Phase 4.5) should eliminate all RTSP timestamp errors. Monitor for:
    - Clean startup/shutdown without crashes
    - Correct timestamps in RTSP streams (no negative DTS/PTS, no "making something up")
    - Stable multi-client RTSP connections with no frame drops
