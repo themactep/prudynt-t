@@ -129,8 +129,8 @@ uint64_t IMPDeviceSource<FrameType, Stream>::normalizePresentationTimeUs(uint64_
       normalizedUs = lastPresentationFrameUs != 0 
           ? lastPresentationFrameUs + fallbackDurationUs 
           : 0;
-      LOG_WARN("Source timestamp %" PRIu64 " < anchor %" PRIu64 ", forcing forward to %" PRIu64,
-               sourceFrameUs, presentationAnchorUs, normalizedUs);
+      LOG_WARN("Source timestamp " << sourceFrameUs << " < anchor " << presentationAnchorUs 
+               << ", forcing forward to " << normalizedUs);
     }
   } else {
     // Zero source timestamp - synthesize from last presentation time
@@ -199,11 +199,11 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     static int log_count = 0;
     if (log_count < 5) {
       if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-        LOG_DEBUG("Video: source=%" PRIu64 " anchor=%" PRIu64 " presentation=%" PRIu64 " duration=%" PRIu64,
-                  source_frame_us, presentationAnchorUs, presentation_us, duration_us);
+        LOG_DEBUG("Video: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
+                  << " presentation=" << presentation_us << " duration=" << duration_us);
       } else {
-        LOG_DEBUG("Audio: source=%" PRIu64 " anchor=%" PRIu64 " presentation=%" PRIu64 " duration=%" PRIu64,
-                  source_frame_us, presentationAnchorUs, presentation_us, duration_us);
+        LOG_DEBUG("Audio: source=" << source_frame_us << " anchor=" << presentationAnchorUs 
+                  << " presentation=" << presentation_us << " duration=" << duration_us);
       }
       log_count++;
     }
