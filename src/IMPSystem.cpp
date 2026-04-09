@@ -1,5 +1,6 @@
 #include "IMPSystem.hpp"
 #include "Config.hpp"
+#include "TimestampManager.hpp"
 #include "imp_hal.hpp"
 #include <algorithm>
 #include <fstream>
@@ -260,6 +261,8 @@ int IMPSystem::init() {
   /* system */
   ret = IMP_System_Init();
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_System_Init()");
+
+  TimestampManager::getInstance().initialize();
 
   ret = IMP_ISP_EnableTuning();
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_EnableTuning()");

@@ -9,6 +9,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "PreTriggerBuffer.hpp"
+#include "TimestampManager.hpp"
 #include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
@@ -459,21 +460,28 @@ void VideoWorker::run() {
           }
 
           if (nal_is_vps || nal_is_sps || nal_is_pps) {
-            std::lock_guard<std::mutex> lock(global_video[encChn]->codec_config_mutex);
-            if (nal_is_vps) {
-              global_video[encChn]->latest_vps.assign(start + 4, end);
-              global_video[encChn]->have_vps = true;
-            } else if (nal_is_sps) {
-              global_video[encChn]->latest_sps.assign(start + 4, end);
-              global_video[encChn]->have_sps = true;
-            } else {
-              global_video[encChn]->latest_pps.assign(start + 4, end);
-              global_video[encChn]->have_pps = true;
+            {
+              std::lock_guard<std::mutex> lock(global_video[encChn]->parameterCache.mutex);
+              if (nal_is_vps) {
+                global_video[encChn]->parameterCache.vps.data.assign(start + 4, end);
+                global_video[encChn]->parameterCache.have_vps = true;
+              } else if (nal_is_sps) {
+                global_video[encChn]->parameterCache.sps.data.assign(start + 4, end);
+                global_video[encChn]->parameterCache.have_sps = true;
+              } else {
+                global_video[encChn]->parameterCache.pps.data.assign(start + 4, end);
+                global_video[encChn]->parameterCache.have_pps = true;
+              }
             }
+            global_video[encChn]->parameterCache.cv.notify_all();
           }
 
           if ((nal_is_idr || nal_is_hevc_idr) && video_state) {
             video_state->mp4_last_idr_ts_us.store(pack_ts_us, std::memory_order_relaxed);
+            {
+              std::lock_guard<std::mutex> lock(global_video[encChn]->parameterCache.mutex);
+              global_video[encChn]->parameterCache.last_idr_us = static_cast<uint64_t>(pack_ts_us);
+            }
           }
 
           if (recorder_accepts_samples && payload_len > 0 && !(nal_is_vps || nal_is_sps || nal_is_pps)) {
@@ -510,10 +518,10 @@ void VideoWorker::run() {
               std::vector<uint8_t> sps_copy;
               std::vector<uint8_t> pps_copy;
               {
-                std::lock_guard<std::mutex> lock(video_state->codec_config_mutex);
-                vps_copy = video_state->latest_vps;
-                sps_copy = video_state->latest_sps;
-                pps_copy = video_state->latest_pps;
+                std::lock_guard<std::mutex> lock(video_state->parameterCache.mutex);
+                vps_copy = video_state->parameterCache.vps.data;
+                sps_copy = video_state->parameterCache.sps.data;
+                pps_copy = video_state->parameterCache.pps.data;
               }
               // For H.265, prepend VPS before SPS
               if (!vps_copy.empty()) {
@@ -541,7 +549,7 @@ void VideoWorker::run() {
             H264NALUnit nalu;
 
             nalu.imp_ts = rtsp_ts_us;
-            gettimeofday(&nalu.time, nullptr);
+            TimestampManager::getInstance().getTimestamp(&nalu.time);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.

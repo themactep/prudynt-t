@@ -79,22 +79,23 @@ char const *IMPServerMediaSubsession::sdpLines(int addressFamily) {
   // If so, update our copies and invalidate cached SDP so live555 regenerates it.
   // This enables dynamic resolution/profile changes without RTSP server restart.
   if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS && global_video[encChn]) {
-    std::lock_guard<std::mutex> lock(global_video[encChn]->codec_config_mutex);
+    std::lock_guard<std::mutex> lock(global_video[encChn]->parameterCache.mutex);
+    const auto &cache = global_video[encChn]->parameterCache;
     bool changed = false;
 
-    if (global_video[encChn]->have_sps && global_video[encChn]->latest_sps != lastKnownSps) {
-      sps.data = global_video[encChn]->latest_sps;
-      lastKnownSps = global_video[encChn]->latest_sps;
+    if (cache.have_sps && cache.sps.data != lastKnownSps) {
+      sps.data = cache.sps.data;
+      lastKnownSps = cache.sps.data;
       changed = true;
     }
-    if (global_video[encChn]->have_pps && global_video[encChn]->latest_pps != lastKnownPps) {
-      pps.data = global_video[encChn]->latest_pps;
-      lastKnownPps = global_video[encChn]->latest_pps;
+    if (cache.have_pps && cache.pps.data != lastKnownPps) {
+      pps.data = cache.pps.data;
+      lastKnownPps = cache.pps.data;
       changed = true;
     }
-    if (vps && global_video[encChn]->have_vps && global_video[encChn]->latest_vps != lastKnownVps) {
-      vps->data = global_video[encChn]->latest_vps;
-      lastKnownVps = global_video[encChn]->latest_vps;
+    if (vps && cache.have_vps && cache.vps.data != lastKnownVps) {
+      vps->data = cache.vps.data;
+      lastKnownVps = cache.vps.data;
       changed = true;
     }
 

@@ -93,6 +93,30 @@ struct BackchannelFrame {
 
 class VideoPrivacyMask;
 
+/**
+ * video_parameter_cache — ported from Prudynt-SE.
+ *
+ * A single mutex-protected struct that holds the most recent SPS/PPS/VPS NAL
+ * units plus IDR timing metadata.  VideoWorker writes here whenever it sees
+ * a new parameter-set NAL; RTSP::addSubsession() waits on the condition
+ * variable instead of consuming live frames from msgChannel on startup.
+ */
+struct video_parameter_cache {
+  std::mutex mutex;
+  std::condition_variable cv;
+  H264NALUnit sps;
+  H264NALUnit pps;
+  H264NALUnit vps;
+  H264NALUnit latest_sync; // most recent IDR/keyframe NAL unit
+  bool have_sps{false};
+  bool have_pps{false};
+  bool have_vps{false};
+  bool have_latest_sync{false};
+  uint64_t last_idr_us{0}; // hardware timestamp (IMP µs) of last IDR
+  uint8_t profile_idc{0};
+  uint8_t level_idc{0};
+};
+
 struct VideoTapEntry {
   uint64_t id{0};
   std::weak_ptr<MsgChannel<H264NALUnit>> queue;
@@ -224,13 +248,7 @@ struct video_stream {
   std::mutex onDataCallbackLock;     // protects onDataCallback from deallocation
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
-  std::mutex codec_config_mutex;
-  std::vector<uint8_t> latest_vps;
-  std::vector<uint8_t> latest_sps;
-  std::vector<uint8_t> latest_pps;
-  bool have_vps;
-  bool have_sps;
-  bool have_pps;
+  video_parameter_cache parameterCache;
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
   std::mutex privacy_mutex;
@@ -247,7 +265,7 @@ struct video_stream {
         imp_framesource(nullptr), msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
         mp4_required_idr_ts_us{-1}, mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},
-        mp4_prebuffer_flushing{false}, have_vps(false), have_sps(false), have_pps(false) {
+        mp4_prebuffer_flushing{false} {
   }
 };
 

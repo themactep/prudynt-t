@@ -290,11 +290,12 @@ bool snapshot_codec_config(std::vector<uint8_t> &vps, std::vector<uint8_t> &sps,
     if (!vs) {
       return false;
     }
-    std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
-    if (vs->have_sps && vs->have_pps && !vs->latest_sps.empty() && !vs->latest_pps.empty()) {
-      vps = vs->latest_vps; // may be empty for H.264; that's fine
-      sps = vs->latest_sps;
-      pps = vs->latest_pps;
+    std::lock_guard<std::mutex> lock(vs->parameterCache.mutex);
+    const auto &cache = vs->parameterCache;
+    if (cache.have_sps && cache.have_pps && !cache.sps.data.empty() && !cache.pps.data.empty()) {
+      vps = cache.vps.data; // may be empty for H.264; that's fine
+      sps = cache.sps.data;
+      pps = cache.pps.data;
       return true;
     }
     return false;

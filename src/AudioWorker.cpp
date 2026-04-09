@@ -2,6 +2,7 @@
 
 #include "Config.hpp"
 #include "Logger.hpp"
+#include "TimestampManager.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
@@ -189,7 +190,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   // is always in the same clock domain as live555's internal timestamps.
   // NTP steps affect both equally, so RTP delta arithmetic stays consistent.
   AudioFrame af;
-  gettimeofday(&af.time, nullptr);
+  TimestampManager::getInstance().getTimestamp(&af.time);
 
   uint8_t *start = (uint8_t *)frame.virAddr;
   uint8_t *end = start + frame.len;

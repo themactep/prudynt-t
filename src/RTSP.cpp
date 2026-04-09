@@ -1,9 +1,49 @@
 #include "RTSP.hpp"
 #include "BackchannelServerMediaSubsession.hpp"
+#include "H264TimingPatch.hpp"
 #include "IMPBackchannel.hpp"
 
 #undef MODULE
 #define MODULE "RTSP"
+
+/**
+ * Wait for SPS/PPS (and VPS for H265) to be populated in the parameter cache
+ * by VideoWorker, then copy them out.  Returns true on success.
+ *
+ * This replaces the old approach of consuming frames from msgChannel which
+ * silently dropped live frames during RTSP client setup.
+ */
+static bool wait_for_parameter_sets(int chnNr, bool is_h265,
+                                    H264NALUnit &sps_out, H264NALUnit &pps_out,
+                                    H264NALUnit *&vps_out) {
+  using namespace std::chrono_literals;
+  auto *vs = global_video[chnNr].get();
+  std::unique_lock<std::mutex> lock(vs->parameterCache.mutex);
+
+  const auto ready = [&] {
+    if (!vs->parameterCache.have_sps || !vs->parameterCache.have_pps)
+      return false;
+    if (is_h265 && !vs->parameterCache.have_vps)
+      return false;
+    return true;
+  };
+
+  // Wait up to 10 s; VideoWorker normally delivers parameter sets within one
+  // GOP (< 2 s at 25 fps with keyint 50).
+  if (!vs->parameterCache.cv.wait_for(lock, 10s, ready)) {
+    LOG_ERROR("Timed out waiting for SPS/PPS for stream " << chnNr);
+    return false;
+  }
+
+  sps_out = vs->parameterCache.sps;
+  pps_out = vs->parameterCache.pps;
+  if (is_h265) {
+    if (!vps_out)
+      vps_out = new H264NALUnit;
+    *vps_out = vs->parameterCache.vps;
+  }
+  return true;
+}
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
   LOG_DEBUG("identify stream " << chnNr);
@@ -12,58 +52,36 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 
   // Add video subsession if enabled
   if (stream.video_enabled) {
-    auto deviceSource =
-        IMPDeviceSource<H264NALUnit, video_stream>::createNew(*env, chnNr, global_video[chnNr], "video/pps/sps/vps");
     H264NALUnit sps;
     H264NALUnit pps;
     H264NALUnit *vps = nullptr;
-    bool have_pps = false;
-    bool have_sps = false;
-    bool have_vps = false;
-    bool is_h265 = strcmp(stream.format, "H265") == 0 ? true : false;
-    // Read from the stream until we capture the SPS and PPS. Only capture VPS if
-    // needed.
-    while (!have_pps || !have_sps || (is_h265 && !have_vps)) {
-      H264NALUnit unit = global_video[chnNr]->msgChannel->wait_read();
-      if (is_h265) {
-        uint8_t nalType = (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
-        if (nalType == 33) {                          // SPS for H265
-          LOG_DEBUG("Got SPS (H265)");
-          sps = unit;
-          have_sps = true;
-        } else if (nalType == 34) { // PPS for H265
-          LOG_DEBUG("Got PPS (H265)");
-          pps = unit;
-          have_pps = true;
-        } else if (nalType == 32) { // VPS, only for H265
-          LOG_DEBUG("Got VPS");
-          if (!vps)
-            vps = new H264NALUnit(unit); // Allocate and store VPS
-          have_vps = true;
-        }
-      } else {                                   // Assuming H264 if not H265
-        uint8_t nalType = (unit.data[0] & 0x1F); // H264 NAL unit type extraction
-        if (nalType == 7) {                      // SPS for H264
-          LOG_DEBUG("Got SPS (H264)");
-          sps = unit;
-          have_sps = true;
-        } else if (nalType == 8) { // PPS for H264
-          LOG_DEBUG("Got PPS (H264)");
-          pps = unit;
-          have_pps = true;
-        }
-        // No VPS in H264, so no need to check for it
-      }
-    }
-    // deviceSource->deinit();
-    delete deviceSource;
-    LOG_DEBUG("Got necessary NAL Units.");
+    bool is_h265 = strcmp(stream.format, "H265") == 0;
 
-    IMPServerMediaSubsession *sub =
-        IMPServerMediaSubsession::createNew(*env, (is_h265 ? vps : nullptr), sps, pps, chnNr // Conditional VPS
-        );
-    sms->addSubsession(sub);
-    LOG_INFO("Video stream " << chnNr << " added to session");
+    // Wait for the parameter cache to be populated by VideoWorker.
+    // Unlike the old msgChannel->wait_read() loop this does NOT consume any
+    // live frames — they remain available for RTSP delivery.
+    if (!wait_for_parameter_sets(chnNr, is_h265, sps, pps, vps)) {
+      LOG_ERROR("Could not obtain SPS/PPS for stream " << chnNr << " — skipping subsession");
+      if (vps) { delete vps; vps = nullptr; }
+    } else {
+      LOG_DEBUG("Got necessary NAL Units from parameter cache.");
+
+      // Patch H264 SPS to include timing_info_present_flag so decoders can
+      // determine frame rate without relying on RTSP SDP signaling. This
+      // prevents negative DTS/PTS at startup with ffprobe, ffmpeg, and VLC.
+      if (!is_h265 && stream.fps > 0) {
+        if (!patch_h264_sps_timing(sps.data, stream.fps)) {
+          LOG_WARN("H264 SPS timing patch failed for stream " << chnNr << " — using unpatched SPS");
+        } else {
+          LOG_DEBUG("H264 SPS timing patch applied (fps=" << stream.fps << ") for stream " << chnNr);
+        }
+      }
+
+      IMPServerMediaSubsession *sub =
+          IMPServerMediaSubsession::createNew(*env, (is_h265 ? vps : nullptr), sps, pps, chnNr);
+      sms->addSubsession(sub);
+      LOG_INFO("Video stream " << chnNr << " added to session");
+    }
   }
 
   if (cfg->audio.input_enabled && stream.audio_enabled) {
