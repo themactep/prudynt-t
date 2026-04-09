@@ -122,59 +122,40 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
       fFrameSize = nal.data.size();
     }
 
-    /* Use monotonic counter-based timestamps for AAC to produce perfectly
-       steady +1024 RTP PTS increments and avoid gettimeofday jitter. */
+    // Use the hardware timestamp from TimestampManager that was captured
+    // when the frame was encoded (stored in nal.time by VideoWorker/AudioWorker)
+    fPresentationTime = nal.time;
+    
+    // Monotonicity check - ensure timestamps never go backwards
+    int64_t pts_us = tv_to_us(fPresentationTime);
+    
     if constexpr (std::is_same_v<FrameType, AudioFrame>) {
-      auto *imp_audio = global_audio[encChn]->imp_audio;
-      int sampleRate = 16000;
-      if (cfg && cfg->audio.input_sample_rate > 0) {
-        sampleRate = cfg->audio.input_sample_rate;
-      }
-      if (imp_audio) {
-        if (imp_audio->sample_rate > 0) {
-          sampleRate = imp_audio->sample_rate;
-        }
-      }
-
-      // Always use current wallclock. This keeps fPresentationTime in the
-      // same clock domain as live555's presetNextTimestamp(), so NTP steps
-      // and stale ring-buffer frames never cause RTP timestamp jumps.
-      gettimeofday(&fPresentationTime, NULL);
-
-      int64_t pts_us = tv_to_us(fPresentationTime);
-      int rate_for_tick = sampleRate > 0 ? sampleRate : 16000;
-      // AAC: 1024 samples/frame; non-AAC: ~40ms frames
-      int64_t min_audio_step_us = (1024LL * 1000000LL + rate_for_tick - 1) / rate_for_tick;
-      if (min_audio_step_us < 1) {
-        min_audio_step_us = 1;
-      }
-      if (audioLastPtsUs >= 0) {
-        int64_t delta_pts_us = pts_us - audioLastPtsUs;
-        if (delta_pts_us <= 0) {
-          pts_us = audioLastPtsUs + min_audio_step_us;
-          fPresentationTime = us_to_tv(pts_us);
-        }
+      // For audio, also check for reasonable minimum step (1024 samples at 16kHz ~= 64ms)
+      if (audioLastPtsUs >= 0 && pts_us <= audioLastPtsUs) {
+        LOG_WARN("Audio timestamp went backwards or stalled: %" PRId64 " -> %" PRId64, audioLastPtsUs, pts_us);
+        // Force forward progress
+        auto *imp_audio = global_audio[encChn]->imp_audio;
+        int sampleRate = imp_audio ? imp_audio->sample_rate : 16000;
+        if (sampleRate <= 0) sampleRate = 16000;
+        int64_t min_audio_step_us = (1024LL * 1000000LL) / sampleRate;
+        pts_us = audioLastPtsUs + min_audio_step_us;
+        fPresentationTime = us_to_tv(pts_us);
       }
       audioLastPtsUs = pts_us;
     } else {
-      // Always use current wallclock for video too.
-      gettimeofday(&fPresentationTime, NULL);
-
-      int64_t pts_us = tv_to_us(fPresentationTime);
-      int64_t min_video_step_us = 12;
-      if (stream && stream->stream && stream->stream->fps > 0) {
-        min_video_step_us = 1000000LL / stream->stream->fps;
-        if (min_video_step_us < 12) {
-          min_video_step_us = 12;
-        }
-      }
+      // For video, check monotonicity and detect large jumps (session restarts)
       if (videoLastPtsUs >= 0) {
         int64_t delta_pts_us = pts_us - videoLastPtsUs;
         if (delta_pts_us <= 0) {
+          LOG_WARN("Video timestamp went backwards or stalled: %" PRId64 " -> %" PRId64, videoLastPtsUs, pts_us);
+          // Force forward progress (assume 30fps)
+          int64_t min_video_step_us = stream && stream->stream && stream->stream->fps > 0 
+            ? 1000000LL / stream->stream->fps : 33333;
           pts_us = videoLastPtsUs + min_video_step_us;
           fPresentationTime = us_to_tv(pts_us);
         } else if (delta_pts_us > 2000000LL) {
-          // Large forward jump (new RTSP session or discontinuity) — re-anchor
+          // Large forward jump (>2s) indicates new session or discontinuity
+          LOG_DEBUG("Video timestamp jump detected: %" PRId64 "us, re-anchoring", delta_pts_us);
           videoFirstFrame = true;
           videoLastDelta = -1;
         }
