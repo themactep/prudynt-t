@@ -510,8 +510,14 @@ int main(int argc, const char *argv[]) {
   std::thread(VideoPrivacyControl::run).detach();
   ImagingControl::start();
 
-  global_video[0] = std::make_shared<video_stream>(0, &cfg->stream0, "stream0");
-  global_video[1] = std::make_shared<video_stream>(1, &cfg->stream1, "stream1");
+  const auto stream0Binding = framesource_binding_for_video(0, cfg->sensor, cfg->stream0);
+  const auto stream1Binding = framesource_binding_for_video(1, cfg->sensor, cfg->stream1);
+  global_video[0] = std::make_shared<video_stream>(0, encoder_group_for_video(0, cfg->sensor, cfg->stream0),
+                                                   stream0Binding.fsChn, stream0Binding.sourceChn, &cfg->stream0,
+                                                   "stream0");
+  global_video[1] = std::make_shared<video_stream>(1, encoder_group_for_video(1, cfg->sensor, cfg->stream1),
+                                                   stream1Binding.fsChn, stream1Binding.sourceChn, &cfg->stream1,
+                                                   "stream1");
   global_jpeg[0] = std::make_shared<jpeg_stream>(2, &cfg->stream2);
   global_jpeg[1] = std::make_shared<jpeg_stream>(3, &cfg->stream3);
 

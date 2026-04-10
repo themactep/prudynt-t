@@ -20,8 +20,8 @@ inline uint32_t align_up(uint32_t value, uint32_t alignment) {
 }
 } // namespace
 
-IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, const char *name) {
-  IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, name);
+IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, int fsChn, const char *name) {
+  IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, fsChn, name);
   if (!encoder) {
     return nullptr;
   }
@@ -304,7 +304,7 @@ void IMPEncoder::initProfile() {
 }
 
 int IMPEncoder::init() {
-  LOG_DEBUG("IMPEncoder::init(" << encChn << ", " << encGrp << ")");
+  LOG_DEBUG("IMPEncoder::init(" << encChn << ", " << encGrp << ", " << fsChn << ")");
 
   int ret = 0;
   is_jpeg_stream = (strcmp(stream->format, "JPEG") == 0);
@@ -325,7 +325,7 @@ int IMPEncoder::init() {
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare(" << encChn << ", " << encGrp << ")");
   }
 
-  if (!is_jpeg) {
+  if (!is_jpeg && ownsGroupResources()) {
     ret = IMP_Encoder_CreateGroup(encGrp);
     if (ret != 0) {
       LOG_ERROR("IMP_Encoder_CreateGroup(" << encGrp << ") failed ret=" << ret);
@@ -360,9 +360,17 @@ int IMPEncoder::init() {
   chn_registered = true;
 
   if (!is_jpeg) {
-    fs = {DEV_ID_FS, encGrp, 0};
+    fs = {DEV_ID_FS, fsChn, 0};
     enc = {DEV_ID_ENC, encGrp, 0};
     osd_cell = {DEV_ID_OSD, encGrp, 0};
+
+    if (!ownsGroupResources()) {
+      if (stream->osd.enabled) {
+        LOG_ERROR("stream " << name << " cannot enable per-stream OSD while sharing encoder group " << encGrp);
+        return -1;
+      }
+      return ret;
+    }
 
     auto cleanup_manual_osd = [&]() {
       if (!osd_group_manual)
@@ -427,7 +435,7 @@ int IMPEncoder::deinit() {
 
   int ret = 0;
 
-  if (!is_jpeg_stream) {
+  if (!is_jpeg_stream && ownsGroupResources()) {
     if (osd) {
       if (fs_to_osd_bound) {
         ret = IMP_System_UnBind(&fs, &osd_cell);

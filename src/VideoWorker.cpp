@@ -9,6 +9,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "PreTriggerBuffer.hpp"
+#include "RTSPStatus.hpp"
 #include "TimestampManager.hpp"
 #include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
@@ -91,6 +92,60 @@ struct timeval frame_timestamp_to_timeval(video_stream &stream_state, uint64_t r
   return timeval_from_us(ts_us);
 }
 
+void publish_video_runtime_status(video_stream &stream_state,
+                                  uint32_t observed_fps,
+                                  uint64_t producer_wall_delta_us,
+                                  uint64_t producer_raw_delta_us,
+                                  bool producer_has_keyframe) {
+  if (!stream_state.stream) {
+    return;
+  }
+
+  const std::string streamName = stream_state.name
+                                     ? std::string(stream_state.name)
+                                     : ("stream" + std::to_string(stream_state.encChn));
+  const auto ringDepth = stream_state.videoCore ? stream_state.videoCore->depth() : 0;
+  const auto clientCount = stream_state.videoCore ? stream_state.videoCore->subscriberCount() : 0;
+  const auto dropCount = stream_state.videoCore ? stream_state.videoCore->producerDropCount() : 0;
+
+  RTSPStatus::writeCustomParameter(streamName, "gop", std::to_string(stream_state.stream->gop));
+  RTSPStatus::writeCustomParameter(streamName, "fs_channel", std::to_string(stream_state.fsChn));
+  RTSPStatus::writeCustomParameter(streamName, "source_channel", std::to_string(stream_state.sourceChn));
+  RTSPStatus::writeCustomParameter(streamName, "ring_depth", std::to_string(ringDepth));
+  RTSPStatus::writeCustomParameter(streamName, "client_count", std::to_string(clientCount));
+  RTSPStatus::writeCustomParameter(streamName, "drop_count", std::to_string(dropCount));
+
+  uint64_t last_idr_us = 0;
+  uint8_t profile_idc = 0;
+  uint8_t level_idc = 0;
+  {
+    std::lock_guard<std::mutex> lock(stream_state.parameterCache.mutex);
+    last_idr_us = stream_state.parameterCache.last_idr_us;
+    profile_idc = stream_state.parameterCache.profile_idc;
+    level_idc = stream_state.parameterCache.level_idc;
+  }
+
+  uint64_t lastIdrAgeMs = 0;
+  if (last_idr_us > 0) {
+    const uint64_t nowUs =
+        duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
+    if (nowUs >= last_idr_us) {
+      lastIdrAgeMs = (nowUs - last_idr_us) / 1000ULL;
+    }
+  }
+
+  RTSPStatus::writeCustomParameter(streamName, "last_idr_age_ms", std::to_string(lastIdrAgeMs));
+  RTSPStatus::writeCustomParameter(streamName, "profile", std::to_string(profile_idc));
+  RTSPStatus::writeCustomParameter(streamName, "level", std::to_string(level_idc));
+  RTSPStatus::writeCustomParameter(streamName, "observed_fps", std::to_string(observed_fps));
+  RTSPStatus::writeCustomParameter(streamName, "producer_wall_delta_ms",
+                                   std::to_string(producer_wall_delta_us / 1000ULL));
+  RTSPStatus::writeCustomParameter(streamName, "producer_raw_delta_ms",
+                                   std::to_string(producer_raw_delta_us / 1000ULL));
+  RTSPStatus::writeCustomParameter(streamName, "producer_state",
+                                   producer_has_keyframe ? "streaming" : "waiting_for_keyframe");
+}
+
 } // namespace
 
 VideoWorker::VideoWorker(int chn) : encChn(chn) {
@@ -152,6 +207,10 @@ void VideoWorker::run() {
   int64_t ts_last_rtp_us = 0;
   int64_t ts_current_frame_us = 0;
   bool ts_have_current_frame = false;
+  uint64_t producer_last_wall_delta_us = 0;
+  uint64_t producer_last_raw_delta_us = 0;
+  uint64_t producer_last_wall_tick_us = 0;
+  int64_t producer_last_raw_tick_us = 0;
   bool had_video_clients = false;
 
   auto reset_mp4_sample = [&]() {
@@ -453,6 +512,20 @@ void VideoWorker::run() {
             } else if (ts_last_frame_us > 0) {
               frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
             }
+
+            if (frame_ts_us > 0) {
+              if (producer_last_raw_tick_us > 0 && frame_ts_us > producer_last_raw_tick_us) {
+                producer_last_raw_delta_us = static_cast<uint64_t>(frame_ts_us - producer_last_raw_tick_us);
+              }
+              producer_last_raw_tick_us = frame_ts_us;
+            }
+
+            const uint64_t now_wall_us =
+                duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
+            if (producer_last_wall_tick_us > 0 && now_wall_us > producer_last_wall_tick_us) {
+              producer_last_wall_delta_us = now_wall_us - producer_last_wall_tick_us;
+            }
+            producer_last_wall_tick_us = now_wall_us;
 
             // Guard against IMP encoder timestamp domain transitions
             // (relative→rebased) which cause large forward jumps.
@@ -760,6 +833,7 @@ void VideoWorker::run() {
           global_video[encChn]->stream->stats.fps = fps;
           global_video[encChn]->stream->osd.stats.fps = fps;
 
+          const uint32_t observed_fps = fps;
           fps = 0;
           bps = 0;
           WorkerUtils::getMonotonicTimeOfDay(&global_video[encChn]->stream->stats.ts);
@@ -779,6 +853,9 @@ void VideoWorker::run() {
             IMP_Encoder_RequestIDR(encChn);
             global_video[encChn]->idr_fix--;
           }
+          publish_video_runtime_status(*global_video[encChn], observed_fps,
+                                       producer_last_wall_delta_us, producer_last_raw_delta_us,
+                                       global_video[encChn]->idr);
         }
       } else {
         error_count++;
@@ -828,26 +905,36 @@ void VideoWorker::run() {
 void *VideoWorker::thread_entry(void *arg) {
   StartHelper *sh = static_cast<StartHelper *>(arg);
   int encChn = sh->encChn;
+  auto stream_state = global_video[encChn];
 
   LOG_DEBUG("Start stream_grabber thread for stream " << encChn);
 
   int ret;
 
-  global_video[encChn]->imp_framesource = IMPFramesource::createNew(global_video[encChn]->stream, &cfg->sensor, encChn);
-  global_video[encChn]->imp_encoder =
-      IMPEncoder::createNew(global_video[encChn]->stream, encChn, encChn, global_video[encChn]->name);
-  if (!global_video[encChn]->imp_encoder) {
+  if (encChn == 1 && stream_state->encGrp == 0 && global_video[0] && global_video[0]->imp_framesource) {
+    stream_state->imp_framesource = global_video[0]->imp_framesource;
+    stream_state->owns_framesource = false;
+  } else {
+    stream_state->owns_framesource = true;
+    stream_state->imp_framesource = IMPFramesource::createNew(stream_state->stream, &cfg->sensor, stream_state->fsChn,
+                                                              stream_state->sourceChn);
+  }
+  stream_state->imp_encoder =
+      IMPEncoder::createNew(stream_state->stream, encChn, stream_state->encGrp, stream_state->fsChn, stream_state->name);
+  if (!stream_state->imp_encoder) {
     LOG_ERROR("Failed to create encoder for stream " << encChn);
     sh->has_started.release();
-    if (global_video[encChn]->imp_framesource) {
-      delete global_video[encChn]->imp_framesource;
-      global_video[encChn]->imp_framesource = nullptr;
+    if (stream_state->imp_framesource && stream_state->owns_framesource) {
+      delete stream_state->imp_framesource;
     }
+    stream_state->imp_framesource = nullptr;
     return 0;
   }
 
-  global_video[encChn]->imp_framesource->enable();
-  global_video[encChn]->run_for_jpeg = false;
+  if (stream_state->imp_framesource && stream_state->owns_framesource) {
+    stream_state->imp_framesource->enable();
+  }
+  stream_state->run_for_jpeg = false;
 
   std::shared_ptr<VideoPrivacyMask> privacy_mask;
   {
@@ -912,15 +999,17 @@ void *VideoWorker::thread_entry(void *arg) {
   ret = IMP_Encoder_StopRecvPic(encChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
 
-  if (global_video[encChn]->imp_framesource) {
-    global_video[encChn]->imp_framesource->disable();
-
-    if (global_video[encChn]->imp_encoder) {
-      global_video[encChn]->imp_encoder->deinit();
-      delete global_video[encChn]->imp_encoder;
-      global_video[encChn]->imp_encoder = nullptr;
-    }
+  if (global_video[encChn]->imp_encoder) {
+    global_video[encChn]->imp_encoder->deinit();
+    delete global_video[encChn]->imp_encoder;
+    global_video[encChn]->imp_encoder = nullptr;
   }
+
+  if (global_video[encChn]->imp_framesource && global_video[encChn]->owns_framesource) {
+    global_video[encChn]->imp_framesource->disable();
+    delete global_video[encChn]->imp_framesource;
+  }
+  global_video[encChn]->imp_framesource = nullptr;
 
   {
     std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);

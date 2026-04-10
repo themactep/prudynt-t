@@ -18,14 +18,15 @@ static long get_total_ram_bytes() {
   return cached > 0 ? cached : 64 * 1024 * 1024;
 }
 
-IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor, int chnNr) {
-  return new IMPFramesource(stream, sensor, chnNr);
+IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor, int chnNr, int sourceChn) {
+  return new IMPFramesource(stream, sensor, chnNr, sourceChn);
 }
 
 int IMPFramesource::init() {
   LOG_DEBUG("IMPFramesource::init()");
 
   int ret = 0, scale = 0;
+  const bool use_ext_channel = (sourceChn != chnNr);
 
   IMPFSChnAttr chnAttr;
   memset(&chnAttr, 0, sizeof(IMPFSChnAttr));
@@ -62,7 +63,15 @@ int IMPFramesource::init() {
              << ", RAM=" << get_total_ram_bytes()/1024/1024 << "MB)");
     chnAttr.nrVBs = auto_buffers;
   }
+#ifdef FS_EXT_CHANNEL
+  chnAttr.type = use_ext_channel ? FS_EXT_CHANNEL : FS_PHY_CHANNEL;
+#else
   chnAttr.type = FS_PHY_CHANNEL;
+  if (use_ext_channel) {
+    LOG_WARN("framesource " << chnNr << " requested source " << sourceChn
+                            << ", but FS_EXT_CHANNEL is unavailable");
+  }
+#endif
 
   chnAttr.crop.enable = 0;
   chnAttr.crop.top = 0;
@@ -87,6 +96,8 @@ int IMPFramesource::init() {
   }
 
   LOG_DEBUG("Channel " << chnNr << " configuration (post-attr):");
+  LOG_DEBUG("  type=" << ((use_ext_channel && chnAttr.type != FS_PHY_CHANNEL) ? "ext" : "phy")
+                       << " source=" << sourceChn);
   LOG_DEBUG("  pic: " << chnAttr.picWidth << "x" << chnAttr.picHeight);
   LOG_DEBUG("  crop.enable=" << chnAttr.crop.enable << " crop=" << chnAttr.crop.width << "x" << chnAttr.crop.height);
   LOG_DEBUG("  scaler.enable=" << chnAttr.scaler.enable << " out=" << chnAttr.scaler.outwidth << "x"
@@ -152,6 +163,13 @@ int IMPFramesource::init() {
 
   ret = IMP_FrameSource_SetChnAttr(chnNr, &chnAttr);
   LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnAttr(" << chnNr << ", &chnAttr)");
+
+#ifdef FS_EXT_CHANNEL
+  if (use_ext_channel && chnAttr.type == FS_EXT_CHANNEL) {
+    ret = IMP_FrameSource_SetSource(chnNr, sourceChn);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetSource(" << chnNr << ", " << sourceChn << ")");
+  }
+#endif
 
 #if !defined(NO_FIFO)
   IMPFSChnFifoAttr fifo;

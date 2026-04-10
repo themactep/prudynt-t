@@ -2,6 +2,7 @@
 
 #include "Config.hpp"
 #include "Logger.hpp"
+#include "RTSPStatus.hpp"
 #include "TimestampManager.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
@@ -33,6 +34,15 @@ static uint64_t pick_audio_anchor_us(uint64_t frame_duration_us) {
   }
 
   return anchor_us;
+}
+
+constexpr uint64_t kAudioStatusPublishIntervalUs = 1000000ULL;
+
+uint64_t monotonic_now_us() {
+  return static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
 }
 
 class AudioTap {
@@ -333,6 +343,44 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
 
   if (!any_recorder_active) {
     mp4_audio_sample_rate = 0;
+  }
+
+  if (global_audio[encChn]->audioCore && !af.data.empty()) {
+    const uint64_t now_us = monotonic_now_us();
+    if (status_last_publish_us == 0 ||
+        (now_us - status_last_publish_us) >= kAudioStatusPublishIntervalUs) {
+      const uint64_t samples_per_channel =
+          frame_samples > 0 ? static_cast<uint64_t>(frame_samples) : 1024ULL;
+      int warn_frames = cfg ? std::max(cfg->audio.buffer_warn_frames, 1) : 1;
+      int cap_frames = cfg ? std::max(cfg->audio.buffer_cap_frames, warn_frames + 1) : 2;
+      if (cap_frames < warn_frames) {
+        cap_frames = warn_frames;
+      }
+
+      const uint64_t ring_depth = global_audio[encChn]->audioCore->depth();
+      const uint64_t client_count = global_audio[encChn]->audioCore->subscriberCount();
+      const uint64_t drop_count = global_audio[encChn]->audioCore->producerDropCount();
+      const uint64_t buffer_level = ring_depth * samples_per_channel;
+      const uint64_t warn_samples = static_cast<uint64_t>(warn_frames) * samples_per_channel;
+      const uint64_t cap_samples = static_cast<uint64_t>(cap_frames) * samples_per_channel;
+
+      const std::string stream_name = "audio" + std::to_string(encChn);
+      RTSPStatus::writeCustomParameter(stream_name, "buffer_warn_samples_per_channel",
+                                       std::to_string(warn_samples));
+      RTSPStatus::writeCustomParameter(stream_name, "buffer_cap_samples_per_channel",
+                                       std::to_string(cap_samples));
+      RTSPStatus::writeCustomParameter(stream_name, "buffer_level_samples_per_channel",
+                                       std::to_string(buffer_level));
+      RTSPStatus::writeCustomParameter(stream_name, "buffer_drop_count",
+                                       std::to_string(drop_count));
+      RTSPStatus::writeCustomParameter(stream_name, "ring_depth",
+                                       std::to_string(ring_depth));
+      RTSPStatus::writeCustomParameter(stream_name, "client_count",
+                                       std::to_string(client_count));
+      RTSPStatus::writeCustomParameter(stream_name, "drop_count",
+                                       std::to_string(drop_count));
+      status_last_publish_us = now_us;
+    }
   }
 
   if (!af.data.empty() && global_audio[encChn]->hasDataCallback) {

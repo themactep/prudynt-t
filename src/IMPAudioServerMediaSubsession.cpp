@@ -41,7 +41,8 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
 FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
   estBitrate = global_audio[audioChn]->imp_audio->bitrate;
   IMPDeviceSource<AudioFrame, audio_stream> *audioSource =
-      IMPDeviceSource<AudioFrame, audio_stream>::createNew(envir(), audioChn, global_audio[audioChn], "audio");
+      IMPDeviceSource<AudioFrame, audio_stream>::createNew(
+          envir(), audioChn, global_audio[audioChn], "audio", false, clientSessionId);
 
   if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
     return EndianSwap16::createNew(envir(), audioSource);

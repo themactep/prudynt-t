@@ -36,6 +36,41 @@
 
 using namespace std::chrono;
 
+struct FrameSourceBinding {
+  int fsChn;
+  int sourceChn;
+};
+
+inline constexpr int kMainPhysicalFrameSourceChannel = 0;
+inline constexpr int kSubPhysicalFrameSourceChannel = 1;
+inline constexpr int kExtSubFrameSourceChannel = 2;
+
+inline bool uses_shared_primary_encoder(int video_channel, const _sensor &sensor, const _stream &stream) {
+  (void)video_channel;
+  (void)sensor;
+  (void)stream;
+  return false;
+}
+
+inline FrameSourceBinding framesource_binding_for_video(int video_channel, const _sensor &sensor, const _stream &stream) {
+  (void)sensor;
+  (void)stream;
+
+  if (video_channel == 1) {
+    return {kSubPhysicalFrameSourceChannel, kSubPhysicalFrameSourceChannel};
+  }
+
+  if (uses_shared_primary_encoder(video_channel, sensor, stream)) {
+    return {kMainPhysicalFrameSourceChannel, kMainPhysicalFrameSourceChannel};
+  }
+
+  return {video_channel, video_channel};
+}
+
+inline int encoder_group_for_video(int video_channel, const _sensor &sensor, const _stream &stream) {
+  return uses_shared_primary_encoder(video_channel, sensor, stream) ? 0 : video_channel;
+}
+
 // Simple binary semaphore compatible with environments lacking
 // std::binary_semaphore
 class binary_semaphore_compat {
@@ -258,6 +293,9 @@ struct audio_stream {
 
 struct video_stream {
   int encChn;
+  int encGrp;
+  int fsChn;
+  int sourceChn;
   _stream *stream;
   const char *name;
   bool running;
@@ -278,6 +316,7 @@ struct video_stream {
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg;                 // see comment in audio_stream
   std::atomic<bool> bootstrap_requested{false};
+  bool owns_framesource{true};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
   std::atomic<bool> mp4_waiting_for_idr;
   std::atomic<int64_t> mp4_required_idr_ts_us;
@@ -298,8 +337,9 @@ struct video_stream {
   std::unique_ptr<PreTriggerBuffer> prebuffer;
 #endif
 
-  video_stream(int encChn, _stream *stream, const char *name)
-      : encChn(encChn), stream(stream), name(name), running(false), idr(false), idr_fix(0), imp_encoder(nullptr),
+  video_stream(int encChn, int encGrp, int fsChn, int sourceChn, _stream *stream, const char *name)
+      : encChn(encChn), encGrp(encGrp), fsChn(fsChn), sourceChn(sourceChn), stream(stream), name(name), running(false),
+        idr(false), idr_fix(0), imp_encoder(nullptr),
         imp_framesource(nullptr), videoCore(std::make_unique<StreamCore<H264NALUnit>>(MSG_CHANNEL_SIZE)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
         mp4_required_idr_ts_us{-1}, mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},

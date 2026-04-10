@@ -4,6 +4,7 @@
 #include "AudioReframer.hpp"
 #include "IMPAudio.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -28,6 +29,7 @@ private:
   int mp4_audio_sample_rate = 0;
   std::unique_ptr<AudioTap> tap;
   std::vector<uint8_t> directEncBuf;
+  uint64_t status_last_publish_us = 0;
 };
 
 #endif // AUDIO_WORKER_HPP

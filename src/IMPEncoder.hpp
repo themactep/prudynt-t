@@ -21,10 +21,10 @@ static const std::array<int, 64> jpeg_luma_quantizer = {
 
 class IMPEncoder {
 public:
-  static IMPEncoder *createNew(_stream *stream, int encChn, int encGrp, const char *name);
+  static IMPEncoder *createNew(_stream *stream, int encChn, int encGrp, int fsChn, const char *name);
 
-  IMPEncoder(_stream *stream, int encChn, int encGrp, const char *name)
-      : stream(stream), encChn(encChn), encGrp(encGrp), name(name) {
+  IMPEncoder(_stream *stream, int encChn, int encGrp, int fsChn, const char *name)
+      : stream(stream), encChn(encChn), encGrp(encGrp), fsChn(fsChn), name(name) {
   }
 
   ~IMPEncoder() {
@@ -42,6 +42,9 @@ public:
 private:
   IMPEncoderCHNAttr chnAttr{};
   void initProfile();
+  bool ownsGroupResources() const {
+    return encGrp == encChn;
+  }
 
   IMPCell fs{};
   IMPCell enc{};
@@ -60,6 +63,7 @@ private:
   _stream *stream{};
   int encChn{};
   int encGrp{};
+  int fsChn{};
   const char *name{};
 };
 

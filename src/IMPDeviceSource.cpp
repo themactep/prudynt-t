@@ -1,15 +1,12 @@
 #include "IMPDeviceSource.hpp"
 #include "GroupsockHelper.hh"
+#include <algorithm>
 #include <cstring>
-#include <iostream>
 #include <type_traits>
+#include <unordered_map>
 #include "Logger.hpp"
 
 #define MODULE "IMPDeviceSource"
-
-static inline int64_t tv_to_us(const struct timeval &tv) {
-  return static_cast<int64_t>(tv.tv_sec) * 1000000LL + static_cast<int64_t>(tv.tv_usec);
-}
 
 static inline struct timeval us_to_tv(uint64_t us) {
   struct timeval tv;
@@ -18,12 +15,34 @@ static inline struct timeval us_to_tv(uint64_t us) {
   return tv;
 }
 
-static inline bool is_plausible_wallclock_tv(const struct timeval &tv) {
-  if (tv.tv_usec < 0 || tv.tv_usec >= 1000000) {
-    return false;
-  }
-  constexpr time_t kMinUnixTime = 946684800; // 2000-01-01
-  return tv.tv_sec >= kMinUnixTime;
+namespace {
+std::mutex gSessionVideoReadyMutex;
+std::unordered_map<unsigned, bool> gSessionVideoReady;
+
+bool is_session_video_ready(unsigned clientSessionId) {
+  if (clientSessionId == 0)
+    return true;
+
+  std::lock_guard<std::mutex> lock(gSessionVideoReadyMutex);
+  const auto it = gSessionVideoReady.find(clientSessionId);
+  return it != gSessionVideoReady.end() && it->second;
+}
+
+void set_session_video_ready(unsigned clientSessionId, bool ready) {
+  if (clientSessionId == 0)
+    return;
+
+  std::lock_guard<std::mutex> lock(gSessionVideoReadyMutex);
+  gSessionVideoReady[clientSessionId] = ready;
+}
+
+void clear_session_video_ready(unsigned clientSessionId) {
+  if (clientSessionId == 0)
+    return;
+
+  std::lock_guard<std::mutex> lock(gSessionVideoReadyMutex);
+  gSessionVideoReady.erase(clientSessionId);
+}
 }
 
 // explicit instantiation
@@ -32,57 +51,36 @@ template class IMPDeviceSource<AudioFrame, audio_stream>;
 
 template <typename FrameType, typename Stream>
 IMPDeviceSource<FrameType, Stream> *IMPDeviceSource<FrameType, Stream>::createNew(UsageEnvironment &env, int encChn,
-                                                                                  std::shared_ptr<Stream> stream,
-                                                                                  const char *name) {
-  return new IMPDeviceSource<FrameType, Stream>(env, encChn, stream, name);
+                                                                                   std::shared_ptr<Stream> stream,
+                                                                                   const char *name, bool eagerActivate,
+                                                                                   unsigned clientSessionId) {
+  return new IMPDeviceSource<FrameType, Stream>(env, encChn, stream, name, eagerActivate, clientSessionId);
 }
 
 template <typename FrameType, typename Stream>
 IMPDeviceSource<FrameType, Stream>::IMPDeviceSource(UsageEnvironment &env, int encChn, std::shared_ptr<Stream> stream,
-                                                    const char *name)
-    : FramedSource(env), encChn(encChn), stream{stream}, name{name}, eventTriggerId(0) {
-  std::lock_guard lock_stream{mutex_main};
-  std::lock_guard lock_callback{stream->onDataCallbackLock};
-  
-  // Register cursor with StreamCore (replaces msgChannel)
-  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-    cursor = stream->videoCore->registerSubscriber(
-        [this]() { this->on_data_available(); },
-        StreamStartPolicy::LatestSync);
-    stream->hasDataCallback.store(stream->videoCore->subscriberCount() > 0, std::memory_order_relaxed);
-  } else {
-    cursor = stream->audioCore->registerSubscriber(
-        [this]() { this->on_data_available(); },
-        StreamStartPolicy::LiveEdge);
-    stream->hasDataCallback.store(stream->audioCore->subscriberCount() > 0, std::memory_order_relaxed);
-  }
-  
-  stream->onDataCallback = [this]() { this->on_data_available(); };
-
+                                                     const char *name, bool eagerActivate, unsigned clientSessionId)
+    : FramedSource(env), encChn(encChn), clientSessionId(clientSessionId), stream{stream}, name{name}, eventTriggerId(0),
+      eagerActivate(eagerActivate) {
   eventTriggerId = envir().taskScheduler().createEventTrigger(deliverFrame0);
-  stream->should_grab_frames.notify_one();
-  LOG_DEBUG("IMPDeviceSource " << name << " constructed, encoder channel:" << encChn);
+  if (eagerActivate) {
+    setCaptureEnabled(true);
+  }
+  LOG_DEBUG("IMPDeviceSource " << name << " constructed, encoder channel:" << encChn
+                               << " session=" << clientSessionId << " eager=" << eagerActivate);
 }
 
 template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, Stream>::deinit() {
-  std::lock_guard lock_stream{mutex_main};
-  LOG_DEBUG("IMPDeviceSource " << name << " deinit begin, encoder channel:" << encChn
-            << " eventTriggerId=" << eventTriggerId
-            << " stream_addr=" << reinterpret_cast<uintptr_t>(stream.get()));
-  std::lock_guard lock_callback{stream->onDataCallbackLock};
-  
-  // Unregister cursor from StreamCore
-  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-    stream->videoCore->unregisterSubscriber(cursor);
-    stream->hasDataCallback.store(stream->videoCore->subscriberCount() > 0, std::memory_order_relaxed);
-  } else {
-    stream->audioCore->unregisterSubscriber(cursor);
-    stream->hasDataCallback.store(stream->audioCore->subscriberCount() > 0, std::memory_order_relaxed);
+  setCaptureEnabled(false);
+  if (eventTriggerId != 0) {
+    envir().taskScheduler().deleteEventTrigger(eventTriggerId);
+    eventTriggerId = 0;
   }
-  
-  envir().taskScheduler().deleteEventTrigger(eventTriggerId);
-  stream->onDataCallback = nullptr;
-  LOG_DEBUG("IMPDeviceSource " << name << " deinit complete, encoder channel:" << encChn);
+  if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+    clear_session_video_ready(clientSessionId);
+  }
+  LOG_DEBUG("IMPDeviceSource " << name << " deinit complete, encoder channel:" << encChn
+                               << " session=" << clientSessionId);
 }
 
 template <typename FrameType, typename Stream> IMPDeviceSource<FrameType, Stream>::~IMPDeviceSource() {
@@ -90,7 +88,17 @@ template <typename FrameType, typename Stream> IMPDeviceSource<FrameType, Stream
 }
 
 template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, Stream>::doGetNextFrame() {
+  if (!captureEnabled) {
+    setCaptureEnabled(true);
+  }
   deliverFrame();
+}
+
+template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, Stream>::doStopGettingFrames() {
+  FramedSource::doStopGettingFrames();
+  if (!eagerActivate && captureEnabled) {
+    setCaptureEnabled(false);
+  }
 }
 
 template <typename FrameType, typename Stream>
@@ -140,8 +148,79 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame0(void *clientData) {
   ((IMPDeviceSource<FrameType, Stream> *)clientData)->deliverFrame();
 }
 
+template <typename FrameType, typename Stream>
+void IMPDeviceSource<FrameType, Stream>::setCaptureEnabled(bool enabled) {
+  bool request_idr = false;
+
+  {
+    std::lock_guard lock_stream{mutex_main};
+    std::lock_guard lock_callback{stream->onDataCallbackLock};
+
+    if (captureEnabled == enabled) {
+      return;
+    }
+
+    if (enabled) {
+      presentationAnchorUs = 0;
+      lastSourceFrameUs = 0;
+      lastPresentationFrameUs = 0;
+
+      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+        set_session_video_ready(clientSessionId, false);
+        cursor.emplace(stream->videoCore->registerSubscriber(
+            [this]() { this->on_data_available(); }, StreamStartPolicy::LatestSync));
+        stream->hasDataCallback.store(stream->videoCore->subscriberCount() > 0, std::memory_order_relaxed);
+        request_idr = true;
+      } else {
+        cursor.emplace(stream->audioCore->registerSubscriber(
+            [this]() { this->on_data_available(); }, StreamStartPolicy::LiveEdge));
+        stream->hasDataCallback.store(stream->audioCore->subscriberCount() > 0, std::memory_order_relaxed);
+      }
+
+      // StreamCore subscriber callbacks drive delivery; this flag callback is
+      // only used by worker run-state logic and must never reference a
+      // per-session object that might be destroyed while other subscribers stay active.
+      stream->onDataCallback = []() {};
+      stream->should_grab_frames.notify_one();
+    } else {
+      if (cursor.has_value()) {
+        if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+          stream->videoCore->unregisterSubscriber(*cursor);
+          clear_session_video_ready(clientSessionId);
+          stream->hasDataCallback.store(stream->videoCore->subscriberCount() > 0, std::memory_order_relaxed);
+        } else {
+          stream->audioCore->unregisterSubscriber(*cursor);
+          stream->hasDataCallback.store(stream->audioCore->subscriberCount() > 0, std::memory_order_relaxed);
+        }
+        cursor.reset();
+      }
+
+      if (!stream->hasDataCallback.load(std::memory_order_relaxed)) {
+        stream->onDataCallback = nullptr;
+      }
+    }
+
+    captureEnabled = enabled;
+  }
+
+  if (request_idr) {
+    IMP_Encoder_RequestIDR(encChn);
+  }
+}
+
 template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, Stream>::deliverFrame() {
   if (!isCurrentlyAwaitingData()) {
+    return;
+  }
+
+  if constexpr (std::is_same_v<FrameType, AudioFrame>) {
+    if (!is_session_video_ready(clientSessionId)) {
+      return;
+    }
+  }
+
+  if (!cursor.has_value()) {
+    fFrameSize = 0;
     return;
   }
 
@@ -149,12 +228,21 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
   // Use StreamCore cursor instead of msgChannel
   bool hasFrame;
   if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-    hasFrame = stream->videoCore->read(cursor, &nal);
+    hasFrame = stream->videoCore->read(*cursor, &nal);
   } else {
-    hasFrame = stream->audioCore->read(cursor, &nal);
+    hasFrame = stream->audioCore->read(*cursor, &nal);
   }
   
   while (hasFrame) {
+    if (nal.data.empty()) {
+      if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+        hasFrame = stream->videoCore->read(*cursor, &nal);
+      } else {
+        hasFrame = stream->audioCore->read(*cursor, &nal);
+      }
+      continue;
+    }
+
     if (nal.data.size() > fMaxSize) {
       fFrameSize = fMaxSize;
       fNumTruncatedBytes = nal.data.size() - fMaxSize;
@@ -213,7 +301,11 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     fPresentationTime = us_to_tv(presentation_us);
     fDurationInMicroseconds = duration_us;
 
-    memcpy(fTo, &nal.data[0], fFrameSize);
+    if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
+      set_session_video_ready(clientSessionId, true);
+    }
+
+    memcpy(fTo, nal.data.data(), fFrameSize);
 
     if (fFrameSize > 0) {
       FramedSource::afterGetting(this);
@@ -222,9 +314,9 @@ template <typename FrameType, typename Stream> void IMPDeviceSource<FrameType, S
     
     // Try to read next frame
     if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-      hasFrame = stream->videoCore->read(cursor, &nal);
+      hasFrame = stream->videoCore->read(*cursor, &nal);
     } else {
-      hasFrame = stream->audioCore->read(cursor, &nal);
+      hasFrame = stream->audioCore->read(*cursor, &nal);
     }
   }
   fFrameSize = 0;

@@ -280,7 +280,8 @@ void *JPEGWorker::thread_entry(void *arg) {
   const char *stream_name = (stream_cfg == &cfg->stream2) ? "stream2" : "stream3";
 
   global_jpeg[jpgChn]->imp_encoder =
-      IMPEncoder::createNew(stream_cfg, sh->encChn, global_jpeg[jpgChn]->streamChn, stream_name);
+      IMPEncoder::createNew(stream_cfg, sh->encChn, global_jpeg[jpgChn]->streamChn, global_jpeg[jpgChn]->streamChn,
+                            stream_name);
 
   if (!global_jpeg[jpgChn]->imp_encoder) {
     LOG_ERROR("Failed to create JPEG encoder for channel " << jpgChn);

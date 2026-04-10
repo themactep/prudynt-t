@@ -42,7 +42,8 @@ FramedSource *IMPServerMediaSubsession::createNewStreamSource(unsigned clientSes
   LOG_DEBUG("Create Stream Source. encChn=" << encChn << " clientSessionId=" << clientSessionId);
   estBitrate = cfg->rtsp.est_bitrate; // The expected bitrate?
 
-  auto imp = IMPDeviceSource<H264NALUnit, video_stream>::createNew(envir(), encChn, global_video[encChn], "video");
+  auto imp = IMPDeviceSource<H264NALUnit, video_stream>::createNew(
+      envir(), encChn, global_video[encChn], "video", false, clientSessionId);
   if (!imp) {
     LOG_ERROR("createNewStreamSource: IMPDeviceSource::createNew returned null for ch" << encChn);
     return nullptr;

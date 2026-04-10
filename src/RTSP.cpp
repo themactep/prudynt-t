@@ -3,10 +3,40 @@
 #include "H264TimingPatch.hpp"
 #include "IMPBackchannel.hpp"
 #include "PrudyntRTSPServer.hpp"
+#include "RTSPStatus.hpp"
 #include <stdlib.h>
 
 #undef MODULE
 #define MODULE "RTSP"
+
+namespace {
+const char *bool_to_text(bool value) {
+  return value ? "true" : "false";
+}
+
+void publish_stream_status(const std::string &streamName, const _stream &stream, const std::string &url,
+                           const char *state, const std::string &error, bool have_sps, bool have_pps, bool have_vps) {
+  RTSPStatus::StreamInfo streamInfo;
+  streamInfo.format = stream.format;
+  streamInfo.fps = stream.fps;
+  streamInfo.width = stream.width;
+  streamInfo.height = stream.height;
+  streamInfo.endpoint = stream.rtsp_endpoint;
+  streamInfo.url = url;
+  streamInfo.bitrate = stream.bitrate;
+  streamInfo.mode = stream.mode;
+  streamInfo.enabled = stream.enabled;
+
+  RTSPStatus::updateStreamStatus(streamName, streamInfo);
+  RTSPStatus::writeCustomParameter(streamName, "state", state ? state : "unknown");
+  RTSPStatus::writeCustomParameter(streamName, "error", error.empty() ? "none" : error);
+  RTSPStatus::writeCustomParameter(streamName, "audio_enabled",
+                                   bool_to_text(cfg->audio.input_enabled && stream.audio_enabled));
+  RTSPStatus::writeCustomParameter(streamName, "sps", bool_to_text(have_sps));
+  RTSPStatus::writeCustomParameter(streamName, "pps", bool_to_text(have_pps));
+  RTSPStatus::writeCustomParameter(streamName, "vps", bool_to_text(have_vps));
+}
+} // namespace
 
 /**
  * Wait for SPS/PPS (and VPS for H265) to be populated in the parameter cache
@@ -85,6 +115,12 @@ static bool wait_for_parameter_sets(int chnNr, bool is_h265,
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
   LOG_DEBUG("identify stream " << chnNr);
+  const std::string streamName = "stream" + std::to_string(chnNr);
+  bool have_sps = false;
+  bool have_pps = false;
+  bool have_vps = false;
+
+  publish_stream_status(streamName, stream, "", "initializing", "waiting_for_sps_pps", false, false, false);
 
   ServerMediaSession *sms = ServerMediaSession::createNew(*env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
 
@@ -113,8 +149,14 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     if (!have_parameter_sets) {
       LOG_ERROR("Could not obtain SPS/PPS for stream " << chnNr << " — skipping subsession");
       if (vps) { delete vps; vps = nullptr; }
+      publish_stream_status(streamName, stream, "", "error", "timeout_waiting_for_sps_pps", have_sps, have_pps,
+                            have_vps);
+      return;
     } else {
       LOG_DEBUG("Got necessary NAL Units from parameter cache.");
+      have_sps = !sps.data.empty();
+      have_pps = !pps.data.empty();
+      have_vps = (vps != nullptr && !vps->data.empty());
 
       // Patch H264 SPS to include timing_info_present_flag so decoders can
       // determine frame rate without relying on RTSP SDP signaling. This
@@ -132,6 +174,10 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
                 << " sps.size=" << sps.data.size() << " pps.size=" << pps.data.size());
       IMPServerMediaSubsession *sub =
           IMPServerMediaSubsession::createNew(*env, (is_h265 ? vps : nullptr), sps, pps, chnNr);
+      if (vps) {
+        delete vps;
+        vps = nullptr;
+      }
       sms->addSubsession(sub);
       LOG_INFO("Video stream " << chnNr << " added to session");
     }
@@ -165,10 +211,17 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
   rtspServer->addServerMediaSession(sms);
 
   char *url = rtspServer->rtspURL(sms);
-  LOG_INFO("stream " << chnNr << " available at: " << url);
+  LOG_INFO("stream " << chnNr << " available at: " << (url ? url : "(null)"));
+  publish_stream_status(streamName, stream, url ? std::string(url) : std::string(), "ready", "", have_sps, have_pps,
+                        have_vps);
+  delete[] url;
 }
 
 void RTSP::start() {
+  if (!RTSPStatus::initialize()) {
+    LOG_WARN("Failed to initialize RTSP status interface");
+  }
+
   scheduler = BasicTaskScheduler::createNew();
   env = BasicUsageEnvironment::createNew(*scheduler);
 
@@ -192,7 +245,8 @@ void RTSP::start() {
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
   if (cfg->audio.input_enabled) {
-    audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(*env, 0, global_audio[audioChn], "audio");
+    audioSource =
+        IMPDeviceSource<AudioFrame, audio_stream>::createNew(*env, 0, global_audio[audioChn], "audio", true, 0);
 
     if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
       audioSource = (IMPDeviceSource<AudioFrame, audio_stream> *)EndianSwap16::createNew(*env, audioSource);
@@ -250,6 +304,7 @@ void RTSP::start() {
   */
 
   LOG_DEBUG("Stop RTSP Server.");
+  RTSPStatus::cleanup();
 
   // Cleanup RTSP server and environment
   Medium::close(rtspServer);

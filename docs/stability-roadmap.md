@@ -286,7 +286,7 @@ contributed SDP lines.
 
 ---
 
-## Phase 4.9: Bootstrap Parameter Warmup + IDR Retry 🔄 In Progress
+## Phase 4.9: Bootstrap Parameter Warmup + IDR Retry ✅ Done
 
 **Problem:** During RTSP startup, a stream can block waiting for SPS/PPS/VPS if the
 video worker has gone idle with no active subscriber callback yet.
@@ -294,21 +294,21 @@ video worker has gone idle with no active subscriber callback yet.
 **SE parity target:** Keep the producer active during bootstrap and periodically
 request IDR until parameter sets are available.
 
-**Implementation started:**
+**Implementation completed:**
 1. Add `video_stream.bootstrap_requested` and use it to keep `VideoWorker` polling
    even without `hasDataCallback`.
 2. Toggle bootstrap-request state in `RTSP::addSubsession()` while waiting for
    parameter sets.
 3. Upgrade `wait_for_parameter_sets()` to request IDR periodically while waiting.
 
-**Files touched (initial pass):**
+**Files changed:**
 - `src/globals.hpp`
 - `src/VideoWorker.cpp`
 - `src/RTSP.cpp`
 
 ---
 
-## Phase 5.0: Audio Startup Anchor Alignment 🔄 In Progress
+## Phase 5.0: Audio Startup Anchor Alignment ✅ Done
 
 **Problem:** Audio timeline anchoring can still start too low when only audio has
 arrived, causing startup skew versus active video timelines.
@@ -316,52 +316,117 @@ arrived, causing startup skew versus active video timelines.
 **SE parity target:** Anchor initial audio presentation origin against the current
 video timeline when available.
 
-**Implementation started:**
+**Implementation completed:**
 1. Add a video-aware audio anchor helper in `AudioWorker`.
 2. Use that anchor for `presentation_origin_us` initialization instead of the
    frame-duration-only fallback.
 
-**Files touched (initial pass):**
+**Files changed:**
 - `src/AudioWorker.cpp`
 
 ---
 
-## Phase 5.1: Native ch0/ch1 Binding Parity 📋 Planned
+## Phase 5.1: Native ch0/ch1 Binding Parity ✅ Done
 
 **Target:** Port SE's `fsChn/sourceChn` and encoder-group binding model for robust
 dual-stream handling (shared/extended frame-source paths where needed).
 
-**Planned scope:**
+**Implementation completed:**
+1. Add explicit stream binding primitives (`FrameSourceBinding`,
+   `encoder_group_for_video()`, `framesource_binding_for_video()`) and carry
+   `encGrp/fsChn/sourceChn` in `video_stream` state.
+2. Switch startup wiring to initialize `stream0/stream1` with explicit binding
+   metadata from those helpers.
+3. Plumb binding metadata into `VideoWorker`, `IMPFramesource`, and
+   `IMPEncoder` creation paths (including source-channel support in
+   `IMP_FrameSource_SetSource` when EXT channels are used).
+
+**Files changed:**
 - `src/globals.hpp`
 - `src/main.cpp`
 - `src/IMPFramesource.hpp/.cpp`
 - `src/IMPEncoder.hpp/.cpp`
+- `src/VideoWorker.cpp`
+- `src/JPEGWorker.cpp`
 
 ---
 
-## Phase 5.2: Session-Aware RTSP Source Lifecycle 📋 Planned
+## Phase 5.2: Session-Aware RTSP Source Lifecycle ✅ Done
 
 **Target:** Port SE's session-aware `IMPDeviceSource` startup gating (`clientSessionId`,
 session video-ready coordination, controlled capture enable/disable) to harden
 multi-client startup/connect/disconnect behavior.
 
-**Planned scope:**
+**Implementation completed:**
+1. Extend `IMPDeviceSource` with session identity (`clientSessionId`), lazy
+   capture activation (`doGetNextFrame`/`doStopGettingFrames`), and optional
+   eager activation for always-on replicator inputs.
+2. Add per-session video-ready coordination so audio packet delivery can wait
+   until that RTSP session has emitted video.
+3. Wire RTSP subsessions to pass `clientSessionId` into each new source.
+
+**Files changed:**
 - `src/IMPDeviceSource.hpp/.cpp`
 - `src/IMPServerMediaSubsession.cpp`
 - `src/IMPAudioServerMediaSubsession.cpp`
+- `src/RTSP.cpp`
+
+---
+
+## Phase 5.3: RTSP Runtime Status Interface ✅ Done
+
+**Target:** Add SE-style runtime RTSP status exposure under
+`/run/prudynt/rtsp/<stream>/...` so stream state/parameters are queryable
+without parsing config files.
+
+**Implementation completed:**
+1. Add `RTSPStatus` service for lifecycle-safe status directory management and
+   per-stream parameter files.
+2. Publish stream state transitions in `RTSP::addSubsession()` (`initializing`,
+   `ready`, `error`) including SPS/PPS/VPS readiness flags.
+3. Initialize/cleanup status interface at RTSP server start/stop.
+4. Publish live per-stream runtime metrics from `VideoWorker` (ring depth,
+   client count, drop count, IDR age, profile/level, observed FPS,
+   producer wall/raw deltas, producer state, channel bindings).
+
+**Files changed:**
+- `src/RTSPStatus.hpp/.cpp`
+- `src/RTSP.cpp`
+- `src/VideoWorker.cpp`
+
+---
+
+## Phase 5.4: Audio Runtime Status Metrics ✅ Done
+
+**Target:** Complete SE runtime-status parity for audio paths by exposing
+audio-buffer and Opus framing diagnostics under `/run/prudynt/rtsp/audio0/`.
+
+**Implementation completed:**
+1. Publish live audio runtime metrics from `AudioWorker`:
+   `buffer_warn_samples_per_channel`, `buffer_cap_samples_per_channel`,
+   `buffer_level_samples_per_channel`, `buffer_drop_count`, plus ring/client/drop
+   counters for the audio stream core.
+2. Track Opus framing mismatches in `Opus` and publish
+   `opus_mismatch_count` to RTSP status.
+
+**Files changed:**
+- `src/AudioWorker.hpp/.cpp`
+- `src/Opus.cpp`
 
 ---
 
 ## Current Status
 
-**Completed:** All 4 phases plus runtime fixes (3.5), critical timestamp fixes (4.5),
-RTCP discontinuity guard (4.6), subscriber/timeline hardening (4.7), and
-Require-gated backchannel SDP handling (4.8)
-are implemented and building successfully. The binary starts cleanly, runs without
-crashes, and exits quickly.
+**Completed:** All roadmap phases through 5.4 are implemented, including:
+runtime fixes (3.5), critical timestamp fixes (4.5), RTCP discontinuity guard
+(4.6), subscriber/timeline hardening (4.7), Require-gated backchannel SDP
+handling (4.8), bootstrap and startup parity (4.9/5.0), native stream binding
+and session lifecycle parity (5.1/5.2), and runtime status parity for both
+video and audio paths (5.3/5.4).
 
-**In progress:** Phase 4.9 (bootstrap warmup/IDR retry) and Phase 5.0 (audio
-startup anchor alignment) are now being implemented.
+**Note:** Prudynt-SE's standalone `SystemSensor` helper was not ported as a
+separate module because prudynt-t already reads sensor data directly from
+`/proc/jz/sensor/*` through `Config.cpp` and `IMPSystem.cpp`.
 
 **Next Steps:**
 
