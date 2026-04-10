@@ -235,11 +235,21 @@ private:
         if (entries_.empty())
             return;
 
+        constexpr uint64_t kLiveEdgeMaxLagFrames = 2;
         const auto frontSequence = entries_.front().sequence;
         if (cursor.nextSequence < frontSequence)
         {
             cursor.overflowCount += frontSequence - cursor.nextSequence;
-            cursor.nextSequence = frontSequence;
+            if (cursor.startPolicy == StreamStartPolicy::LiveEdge && !cursor.requireSync)
+            {
+                // For live-edge consumers (audio), skip stale backlog and resume
+                // from the newest retained frame to keep latency bounded.
+                cursor.nextSequence = entries_.back().sequence;
+            }
+            else
+            {
+                cursor.nextSequence = frontSequence;
+            }
 
             if (cursor.requireSync)
             {
@@ -253,6 +263,18 @@ private:
                         break;
                     }
                 }
+            }
+        }
+
+        if (cursor.startPolicy == StreamStartPolicy::LiveEdge && !cursor.requireSync)
+        {
+            const auto backSequence = entries_.back().sequence;
+            if (backSequence > cursor.nextSequence
+                && (backSequence - cursor.nextSequence) > kLiveEdgeMaxLagFrames)
+            {
+                const auto targetSequence = backSequence - kLiveEdgeMaxLagFrames;
+                cursor.overflowCount += targetSequence - cursor.nextSequence;
+                cursor.nextSequence = targetSequence;
             }
         }
     }

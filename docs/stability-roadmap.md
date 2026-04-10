@@ -415,14 +415,58 @@ audio-buffer and Opus framing diagnostics under `/run/prudynt/rtsp/audio0/`.
 
 ---
 
+## Phase 5.5: Live-Edge Backlog Clamp for Audio ✅ Done
+
+**Problem:** Under queue pressure, live-edge audio consumers could reconnect into
+stale backlog and drift several seconds behind current video, especially visible
+around abrupt scene transitions (e.g. IR-cut toggles).
+
+**Fix:** Add bounded-live-edge behavior in `StreamCore` cursor normalization:
+1. On overflow for non-sync `LiveEdge` consumers, jump to the newest retained frame
+   instead of the oldest retained frame.
+2. Continuously clamp live-edge lag to at most 2 frames from the queue tail.
+
+**Files changed:**
+- `src/StreamCore.hpp`
+
+---
+
+## Phase 5.6: live555 RTP-Info Start Parity ✅ Done
+
+**Problem:** Some reconnects alternated between clean startup timestamps and
+32-bit wrap-style RTP-Info values (for example video `47721.*`, audio
+`268435.*`), causing extreme A/V desync reports in clients.
+
+**Root Causes:**
+1. `RTPSink::presetNextTimestamp()` could reuse stale pre-PLAY RTP state instead
+   of a clean session-local origin.
+2. `OnDemandServerMediaSubsession::startStream()` captured RTP-Info after
+   `startPlaying()`, allowing fast sources to race the advertised start timestamp.
+
+**Fixes (SE parity):**
+1. Port SE-style `presetNextTimestamp()` behavior:
+   - return `fCurrentTimestamp` for mid-stream joins,
+   - reset stale warmup RTP state before first PLAY,
+   - apply codec-specific initial offsets for audio payloads.
+2. Capture RTP-Info (`seq/timestamp`) before `startPlaying()` in
+   `OnDemandServerMediaSubsession::startStream()`.
+3. Keep per-sink timestamp-base behavior deterministic (no shared cross-clock RTP base).
+
+**Files changed:**
+- `res/live555/0002-use-monotonic-preset-timestamp.patch`
+- `res/live555/0003-capture-rtp-info-before-start-playing.patch`
+
+---
+
 ## Current Status
 
-**Completed:** All roadmap phases through 5.4 are implemented, including:
+**Completed:** All roadmap phases through 5.6 are implemented, including:
 runtime fixes (3.5), critical timestamp fixes (4.5), RTCP discontinuity guard
 (4.6), subscriber/timeline hardening (4.7), Require-gated backchannel SDP
 handling (4.8), bootstrap and startup parity (4.9/5.0), native stream binding
 and session lifecycle parity (5.1/5.2), and runtime status parity for both
-video and audio paths (5.3/5.4).
+video and audio paths (5.3/5.4), plus live-edge backlog clamping and deterministic
+RTP-Info startup parity for repeated reconnects (5.5/5.6).
 
 **Note:** Prudynt-SE's standalone `SystemSensor` helper was not ported as a
 separate module because prudynt-t already reads sensor data directly from
@@ -449,6 +493,8 @@ separate module because prudynt-t already reads sensor data directly from
 After each phase, verify with the target hardware:
 
 - [ ] `ffprobe rtsp://<ip>/ch0` — clean output, no negative DTS/PTS
+- [ ] Repeat RTSP reconnect probes (or repeated `ffplay` opens) — no startup wrap values
+      (`47721.*` / `268435.*`), both tracks start near 0
 - [ ] `ffmpeg -i rtsp://<ip>/ch0 -t 20 /dev/null` — 20 seconds without warnings
 - [ ] VLC opens stream, plays back without stutter
 - [ ] Two simultaneous clients (e.g. ffplay + VLC) — neither drops packets

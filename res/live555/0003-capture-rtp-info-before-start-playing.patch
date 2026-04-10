@@ -1,0 +1,23 @@
+diff --git i/liveMedia/OnDemandServerMediaSubsession.cpp w/liveMedia/OnDemandServerMediaSubsession.cpp
+index 5dd8fdc..5cf123b 100644
+--- i/liveMedia/OnDemandServerMediaSubsession.cpp
++++ w/liveMedia/OnDemandServerMediaSubsession.cpp
+@@ -248,14 +248,16 @@ void OnDemandServerMediaSubsession::startStream(unsigned clientSessionId,
+   Destinations* destinations
+     = (Destinations*)(fDestinationsHashTable->Lookup((char const*)clientSessionId));
+   if (streamState != NULL) {
+-    streamState->startPlaying(destinations, clientSessionId,
+-			      rtcpRRHandler, rtcpRRHandlerClientData,
+-			      serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+     RTPSink* rtpSink = streamState->rtpSink(); // alias
+     if (rtpSink != NULL) {
++      // Capture RTP-Info values before packets can race ahead in startPlaying().
+       rtpSeqNum = rtpSink->currentSeqNo();
+       rtpTimestamp = rtpSink->presetNextTimestamp();
+     }
++
++    streamState->startPlaying(destinations, clientSessionId,
++			      rtcpRRHandler, rtcpRRHandlerClientData,
++			      serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+   }
+ }
