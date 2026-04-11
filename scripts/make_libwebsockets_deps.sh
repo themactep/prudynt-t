@@ -45,7 +45,8 @@ else
     echo "Pulling libwebsockets master"
 fi
 
-# Create and navigate to cmake build dir
+# Create a fresh CMake build dir to avoid stale cross-toolchain cache
+rm -rf build
 mkdir -p build
 cd build
 

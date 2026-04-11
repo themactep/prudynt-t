@@ -59,7 +59,8 @@ git apply ../../res/libhelix-aac/0001-not-arduino.patch
 git apply ../../res/libhelix-aac/0002-remove-mangling.patch
 git apply ../../res/libhelix-aac/0003-CMakeLists.patch
 
-# Create and navigate to build directory
+# Create a fresh CMake build directory to avoid stale cross-toolchain cache
+rm -rf build
 mkdir -p build
 cd build
 
@@ -90,4 +91,3 @@ echo "Installing libhelix-aac library and headers..."
 make install
 
 echo "libhelix-aac build complete!"
-

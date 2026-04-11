@@ -51,7 +51,8 @@ else
     echo "Pulling Opus master"
 fi
 
-# Create and navigate to build directory
+# Create a fresh CMake build directory to avoid stale cross-toolchain cache
+rm -rf build
 mkdir -p build
 cd build
 
