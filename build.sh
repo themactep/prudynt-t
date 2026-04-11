@@ -6,7 +6,7 @@ _PRUDYNT_CROSS_EXPLICIT=${PRUDYNT_CROSS+set}
 : "${PRUDYNT_CROSS:=ccache mipsel-linux-}"
 
 TOP=$(pwd)
-NFS_SHARE="/nfs/"
+NFS_SHARE="/nfs"
 
 TOOLCHAIN_RELEASE="toolchain-x86_64"
 TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_xburst1_musl_gcc15-linux-mipsel.tar.gz"
