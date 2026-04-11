@@ -342,7 +342,7 @@ deps() {
 			;;
 		T23)
 			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.1.0/uclibc/5.4.0"
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.3.0/uclibc/5.4.0"
 			;;
 		T30)
 			echo "use $1 libs"
@@ -362,7 +362,7 @@ deps() {
 			;;
 		T41)
 			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0"
+			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.2.5/uclibc/7.2.0"
 			;;
 		*)
 			echo "Unsupported or unspecified SoC model."
