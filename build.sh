@@ -9,16 +9,42 @@ TOP=$(pwd)
 NFS_SHARE="/nfs"
 
 TOOLCHAIN_RELEASE="toolchain-x86_64"
-TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_xburst1_musl_gcc15-linux-mipsel.tar.gz"
-TOOLCHAIN_URL="https://github.com/themactep/thingino-firmware/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
-TOOLCHAIN_SDK="${TOP}/toolchain/mipsel-thingino-linux-musl_sdk-buildroot"
+
+# Map SOC to xburst generation
+get_xburst_generation() {
+	local soc="$1"
+	case "$soc" in
+		T10|T20|T21|T23|T30|T31|C100)
+			echo "xburst1"
+			;;
+		T40|T41)
+			echo "xburst2"
+			;;
+		*)
+			echo "xburst1"  # Default to xburst1 for unknown SOCs
+			;;
+	esac
+}
+
+# Set toolchain variables based on SOC
+set_toolchain_for_soc() {
+	local soc="$1"
+	local xburst=$(get_xburst_generation "$soc")
+	
+	TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_${xburst}_musl_gcc15-linux-mipsel.tar.gz"
+	TOOLCHAIN_URL="https://github.com/themactep/thingino-firmware/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
+	TOOLCHAIN_SDK="${TOP}/toolchain/${xburst}/mipsel-thingino-linux-musl_sdk-buildroot"
+}
+
+# Initialize with default (xburst1) for non-SOC commands
+set_toolchain_for_soc "T31"
 
 ensure_toolchain() {
 	[[ -n "$_PRUDYNT_CROSS_EXPLICIT" ]] && return 0
 
 	if [[ ! -d "${TOOLCHAIN_SDK}/bin" ]]; then
 		echo "Thingino toolchain not found, downloading..."
-		mkdir -p "${TOP}/toolchain"
+		mkdir -p "${TOP}/toolchain/xburst1" "${TOP}/toolchain/xburst2"
 		if command -v wget &>/dev/null; then
 			wget -q --show-progress "${TOOLCHAIN_URL}" -O "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
 		else
@@ -38,8 +64,12 @@ ensure_toolchain() {
 }
 
 prudynt() {
+	local soc="$1"
+	shift  # Remove SOC from arguments
+	
+	set_toolchain_for_soc "$soc"
 	ensure_toolchain
-	echo "Build prudynt"
+	echo "Build prudynt for $soc"
 
 	cd $TOP
 	make clean
@@ -124,6 +154,10 @@ prudynt() {
 }
 
 deps() {
+	local soc="$1"
+	shift  # Remove SOC from arguments
+	
+	set_toolchain_for_soc "$soc"
 	ensure_toolchain
 	# Parse flags for dependency builds
 	CLEAN_ALL=0
