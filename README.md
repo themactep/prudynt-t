@@ -18,8 +18,9 @@ This is the simplest way to build prudynt-t in an isolated environment with all 
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-user/prudynt-t.git
+git clone https://github.com/themactep/prudynt-t.git
 cd prudynt-t
+git checkout stability-improvements
 
 # Update submodules
 git submodule update --init
@@ -49,8 +50,9 @@ For the best binary compatibility and integration with the Thingino firmware:
 1. Set up [Thingino buildroot](https://github.com/themactep/thingino-firmware/wiki/Development) environment
 2. Clone prudynt-t into the buildroot:
    ```bash
-   git clone https://github.com/your-user/prudynt-t.git
+   git clone https://github.com/themactep/prudynt-t.git
    cd prudynt-t
+   git checkout stability-improvements
    git submodule update --init
    ```
 3. Run the buildroot build script:
