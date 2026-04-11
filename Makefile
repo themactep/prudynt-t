@@ -150,32 +150,66 @@ ifneq ($(MAKECMDGOALS),clean)
 # Static Binary Configuration
 # ---------------------------
 ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
-override LDFLAGS       += -static -static-libgcc -static-libstdc++
-LIBS                    = -l:libimp.a \
-                          -l:libalog.a \
-                          -l:libsysutils.a \
-                          -l:libliveMedia.a \
-                          -l:libgroupsock.a \
-                          -l:libBasicUsageEnvironment.a \
-                          -l:libUsageEnvironment.a \
-                          $(WEBSOCKET_LIB_STATIC_LINE) \
-                          -l:libschrift.a \
-                          $(OPUS_LIB_STATIC_LINE) \
-                          $(FAAC_LIB_STATIC_LINE) \
-                          $(AAC_LIB_STATIC_LINE) \
-                          $(MP3_LIB_STATIC_LINE) \
-                          $(FLAC_LIB_STATIC_LINE) \
-                          -l:libcurl.a \
-                          -ljct \
-                          -latomic
-
-ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
-	# GLIBC - no additional libraries needed
-else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
-	# uClibc - no additional libraries needed
+ifneq (,$(or $(findstring -DPLATFORM_T40,$(CFLAGS)), $(findstring -DPLATFORM_T41,$(CFLAGS))))
+	override CFLAGS      += -fno-PIE
+	override LDFLAGS     += -no-pie
+	override LDFLAGS     += -static-libgcc -static-libstdc++
+	LIBS                  = -Wl,-Bdynamic \
+	                        -l:libimp.so \
+	                        -l:libalog.so \
+	                        -l:libsysutils.so \
+	                        -l:libaudioProcess.so \
+	                        -Wl,-Bstatic \
+	                        -l:libliveMedia.a \
+	                        -l:libgroupsock.a \
+	                        -l:libBasicUsageEnvironment.a \
+	                        -l:libUsageEnvironment.a \
+	                        $(WEBSOCKET_LIB_STATIC_LINE) \
+	                        -l:libschrift.a \
+	                        $(OPUS_LIB_STATIC_LINE) \
+	                        $(FAAC_LIB_STATIC_LINE) \
+	                        $(AAC_LIB_STATIC_LINE) \
+	                        $(MP3_LIB_STATIC_LINE) \
+	                        $(FLAC_LIB_STATIC_LINE) \
+	                        -l:libcurl.a \
+	                        -ljct \
+	                        -latomic
+	ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
+		# GLIBC - no additional libraries needed
+	else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
+		# uClibc - no additional libraries needed
+	else
+		# Default to musl
+		LIBS               += -Wl,-Bdynamic -l:libmuslshim.so -Wl,-Bstatic
+	endif
 else
-	# Default to musl - shim resolves uclibc ABI symbols in libimp.a/libalog.a/libsysutils.a
-LIBS                   += -l:libmuslshim.a
+	override LDFLAGS     += -static -static-libgcc -static-libstdc++
+	LIBS                  = -l:libimp.a \
+	                        -l:libalog.a \
+	                        -l:libsysutils.a \
+	                        -l:libliveMedia.a \
+	                        -l:libgroupsock.a \
+	                        -l:libBasicUsageEnvironment.a \
+	                        -l:libUsageEnvironment.a \
+	                        $(WEBSOCKET_LIB_STATIC_LINE) \
+	                        -l:libschrift.a \
+	                        $(OPUS_LIB_STATIC_LINE) \
+	                        $(FAAC_LIB_STATIC_LINE) \
+	                        $(AAC_LIB_STATIC_LINE) \
+	                        $(MP3_LIB_STATIC_LINE) \
+	                        $(FLAC_LIB_STATIC_LINE) \
+	                        -l:libcurl.a \
+	                        -ljct \
+	                        -latomic
+
+	ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
+		# GLIBC - no additional libraries needed
+	else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
+		# uClibc - no additional libraries needed
+	else
+		# Default to musl - shim resolves uclibc ABI symbols in libimp.a/libalog.a/libsysutils.a
+		LIBS               += -l:libmuslshim.a
+	endif
 endif
 
 # Hybrid Binary Configuration
@@ -292,7 +326,7 @@ else ifneq (,$(findstring -DPLATFORM_T40,$(CFLAGS)))
     LIBIMP_DEFAULT_SDK_VERSION := 1.2.0
 else ifneq (,$(findstring -DPLATFORM_T41,$(CFLAGS)))
     LIBIMP_PLATFORM        := T41
-    LIBIMP_LANG            := zh
+    LIBIMP_LANG            := en
     LIBIMP_DEFAULT_SDK_VERSION := 1.2.5
 else
     LIBIMP_PLATFORM        := T31
