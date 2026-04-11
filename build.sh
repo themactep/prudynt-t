@@ -50,8 +50,10 @@ ensure_toolchain() {
 		else
 			curl -L --progress-bar "${TOOLCHAIN_URL}" -o "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
 		fi
-		echo "Extracting toolchain to ${TOP}/toolchain/ ..."
-		tar -xf "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}" -C "${TOP}/toolchain"
+		# Extract to the appropriate xburst subdirectory
+		local xburst_dir=$(dirname "${TOOLCHAIN_SDK}")
+		echo "Extracting toolchain to ${xburst_dir}/ ..."
+		tar -xf "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}" -C "${xburst_dir}"
 		rm -f "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
 		if [[ -x "${TOOLCHAIN_SDK}/relocate-sdk.sh" ]]; then
 			echo "Relocating SDK..."
