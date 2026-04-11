@@ -480,6 +480,8 @@ deps() {
 		fi
 
 	# faac uses meson; create a cross-file for mipsel
+	# Fix meson.build for newer meson versions (change c_std=gnu99,c99 to c_std=gnu99)
+	sed -i "s/'c_std=gnu99,c99'/'c_std=gnu99'/g" meson.build
 	cat > /tmp/faac-meson-cross.ini <<-CROSSFILE
 		[binaries]
 		c = '${PRUDYNT_CROSS}gcc'

@@ -12,8 +12,11 @@
 
 ## Building
 
-The best and most binary-compatible way to build prudynt-t is by using `buildroot_dev.sh` within the [Thingino buildroot](https://github.com/themactep/thingino-firmware/wiki/Development) environment. Alternatively, you can use the following Docker image for a more isolated setup:
-```
+### Option 1: Using Podman (Recommended for isolation)
+
+This is the simplest way to build prudynt-t in an isolated environment with all dependencies pre-configured. Podman provides a rootless, daemonless container engine.
+
+```bash
 # Clone the repo
 git clone https://github.com/your-user/prudynt-t.git
 cd prudynt-t
@@ -22,15 +25,40 @@ cd prudynt-t
 git submodule update --init
 
 # Build for a specific target and build type
-docker build \
+podman build \
   --build-arg TARGET=T31 \
   --build-arg BUILD_TYPE=dynamic \
   -t prudynt-builder .
 
-docker run --rm -v "$(pwd):/src" prudynt-builder
-
-# You will find the resulting binary at: bin/
+podman run --rm -v "$(pwd):/src" prudynt-builder
 ```
+
+**Build Type Options:**
+- `dynamic` (default): Dynamically linked binary
+- `static`: Statically linked binary  
+- `hybrid`: Hybrid linking mode
+
+The resulting binary will be at: `bin/prudynt-T31-dynamic`
+
+**Note:** If you prefer Docker, simply replace `podman` with `docker` in the commands above.
+
+### Option 2: Using Thingino Buildroot (Recommended for production)
+
+For the best binary compatibility and integration with the Thingino firmware:
+
+1. Set up [Thingino buildroot](https://github.com/themactep/thingino-firmware/wiki/Development) environment
+2. Clone prudynt-t into the buildroot:
+   ```bash
+   git clone https://github.com/your-user/prudynt-t.git
+   cd prudynt-t
+   git submodule update --init
+   ```
+3. Run the buildroot build script:
+   ```bash
+   ./buildroot_dev.sh -b dynamic wyze_cp2
+   ```
+
+This method uses the Thingino cross-compilation toolchain (GCC 15) and ensures maximum compatibility with your target device.
 
 ## Contributing
 

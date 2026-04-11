@@ -8,10 +8,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
     build-essential bc bison cpio curl file flex git libncurses-dev \
     make rsync unzip wget whiptail gcc lzop u-boot-tools \
-    ca-certificates cmake && \
+    ca-certificates cmake meson ninja-build && \
     rm -rf /var/lib/apt/lists/*
 
-ENV TOOLCHAIN_URL=https://github.com/themactep/thingino-firmware/releases/download/toolchain-x86_64/thingino-toolchain-x86_64_xburst1_4_4_musl_gcc14-linux-mipsel.tar.gz
+ENV TOOLCHAIN_URL=https://github.com/themactep/thingino-firmware/releases/download/toolchain-x86_64/thingino-toolchain-x86_64_xburst1_4_4_musl_gcc15-linux-mipsel.tar.gz
 ENV TOOLCHAIN_DIR=/opt/mipsel-thingino-linux-musl_sdk-buildroot
 
 RUN mkdir -p /opt && \
