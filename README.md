@@ -28,7 +28,7 @@ git submodule update --init
 # Build for a specific target and build type
 podman build \
   --build-arg TARGET=T31 \
-  --build-arg BUILD_TYPE=dynamic \
+  --build-arg BUILD_TYPE=static \
   -t prudynt-builder .
 
 podman run --rm -v "$(pwd):/src" prudynt-builder
@@ -39,7 +39,7 @@ podman run --rm -v "$(pwd):/src" prudynt-builder
 - `static`: Statically linked binary  
 - `hybrid`: Hybrid linking mode
 
-The resulting binary will be at: `bin/prudynt-T31-dynamic`
+The resulting binary will be at: `bin/prudynt-T31-static`
 
 **Note:** If you prefer Docker, simply replace `podman` with `docker` in the commands above.
 
@@ -57,10 +57,36 @@ For the best binary compatibility and integration with the Thingino firmware:
    ```
 3. Run the buildroot build script:
    ```bash
-   ./buildroot_dev.sh -b dynamic wyze_cp2
+   ./buildroot_dev.sh -b static wyze_cp2
    ```
 
 This method uses the Thingino cross-compilation toolchain (GCC 15) and ensures maximum compatibility with your target device.
+
+### Option 3: Using build.sh directly
+
+If you have the build dependencies installed locally (Thingino toolchain, meson, ninja, etc.), you can build directly:
+
+```bash
+# Clone the repo
+git clone https://github.com/themactep/prudynt-t.git
+cd prudynt-t
+git checkout stability-improvements
+
+# Update submodules
+git submodule update --init
+
+# Build for a specific target and build type
+./build.sh prudynt T31 -static
+```
+
+**Build Type Options:**
+- `-static`: Statically linked binary (recommended)
+- `-dynamic`: Dynamically linked binary
+- `-hybrid`: Hybrid linking mode
+
+The resulting binary will be at: `bin/prudynt-T31-static`
+
+This method requires a pre-configured build environment but provides the fastest iteration for development.
 
 ## Contributing
 
