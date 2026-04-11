@@ -135,7 +135,7 @@ prudynt() {
 
 	/usr/bin/make -j$(nproc) \
 	ARCH= CROSS_COMPILE="${PRUDYNT_CROSS}" \
-	CFLAGS="-DPLATFORM_$1 $BIN_TYPE $OPTIMIZATION $DEBUG_FLAGS -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
+	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $OPTIMIZATION $DEBUG_FLAGS -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include \
 	-isystem ./3rdparty/install/include/liveMedia \
 	-isystem ./3rdparty/install/include/groupsock \
@@ -147,7 +147,7 @@ prudynt() {
 
 	if [ -d "$NFS_SHARE" ]; then
 		echo "DONE. COPYING BINARY TO $NFS_SHARE"
-		SOC_LOWER=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+		SOC_LOWER=$(echo "$soc" | tr '[:upper:]' '[:lower:]')
 		cp -vf bin/prudynt "$NFS_SHARE/prudynt-$SOC_LOWER"
 		cp -vf res/prudynt.json "$NFS_SHARE/prudynt-$SOC_LOWER.json"
 	fi
@@ -339,7 +339,7 @@ deps() {
 		done
 	fi
 
-	if [[ "$2" == "-static" || "$2" == "-hybrid" ]]; then
+	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
 		echo "STATIC LIVE555"
 		cp ../../res/live555-config.prudynt-static ./config.prudynt-static
 		./genMakefiles prudynt-static
@@ -367,38 +367,38 @@ deps() {
 	fi
 
 	INGENIC_LIB_SRC=""
-	case "$1" in
+	case "$soc" in
 		T10|T20)
 			echo "use T20 libs"
 			INGENIC_LIB_SRC="ingenic-lib/T20/lib/3.12.0/uclibc/4.7.2"
 			;;
 		T21)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.0.33/uclibc/5.4.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.0.33/uclibc/5.4.0"
 			;;
 		T23)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.3.0/uclibc/5.4.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.3.0/uclibc/5.4.0"
 			;;
 		T30)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.0.5/uclibc/5.4.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.0.5/uclibc/5.4.0"
 			;;
 		T31)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.1.6/uclibc/5.4.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.1.6/uclibc/5.4.0"
 			;;
 		C100)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/2.1.0/uclibc/5.4.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/2.1.0/uclibc/5.4.0"
 			;;
 		T40)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.2.0/uclibc/7.2.0"
 			;;
 		T41)
-			echo "use $1 libs"
-			INGENIC_LIB_SRC="ingenic-lib/$1/lib/1.2.5/uclibc/7.2.0"
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.2.5/uclibc/7.2.0"
 			;;
 		*)
 			echo "Unsupported or unspecified SoC model."
