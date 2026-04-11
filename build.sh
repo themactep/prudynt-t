@@ -115,8 +115,9 @@ prudynt() {
 
 	if [ -d "$NFS_SHARE" ]; then
 		echo "DONE. COPYING BINARY TO $NFS_SHARE"
-		cp -vf bin/prudynt "$NFS_SHARE"
-		cp -vf res/prudynt.json "$NFS_SHARE"
+		SOC_LOWER=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+		cp -vf bin/prudynt "$NFS_SHARE/prudynt-$SOC_LOWER"
+		cp -vf res/prudynt.json "$NFS_SHARE/prudynt-$SOC_LOWER.json"
 	fi
 
 	exit 0
