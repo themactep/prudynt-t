@@ -75,6 +75,7 @@ void VideoWorker::run() {
   int64_t ts_last_rtp_us = 0;
   int64_t ts_current_frame_us = 0;
   bool ts_have_current_frame = false;
+  bool had_video_clients = false;
 
   auto reset_mp4_sample = [&]() {
     mp4_sample.clear();
@@ -252,6 +253,23 @@ void VideoWorker::run() {
     }
     run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
     bool bootstrap_requested = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
+    bool video_clients_active = global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+    if (video_clients_active && !had_video_clients) {
+      if (global_video[encChn]->msgChannel) {
+        global_video[encChn]->msgChannel->clear();
+      }
+      IMP_Encoder_RequestIDR(encChn);
+      int flush_ret = IMP_Encoder_FlushStream(encChn);
+      if (flush_ret != 0) {
+        LOG_WARN("VideoWorker: IMP_Encoder_FlushStream(" << encChn << ") failed during subscriber startup");
+      }
+      ts_last_nonzero_us = 0;
+      ts_last_frame_us = 0;
+      ts_last_rtp_us = 0;
+      ts_current_frame_us = 0;
+      ts_have_current_frame = false;
+    }
+    had_video_clients = video_clients_active;
 
     /* now we need to verify that
      * 1. a client is connected (hasDataCallback)
@@ -264,8 +282,7 @@ void VideoWorker::run() {
 #else
     bool prebuffer_active = false;
 #endif
-    if (global_video[encChn]->hasDataCallback || run_for_jpeg || bootstrap_requested || global_force_video_active ||
-        prebuffer_active) {
+    if (video_clients_active || run_for_jpeg || bootstrap_requested || global_force_video_active || prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
