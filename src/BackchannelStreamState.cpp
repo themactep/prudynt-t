@@ -27,14 +27,19 @@ BackchannelStreamState::BackchannelStreamState(UsageEnvironment &env, char const
 BackchannelStreamState::~BackchannelStreamState() {
   LOG_DEBUG("Destroyed for session " << static_cast<unsigned>(clientSessionId));
   Medium::close(rtcpInstance);
-  Medium::close(rtpSource);
   Medium::close(mediaSink);
+  mediaSink = nullptr;
+  Medium::close(rtpSource);
+  rtpSource = nullptr;
+  rtcpInstance = nullptr;
 
   // Delete groupsocks
   delete rtpGS;
+  rtpGS = nullptr;
   if (rtcpGS != nullptr && rtcpGS != rtpGS) { // Avoid double delete if multiplexing
     delete rtcpGS;
   }
+  rtcpGS = nullptr;
 }
 
 void BackchannelStreamState::startPlaying(TaskFunc *rtcpRRHandler, void *rtcpRRHandlerClientData,

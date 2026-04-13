@@ -2,6 +2,8 @@
 #include "Config.hpp"
 #include "imp_hal.hpp"
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <unistd.h>
 
@@ -166,15 +168,82 @@ void clamp_streams_to_sensor_limits() {
   clamp_stream_to_sensor_limits("stream3", cfg->stream3);
 }
 
+int add_sensor_with_retry(IMPSensorInfo &sensor_info) {
+  int ret = hal::isp::add_sensor(&sensor_info);
+#if defined(PLATFORM_T23)
+  if (ret != 0) {
+    LOG_WARN("IMPSystem init: add_sensor failed on first attempt; trying targeted ISP cleanup and retry");
+
+    int cleanup_ret = hal::isp::disable_sensor();
+    LOG_DEBUG_OR_ERROR(cleanup_ret, "hal::isp::disable_sensor() cleanup before add_sensor retry");
+
+    cleanup_ret = hal::isp::del_sensor(&sensor_info);
+    LOG_DEBUG_OR_ERROR(cleanup_ret, "hal::isp::del_sensor(&sinfo) cleanup before add_sensor retry");
+
+    cleanup_ret = IMP_ISP_Close();
+    LOG_DEBUG_OR_ERROR(cleanup_ret, "IMP_ISP_Close() cleanup before add_sensor retry");
+
+    cleanup_ret = IMP_ISP_Open();
+    LOG_DEBUG_OR_ERROR(cleanup_ret, "IMP_ISP_Open() retry before add_sensor retry");
+    if (cleanup_ret == 0) {
+      ret = hal::isp::add_sensor(&sensor_info);
+      if (ret == 0) {
+        LOG_WARN("IMPSystem init: add_sensor retry succeeded after targeted cleanup");
+      }
+    } else {
+      ret = cleanup_ret;
+    }
+  }
+#endif
+  return ret;
+}
+
+void cleanup_stale_t23_isp_state(IMPSensorInfo &sensor_info) {
+#if defined(PLATFORM_T23)
+  LOG_WARN("IMPSystem init: running preemptive T23 stale ISP cleanup before sensor attach");
+
+  int ret = hal::isp::disable_sensor();
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::disable_sensor() preemptive cleanup before add_sensor");
+
+  ret = hal::isp::del_sensor(&sensor_info);
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::del_sensor(&sinfo) preemptive cleanup before add_sensor");
+
+  ret = IMP_ISP_Close();
+  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Close() preemptive cleanup before add_sensor");
+
+  ret = IMP_ISP_Open();
+  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Open() preemptive cleanup before add_sensor retry");
+
+  LOG_WARN("IMPSystem init: completed preemptive T23 stale ISP cleanup before sensor attach");
+#else
+  (void)sensor_info;
+#endif
+}
+
 } // namespace
 
 IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name) {
   IMPSensorInfo out;
   memset(&out, 0, sizeof(IMPSensorInfo));
-  LOG_INFO("Sensor: " << cfg->sensor.model);
-  strcpy(out.name, cfg->sensor.model);
+  const char *resolved_sensor = sensor_name;
+  std::string fallback_sensor;
+  if (!resolved_sensor || resolved_sensor[0] == '\0' || strcmp(resolved_sensor, "unknown") == 0) {
+    std::ifstream sensor_name_file("/proc/jz/sensor/name");
+    if (sensor_name_file) {
+      std::getline(sensor_name_file, fallback_sensor);
+      if (!fallback_sensor.empty()) {
+        resolved_sensor = fallback_sensor.c_str();
+      }
+    }
+  }
+  if (!resolved_sensor || resolved_sensor[0] == '\0') {
+    resolved_sensor = "unknown";
+  }
+
+  LOG_INFO("Sensor: " << resolved_sensor);
+  strcpy(out.name, resolved_sensor);
   out.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
-  strcpy(out.i2c.type, cfg->sensor.model);
+  strcpy(out.i2c.type, resolved_sensor);
   out.i2c.addr = cfg->sensor.i2c_address;
   out.i2c.i2c_adapter_id = cfg->sensor.i2c_bus;
   out.rst_gpio = cfg->sensor.gpio_reset;
@@ -193,15 +262,26 @@ IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name) {
 }
 
 IMPSystem *IMPSystem::createNew() {
-  return new IMPSystem();
+  try {
+    return new IMPSystem();
+  } catch (const std::exception &e) {
+    LOG_ERROR("IMPSystem::createNew failed: " << e.what());
+  } catch (...) {
+    LOG_ERROR("IMPSystem::createNew failed: unknown exception");
+  }
+  return nullptr;
 }
 
 int IMPSystem::init() {
   LOG_DEBUG("IMPSystem::init()");
   int ret = 0;
 
+#if defined(PLATFORM_T23)
+  LOG_WARN("IMPSystem init: skipping early sensor procfs refresh on T23 until after sensor enable");
+#else
   refresh_sensor_properties_from_proc();
   clamp_streams_to_sensor_limits();
+#endif
 
   {
     int pool_size_kb;
@@ -227,15 +307,28 @@ int IMPSystem::init() {
   ret = SU_Base_GetVersion(&suVersion);
   LOG_INFO("SYSUTILS Version: " << suVersion.chr);
 
+#if defined(PLATFORM_T23)
+  cfg->sysinfo.cpu = "T23";
+  LOG_WARN("IMPSystem init: skipping IMP_System_GetCPUInfo on T23 (set PRUDYNT_FORCE_CPUINFO=1 to enable)");
+  const char *force_cpuinfo = std::getenv("PRUDYNT_FORCE_CPUINFO");
+  if (force_cpuinfo && force_cpuinfo[0] != '\0' && strcmp(force_cpuinfo, "1") == 0) {
+    cfg->sysinfo.cpu = IMP_System_GetCPUInfo();
+    LOG_INFO("CPU Information: " << cfg->sysinfo.cpu);
+  }
+#else
   cfg->sysinfo.cpu = IMP_System_GetCPUInfo();
   LOG_INFO("CPU Information: " << cfg->sysinfo.cpu);
+#endif
 
   ret = IMP_ISP_Open();
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_ISP_Open()");
 
   /* sensor */
   sinfo = create_sensor_info(cfg->sensor.model);
-  ret = hal::isp::add_sensor(&sinfo);
+#if defined(PLATFORM_T23)
+  cleanup_stale_t23_isp_state(sinfo);
+#endif
+  ret = add_sensor_with_retry(sinfo);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::add_sensor(&sinfo)");
 
   ret = hal::isp::enable_sensor(&sinfo);
@@ -304,6 +397,40 @@ int IMPSystem::init() {
   ret = hal::isp::set_max_again(static_cast<unsigned char>(cfg->image.max_again));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_again(" << cfg->image.max_again << ")");
 
+#if defined(PLATFORM_T23)
+  const char *force_advanced_isp = std::getenv("PRUDYNT_FORCE_ADVANCED_ISP");
+  bool apply_advanced_isp_tunings =
+      (force_advanced_isp && force_advanced_isp[0] != '\0' && strcmp(force_advanced_isp, "1") == 0);
+  if (!apply_advanced_isp_tunings) {
+    LOG_WARN("IMPSystem init: advanced ISP tunings disabled on T23 (set PRUDYNT_FORCE_ADVANCED_ISP=1 to enable)");
+  }
+  if (apply_advanced_isp_tunings) {
+    ret = hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->image.max_dgain));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
+
+    ret = hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain="
+                                                      << cfg->image.wb_rgain << ", bgain=" << cfg->image.wb_bgain
+                                                      << ")");
+
+    ret = hal::isp::set_hue(static_cast<unsigned char>(cfg->image.hue));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_hue(" << cfg->image.hue << ")");
+
+    ret = hal::isp::set_defog_strength(static_cast<uint8_t>(cfg->image.defog_strength));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_defog_strength(" << cfg->image.defog_strength << ")");
+
+    ret = hal::isp::set_dpc_strength(static_cast<unsigned char>(cfg->image.dpc_strength));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_dpc_strength(" << cfg->image.dpc_strength << ")");
+  }
+
+  const char *force_drc = std::getenv("PRUDYNT_FORCE_DRC");
+  if (force_drc && force_drc[0] != '\0' && strcmp(force_drc, "1") == 0) {
+    ret = hal::isp::set_drc_strength(static_cast<unsigned char>(cfg->image.drc_strength));
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_drc_strength(" << cfg->image.drc_strength << ")");
+  } else {
+    LOG_WARN("IMPSystem init: skipping hal::isp::set_drc_strength on T23 (set PRUDYNT_FORCE_DRC=1 to enable)");
+  }
+#else
   ret = hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->image.max_dgain));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
 
@@ -323,6 +450,7 @@ int IMPSystem::init() {
 
   ret = hal::isp::set_drc_strength(static_cast<unsigned char>(cfg->image.drc_strength));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_drc_strength(" << cfg->image.drc_strength << ")");
+#endif
 
   const bool backlight_requested = cfg->image.backlight_compensation > 0;
   const bool highlight_requested = cfg->image.highlight_depress > 0;
@@ -349,8 +477,18 @@ int IMPSystem::init() {
   if (cfg->sensor.fps > 0 && desired_sensor_fps > (int)cfg->sensor.fps) {
     desired_sensor_fps = cfg->sensor.fps;
   }
+#if defined(PLATFORM_T23)
+  const char *force_sensor_fps = std::getenv("PRUDYNT_FORCE_SENSOR_FPS");
+  if (force_sensor_fps && force_sensor_fps[0] != '\0' && strcmp(force_sensor_fps, "1") == 0) {
+    ret = hal::isp::set_sensor_fps(desired_sensor_fps, 1);
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_sensor_fps(" << desired_sensor_fps << ", 1)");
+  } else {
+    LOG_WARN("IMPSystem init: skipping hal::isp::set_sensor_fps on T23 (set PRUDYNT_FORCE_SENSOR_FPS=1 to enable)");
+  }
+#else
   ret = hal::isp::set_sensor_fps(desired_sensor_fps, 1);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_sensor_fps(" << desired_sensor_fps << ", 1)");
+#endif
 
 #if defined(PLATFORM_T21)
   // T20 T21 only set FPS if it is read after set.
@@ -370,6 +508,10 @@ int IMPSystem::init() {
 int IMPSystem::destroy() {
   int ret;
 
+  // Tear down in reverse order of init(): tuning -> system -> sensor -> ISP.
+  ret = IMP_ISP_DisableTuning();
+  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DisableTuning()");
+
   ret = IMP_System_Exit();
   LOG_DEBUG_OR_ERROR(ret, "IMP_System_Exit()");
 
@@ -378,9 +520,6 @@ int IMPSystem::destroy() {
 
   ret = hal::isp::del_sensor(&sinfo);
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::del_sensor(&sinfo)");
-
-  ret = IMP_ISP_DisableTuning();
-  LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DisableTuning()");
 
   ret = IMP_ISP_Close();
   LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Close()");

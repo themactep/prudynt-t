@@ -2441,6 +2441,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason, void *use
 }
 
 void WS::start() {
+  stop_requested.store(false, std::memory_order_relaxed);
   char *ip = NULL;
 
   // create websocket authentication token and write it into /run/prudynt/
@@ -2539,13 +2540,23 @@ void WS::start() {
 
   LOG_INFO("Server started on port " << cfg->websocket.port);
 
-  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
+  while (!global_shutdown_requested.load(std::memory_order_relaxed) &&
+         !stop_requested.load(std::memory_order_relaxed)) {
     lws_service(context, 50);
   }
 
   LOG_INFO("Server stopped.");
 
   lws_context_destroy(context);
+  context = nullptr;
+}
+
+void WS::stop() {
+  stop_requested.store(true, std::memory_order_relaxed);
+  if (context) {
+    LOG_DEBUG("WS::stop: cancelling libwebsockets service loop");
+    lws_cancel_service(context);
+  }
 }
 
 void *WS::run(void *arg) {

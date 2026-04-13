@@ -1,5 +1,8 @@
-#include <iostream>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
+#include <string>
+#include <sys/time.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -14,6 +17,31 @@
 #include "Logger.hpp"
 
 const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"};
+
+namespace {
+void current_timestamp(char *out, size_t out_size) {
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+
+  time_t now = tv.tv_sec;
+  struct tm local_tm;
+  if (localtime_r(&now, &local_tm) == nullptr) {
+    snprintf(out, out_size, "1970-01-01 00:00:00.000");
+    return;
+  }
+
+  char time_buf[32];
+  if (strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &local_tm) == 0) {
+    snprintf(out, out_size, "1970-01-01 00:00:00.000");
+    return;
+  }
+
+  snprintf(out, out_size, "%.19s.%03ld", time_buf, static_cast<long>(tv.tv_usec / 1000));
+}
+
+bool g_syslog_enabled = true;
+bool g_logger_initialized = false;
+} // namespace
 
 Logger::Level Logger::parseLevel(const std::string &levelStr) {
   if (levelStr == "EMERGENCY")
@@ -43,10 +71,18 @@ Logger::Level Logger::level = Logger::INFO;
 std::mutex Logger::log_mtx;
 
 bool Logger::init(std::string logLevel) {
-  // Initialize the syslog
-  openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
+  const char *syslog_env = std::getenv("PRUDYNT_ENABLE_SYSLOG");
+#if defined(PLATFORM_T23)
+  g_syslog_enabled = (syslog_env && std::strcmp(syslog_env, "1") == 0);
+#else
+  g_syslog_enabled = !(syslog_env && std::strcmp(syslog_env, "0") == 0);
+#endif
+
+  if (g_syslog_enabled) {
+    openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
+  }
   Logger::level = Logger::parseLevel(logLevel);
-  LOG_INFO("Logger init. level=" << logLevel);
+  g_logger_initialized = true;
   return false;
 }
 
@@ -61,10 +97,11 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
     return; // skip both syslog and console for TRACE when not enabled
   }
   std::unique_lock<std::mutex> lck(log_mtx);
+  char timestamp[40];
+  current_timestamp(timestamp, sizeof(timestamp));
 
   // Log to syslog
-  // Filter based on the configured log level
-  if (Logger::level >= lvl) {
+  if (g_logger_initialized && g_syslog_enabled && Logger::level >= lvl) {
     int syslogPriority;
     switch (lvl) {
     case EMERGENCY:
@@ -102,9 +139,22 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
   }
 
   // Log to console
-  std::stringstream fmt;
-  fmt << "[" << text_levels[lvl] << ":" << module << "]: " << msg.log_str << std::endl;
-  std::cout << fmt.str();
+#if defined(PLATFORM_T23)
+  std::string line;
+  line.reserve(64 + module.size() + msg.log_str.size());
+  line.append(timestamp);
+  line.append(" [");
+  line.append(text_levels[lvl]);
+  line.append(":");
+  line.append(module);
+  line.append("]: ");
+  line.append(msg.log_str);
+  line.push_back('\n');
+  (void)write(STDOUT_FILENO, line.c_str(), line.size());
+#else
+  std::fprintf(stdout, "%s [%s:%s]: %s\n", timestamp, text_levels[lvl], module.c_str(), msg.log_str.c_str());
+  std::fflush(stdout);
+#endif
 }
 
 // Remember to close the syslog

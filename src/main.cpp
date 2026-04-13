@@ -69,7 +69,7 @@ std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS] = {nullptr};
 std::shared_ptr<backchannel_stream> global_backchannel = nullptr;
 std::shared_ptr<audio_output_stream> global_audio_output = nullptr;
 
-std::shared_ptr<CFG> cfg = std::make_shared<CFG>();
+std::shared_ptr<CFG> cfg = nullptr;
 
 #if defined(WEBSOCKET_ENABLED)
 WS ws;
@@ -367,6 +367,57 @@ void *shutdown_signal_thread(void *arg) {
   }
   return nullptr;
 }
+
+void recover_stale_imp_state() {
+#if defined(PLATFORM_T23)
+  LOG_WARN("Startup recovery: skipped aggressive pre-init cleanup on T23");
+  return;
+#else
+  const char *skip_recover = std::getenv("PRUDYNT_SKIP_RECOVER");
+  if (skip_recover && skip_recover[0] != '\0' && strcmp(skip_recover, "1") == 0) {
+    LOG_WARN("Startup recovery: skipped via PRUDYNT_SKIP_RECOVER=1");
+    return;
+  }
+
+  LOG_WARN("Startup recovery: attempting to clean stale IMP state from previous run");
+
+  for (int ch = 0; ch < 4; ++ch) {
+    IMP_Encoder_StopRecvPic(ch);
+    IMP_Encoder_UnRegisterChn(ch);
+    IMP_Encoder_DestroyChn(ch);
+  }
+  for (int grp = 0; grp < 4; ++grp) {
+    IMP_Encoder_DestroyGroup(grp);
+  }
+
+  for (int ch = 0; ch < 4; ++ch) {
+    IMP_FrameSource_DisableChn(ch);
+    IMP_FrameSource_DestroyChn(ch);
+  }
+
+  for (int grp = 0; grp < 4; ++grp) {
+    IMP_OSD_Stop(grp);
+    IMP_OSD_DestroyGroup(grp);
+  }
+
+  for (int ch = 0; ch < 4; ++ch) {
+    IMP_ADEC_DestroyChn(ch);
+  }
+
+  IMP_AO_DisableChn(0, 0);
+  IMP_AO_Disable(0);
+  IMP_AI_DisableChn(0, 0);
+  IMP_AI_Disable(0);
+  IMP_AI_DisableChn(1, 0);
+  IMP_AI_Disable(1);
+
+  IMP_ISP_DisableTuning();
+  IMP_System_Exit();
+  IMP_ISP_Close();
+
+  LOG_WARN("Startup recovery: stale IMP cleanup pass completed");
+#endif
+}
 } // namespace
 
 bool timesync_wait() {
@@ -396,7 +447,14 @@ void start_video(int encChn) {
 }
 
 int main(int argc, const char *argv[]) {
+  if (Logger::init("INFO")) {
+    LOG_ERROR("Logger initialization failed.");
+    return 1;
+  }
+
   LOG_INFO("PRUDYNT-T Video Daemon: " << FULL_VERSION_STRING);
+  LOG_INFO("Starting Prudynt Video Server.");
+  LOG_INFO("Configuration bootstrap deferred until after early startup recovery");
 
   InstanceLockGuard instance_lock;
 
@@ -415,20 +473,6 @@ int main(int argc, const char *argv[]) {
   bool signal_thread_started = false;
 
   bool http_mjpeg_started = false;
-
-  if (Logger::init(cfg->general.loglevel)) {
-    LOG_ERROR("Logger initialization failed.");
-    return 1;
-  }
-
-  LOG_INFO("Starting Prudynt Video Server.");
-#if defined(WEBSOCKET_ENABLED)
-  LOG_INFO("WebSocket module compiled; runtime state: " << (cfg->websocket.enabled ? "enabled" : "disabled"));
-#else
-  LOG_INFO("WebSocket module not compiled into this build.");
-#endif
-  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) ? "enabled" : "disabled"));
-  LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   if (!instance_lock.acquire()) {
     LOG_ERROR("Prudynt is already running. Exiting.");
@@ -474,6 +518,20 @@ int main(int argc, const char *argv[]) {
     LOG_DEBUG_OR_ERROR(ret, "join shutdown signal thread");
     signal_thread_started = false;
   };
+
+  recover_stale_imp_state();
+
+  cfg = std::make_shared<CFG>();
+  Logger::setLevel(cfg->general.loglevel);
+
+#if defined(WEBSOCKET_ENABLED)
+  LOG_INFO("WebSocket module compiled; runtime state: " << (cfg->websocket.enabled ? "enabled" : "disabled"));
+#else
+  LOG_INFO("WebSocket module not compiled into this build.");
+#endif
+  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) ? "enabled"
+                                                                                                            : "disabled"));
+  LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   if (!timesync_wait()) {
     if (global_shutdown_requested.load(std::memory_order_relaxed)) {
@@ -731,6 +789,7 @@ int main(int argc, const char *argv[]) {
 
 #if defined(WEBSOCKET_ENABLED)
   if (cfg->websocket.enabled) {
+    ws.stop();
     int ret = pthread_join(ws_thread, nullptr);
     LOG_DEBUG_OR_ERROR(ret, "join websocket thread");
   }
