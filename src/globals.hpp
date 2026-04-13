@@ -167,7 +167,9 @@ struct jpeg_stream {
     return duration_cast<milliseconds>(steady_clock::now() - last_subscriber).count() < 1000;
   }
 
-  jpeg_stream(int encChn, _stream *stream) : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {
+  jpeg_stream(int encChn, _stream *stream)
+      : encChn(encChn), streamChn(stream ? stream->jpeg_channel : 0), stream(stream), running(false),
+        imp_encoder(nullptr) {
   }
 };
 
@@ -216,6 +218,7 @@ struct video_stream {
   std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg; // see comment in audio_stream
+  std::atomic<bool> bootstrap_requested{false};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
   std::atomic<bool> mp4_waiting_for_idr;
   std::atomic<int64_t> mp4_required_idr_ts_us;

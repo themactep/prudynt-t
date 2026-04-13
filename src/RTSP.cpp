@@ -1,9 +1,62 @@
 #include "RTSP.hpp"
 #include "BackchannelServerMediaSubsession.hpp"
 #include "IMPBackchannel.hpp"
+#include <chrono>
 
 #undef MODULE
 #define MODULE "RTSP"
+
+namespace {
+
+bool wait_for_parameter_sets(int chnNr, bool is_h265, H264NALUnit &sps_out, H264NALUnit &pps_out, H264NALUnit *&vps_out) {
+  using namespace std::chrono_literals;
+
+  auto *video = global_video[chnNr].get();
+  if (!video) {
+    LOG_ERROR("wait_for_parameter_sets: missing video state for channel " << chnNr);
+    return false;
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() + 10s;
+  auto next_idr_retry = std::chrono::steady_clock::now();
+  unsigned wait_timeout_count = 0;
+
+  while (true) {
+    {
+      std::lock_guard<std::mutex> lock(video->codec_config_mutex);
+      if (video->have_sps && video->have_pps && (!is_h265 || video->have_vps)) {
+        sps_out.data = video->latest_sps;
+        pps_out.data = video->latest_pps;
+        if (is_h265) {
+          if (!vps_out) {
+            vps_out = new H264NALUnit;
+          }
+          vps_out->data = video->latest_vps;
+        }
+        return true;
+      }
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    if (now >= next_idr_retry) {
+      IMP_Encoder_RequestIDR(chnNr);
+      next_idr_retry = now + 250ms;
+    }
+
+    if ((++wait_timeout_count % 4) == 0) {
+      LOG_WARN("Still waiting for bootstrap parameter sets on stream " << chnNr << ", retrying IDR");
+    }
+
+    if (now >= deadline) {
+      LOG_ERROR("Timed out waiting for SPS/PPS for stream " << chnNr);
+      return false;
+    }
+
+    usleep(50 * 1000);
+  }
+}
+
+} // namespace
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
   LOG_DEBUG("identify stream " << chnNr);
@@ -12,8 +65,6 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 
   // Add video subsession if enabled
   if (stream.video_enabled) {
-    auto deviceSource =
-        IMPDeviceSource<H264NALUnit, video_stream>::createNew(*env, chnNr, global_video[chnNr], "video/pps/sps/vps");
     H264NALUnit sps;
     H264NALUnit pps;
     H264NALUnit *vps = nullptr;
@@ -21,47 +72,34 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     bool have_sps = false;
     bool have_vps = false;
     bool is_h265 = strcmp(stream.format, "H265") == 0 ? true : false;
-    // Read from the stream until we capture the SPS and PPS. Only capture VPS if
-    // needed.
-    while (!have_pps || !have_sps || (is_h265 && !have_vps)) {
-      H264NALUnit unit = global_video[chnNr]->msgChannel->wait_read();
-      if (is_h265) {
-        uint8_t nalType = (unit.data[0] & 0x7E) >> 1; // H265 NAL unit type extraction
-        if (nalType == 33) {                          // SPS for H265
-          LOG_DEBUG("Got SPS (H265)");
-          sps = unit;
-          have_sps = true;
-        } else if (nalType == 34) { // PPS for H265
-          LOG_DEBUG("Got PPS (H265)");
-          pps = unit;
-          have_pps = true;
-        } else if (nalType == 32) { // VPS, only for H265
-          LOG_DEBUG("Got VPS");
-          if (!vps)
-            vps = new H264NALUnit(unit); // Allocate and store VPS
-          have_vps = true;
-        }
-      } else {                                   // Assuming H264 if not H265
-        uint8_t nalType = (unit.data[0] & 0x1F); // H264 NAL unit type extraction
-        if (nalType == 7) {                      // SPS for H264
-          LOG_DEBUG("Got SPS (H264)");
-          sps = unit;
-          have_sps = true;
-        } else if (nalType == 8) { // PPS for H264
-          LOG_DEBUG("Got PPS (H264)");
-          pps = unit;
-          have_pps = true;
-        }
-        // No VPS in H264, so no need to check for it
-      }
+
+    global_video[chnNr]->bootstrap_requested.store(true, std::memory_order_relaxed);
+    global_video[chnNr]->should_grab_frames.notify_one();
+    if (wait_for_parameter_sets(chnNr, is_h265, sps, pps, vps)) {
+      have_sps = !sps.data.empty();
+      have_pps = !pps.data.empty();
+      have_vps = (vps != nullptr && !vps->data.empty());
     }
-    // deviceSource->deinit();
-    delete deviceSource;
+    global_video[chnNr]->bootstrap_requested.store(false, std::memory_order_relaxed);
+    global_video[chnNr]->should_grab_frames.notify_one();
+
+    if (!have_sps || !have_pps || (is_h265 && !have_vps)) {
+      LOG_ERROR("Could not obtain SPS/PPS for stream " << chnNr << " — skipping subsession");
+      if (vps) {
+        delete vps;
+      }
+      return;
+    }
+
     LOG_DEBUG("Got necessary NAL Units.");
 
     IMPServerMediaSubsession *sub =
         IMPServerMediaSubsession::createNew(*env, (is_h265 ? vps : nullptr), sps, pps, chnNr // Conditional VPS
         );
+    if (vps) {
+      delete vps;
+      vps = nullptr;
+    }
     sms->addSubsession(sub);
     LOG_INFO("Video stream " << chnNr << " added to session");
   }

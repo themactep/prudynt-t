@@ -663,7 +663,7 @@ int main(int argc, const char *argv[]) {
         }
       }
 
-      if (cfg->stream2.enabled) {
+      if (cfg->stream2.enabled && (cfg->stream2.jpeg_idle_fps > 0 || cfg->stream2.jpeg_refresh > 0)) {
         StartHelper sh{2};
         int ret = pthread_create(&global_jpeg[0]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
         LOG_DEBUG_OR_ERROR(ret, "create jpeg thread");
@@ -671,7 +671,7 @@ int main(int argc, const char *argv[]) {
         sh.has_started.acquire();
       }
 
-      if (cfg->stream3.enabled) {
+      if (cfg->stream3.enabled && (cfg->stream3.jpeg_idle_fps > 0 || cfg->stream3.jpeg_refresh > 0)) {
         StartHelper sh{3};
         int ret = pthread_create(&global_jpeg[1]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
         LOG_DEBUG_OR_ERROR(ret, "create jpeg thread 2");
@@ -702,12 +702,6 @@ int main(int argc, const char *argv[]) {
       int ret = pthread_create(&rtsp_thread, nullptr, RTSP::run, &rtsp);
       LOG_DEBUG_OR_ERROR(ret, "create rtsp thread");
     }
-
-    /* we should wait a short period to ensure all services are up
-     * and running, additionally we add the timespan which is configured as
-     * OSD startup delay.
-     */
-    usleep(250000 + (cfg->stream0.osd.start_delay_ms * 1000) + cfg->stream1.osd.start_delay_ms * 1000);
 
     LOG_DEBUG("main thread is going to sleep");
     std::unique_lock lck(mutex_main);

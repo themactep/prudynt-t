@@ -21,6 +21,29 @@ JPEGWorker::~JPEGWorker() {
   LOG_DEBUG("JPEGWorker destroyed for JPEG channel index " << jpgChn);
 }
 
+bool JPEGWorker::ensure_running(int jpgChn) {
+  static std::mutex start_mutex;
+  std::lock_guard<std::mutex> start_lock(start_mutex);
+
+  if (jpgChn < 0 || jpgChn >= NUM_JPEG_CHANNELS || !global_jpeg[jpgChn]) {
+    return false;
+  }
+
+  if (global_jpeg[jpgChn]->imp_encoder || global_jpeg[jpgChn]->running.load(std::memory_order_relaxed)) {
+    return true;
+  }
+
+  StartHelper sh{global_jpeg[jpgChn]->encChn};
+  int ret = pthread_create(&global_jpeg[jpgChn]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
+  LOG_DEBUG_OR_ERROR(ret, "create lazy jpeg thread " << jpgChn);
+  if (ret != 0) {
+    return false;
+  }
+
+  sh.has_started.acquire();
+  return global_jpeg[jpgChn]->imp_encoder != nullptr;
+}
+
 int JPEGWorker::save_jpeg_stream(int fd, IMPEncoderStream *stream) {
   auto write_chunk = [&](const void *ptr, size_t len) -> bool {
     if (!len)

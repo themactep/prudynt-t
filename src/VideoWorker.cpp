@@ -251,6 +251,7 @@ void VideoWorker::run() {
       }
     }
     run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
+    bool bootstrap_requested = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
 
     /* now we need to verify that
      * 1. a client is connected (hasDataCallback)
@@ -263,7 +264,8 @@ void VideoWorker::run() {
 #else
     bool prebuffer_active = false;
 #endif
-    if (global_video[encChn]->hasDataCallback || run_for_jpeg || global_force_video_active || prebuffer_active) {
+    if (global_video[encChn]->hasDataCallback || run_for_jpeg || bootstrap_requested || global_force_video_active ||
+        prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
@@ -710,11 +712,13 @@ void VideoWorker::run() {
                                                 << ") timeout !");
       }
     } else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-               !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active) {
+               !global_video[encChn]->run_for_jpeg && !bootstrap_requested && !global_force_video_active &&
+               !prebuffer_active) {
       LOG_DDEBUG("VIDEO LOCK" << " channel:" << encChn
                               << " hasCallbackIsNull:" << (global_video[encChn]->onDataCallback == nullptr)
                               << " restartVideo:" << global_restart_video
-                              << " runForJpeg:" << global_video[encChn]->run_for_jpeg);
+                              << " runForJpeg:" << global_video[encChn]->run_for_jpeg
+                              << " bootstrapRequested:" << bootstrap_requested);
 
       global_video[encChn]->stream->stats.bps = 0;
       global_video[encChn]->stream->stats.fps = 0;
@@ -729,9 +733,13 @@ void VideoWorker::run() {
 #else
       bool prebuffer_active_inner = false;
 #endif
+      bool bootstrap_requested_inner = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
       while (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-             !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active_inner)
+             !global_video[encChn]->run_for_jpeg && !bootstrap_requested_inner && !global_force_video_active &&
+             !prebuffer_active_inner) {
         global_video[encChn]->should_grab_frames.wait(lock_stream);
+        bootstrap_requested_inner = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
+      }
 
       global_video[encChn]->active = true;
       global_video[encChn]->is_activated.release();
@@ -827,6 +835,10 @@ void *VideoWorker::thread_entry(void *arg) {
 
 #if defined(PLATFORM_T23)
   if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    {
+      std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
+      global_video[encChn]->privacy_mask.reset();
+    }
     LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
     return 0;
   }

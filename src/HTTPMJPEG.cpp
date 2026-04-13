@@ -1,5 +1,6 @@
 #include "HTTPMJPEG.hpp"
 
+#include "JPEGWorker.hpp"
 #include "JsonAPI.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
@@ -437,6 +438,13 @@ void HTTPMJPEG::handle_client(int cfd) {
 
   if (ch < 0 || ch >= NUM_JPEG_CHANNELS || !global_jpeg[ch]) {
     const char *resp = "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nbad channel\n";
+    (void)write_full(cfd, resp, strlen(resp));
+    ::close(cfd);
+    return;
+  }
+  if (!JPEGWorker::ensure_running(ch)) {
+    const char *resp =
+        "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\njpeg unavailable\n";
     (void)write_full(cfd, resp, strlen(resp));
     ::close(cfd);
     return;
