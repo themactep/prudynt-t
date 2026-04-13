@@ -161,9 +161,9 @@ struct _daynight {
   std::atomic<int> live_ev{-1};
   std::atomic<int> live_gb{-1};
   std::atomic<int> live_gr{-1};
-  std::atomic<int> live_total_gain{-1};      // Total ISP gain (analog + digital)
-  std::atomic<int> live_ae_luma{-1};         // AE luma value
-  std::atomic<int> live_awb_color_temp{-1};  // AWB color temperature (when available)
+  std::atomic<int> live_total_gain{-1};     // Total ISP gain (analog + digital)
+  std::atomic<int> live_ae_luma{-1};        // AE luma value
+  std::atomic<int> live_awb_color_temp{-1}; // AWB color temperature (when available)
   std::atomic<const char *> live_mode{"unknown"};
 };
 struct _general {

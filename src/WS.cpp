@@ -111,8 +111,9 @@ enum {
   PNT_RTSP_PASSWORD
 };
 
-static const char *const rtsp_keys[] = {"port",          "est_bitrate", "out_buffer_size", "send_buffer_size",
-                                        "send_timeout",  "auth_required", "name",        "username",        "password"};
+static const char *const rtsp_keys[] = {
+    "port",          "est_bitrate", "out_buffer_size", "send_buffer_size", "send_timeout",
+    "auth_required", "name",        "username",        "password"};
 
 /* SENSOR */
 enum { PNT_SENSOR_MODEL = 1, PNT_SENSOR_FPS, PNT_SENSOR_WIDTH, PNT_SENSOR_HEIGHT, PNT_SENSOR_I2C_ADDRESS };
@@ -225,10 +226,10 @@ enum {
   PNT_STREAM_OSD
 };
 
-static const char *const stream_keys[] = {"enabled",     "audio_enabled", "video_enabled", "scale_enabled", "rtsp_endpoint", "rtsp_info",
-                                          "format",      "mode",          "gop",           "max_gop",       "fps",
-                                          "buffers",     "width",         "height",        "bitrate",       "rotation",
-                                          "scale_width", "scale_height",  "profile",       "stats",         "osd"};
+static const char *const stream_keys[] = {
+    "enabled", "audio_enabled", "video_enabled", "scale_enabled", "rtsp_endpoint", "rtsp_info", "format",
+    "mode",    "gop",           "max_gop",       "fps",           "buffers",       "width",     "height",
+    "bitrate", "rotation",      "scale_width",   "scale_height",  "profile",       "stats",     "osd"};
 
 /* STREAM2 (JPEG) */
 enum {
@@ -361,10 +362,9 @@ enum {
 };
 
 static const char *const motion_keys[] = {
-  "debounce_time",   "post_time",       "cooldown_time", "motor_settle_ms", "init_time",    "min_time",
-  "thread_wait",     "sensitivity",    "skip_frame_count", "frame_width",     "frame_height", "roi_0_x",
-  "roi_0_y",         "roi_1_x",        "roi_1_y",          "roi_count",     "enabled",      "script_path",
-  "rois"};
+    "debounce_time", "post_time",        "cooldown_time", "motor_settle_ms", "init_time", "min_time", "thread_wait",
+    "sensitivity",   "skip_frame_count", "frame_width",   "frame_height",    "roi_0_x",   "roi_0_y",  "roi_1_x",
+    "roi_1_y",       "roi_count",        "enabled",       "script_path",     "rois"};
 
 /* INFO */
 enum { PNT_INFO_IMP_SYSTEM_VERSION = 1 };
@@ -1094,8 +1094,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
       }
       add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-    }
-    else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_ENABLED) {
+    } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_ENABLED) {
       if (!hal::caps().has_audio_agc) {
         add_json_null(u_ctx->message);
       } else {
@@ -1126,8 +1125,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
       }
-    }
-    else {
+    } else {
       switch (ctx->path_match) {
       case PNT_AUDIO_OUTPUT_ENABLED:
         if (reason == LEJPCB_VAL_TRUE) {

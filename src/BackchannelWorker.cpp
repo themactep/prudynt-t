@@ -4,8 +4,8 @@
 #include "IMPBackchannel.hpp"
 #include "Logger.hpp"
 
-#include <cassert>
 #include <cmath>
+#include <stdexcept>
 #include <vector>
 
 #include <imp/imp_audio.h>
@@ -19,7 +19,10 @@ BackchannelWorker::~BackchannelWorker() = default;
 
 std::vector<int16_t> BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm, int input_rate,
                                                        int output_rate) {
-  assert(input_rate != output_rate);
+  if (input_rate == output_rate) {
+    LOG_ERROR("resampleLinear called with equal rates (" << input_rate << "), returning input unchanged");
+    return input_pcm;
+  }
 
   double ratio = static_cast<double>(output_rate) / input_rate;
   size_t output_size = static_cast<size_t>(std::max(1.0, std::round(static_cast<double>(input_pcm.size()) * ratio)));
@@ -62,8 +65,20 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize, 
   int adChn = (int)format;
   int ret = IMP_ADEC_SendStream(adChn, &stream_in, BLOCK);
   if (ret != 0) {
-    LOG_ERROR("IMP_ADEC_SendStream failed for channel " << adChn << ": " << ret);
-    return false;
+    bool retried = false;
+    if (global_backchannel && global_backchannel->imp_backchannel) {
+      int ensure_ret = global_backchannel->imp_backchannel->ensureDecoderChannel(format);
+      if (ensure_ret == 0) {
+        retried = true;
+        ret = IMP_ADEC_SendStream(adChn, &stream_in, BLOCK);
+      }
+    }
+
+    if (ret != 0) {
+      LOG_ERROR("IMP_ADEC_SendStream failed for channel " << adChn << ": " << ret
+                                                          << (retried ? " (after lazy init retry)" : ""));
+      return false;
+    }
   }
 
   IMPAudioStream stream_out;
@@ -199,17 +214,32 @@ void BackchannelWorker::run() {
 }
 
 void *BackchannelWorker::thread_entry(void *arg) {
-  LOG_INFO("Starting BackchannelWorker thread.");
+  try {
+    LOG_INFO("Starting BackchannelWorker thread.");
 
-  global_backchannel->imp_backchannel = IMPBackchannel::createNew();
+    global_backchannel->imp_backchannel = IMPBackchannel::createNew();
 
-  BackchannelWorker processor;
-  processor.run();
+    BackchannelWorker processor;
+    processor.run();
 
-  delete global_backchannel->imp_backchannel;
-  global_backchannel->imp_backchannel = nullptr;
+#if defined(PLATFORM_T23)
+    if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+      LOG_WARN("T23 shutdown: skipping backchannel teardown");
+      global_backchannel->imp_backchannel = nullptr;
+      LOG_INFO("Exiting BackchannelWorker thread.");
+      return nullptr;
+    }
+#endif
 
-  LOG_INFO("Exiting BackchannelWorker thread.");
+    delete global_backchannel->imp_backchannel;
+    global_backchannel->imp_backchannel = nullptr;
+
+    LOG_INFO("Exiting BackchannelWorker thread.");
+  } catch (const std::exception &e) {
+    LOG_ERROR("BackchannelWorker thread caught exception: " << e.what());
+  } catch (...) {
+    LOG_ERROR("BackchannelWorker thread caught unknown exception");
+  }
   return nullptr;
 }
 

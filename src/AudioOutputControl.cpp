@@ -1626,8 +1626,8 @@ public:
     // Skip on platforms with a shared AI/AO CODEC clock (T10/T20/T21/T30):
     // changing the AO clock also shifts the AI capture rate, causing the
     // microphone stream to play back at the wrong pitch/speed.
-    if (!reconfigureAttempted_ && actualSourceRate != targetRate_ && !options_.append
-        && !hal::caps().has_shared_audio_clock) {
+    if (!reconfigureAttempted_ && actualSourceRate != targetRate_ && !options_.append &&
+        !hal::caps().has_shared_audio_clock) {
       reconfigureAttempted_ = true;
       if (AudioOutputWorker::reconfigureRate(actualSourceRate)) {
         targetRate_ = effectiveOutputSampleRate();
@@ -2664,15 +2664,13 @@ void handlePlay(const PlayCommandOptions &options) {
   // changing the AO clock also shifts the AI capture rate, causing the
   // microphone stream to play back at the wrong pitch/speed.
   bool reconfigured = false;
-  if (sourceRate > 0 && sourceRate != targetRate && !options.append
-      && !hal::caps().has_shared_audio_clock) {
+  if (sourceRate > 0 && sourceRate != targetRate && !options.append && !hal::caps().has_shared_audio_clock) {
     if (AudioOutputWorker::reconfigureRate(sourceRate)) {
       targetRate = effectiveOutputSampleRate();
       reconfigured = true;
       LOG_DEBUG("AudioOutputControl: reconfigured AO to " << targetRate << " Hz to match source");
     } else {
-      LOG_DEBUG("AudioOutputControl: AO reconfigure to " << sourceRate
-                << " Hz failed, falling back to resampling");
+      LOG_DEBUG("AudioOutputControl: AO reconfigure to " << sourceRate << " Hz failed, falling back to resampling");
     }
   }
 

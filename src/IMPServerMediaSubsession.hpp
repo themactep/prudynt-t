@@ -51,8 +51,7 @@ protected:
   virtual void deleteStream(unsigned clientSessionId, void *&streamToken) override {
     OnDemandServerMediaSubsession::deleteStream(clientSessionId, streamToken);
     int prev = global_rtsp_clients.load(std::memory_order_relaxed);
-    while (prev > 0 &&
-           !global_rtsp_clients.compare_exchange_weak(prev, prev - 1, std::memory_order_relaxed)) {
+    while (prev > 0 && !global_rtsp_clients.compare_exchange_weak(prev, prev - 1, std::memory_order_relaxed)) {
       ;
     }
   }

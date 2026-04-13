@@ -6,18 +6,18 @@
 #include "globals.hpp"
 #include "imp_hal.hpp"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <filesystem>
 #include <limits>
 #include <string>
-#include <thread>
-#include <cerrno>
-#include <fcntl.h>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 
 using namespace std::chrono;
@@ -116,9 +116,7 @@ static inline int percent_from_ev(const Profile &pr, int ev) {
   return clampi(pct, 0, 100);
 }
 
-static inline int brightness_percent_from_ev(const Profile &pr,
-                                             const DayNightAlgo::Params &params,
-                                             int ev) {
+static inline int brightness_percent_from_ev(const Profile &pr, const DayNightAlgo::Params &params, int ev) {
   if (ev < 0)
     return -1;
 
@@ -196,8 +194,7 @@ static void export_brightness_value(int pct, const char *mode) {
     }
   } else {
     size_t mode_len = std::strlen(mode_str);
-    if (::write(mode_fd, mode_str, mode_len) != static_cast<ssize_t>(mode_len) &&
-        daynight_should_log(Logger::DEBUG)) {
+    if (::write(mode_fd, mode_str, mode_len) != static_cast<ssize_t>(mode_len) && daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG("DayNight: short write to " << kModePath << ": " << strerror(errno));
     }
     if (::write(mode_fd, "\n", 1) != 1 && daynight_should_log(Logger::DEBUG)) {
@@ -583,9 +580,9 @@ void *thread_entry(void *arg) {
   simple_params.ev_day_threshold = cfg->get<int>("daynight.ev_day_threshold");
 
   if (simple_params.total_gain_day_threshold >= simple_params.total_gain_night_threshold) {
-    LOG_WARN("DayNight: day_threshold (" << simple_params.total_gain_day_threshold
-             << ") >= night_threshold (" << simple_params.total_gain_night_threshold
-             << ") — hysteresis zone is inverted, automatic switching will not work");
+    LOG_WARN("DayNight: day_threshold (" << simple_params.total_gain_day_threshold << ") >= night_threshold ("
+                                         << simple_params.total_gain_night_threshold
+                                         << ") — hysteresis zone is inverted, automatic switching will not work");
   }
 
   int interval_ms = cfg->get<int>("daynight.sample_interval_ms");
@@ -599,7 +596,7 @@ void *thread_entry(void *arg) {
   // initial mode. Prevents a single under-settled AE sample (TC-2) from
   // locking the wrong mode at boot.
   int initial_night_confirm = 0;
-  int initial_day_confirm   = 0;
+  int initial_day_confirm = 0;
 
   // If initial mode cannot be determined within this many samples (gain stays
   // in the hysteresis zone), default to Night — the safe fallback for the
@@ -666,13 +663,12 @@ void *thread_entry(void *arg) {
     auto dec = DayNightAlgo::simple_decide(simple_params, simple_state, total_gain, ev);
 
     if (daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: TotalGain=" << total_gain << " EV=" << ev << " AELuma=" << ae_luma
-                                       << " nCnt=" << simple_state.night_count
-                                       << " dCnt=" << simple_state.day_count
-                                       << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY")
-                                       << " schedule=" << (within_schedule ? "ACTIVE" : "INACTIVE") << " -> "
-                                       << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
-                                                      : "HOLD"));
+      LOG_DEBUG(
+          "DayNight: TotalGain=" << total_gain << " EV=" << ev << " AELuma=" << ae_luma
+                                 << " nCnt=" << simple_state.night_count << " dCnt=" << simple_state.day_count
+                                 << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY")
+                                 << " schedule=" << (within_schedule ? "ACTIVE" : "INACTIVE") << " -> "
+                                 << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT") : "HOLD"));
     }
 
     // Apply initial mode if not set - infer from current sensor readings
@@ -708,7 +704,7 @@ void *thread_entry(void *arg) {
       } else {
         // Hysteresis zone — tick down the fallback countdown
         initial_night_confirm = 0;
-        initial_day_confirm   = 0;
+        initial_day_confirm = 0;
         --initial_mode_fallback_countdown;
       }
 
@@ -716,8 +712,7 @@ void *thread_entry(void *arg) {
         apply_mode(initial);
         current = initial;
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                      std::memory_order_relaxed);
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night", std::memory_order_relaxed);
         // Protect initial Night from an immediate bright-burst flip (TC-8b):
         // the anti_flap path only fires on counter-triggered switches, so set
         // it explicitly here when starting in Night.
@@ -725,10 +720,11 @@ void *thread_entry(void *arg) {
           anti_flap_cooldown = anti_flap_iterations / 2;
         initial_mode_applied = true;
         if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: applied initial mode " << (current == DayNightAlgo::Mode::Day ? "day" : "night")
-                   << " (total_gain=" << total_gain << ", ev=" << ev
-                   << ", confirm=" << (current == DayNightAlgo::Mode::Night ? initial_night_confirm : initial_day_confirm)
-                   << ", " << (within_schedule ? "within schedule" : "outside schedule") << ")");
+          LOG_INFO("DayNight: applied initial mode "
+                   << (current == DayNightAlgo::Mode::Day ? "day" : "night") << " (total_gain=" << total_gain
+                   << ", ev=" << ev << ", confirm="
+                   << (current == DayNightAlgo::Mode::Night ? initial_night_confirm : initial_day_confirm) << ", "
+                   << (within_schedule ? "within schedule" : "outside schedule") << ")");
         }
       } else if (initial_mode_fallback_countdown <= 0) {
         // Gain has been stuck in the hysteresis zone long enough that the
@@ -742,14 +738,14 @@ void *thread_entry(void *arg) {
         anti_flap_cooldown = anti_flap_iterations / 2;
         initial_mode_applied = true;
         LOG_WARN("DayNight: initial detection timeout, defaulting to Night"
-                 " (gain stuck in hysteresis zone, total_gain=" << total_gain << ")");
+                 " (gain stuck in hysteresis zone, total_gain="
+                 << total_gain << ")");
       }
     }
 
     // Handle mode switching with anti-flap cooldown
     // Schedule check ONLY applies to automatic switches, NOT to initial mode detection
     // This ensures camera starts in correct mode even when booting outside schedule window
-    bool photosensing_enabled = cfg->daynight.enabled && within_schedule;
     if (dec.toggled && dec.target != current) {
       if (!cfg->daynight.enabled) {
         // Photosensing is disabled globally - skip automatic switching
@@ -770,12 +766,11 @@ void *thread_entry(void *arg) {
         apply_mode(dec.target);
         current = dec.target;
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                      std::memory_order_relaxed);
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night", std::memory_order_relaxed);
         anti_flap_cooldown = anti_flap_iterations;
         if (daynight_should_log(Logger::INFO)) {
           LOG_INFO("DayNight: switched to " << (current == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
-                   << " (total_gain=" << total_gain << ")");
+                                            << " (total_gain=" << total_gain << ")");
         }
       }
     } else if (anti_flap_cooldown > 0) {

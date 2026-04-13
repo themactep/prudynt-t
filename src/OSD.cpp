@@ -37,6 +37,10 @@ constexpr float DEFAULT_NIGHT_BRIGHTNESS = 25.0f;
 } // namespace
 
 int OSD::renderGlyph(const char *characters) {
+  if (!sft || !text_rendering_available || !characters) {
+    return -1;
+  }
+
   while (*characters) {
     SFT_LMetrics lmetrics;
     SFT_GMetrics gmetrics;
@@ -79,23 +83,22 @@ int OSD::renderGlyph(const char *characters) {
   return 0;
 }
 
-void setPixel(uint8_t *image, int x, int y, const uint8_t *color, uint8_t alpha,
-              int WIDTH, int HEIGHT) {
+void setPixel(uint8_t *image, int x, int y, const uint8_t *color, uint8_t alpha, int WIDTH, int HEIGHT) {
   if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
     int index = (y * WIDTH + x) * 4;
-    uint8_t beta = 255-alpha;
-    image[index+0] = ((color[0]*alpha)/255) + ((image[index+0]*beta)/255); // B
-    image[index+1] = ((color[1]*alpha)/255) + ((image[index+1]*beta)/255); // G
-    image[index+2] = ((color[2]*alpha)/255) + ((image[index+2]*beta)/255); // R
-    image[index+3] = ((color[3]*alpha)/255) + ((image[index+3]*beta)/255); // A
+    uint8_t beta = 255 - alpha;
+    image[index + 0] = ((color[0] * alpha) / 255) + ((image[index + 0] * beta) / 255); // B
+    image[index + 1] = ((color[1] * alpha) / 255) + ((image[index + 1] * beta) / 255); // G
+    image[index + 2] = ((color[2] * alpha) / 255) + ((image[index + 2] * beta) / 255); // R
+    image[index + 3] = ((color[3] * alpha) / 255) + ((image[index + 3] * beta) / 255); // A
   }
 }
 
-void setPixelMaybe(uint8_t *image, int x, int y, const uint8_t *color,
-                   int WIDTH, int HEIGHT) {
+void setPixelMaybe(uint8_t *image, int x, int y, const uint8_t *color, int WIDTH, int HEIGHT) {
   if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
     int index = (y * WIDTH + x) * 4;
-    if(image[index+3] != 0) return;
+    if (image[index + 3] != 0)
+      return;
     image[index] = color[0];     // B
     image[index + 1] = color[1]; // G
     image[index + 2] = color[2]; // R
@@ -111,7 +114,7 @@ void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineS
         for (int h = 0; h < g.height; ++h) {
           for (int w = 0; w < g.width; ++w) {
             int srcIndex = h * g.width + w;
-            if ((g.bitmap[srcIndex]&0x80)) { // Check alpha value
+            if ((g.bitmap[srcIndex] & 0x80)) { // Check alpha value
               setPixelMaybe(image, x + w + i, y + h + j, strokeColor, WIDTH, HEIGHT);
             }
           }
@@ -123,6 +126,10 @@ void OSD::drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineS
 
 int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT, int outlineSize, unsigned int fill_color,
                   unsigned int stroke_color) {
+  if (!sft || !text_rendering_available || !image || !text) {
+    return -1;
+  }
+
   int penX = 1;
   int penY = 1;
 
@@ -159,7 +166,7 @@ int OSD::drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT, int o
       for (int j = 0; j < g.height; ++j) {
         for (int i = 0; i < g.width; ++i) {
           int srcIndex = j * g.width + i;
-          if ((g.bitmap[srcIndex]&0xFF)) { // Check alpha value
+          if ((g.bitmap[srcIndex] & 0xFF)) { // Check alpha value
             setPixel(image, x + i, y + j, textColor, g.bitmap[srcIndex], WIDTH, HEIGHT);
           }
         }
@@ -177,6 +184,16 @@ int OSD::calculateTextSize(const char *text, uint16_t &width, uint16_t &height, 
   width = 0;
   height = 0;
 
+  if (!text || !*text) {
+    width = 1 + outlineSize * 2;
+    return 0;
+  }
+
+  if (!sft || !text_rendering_available) {
+    width = 1 + outlineSize * 2;
+    return -1;
+  }
+
   while (*text) {
     auto it = glyphs.find(*text);
     if (it != glyphs.end()) {
@@ -192,17 +209,28 @@ int OSD::calculateTextSize(const char *text, uint16_t &width, uint16_t &height, 
   }
 
   height += sft->yScale;
-   width += 1 + outlineSize * 2;
+  width += 1 + outlineSize * 2;
 
   return 0;
 }
 
 int OSD::libschrift_init() {
   LOG_DEBUG("OSD::libschrift_init()");
+  text_rendering_available = false;
+
+  if (!osd.font_path || osd.font_path[0] == '\0') {
+    LOG_ERROR("No font path configured for OSD text rendering");
+    return -1;
+  }
+
+  if (access(osd.font_path, R_OK) != 0) {
+    LOG_ERROR("OSD font file missing or unreadable: " << osd.font_path);
+    return -1;
+  }
 
   std::ifstream fontFile(osd.font_path, std::ios::binary | std::ios::ate);
   if (!fontFile.is_open()) {
-    LOG_DEBUG("Unable to open font file.");
+    LOG_ERROR("Unable to open font file: " << osd.font_path);
     return -1;
   }
 
@@ -223,10 +251,13 @@ int OSD::libschrift_init() {
   sft->yOffset = yoff;
   sft->font = sft_loadmem(fontData.data(), fontData.size());
   if (!sft->font) {
-    LOG_DEBUG("Unable to load font data.");
+    LOG_ERROR("Unable to load font data from: " << osd.font_path);
+    delete sft;
+    sft = nullptr;
     return -1;
   }
 
+  text_rendering_available = true;
   renderGlyph("01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!"
               "§$%&/()=?,.-_:;#'+*~}{} ");
 
@@ -236,6 +267,10 @@ int OSD::libschrift_init() {
 
 void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, const char *position, int angle,
                    unsigned int fill_color, unsigned int stroke_color) {
+  if (!text_rendering_available || !sft || !osdItem || !text) {
+    return;
+  }
+
   // parse position string "x,y"
   int posX = 0, posY = 0;
   if (position && *position) {
@@ -269,7 +304,9 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, 
   uint16_t item_width = 0;
   uint16_t item_height = 0;
 
-  calculateTextSize(text, item_width, item_height, stroke_width);
+  if (calculateTextSize(text, item_width, item_height, stroke_width) != 0) {
+    return;
+  }
 
   if (item_width % 2 != 0)
     ++item_width;
@@ -280,7 +317,9 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text, 
   osdItem->data = (uint8_t *)malloc(item_size);
   memset(osdItem->data, 0, item_size);
 
-  drawText(osdItem->data, text, item_width, item_height, stroke_width, fill_color, stroke_color);
+  if (drawText(osdItem->data, text, item_width, item_height, stroke_width, fill_color, stroke_color) != 0) {
+    return;
+  }
 
   if (angle) {
     rotateBGRAImage(osdItem->data, item_width, item_height, angle, true);
@@ -694,25 +733,37 @@ void OSD::set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t
 }
 
 unsigned char *loadBGRAImage(const char *filepath, size_t &length) {
+  length = 0;
+  if (!filepath || filepath[0] == '\0') {
+    LOG_ERROR("OSD logo path is empty");
+    return nullptr;
+  }
+
   FILE *file = fopen(filepath, "rb");
   if (!file) {
-    printf("Failed to open the OSD logo file.\n");
+    LOG_ERROR("Failed to open OSD logo file: " << filepath);
     return nullptr;
   }
 
   fseek(file, 0, SEEK_END);
-  length = ftell(file);
+  long fileLength = ftell(file);
+  if (fileLength <= 0) {
+    LOG_ERROR("OSD logo file is empty or unreadable: " << filepath);
+    fclose(file);
+    return nullptr;
+  }
+  length = static_cast<size_t>(fileLength);
   fseek(file, 0, SEEK_SET);
 
   unsigned char *data = (unsigned char *)malloc(length);
   if (!data) {
-    printf("Failed to allocate memory for the image.\n");
+    LOG_ERROR("Failed to allocate memory for OSD logo image: " << filepath);
     fclose(file);
     return nullptr;
   }
 
   if (fread(data, 1, length, file) != length) {
-    printf("Failed to read OSD logo data.\n");
+    LOG_ERROR("Failed to read OSD logo data: " << filepath);
     free(data);
     fclose(file);
     return nullptr;
@@ -755,10 +806,10 @@ void OSD::init() {
   }
 
   if (libschrift_init() != 0) {
-    LOG_DEBUG("libschrift init failed.");
+    LOG_ERROR("libschrift init failed; text OSD regions will be disabled");
   }
 
-  if (osd.time_enabled) {
+  if (osd.time_enabled && text_rendering_available) {
     /* OSD Time */
 
     osdTime.data = nullptr;
@@ -792,7 +843,7 @@ void OSD::init() {
     IMP_OSD_SetGrpRgnAttr(osdTime.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
-  if (osd.usertext_enabled) {
+  if (osd.usertext_enabled && text_rendering_available) {
     getIp(ip);
     gethostname(hostname, 64);
 
@@ -839,7 +890,7 @@ void OSD::init() {
     IMP_OSD_SetGrpRgnAttr(osdUser.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
-  if (osd.brightness_enabled) {
+  if (osd.brightness_enabled && text_rendering_available) {
     osdBrightness.data = nullptr;
     osdBrightness.imp_rgn = IMP_OSD_CreateRgn(nullptr);
     IMP_OSD_RegisterRgn(osdBrightness.imp_rgn, osdGrp, nullptr);
@@ -871,7 +922,7 @@ void OSD::init() {
     IMP_OSD_SetGrpRgnAttr(osdBrightness.imp_rgn, osdGrp, &grpRgnAttr);
   }
 
-  if (osd.uptime_enabled) {
+  if (osd.uptime_enabled && text_rendering_available) {
     /* OSD Uptime */
 
     osdUptm.data = nullptr;
@@ -906,19 +957,24 @@ void OSD::init() {
   if (osd.logo_enabled) {
     /* OSD Logo */
 
-    size_t imageSize;
+    size_t imageSize = 0;
     auto imageData = loadBGRAImage(osd.logo_path, imageSize);
+    const size_t expectedImageSize = static_cast<size_t>(osd.logo_width) * static_cast<size_t>(osd.logo_height) * 4U;
+    if (!imageData) {
+      LOG_ERROR("OSD logo disabled: failed to load logo image");
+    } else if (expectedImageSize == 0 || imageSize != expectedImageSize) {
+      LOG_ERROR("OSD logo disabled: invalid logo dimensions. got=" << imageSize << " expected=" << expectedImageSize
+                                                                   << " (" << osd.logo_width << "x" << osd.logo_height
+                                                                   << "x4)");
+      free(imageData);
+    } else {
+      osdLogo.data = nullptr;
+      osdLogo.imp_rgn = IMP_OSD_CreateRgn(nullptr);
+      IMP_OSD_RegisterRgn(osdLogo.imp_rgn, osdGrp, nullptr);
+      logo_region_created = true;
+      osd.regions.logo = osdLogo.imp_rgn;
 
-    osdLogo.data = nullptr;
-    osdLogo.imp_rgn = IMP_OSD_CreateRgn(nullptr);
-    IMP_OSD_RegisterRgn(osdLogo.imp_rgn, osdGrp, nullptr);
-    logo_region_created = true;
-    osd.regions.logo = osdLogo.imp_rgn;
-
-    memset(&osdLogo.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
-
-    // Verify OSD logo size vs dimensions
-    if ((osd.logo_width * osd.logo_height * 4) == (int)imageSize) {
+      memset(&osdLogo.rgnAttr, 0, sizeof(IMPOSDRgnAttr));
       osdLogo.rgnAttr.type = OSD_REG_PIC;
       osdLogo.rgnAttr.fmt = PIX_FMT_BGRA;
       osdLogo.rgnAttr.data.picData.pData = imageData;
@@ -927,9 +983,9 @@ void OSD::init() {
       uint16_t logo_width = osd.logo_width;
       uint16_t logo_height = osd.logo_height;
       if (osd.logo_rotation) {
-        uint8_t *imageData = static_cast<uint8_t *>(osdLogo.rgnAttr.data.picData.pData);
-        rotateBGRAImage(imageData, logo_width, logo_height, osd.logo_rotation, false);
-        osdLogo.rgnAttr.data.picData.pData = imageData;
+        uint8_t *logoPixels = static_cast<uint8_t *>(osdLogo.rgnAttr.data.picData.pData);
+        rotateBGRAImage(logoPixels, logo_width, logo_height, osd.logo_rotation, false);
+        osdLogo.rgnAttr.data.picData.pData = logoPixels;
       }
 
       // Parse logo_position string "x,y"
@@ -961,26 +1017,17 @@ void OSD::init() {
       }
 
       set_pos(&osdLogo.rgnAttr, logoPosX, logoPosY, logo_width, logo_height, stream_width, stream_height);
-    } else {
-      LOG_ERROR("Invalid OSD logo dimensions. Imagesize=" << imageSize << ", " << osd.logo_width << "*"
-                                                          << osd.logo_height
-                                                          << "*4=" << (osd.logo_width * osd.logo_height * 4));
-    }
-    // Parse logo_position string "x,y" - TODO: implement position parsing
-    // int logoPosX = 0, logoPosY = 0;
-    if (osd.logo_position && *osd.logo_position) {
-      // TODO: Parse position string and set logo position
-    }
 
-    IMP_OSD_SetRgnAttr(osdLogo.imp_rgn, &osdLogo.rgnAttr);
+      IMP_OSD_SetRgnAttr(osdLogo.imp_rgn, &osdLogo.rgnAttr);
 
-    IMPOSDGrpRgnAttr grpRgnAttr;
-    memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
-    grpRgnAttr.show = 1;
-    grpRgnAttr.layer = 4;
-    grpRgnAttr.gAlphaEn = 1;
-    grpRgnAttr.fgAlhpa = osd.logo_transparency;
-    IMP_OSD_SetGrpRgnAttr(osdLogo.imp_rgn, osdGrp, &grpRgnAttr);
+      IMPOSDGrpRgnAttr grpRgnAttr;
+      memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
+      grpRgnAttr.show = 1;
+      grpRgnAttr.layer = 4;
+      grpRgnAttr.gAlphaEn = 1;
+      grpRgnAttr.fgAlhpa = osd.logo_transparency;
+      IMP_OSD_SetGrpRgnAttr(osdLogo.imp_rgn, osdGrp, &grpRgnAttr);
+    }
   }
 
   if (osd.start_delay_ms)
@@ -1031,7 +1078,15 @@ int OSD::exit() {
   free(osdLogo.data);
   free(osdBrightness.data);
 
-  sft_freefont(sft->font);
+  if (sft) {
+    if (sft->font) {
+      sft_freefont(sft->font);
+      sft->font = nullptr;
+    }
+    delete sft;
+    sft = nullptr;
+  }
+  text_rendering_available = false;
   return 0;
 }
 

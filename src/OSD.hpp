@@ -61,11 +61,13 @@ private:
   // libschrift
   // std::vector<uint8_t> fontData;
   std::unordered_map<char, Glyph> glyphs;
-  SFT *sft;
+  SFT *sft{nullptr};
+  bool text_rendering_available{false};
   int load_font();
   int libschrift_init();
   int renderGlyph(const char *characters);
-  void drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineSize, int WIDTH, int HEIGHT, const uint8_t *strokeColor);
+  void drawOutline(uint8_t *image, const Glyph &g, int x, int y, int outlineSize, int WIDTH, int HEIGHT,
+                   const uint8_t *strokeColor);
   int calculateTextSize(const char *text, uint16_t &width, uint16_t &height, int outlineSize);
   int drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT, int outlineSize, unsigned int fill_color,
                unsigned int stroke_color);

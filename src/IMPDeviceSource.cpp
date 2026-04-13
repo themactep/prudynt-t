@@ -22,14 +22,6 @@ static inline struct timeval us_to_tv(int64_t us) {
   return tv;
 }
 
-static inline bool is_plausible_wallclock_tv(const struct timeval &tv) {
-  if (tv.tv_usec < 0 || tv.tv_usec >= 1000000) {
-    return false;
-  }
-  constexpr time_t kMinUnixTime = 946684800; // 2000-01-01
-  return tv.tv_sec >= kMinUnixTime;
-}
-
 // explicit instantiation
 template class IMPDeviceSource<H264NALUnit, video_stream>;
 template class IMPDeviceSource<AudioFrame, audio_stream>;

@@ -5,8 +5,8 @@
 AudioReframer::AudioReframer(unsigned int inputSampleRate, unsigned int inputSamplesPerFrame,
                              unsigned int outputSamplesPerFrame)
     : inputSampleRate(inputSampleRate), inputSamplesPerFrame(inputSamplesPerFrame),
-      outputSamplesPerFrame(outputSamplesPerFrame), currentTimestamp_us(0), timestampRemainder_us(0), samplesAccumulated(0),
-      buffer(2 * std::max(inputSamplesPerFrame, outputSamplesPerFrame) * sizeof(uint16_t)) {
+      outputSamplesPerFrame(outputSamplesPerFrame), currentTimestamp_us(0), timestampRemainder_us(0),
+      samplesAccumulated(0), buffer(2 * std::max(inputSamplesPerFrame, outputSamplesPerFrame) * sizeof(uint16_t)) {
   if (inputSamplesPerFrame == 0 || outputSamplesPerFrame == 0) {
     throw std::invalid_argument("Number of samples per frame must be greater than zero.");
   }

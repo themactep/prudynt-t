@@ -31,9 +31,8 @@ bool wait_for_sensor_resolution(int max_retries = 10, int delay_ms = 50) {
 
   for (int i = 0; i < max_retries; ++i) {
     int width = 0, height = 0;
-    if (read_int_from_file(kSensorWidthPath, width) &&
-        read_int_from_file(kSensorHeightPath, height) &&
-        width > 0 && height > 0) {
+    if (read_int_from_file(kSensorWidthPath, width) && read_int_from_file(kSensorHeightPath, height) && width > 0 &&
+        height > 0) {
       LOG_DEBUG("Sensor resolution detected: " << width << "x" << height << " (attempt " << (i + 1) << ")");
       return true;
     }
@@ -172,7 +171,7 @@ int add_sensor_with_retry(IMPSensorInfo &sensor_info) {
   int ret = hal::isp::add_sensor(&sensor_info);
 #if defined(PLATFORM_T23)
   if (ret != 0) {
-    LOG_WARN("IMPSystem init: add_sensor failed on first attempt; trying targeted ISP cleanup and retry");
+    LOG_WARN("IMPSystem init: add_sensor failed on first attempt; trying targeted ISP sensor cleanup and retry");
 
     int cleanup_ret = hal::isp::disable_sensor();
     LOG_DEBUG_OR_ERROR(cleanup_ret, "hal::isp::disable_sensor() cleanup before add_sensor retry");
@@ -202,7 +201,9 @@ void cleanup_stale_t23_isp_state(IMPSensorInfo &sensor_info) {
 #if defined(PLATFORM_T23)
   LOG_WARN("IMPSystem init: running preemptive T23 stale ISP cleanup before sensor attach");
 
-  int ret = hal::isp::disable_sensor();
+  int ret = 0;
+
+  ret = hal::isp::disable_sensor();
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::disable_sensor() preemptive cleanup before add_sensor");
 
   ret = hal::isp::del_sensor(&sensor_info);
@@ -291,7 +292,8 @@ int IMPSystem::init() {
       // Auto-calculate from the largest enabled stream: ~10% RGBA coverage + 256KB margin
       int max_pixels = 0;
       for (auto *s : {&cfg->stream0, &cfg->stream1, &cfg->stream2, &cfg->stream3}) {
-        if (s->enabled) max_pixels = std::max(max_pixels, s->width * s->height);
+        if (s->enabled)
+          max_pixels = std::max(max_pixels, s->width * s->height);
       }
       pool_size_kb = (max_pixels * 4 * 0.1) / 1024 + 256;
     }
@@ -409,9 +411,8 @@ int IMPSystem::init() {
     LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
 
     ret = hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
-    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain="
-                                                      << cfg->image.wb_rgain << ", bgain=" << cfg->image.wb_bgain
-                                                      << ")");
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain=" << cfg->image.wb_rgain
+                                                     << ", bgain=" << cfg->image.wb_bgain << ")");
 
     ret = hal::isp::set_hue(static_cast<unsigned char>(cfg->image.hue));
     LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_hue(" << cfg->image.hue << ")");
@@ -435,9 +436,8 @@ int IMPSystem::init() {
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_dgain(" << cfg->image.max_dgain << ")");
 
   ret = hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
-  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain="
-                                                    << cfg->image.wb_rgain << ", bgain=" << cfg->image.wb_bgain
-                                                    << ")");
+  LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_wb(mode=" << cfg->image.core_wb_mode << ", rgain=" << cfg->image.wb_rgain
+                                                   << ", bgain=" << cfg->image.wb_bgain << ")");
 
   ret = hal::isp::set_hue(static_cast<unsigned char>(cfg->image.hue));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_hue(" << cfg->image.hue << ")");
@@ -477,6 +477,7 @@ int IMPSystem::init() {
   if (cfg->sensor.fps > 0 && desired_sensor_fps > (int)cfg->sensor.fps) {
     desired_sensor_fps = cfg->sensor.fps;
   }
+
 #if defined(PLATFORM_T23)
   const char *force_sensor_fps = std::getenv("PRUDYNT_FORCE_SENSOR_FPS");
   if (force_sensor_fps && force_sensor_fps[0] != '\0' && strcmp(force_sensor_fps, "1") == 0) {
@@ -508,6 +509,8 @@ int IMPSystem::init() {
 int IMPSystem::destroy() {
   int ret;
 
+  LOG_INFO("IMPSystem::destroy() begin");
+
   // Tear down in reverse order of init(): tuning -> system -> sensor -> ISP.
   ret = IMP_ISP_DisableTuning();
   LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_DisableTuning()");
@@ -523,6 +526,8 @@ int IMPSystem::destroy() {
 
   ret = IMP_ISP_Close();
   LOG_DEBUG_OR_ERROR(ret, "IMP_ISP_Close()");
+
+  LOG_INFO("IMPSystem::destroy() complete");
 
   return 0;
 }

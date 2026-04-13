@@ -43,8 +43,8 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
 #else
 FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
   estBitrate = global_audio[audioChn]->imp_audio->bitrate;
-  IMPDeviceSource<AudioFrame, audio_stream> *audioSource =
-      IMPDeviceSource<AudioFrame, audio_stream>::createNew(envir(), audioChn, global_audio[audioChn], "audio");
+  IMPDeviceSource<AudioFrame, audio_stream> *audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(
+      envir(), audioChn, global_audio[audioChn], "audio");
 
   if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
     return EndianSwap16::createNew(envir(), audioSource);
@@ -97,9 +97,10 @@ RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock
     break;
 #endif
 #if defined(USE_AAC) && USE_AAC
-  case IMPAudioFormat::AAC:
+  case IMPAudioFormat::AAC: {
     return AACSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
                               /* numChannels */ outChnCnt);
+  }
 #endif
   }
 

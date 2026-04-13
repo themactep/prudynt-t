@@ -138,9 +138,8 @@ bool IMPAudioOutput::configureHardwareAtRate(int sampleRate) {
 
   int actualRate = static_cast<int>(attr.samplerate);
   if (actualRate > 0 && actualRate != sampleRate) {
-    LOG_WARN("AO sample rate adjusted by hardware: requested "
-             << sampleRate << " Hz, got " << actualRate
-             << " Hz (shared CODEC clock?)");
+    LOG_WARN("AO sample rate adjusted by hardware: requested " << sampleRate << " Hz, got " << actualRate
+                                                               << " Hz (shared CODEC clock?)");
     int newNumPerFrm = std::max(actualRate / (1000 / kFrameDurationMs), 1);
     maxFrameBytes = newNumPerFrm * static_cast<int>(sizeof(int16_t));
   }
@@ -157,9 +156,8 @@ bool IMPAudioOutput::configureHardwareAtRate(int sampleRate) {
   }
 
   configuredSampleRate = (actualRate > 0) ? actualRate : sampleRate;
-  LOG_INFO("AO initialised: device=" << devId << " channel=" << channelId
-           << " rate=" << configuredSampleRate << " Hz"
-           << " maxFrameBytes=" << maxFrameBytes);
+  LOG_INFO("AO initialised: device=" << devId << " channel=" << channelId << " rate=" << configuredSampleRate << " Hz"
+                                     << " maxFrameBytes=" << maxFrameBytes);
   return true;
 }
 

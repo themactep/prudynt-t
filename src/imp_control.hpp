@@ -25,27 +25,27 @@ int imp_control_set_sharpness(unsigned char val);
 int imp_control_set_hue(unsigned char val);
 
 /* Denoising controls */
-int imp_control_set_sinter(unsigned char val);      /* Spatial denoise */
-int imp_control_set_temper(unsigned char val);      /* Temporal denoise */
+int imp_control_set_sinter(unsigned char val); /* Spatial denoise */
+int imp_control_set_temper(unsigned char val); /* Temporal denoise */
 
 /* Defect and dynamic range controls */
-int imp_control_set_dpc(unsigned char val);         /* Dead pixel correction */
-int imp_control_set_drc(unsigned char val);         /* Dynamic range compression */
-int imp_control_set_defog(unsigned char val);       /* Defog algorithm strength */
+int imp_control_set_dpc(unsigned char val);   /* Dead pixel correction */
+int imp_control_set_drc(unsigned char val);   /* Dynamic range compression */
+int imp_control_set_defog(unsigned char val); /* Defog algorithm strength */
 
 /* Exposure and gain controls */
 int imp_control_set_ae_compensation(int val);
-int imp_control_set_ae_it_max(int val);            /* AE integration time max */
+int imp_control_set_ae_it_max(int val); /* AE integration time max */
 int imp_control_set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short);
-int imp_control_set_max_again(unsigned char val);  /* Max analog gain */
-int imp_control_set_max_dgain(unsigned char val);  /* Max digital gain */
+int imp_control_set_max_again(unsigned char val); /* Max analog gain */
+int imp_control_set_max_dgain(unsigned char val); /* Max digital gain */
 
 /* Special effects and modes */
 int imp_control_set_backlight_comp(unsigned char val);
 int imp_control_set_highlight_depress(unsigned char val);
 int imp_control_set_running_mode(int mode);
-int imp_control_set_flicker_mode(int mode);        /* 0=off, 1=50Hz, 2=60Hz */
-int imp_control_switch_bin(const char *bin_path);  /* Switch IQ bin file */
+int imp_control_set_flicker_mode(int mode);       /* 0=off, 1=50Hz, 2=60Hz */
+int imp_control_switch_bin(const char *bin_path); /* Switch IQ bin file */
 
 /* White balance */
 int imp_control_set_white_balance(int mode, unsigned short rgain, unsigned short bgain);
@@ -54,7 +54,7 @@ int imp_control_set_white_balance(int mode, unsigned short rgain, unsigned short
 int imp_control_set_sensor_fps(int fps_num, int fps_den);
 
 /* Flip/mirror controls */
-int imp_control_set_flip(int mode);                /* 0=normal, 1=mirror, 2=flip, 3=both */
+int imp_control_set_flip(int mode); /* 0=normal, 1=mirror, 2=flip, 3=both */
 
 /* ISP Query functions (read-only) */
 int imp_control_get_total_gain(int *out_gain);
@@ -67,21 +67,21 @@ int imp_control_get_ae_attributes(char *buffer, int size);
  * Audio Input (AI) Controls
  * ============================================================================ */
 
-int imp_control_ai_set_hpf(int enable);            /* High pass filter */
+int imp_control_ai_set_hpf(int enable); /* High pass filter */
 int imp_control_ai_set_agc(int gain_level, int max_gain);
 int imp_control_ai_set_noise_suppression(int level); /* 0-3, 0=off */
 int imp_control_ai_set_echo_cancellation(int enable);
-int imp_control_ai_set_volume(int vol);            /* -30 to 120 dB */
-int imp_control_ai_set_gain(int gain);             /* 0-31 dB */
-int imp_control_ai_set_alc(int level);             /* ALC 0-7 */
+int imp_control_ai_set_volume(int vol); /* -30 to 120 dB */
+int imp_control_ai_set_gain(int gain);  /* 0-31 dB */
+int imp_control_ai_set_alc(int level);  /* ALC 0-7 */
 
 /* ============================================================================
  * Audio Output (AO) Controls
  * ============================================================================ */
 
 int imp_control_ao_set_hpf(int enable);
-int imp_control_ao_set_volume(int vol);            /* -30 to 120 dB */
-int imp_control_ao_set_gain(int gain);             /* 0-31 dB */
+int imp_control_ao_set_volume(int vol); /* -30 to 120 dB */
+int imp_control_ao_set_gain(int gain);  /* 0-31 dB */
 
 /* ============================================================================
  * Encoding Controls
@@ -91,7 +91,7 @@ int imp_control_set_bitrate(int channel, int bitrate);
 int imp_control_set_gop_length(int channel, int length);
 int imp_control_set_rc_mode(int channel, int mode);
 int imp_control_set_framerate(int channel, int fps_num, int fps_den);
-int imp_control_set_qp(int channel, int qp);       /* Quantization parameter */
+int imp_control_set_qp(int channel, int qp); /* Quantization parameter */
 int imp_control_set_qp_bounds(int channel, int min_qp, int max_qp);
 int imp_control_set_qp_ip_delta(int channel, int delta);
 

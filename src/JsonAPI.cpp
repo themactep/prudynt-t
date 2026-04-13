@@ -1,9 +1,9 @@
 #include "JsonAPI.hpp"
 #include "AudioOutputWorker.hpp"
 #include "Config.hpp"
+#include "MP4Recorder.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
-#include "MP4Recorder.hpp"
 
 extern "C" {
 #include <json_config.h>
@@ -13,10 +13,10 @@ JsonValue *parse_json_string(const char *json_str);
 
 #include <algorithm>
 #include <cstring>
+#include <fcntl.h>
+#include <imp/imp_audio.h>
 #include <imp/imp_isp.h>
 #include <sstream>
-#include <imp/imp_audio.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 namespace {
@@ -1337,8 +1337,9 @@ void handle_action(JsonValue *obj, std::string &out, bool &sep) {
   bool wrote = false;
   if (JsonValue *rst = obj_get(obj, "restart_thread"); rst && rst->type == JSON_NUMBER) {
     int mask = (int)rst->value.number.integer;
-    if (mask & 1)
+    if (mask & 1) {
       global_restart_rtsp = true;
+    }
     if (mask & 2)
       global_restart_video = true;
     if (mask & 4)

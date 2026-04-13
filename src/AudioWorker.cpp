@@ -305,19 +305,18 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       static uint64_t clog_last_log_ms = 0;
       clog_count++;
       uint64_t now_ms = static_cast<uint64_t>(
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-              std::chrono::steady_clock::now().time_since_epoch()).count());
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+              .count());
       if (now_ms - clog_last_log_ms >= 5000) {
-        LOG_WARN("audio encChn:" << encChn << " - msgChannel sink clogged, "
-                                 << clog_count << " frames dropped in last 5s");
+        LOG_WARN("audio encChn:" << encChn << " - msgChannel sink clogged, " << clog_count
+                                 << " frames dropped in last 5s");
         clog_count = 0;
         clog_last_log_ms = now_ms;
       }
     }
   }
 
-  if (got_stream &&
-      IMP_AENC_ReleaseStream(global_audio[encChn]->aeChn, &stream) < 0) {
+  if (got_stream && IMP_AENC_ReleaseStream(global_audio[encChn]->aeChn, &stream) < 0) {
     LOG_ERROR("IMP_AENC_ReleaseStream(" << global_audio[encChn]->devId << ", " << global_audio[encChn]->aeChn
                                         << ", &stream) failed");
   }
@@ -400,8 +399,8 @@ void AudioWorker::run() {
     bool recorder_needs_audio = (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
     bool audio_clients_active = global_audio[encChn]->hasDataCallback;
     bool tap_requests_audio = tap && tap->wantsCapture();
-    bool should_capture_audio = cfg->audio.input_enabled &&
-                                (audio_clients_active || recorder_needs_audio || tap_requests_audio);
+    bool should_capture_audio =
+        cfg->audio.input_enabled && (audio_clients_active || recorder_needs_audio || tap_requests_audio);
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn,
@@ -502,6 +501,14 @@ void *AudioWorker::thread_entry(void *arg) {
 
   AudioWorker worker(encChn);
   worker.run();
+
+#if defined(PLATFORM_T23)
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    LOG_WARN("T23 shutdown: skipping audio teardown for channel " << encChn);
+    global_audio[encChn]->imp_audio = nullptr;
+    return 0;
+  }
+#endif
 
   if (global_audio[encChn]->imp_audio) {
     delete global_audio[encChn]->imp_audio;

@@ -59,7 +59,7 @@ inline void on_enter_night(const Params &p, State &s) {
 inline void on_enter_day(State &s) {
   s.ircut_engaged = false;
   s.day_count = 0;
-  s.night_count = 0; // Reset night counter to prevent immediate flip-back
+  s.night_count = 0;      // Reset night counter to prevent immediate flip-back
   s.settle_remaining = 0; // No settle needed in day mode
 }
 
@@ -145,12 +145,12 @@ struct SimpleParams {
   int day_count_threshold = 4;           // Consecutive samples before switching to day
 
   // EV-based thresholds for platforms without total_gain (T10, T20)
-  int ev_night_threshold = 1500000;      // Switch to night when EV > this (dark)
-  int ev_day_threshold = 200000;         // Switch to day when EV < this (bright)
+  int ev_night_threshold = 1500000; // Switch to night when EV > this (dark)
+  int ev_day_threshold = 200000;    // Switch to day when EV < this (bright)
 };
 
 struct SimpleState {
-  bool is_night = false;  // Current mode (true = night, false = day)
+  bool is_night = false; // Current mode (true = night, false = day)
   int night_count = 0;
   int day_count = 0;
 };
@@ -190,8 +190,10 @@ inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_g
     // In between thresholds - decay counters slowly to tolerate brief AE oscillation.
     // A hard reset would block detection if gain bounces through the zone during settling.
     else {
-      if (s.night_count > 0) --s.night_count;
-      if (s.day_count > 0) --s.day_count;
+      if (s.night_count > 0)
+        --s.night_count;
+      if (s.day_count > 0)
+        --s.day_count;
     }
   }
   // Fallback to EV-based algorithm for platforms without total_gain (T10, T20)
@@ -220,8 +222,10 @@ inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_g
     }
     // In between thresholds - decay counters slowly to tolerate brief AE oscillation.
     else {
-      if (s.night_count > 0) --s.night_count;
-      if (s.day_count > 0) --s.day_count;
+      if (s.night_count > 0)
+        --s.night_count;
+      if (s.day_count > 0)
+        --s.day_count;
     }
   }
   // No valid sensor data - hold current state

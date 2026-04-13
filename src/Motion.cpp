@@ -99,20 +99,13 @@ void Motion::detect() {
     bool motorActiveOrSettling = motorFlagPresent || (sinceLastMotor < motorSettleWindow);
 
     if (motorActiveOrSettling && !motorMovementActive) {
-      LOG_INFO("Motion suppressed: motor movement detected (flag=" << motorFlagPresent
-                                                                       << ", settle_ms="
-                                                                       << motorSettleWindow.count()
-                                                                       << ", since_last_ms="
-                                                                       << sinceLastMotor.count() << ")");
+      LOG_INFO("Motion suppressed: motor movement detected (flag="
+               << motorFlagPresent << ", settle_ms=" << motorSettleWindow.count()
+               << ", since_last_ms=" << sinceLastMotor.count() << ")");
     } else if (!motorActiveOrSettling && motorMovementActive) {
-      LOG_INFO("Motor movement ended; resuming motion monitoring (cooldown applies) (flag=" << motorFlagPresent
-                                                                                           << ", settle_ms="
-                                                                                           << motorSettleWindow.count()
-                                                                                           << ", since_last_ms="
-                                                                                           << sinceLastMotor.count()
-                                                                                           << ", cooldown_s="
-                                                                                           << cfg->motion.cooldown_time_s
-                                                                                           << ")");
+      LOG_INFO("Motor movement ended; resuming motion monitoring (cooldown applies) (flag="
+               << motorFlagPresent << ", settle_ms=" << motorSettleWindow.count() << ", since_last_ms="
+               << sinceLastMotor.count() << ", cooldown_s=" << cfg->motion.cooldown_time_s << ")");
       isInCooldown = true;
       cooldownEndTime = steady_clock::now();
     }
@@ -228,9 +221,11 @@ int Motion::init() {
   // Map web UI sensitivity (1-8) to hardware range (0-max)
   // Hardware max varies by platform: older T20 supports 0-4, newer platforms support 0-8 for panoramic/fisheye cameras
   int hw_sensitivity = cfg->motion.sensitivity - 1;
-  if (hw_sensitivity < 0) hw_sensitivity = 0;
+  if (hw_sensitivity < 0)
+    hw_sensitivity = 0;
   int hw_max = hal::caps().motion_sensitivity_max;
-  if (hw_sensitivity > hw_max) hw_sensitivity = hw_max;
+  if (hw_sensitivity > hw_max)
+    hw_sensitivity = hw_max;
 
   move_param.sense[0] = hw_sensitivity;
   move_param.skipFrameCnt = cfg->motion.skip_frame_count;
@@ -261,11 +256,11 @@ int Motion::init() {
   move_param.frameInfo.width = motion_width;
   move_param.frameInfo.height = motion_height;
 
-  LOG_INFO("Motion detection: sensitivity: " << move_param.sense[0] << " (UI: " << cfg->motion.sensitivity 
-                               << ", HW max: " << hal::caps().motion_sensitivity_max << ")"
-                               << ", skipCnt:" << move_param.skipFrameCnt
-                               << ", width:" << move_param.frameInfo.width
-                               << ", height:" << move_param.frameInfo.height);
+  LOG_INFO("Motion detection: sensitivity: " << move_param.sense[0] << " (UI: " << cfg->motion.sensitivity
+                                             << ", HW max: " << hal::caps().motion_sensitivity_max << ")"
+                                             << ", skipCnt:" << move_param.skipFrameCnt
+                                             << ", width:" << move_param.frameInfo.width
+                                             << ", height:" << move_param.frameInfo.height);
 
   move_param.roiRect[0].p0.x = cfg->motion.roi_0_x;
   move_param.roiRect[0].p0.y = cfg->motion.roi_0_y;

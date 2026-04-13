@@ -48,9 +48,8 @@ int Opus::close() {
 }
 
 int Opus::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
-  opus_int32 bytesEncoded =
-      opus_encode(encoder, reinterpret_cast<const opus_int16 *>(data->virAddr), (data->len / sizeof(int16_t)) / numChn,
-                  reinterpret_cast<unsigned char *>(outbuf), 1024);
+  opus_int32 bytesEncoded = opus_encode(encoder, reinterpret_cast<const opus_int16 *>(data->virAddr),
+                                        (data->len / sizeof(int16_t)) / numChn, reinterpret_cast<unsigned char *>(outbuf), 1024);
 
   if (bytesEncoded < 0) {
     LOG_WARN("Opus encoding failed with error code: " << *outLen);

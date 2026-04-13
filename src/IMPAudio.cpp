@@ -16,7 +16,8 @@
 static thread_local IMPAudioEncoder *encoder = nullptr;
 
 int IMPAudio::encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf, int *outLen) {
-  if (!encoder) return -1;
+  if (!encoder)
+    return -1;
   return encoder->encode(frame, outbuf, outLen);
 }
 

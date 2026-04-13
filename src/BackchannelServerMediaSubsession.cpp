@@ -273,7 +273,8 @@ void BackchannelServerMediaSubsession::startStream(
   }
 
   if (state->mediaSink && state->mediaSink->isActive()) {
-    LOG_DEBUG("Stream already playing for session " << static_cast<unsigned>(clientSessionId) << ", skipping startPlaying");
+    LOG_DEBUG("Stream already playing for session " << static_cast<unsigned>(clientSessionId)
+                                                    << ", skipping startPlaying");
   } else {
     state->startPlaying(rtcpRRHandler, rtcpRRHandlerClientData, serverRequestAlternativeByteHandler,
                         serverRequestAlternativeByteHandlerClientData);

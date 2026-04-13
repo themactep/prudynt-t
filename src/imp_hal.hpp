@@ -6,18 +6,20 @@
  * ============================================================================ */
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
-    #define PLATFORM_NEW_SDK  /* T31+ use newer SDK API */
-#elif defined(PLATFORM_T30) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T10)
-    #define PLATFORM_OLD_SDK  /* T10-T30 use older SDK API */
+#define PLATFORM_NEW_SDK /* T31+ use newer SDK API */
+#elif defined(PLATFORM_T30) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
+    defined(PLATFORM_T10)
+#define PLATFORM_OLD_SDK /* T10-T30 use older SDK API */
 #else
-    #define PLATFORM_OLD_SDK  /* Default to older API */
+#define PLATFORM_OLD_SDK /* Default to older API */
 #endif
 
 #include <cstdint>
 
 // Define stub types for platforms missing IMP ISP attribute records
 // Must be before SDK headers are included
-#if defined(PLATFORM_T20) || defined(PLATFORM_T10) || defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T10) || defined(PLATFORM_T21) || defined(PLATFORM_T30) ||                \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
 struct IMPISPAEAttr {};
 #endif
 
@@ -34,7 +36,7 @@ struct IMPISPEVAttr {};
 // Compatibility shims for SDK variants where these prototypes are absent.
 extern "C" {
 int IMP_OSD_SetPoolSize(int size);
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
     defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
 int IMP_ISP_Tuning_GetAwbHist(IMPISPAWBHist *awb_hist);
 #endif
@@ -227,7 +229,8 @@ int get_ae_zone(unsigned int zone[15][15]);
 
 // AE histogram (5-bin normalized or 256-bin origin)
 int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh, unsigned char stat_nodev);
-int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh, unsigned char &stat_nodev);
+int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh,
+                unsigned char &stat_nodev);
 int get_ae_hist_origin(unsigned int bins[256]);
 
 // Sensor timing
@@ -388,7 +391,7 @@ int set_region_pos(int handle, int x, int y);
 int set_region_alpha(int handle, int alpha);
 int get_region_attr(int handle, IMPOSDRgnAttr &out_attr);
 int get_group_attr(int handle, int group, IMPOSDGrpRgnAttr &out_attr);
-int set_region_attr(int handle, const char *params); // placeholder for future parsing
+int set_region_attr(int handle, const char *params);  // placeholder for future parsing
 int set_region_cover(int handle, const char *params); // placeholder for future parsing
 
 } // namespace osd

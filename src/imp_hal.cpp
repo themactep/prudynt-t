@@ -55,8 +55,8 @@ static PlatformCaps g_caps = {
     .has_audio_aec_channel = false,
 #endif
 
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
-    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) ||                \
     defined(PLATFORM_C100)
     .has_audio_agc = true,
 #else
@@ -69,8 +69,8 @@ static PlatformCaps g_caps = {
     .has_audio_alc = false,
 #endif
 
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
-    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
+    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) ||                \
     defined(PLATFORM_C100)
     .has_audio_hpf = true,
     .has_audio_ns = true,
@@ -161,7 +161,7 @@ static PlatformCaps g_caps = {
     .has_isp_wb = true,           // All platforms support white balance
 
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
-    .has_isp_switch_bin = true,   // Bin switching on T40/T41 (T23 needs SDK 1.1.2+)
+    .has_isp_switch_bin = true, // Bin switching on T40/T41 (T23 needs SDK 1.1.2+)
 #else
     .has_isp_switch_bin = false,
 #endif
@@ -214,7 +214,8 @@ const EncoderDefaults &encoder() {
 
 const DenoiseDefaults &denoise() {
   // Initializer order: {sinter_default, temper_default, sinter_min, sinter_max, temper_min, temper_max}
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) ||                \
+    defined(PLATFORM_C100)
   static constexpr DenoiseDefaults defaults{128, 128, 0, 255, 0, 255};
 #elif defined(PLATFORM_T10) || defined(PLATFORM_T20)
   static constexpr DenoiseDefaults defaults{14, 95, 0, 255, 0, 255};
@@ -775,7 +776,7 @@ int get_total_gain(int &out_gain) {
     out_gain = static_cast<int>(info.TotalGainDb);
   }
   return ret;
-#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+#elif defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
     defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   uint32_t gain = 0;
   int ret = IMP_ISP_Tuning_GetTotalGain(&gain);
@@ -813,7 +814,7 @@ int get_awb_color_temp(int &out_ct) {
 }
 
 int get_ev_attr(IMPISPEVAttr &out_attr) {
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || \
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
     defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   return IMP_ISP_Tuning_GetEVAttr(&out_attr);
 #else
@@ -1389,9 +1390,7 @@ int get_ae_roi(unsigned char roi[15][15]) {
   int ret = IMP_ISP_Tuning_AE_GetROI(&rect);
   if (ret == 0) {
     memset(roi, 0, sizeof(unsigned char) * 15 * 15);
-    auto coord_to_cell = [](unsigned char coord) -> int {
-      return static_cast<int>(coord) * 15 / 256;
-    };
+    auto coord_to_cell = [](unsigned char coord) -> int { return static_cast<int>(coord) * 15 / 256; };
     int start_col = coord_to_cell(rect.startx);
     int end_col = coord_to_cell(rect.endx);
     int start_row = coord_to_cell(rect.starty);
@@ -1462,7 +1461,8 @@ int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh, uns
 #endif
 }
 
-int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh, unsigned char &stat_nodev) {
+int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh,
+                unsigned char &stat_nodev) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   // AE histogram not available on T40/T41
   (void)thresholds;
@@ -1777,8 +1777,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) ||                \
+    defined(PLATFORM_T41) || defined(PLATFORM_C100)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }
@@ -1810,8 +1810,8 @@ int set_ai_hpf(int enable) {
   if (!::hal::caps().has_audio_hpf)
     return -1;
 
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) ||                \
+    defined(PLATFORM_C100)
   return IMP_AI_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1846,7 +1846,7 @@ int set_ai_echo_cancellation(int enable) {
 }
 
 int set_ai_volume(int vol) {
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||                \
     defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   int audioDevId = 0;
   int aiChn = 0;
@@ -1874,8 +1874,8 @@ int set_ai_alc(int level) {
 }
 
 int set_ao_hpf(int enable) {
-#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) ||                \
+    defined(PLATFORM_C100)
   return IMP_AO_SetHpfCoFrequency(enable ? 20 : 0);
 #else
   (void)enable;
@@ -1884,7 +1884,7 @@ int set_ao_hpf(int enable) {
 }
 
 int set_ao_volume(int vol) {
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||                \
     defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   int audioDevId = 0;
   int aoChn = 0;
@@ -1896,7 +1896,7 @@ int set_ao_volume(int vol) {
 }
 
 int set_ao_gain(int gain) {
-#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||              \
+#if defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T30) ||                \
     defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
   int audioDevId = 0;
   int aoChn = 0;
@@ -2053,8 +2053,8 @@ int get_encoder_type(const char *format) {
   } else if (strcmp(format, "H264") == 0) {
     return PT_H264;
   }
-#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T21) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_T40) ||                \
+    defined(PLATFORM_T41) || defined(PLATFORM_C100)
   else if (strcmp(format, "H265") == 0) {
     return PT_H265;
   }

@@ -17,10 +17,10 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
-#include <functional>
-#include <future>
 #include <cstdint>
 #include <deque>
+#include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -73,11 +73,11 @@ struct H264NALUnit {
   std::vector<uint8_t> data;
 
   // Frame boundary tracking (detect incomplete frames)
-  bool is_frame_start = false;      // First NAL unit of frame
-  bool is_frame_end = false;        // Last NAL unit of frame
-  uint32_t frame_id = 0;            // Unique per video frame
-  uint32_t packet_index = 0;        // Position within frame (0-based)
-  uint32_t packet_count = 0;        // Total NAL units in frame
+  bool is_frame_start = false; // First NAL unit of frame
+  bool is_frame_end = false;   // Last NAL unit of frame
+  uint32_t frame_id = 0;       // Unique per video frame
+  uint32_t packet_index = 0;   // Position within frame (0-based)
+  uint32_t packet_count = 0;   // Total NAL units in frame
 
   struct timeval time{0, 0};
   // Encoder timestamp in microseconds (from IMP encoder, monotonic)
@@ -197,8 +197,8 @@ struct audio_stream {
   std::vector<AudioTapEntry> audio_taps;
 
   audio_stream(int devId, int aiChn, int aeChn)
-      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
-        msgChannel(nullptr), onDataCallback{nullptr}, hasDataCallback{false} {
+      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr), msgChannel(nullptr),
+        onDataCallback{nullptr}, hasDataCallback{false} {
   }
 };
 
@@ -215,15 +215,15 @@ struct video_stream {
   IMPFramesource *imp_framesource;
   std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
   std::function<void(void)> onDataCallback;
-  bool run_for_jpeg;                 // see comment in audio_stream
+  bool run_for_jpeg; // see comment in audio_stream
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
   std::atomic<bool> mp4_waiting_for_idr;
   std::atomic<int64_t> mp4_required_idr_ts_us;
   std::atomic<int64_t> mp4_last_idr_ts_us;
   std::atomic<uint64_t> mp4_last_idr_request_ms;
-  std::atomic<int64_t> mp4_prebuffer_offset_ms;  // Offset for live frames when prebuffer is used
-  std::atomic<bool> mp4_prebuffer_flushing;      // True while prebuffer frames are being written
-  std::mutex onDataCallbackLock;     // protects onDataCallback from deallocation
+  std::atomic<int64_t> mp4_prebuffer_offset_ms; // Offset for live frames when prebuffer is used
+  std::atomic<bool> mp4_prebuffer_flushing;     // True while prebuffer frames are being written
+  std::mutex onDataCallbackLock;                // protects onDataCallback from deallocation
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
   std::mutex codec_config_mutex;

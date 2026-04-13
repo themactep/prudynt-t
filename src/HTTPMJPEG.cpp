@@ -1,16 +1,16 @@
 #include "HTTPMJPEG.hpp"
 
+#include "JsonAPI.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
-#include "JsonAPI.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <arpa/inet.h>
+#include <cctype>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -34,11 +34,13 @@ std::string base64_decode(const std::string &encoded) {
   static const std::string base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   std::string decoded;
   std::vector<int> T(256, -1);
-  for (int i = 0; i < 64; i++) T[base64_chars[i]] = i;
+  for (int i = 0; i < 64; i++)
+    T[base64_chars[i]] = i;
 
   int val = 0, valb = -8;
   for (unsigned char c : encoded) {
-    if (T[c] == -1) break;
+    if (T[c] == -1)
+      break;
     val = (val << 6) + T[c];
     valb += 6;
     if (valb >= 0) {
@@ -85,7 +87,8 @@ bool write_chunked_paced(int fd, const unsigned char *data, size_t len, size_t c
 
     // Target schedule: proportion of total duration based on bytes sent
     auto elapsed = steady_clock::now() - start;
-    auto target_us = static_cast<uint64_t>(sent) * duration_cast<microseconds>(total).count() / static_cast<uint64_t>(len);
+    auto target_us =
+        static_cast<uint64_t>(sent) * duration_cast<microseconds>(total).count() / static_cast<uint64_t>(len);
     auto elapsed_us = static_cast<uint64_t>(duration_cast<microseconds>(elapsed).count());
     if (target_us > elapsed_us) {
       auto sleep_us = target_us - elapsed_us;
@@ -142,7 +145,7 @@ std::string get_auth_header(const std::string &req) {
     // Remove \r if present
     if (!line.empty() && line.back() == '\r')
       line.pop_back();
-    
+
     // Case-insensitive header search
     if (line.size() > 14) {
       std::string header_name = line.substr(0, 14);
@@ -165,7 +168,7 @@ bool check_auth(const std::string &req, const char *username, const char *passwo
   std::string auth = get_auth_header(req);
   if (auth.empty())
     return false;
-  
+
   // Check for "Basic " prefix (case-insensitive)
   if (auth.size() < 6)
     return false;
@@ -174,19 +177,19 @@ bool check_auth(const std::string &req, const char *username, const char *passwo
     c = std::tolower(static_cast<unsigned char>(c));
   if (prefix != "basic ")
     return false;
-  
+
   // Decode base64 credentials
   std::string encoded = auth.substr(6);
   std::string decoded = base64_decode(encoded);
-  
+
   // Expected format: "username:password"
   size_t colon = decoded.find(':');
   if (colon == std::string::npos)
     return false;
-  
+
   std::string user = decoded.substr(0, colon);
   std::string pass = decoded.substr(colon + 1);
-  
+
   return (user == username && pass == password);
 }
 
@@ -197,8 +200,8 @@ HTTPMJPEG::~HTTPMJPEG() {
   stop();
 }
 
-void HTTPMJPEG::start(int port, bool enable_mjpeg, bool enable_api, 
-                      bool auth_required, const char *username, const char *password) {
+void HTTPMJPEG::start(int port, bool enable_mjpeg, bool enable_api, bool auth_required, const char *username,
+                      const char *password) {
   bool expected = false;
   if (!running_.compare_exchange_strong(expected, true))
     return; // already running
@@ -252,8 +255,8 @@ void HTTPMJPEG::server_loop(int port) {
     running_.store(false);
     return;
   }
-  LOG_INFO("HTTPMJPEG: listening on port " << port << " (/mjpg?ch=0.." << (NUM_JPEG_CHANNELS - 1)
-                                           << "&f=&q=&w=&h=)" << (api_enabled_ ? " and /api/v1/config" : ""));
+  LOG_INFO("HTTPMJPEG: listening on port " << port << " (/mjpg?ch=0.." << (NUM_JPEG_CHANNELS - 1) << "&f=&q=&w=&h=)"
+                                           << (api_enabled_ ? " and /api/v1/config" : ""));
 
   while (running_.load()) {
     sockaddr_in cli{};
@@ -322,9 +325,9 @@ void HTTPMJPEG::handle_client(int cfd) {
 
   auto send_response = [&](int code, const char *ctype, const std::string &payload) {
     char hdr[256];
-    int n = snprintf(hdr, sizeof(hdr), "HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
-                     code, (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")), ctype,
-                     payload.size());
+    int n = snprintf(hdr, sizeof(hdr),
+                     "HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", code,
+                     (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")), ctype, payload.size());
     write_full(cfd, hdr, static_cast<size_t>(n));
     if (!payload.empty())
       write_full(cfd, payload.data(), payload.size());
@@ -588,10 +591,10 @@ void HTTPMJPEG::handle_client(int cfd) {
     char part_hdr[256];
     struct timeval tv;
     gettimeofday(&tv, nullptr);
-    int header_len = snprintf(part_hdr, sizeof(part_hdr),
-                              "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %zu\r\nX-Timestamp: %ld.%06ld\r\n\r\n",
-                              boundary.c_str(), img.size(), static_cast<long>(tv.tv_sec),
-                              static_cast<long>(tv.tv_usec));
+    int header_len =
+        snprintf(part_hdr, sizeof(part_hdr),
+                 "--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %zu\r\nX-Timestamp: %ld.%06ld\r\n\r\n",
+                 boundary.c_str(), img.size(), static_cast<long>(tv.tv_sec), static_cast<long>(tv.tv_usec));
 
     if (header_len < 0 || header_len >= static_cast<int>(sizeof(part_hdr)) ||
         !write_full(cfd, part_hdr, static_cast<size_t>(header_len))) {

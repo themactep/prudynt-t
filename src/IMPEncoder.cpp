@@ -2,6 +2,7 @@
 #include "Config.hpp"
 #include "imp_hal.hpp"
 #include <cstdint>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
@@ -18,10 +19,27 @@ inline uint32_t align_up(uint32_t value, uint32_t alignment) {
   }
   return value + (alignment - remainder);
 }
+
+#if defined(PLATFORM_T23)
+void t23_encoder_global_preclean_once() {
+  static std::once_flag once;
+  std::call_once(once, []() {
+    LOG_WARN("T23 pre-clean: running one-time global encoder sweep");
+    for (int ch = 0; ch < 8; ++ch) {
+      (void)IMP_Encoder_StopRecvPic(ch);
+      (void)IMP_Encoder_UnRegisterChn(ch);
+      (void)IMP_Encoder_DestroyChn(ch);
+    }
+    for (int grp = 0; grp < 8; ++grp) {
+      (void)IMP_Encoder_DestroyGroup(grp);
+    }
+  });
+}
+#endif
 } // namespace
 
-IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, const char *name) {
-  IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, name);
+IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, int fsChn, const char *name) {
+  IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, fsChn, name);
   if (!encoder) {
     return nullptr;
   }
@@ -76,9 +94,8 @@ void IMPEncoder::initProfile() {
     encoderProfile = IMP_ENC_PROFILE_HEVC_MAIN;
   } else if (strcmp(stream->format, "JPEG") == 0) {
     encoderProfile = IMP_ENC_PROFILE_JPEG;
-    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP, stream->width,
-                                stream->height, 24, 1, 0, 0,
-                                stream->jpeg_quality, 0);
+    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP, stream->width, stream->height, 24, 1,
+                                0, 0, stream->jpeg_quality, 0);
     // 1000 / stream->jpeg_refresh
     LOG_DEBUG("STREAM PROFILE " << encChn << ", " << encGrp << ", " << stream->format << ", "
                                 << chnAttr.rcAttr.outFrmRate.frmRateNum << "fps, profile:" << stream->profile << ", "
@@ -102,8 +119,8 @@ void IMPEncoder::initProfile() {
                                               "CAPPED_QUALITY on T31");
   }
 
-  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width, stream->height,
-                              stream->fps, 1, stream->gop, 2, -1, stream->bitrate);
+  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width, stream->height, stream->fps, 1,
+                              stream->gop, 2, -1, stream->bitrate);
 
   switch (rcMode) {
   case IMP_ENC_RC_MODE_FIXQP:
@@ -195,13 +212,29 @@ void IMPEncoder::initProfile() {
     LOG_ERROR("unsupported stream->mode (" << stream->mode << "). we only support FIXQP, CBR, VBR and SMART");
   }
 
+#if defined(PLATFORM_T23)
+  if (chnAttr.encAttr.enType == PT_H264 && rcMode == ENC_RC_MODE_SMART) {
+    LOG_WARN("T23: forcing H264 RC mode SMART -> CBR for encoder stability");
+    rcMode = ENC_RC_MODE_CBR;
+  }
+#endif
+
   // 0 = Baseline
   // 1 = Main
   // 2 = High
   // Note: The encoder seems to emit frames at half the
   // requested framerate when the profile is set to Baseline.
   // For this reason, Main or High are recommended.
+#if defined(PLATFORM_T23)
+  if (chnAttr.encAttr.enType == PT_H264 && (stream->profile < 0 || stream->profile > 1)) {
+    LOG_WARN("T23: forcing unsupported H264 profile " << stream->profile << " -> 1 (Main)");
+    chnAttr.encAttr.profile = 1;
+  } else {
+    chnAttr.encAttr.profile = stream->profile;
+  }
+#else
   chnAttr.encAttr.profile = stream->profile;
+#endif
   chnAttr.encAttr.bufSize = 0;
 
   // Handle video rotation: swap width/height if rotation is applied
@@ -325,7 +358,31 @@ int IMPEncoder::init() {
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare(" << encChn << ", " << encGrp << ")");
   }
 
-  if (!is_jpeg) {
+#if defined(PLATFORM_T23)
+  t23_encoder_global_preclean_once();
+  {
+    int cleanup_ret = IMP_Encoder_StopRecvPic(encChn);
+    if (cleanup_ret == 0) {
+      LOG_WARN("T23 pre-clean: stopped stale recv on ch " << encChn);
+    }
+    cleanup_ret = IMP_Encoder_UnRegisterChn(encChn);
+    if (cleanup_ret == 0) {
+      LOG_WARN("T23 pre-clean: unregistered stale ch " << encChn);
+    }
+    cleanup_ret = IMP_Encoder_DestroyChn(encChn);
+    if (cleanup_ret == 0) {
+      LOG_WARN("T23 pre-clean: destroyed stale ch " << encChn);
+    }
+    if (!is_jpeg && ownsGroupResources()) {
+      cleanup_ret = IMP_Encoder_DestroyGroup(encGrp);
+      if (cleanup_ret == 0) {
+        LOG_WARN("T23 pre-clean: destroyed stale grp " << encGrp);
+      }
+    }
+  }
+#endif
+
+  if (!is_jpeg && ownsGroupResources()) {
     ret = IMP_Encoder_CreateGroup(encGrp);
     if (ret != 0) {
       LOG_ERROR("IMP_Encoder_CreateGroup(" << encGrp << ") failed ret=" << ret);
@@ -348,6 +405,9 @@ int IMPEncoder::init() {
     }
     oss << " res=" << stream->width << "x" << stream->height;
     LOG_ERROR(oss.str());
+#if defined(PLATFORM_T23)
+    group_created = false;
+#endif
     return ret;
   }
   chn_created = true;
@@ -360,9 +420,17 @@ int IMPEncoder::init() {
   chn_registered = true;
 
   if (!is_jpeg) {
-    fs = {DEV_ID_FS, encGrp, 0};
+    fs = {DEV_ID_FS, fsChn, 0};
     enc = {DEV_ID_ENC, encGrp, 0};
     osd_cell = {DEV_ID_OSD, encGrp, 0};
+
+    if (!ownsGroupResources()) {
+      if (stream->osd.enabled) {
+        LOG_ERROR("stream " << name << " cannot enable per-stream OSD while sharing encoder group " << encGrp);
+        return -1;
+      }
+      return ret;
+    }
 
     auto cleanup_manual_osd = [&]() {
       if (!osd_group_manual)
@@ -427,7 +495,7 @@ int IMPEncoder::deinit() {
 
   int ret = 0;
 
-  if (!is_jpeg_stream) {
+  if (!is_jpeg_stream && ownsGroupResources()) {
     if (osd) {
       if (fs_to_osd_bound) {
         ret = IMP_System_UnBind(&fs, &osd_cell);

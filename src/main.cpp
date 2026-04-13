@@ -8,7 +8,6 @@
 #include "IMPBackchannel.hpp"
 #include "IMPSystem.hpp"
 #include "ImagingControl.hpp"
-#include "imp_hal.hpp"
 #include "JPEGWorker.hpp"
 #include "Logger.hpp"
 #include "MP4ControlSocket.hpp"
@@ -16,33 +15,34 @@
 #include "RTSP.hpp"
 #include "VideoPrivacyControl.hpp"
 #include "VideoWorker.hpp"
+#include "imp_hal.hpp"
 #if defined(WEBSOCKET_ENABLED)
 #include "WS.hpp"
 #endif
-#include "WorkerUtils.hpp"
-#include "globals.hpp"
 #include "HTTPMJPEG.hpp"
 #include "IPCServer.hpp"
+#include "WorkerUtils.hpp"
+#include "globals.hpp"
 #include "version.hpp"
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
 #include <csignal>
+#include <cstdio>
 #include <cstring>
-#include <cerrno>
-#include <filesystem>
+#include <dlfcn.h>
 #include <fcntl.h>
+#include <filesystem>
 #include <signal.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/ucontext.h>
 #include <thread>
-#include <unistd.h>
 #include <time.h>
-#include <dlfcn.h>
+#include <unistd.h>
 #if defined(HAS_BACKTRACE) && HAS_BACKTRACE
 #include <execinfo.h>
 #endif
@@ -161,14 +161,14 @@ namespace {
 sigset_t shutdown_signal_set;
 
 // Helper to write strings safely in signal handler
-static void safe_write(int fd, const char* str) {
+static void safe_write(int fd, const char *str) {
   write(fd, str, strlen(str));
 }
 
 // Helper to write hex value safely
 static void safe_write_hex(int fd, unsigned long val) {
   char buf[20];
-  char* p = buf + sizeof(buf) - 1;
+  char *p = buf + sizeof(buf) - 1;
   *p = '\0';
   if (val == 0) {
     *(--p) = '0';
@@ -212,11 +212,21 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
   safe_write(crash_fd, "Signal: ");
   const char *signame = "UNKNOWN";
   switch (sig) {
-    case SIGSEGV: signame = "SIGSEGV (Segmentation fault)"; break;
-    case SIGABRT: signame = "SIGABRT (Abort)"; break;
-    case SIGILL:  signame = "SIGILL (Illegal instruction)"; break;
-    case SIGFPE:  signame = "SIGFPE (Floating point exception)"; break;
-    case SIGBUS:  signame = "SIGBUS (Bus error)"; break;
+  case SIGSEGV:
+    signame = "SIGSEGV (Segmentation fault)";
+    break;
+  case SIGABRT:
+    signame = "SIGABRT (Abort)";
+    break;
+  case SIGILL:
+    signame = "SIGILL (Illegal instruction)";
+    break;
+  case SIGFPE:
+    signame = "SIGFPE (Floating point exception)";
+    break;
+  case SIGBUS:
+    signame = "SIGBUS (Bus error)";
+    break;
   }
   safe_write(crash_fd, signame);
   safe_write(crash_fd, "\n");
@@ -229,23 +239,47 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
     if (sig == SIGILL) {
       safe_write(crash_fd, " (");
       switch (info->si_code) {
-        case ILL_ILLOPC: safe_write(crash_fd, "illegal opcode"); break;
-        case ILL_ILLOPN: safe_write(crash_fd, "illegal operand"); break;
-        case ILL_ILLADR: safe_write(crash_fd, "illegal addressing mode"); break;
-        case ILL_ILLTRP: safe_write(crash_fd, "illegal trap"); break;
-        case ILL_PRVOPC: safe_write(crash_fd, "privileged opcode"); break;
-        case ILL_PRVREG: safe_write(crash_fd, "privileged register"); break;
-        case ILL_COPROC: safe_write(crash_fd, "coprocessor error"); break;
-        case ILL_BADSTK: safe_write(crash_fd, "internal stack error"); break;
-        default: safe_write(crash_fd, "unknown"); break;
+      case ILL_ILLOPC:
+        safe_write(crash_fd, "illegal opcode");
+        break;
+      case ILL_ILLOPN:
+        safe_write(crash_fd, "illegal operand");
+        break;
+      case ILL_ILLADR:
+        safe_write(crash_fd, "illegal addressing mode");
+        break;
+      case ILL_ILLTRP:
+        safe_write(crash_fd, "illegal trap");
+        break;
+      case ILL_PRVOPC:
+        safe_write(crash_fd, "privileged opcode");
+        break;
+      case ILL_PRVREG:
+        safe_write(crash_fd, "privileged register");
+        break;
+      case ILL_COPROC:
+        safe_write(crash_fd, "coprocessor error");
+        break;
+      case ILL_BADSTK:
+        safe_write(crash_fd, "internal stack error");
+        break;
+      default:
+        safe_write(crash_fd, "unknown");
+        break;
       }
       safe_write(crash_fd, ")");
     } else if (sig == SIGSEGV) {
       safe_write(crash_fd, " (");
       switch (info->si_code) {
-        case SEGV_MAPERR: safe_write(crash_fd, "address not mapped"); break;
-        case SEGV_ACCERR: safe_write(crash_fd, "invalid permissions"); break;
-        default: safe_write(crash_fd, "unknown"); break;
+      case SEGV_MAPERR:
+        safe_write(crash_fd, "address not mapped");
+        break;
+      case SEGV_ACCERR:
+        safe_write(crash_fd, "invalid permissions");
+        break;
+      default:
+        safe_write(crash_fd, "unknown");
+        break;
       }
       safe_write(crash_fd, ")");
     }
@@ -529,8 +563,9 @@ int main(int argc, const char *argv[]) {
 #else
   LOG_INFO("WebSocket module not compiled into this build.");
 #endif
-  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) ? "enabled"
-                                                                                                            : "disabled"));
+  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled))
+                                     ? "enabled"
+                                     : "disabled"));
   LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   if (!timesync_wait()) {
@@ -578,8 +613,8 @@ int main(int argc, const char *argv[]) {
 #endif
 
   if (cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) {
-    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled,
-                     cfg->http.auth_required, cfg->http.username, cfg->http.password);
+    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled, cfg->http.auth_required,
+                     cfg->http.username, cfg->http.password);
     http_mjpeg_started = true;
   }
 
@@ -601,7 +636,8 @@ int main(int argc, const char *argv[]) {
 
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
       StartHelper ao_sh{0};
-      int ret = pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, static_cast<void *>(&ao_sh));
+      int ret =
+          pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, static_cast<void *>(&ao_sh));
       LOG_DEBUG_OR_ERROR(ret, "create audio output thread");
       // Wait for AO hardware init to complete before starting video.
       // The IMP SDK shares internal state between AO and encoder

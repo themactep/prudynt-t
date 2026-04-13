@@ -97,12 +97,8 @@ void VideoWorker::run() {
       return;
     }
 
-    global_video[encChn]->prebuffer->addFrame(
-      prebuffer_sample.data(),
-      prebuffer_sample.size(),
-      prebuffer_sample_ts_us,
-      prebuffer_sample_is_key
-    );
+    global_video[encChn]->prebuffer->addFrame(prebuffer_sample.data(), prebuffer_sample.size(), prebuffer_sample_ts_us,
+                                              prebuffer_sample_is_key);
     reset_prebuffer_sample();
   };
 #endif
@@ -118,7 +114,7 @@ void VideoWorker::run() {
     if (!recorder_active) {
       if (was_recorder_active) {
 #ifdef PREBUFFER_ENABLED
-        pending_frames_during_flush.clear();  // Clear pending frames
+        pending_frames_during_flush.clear(); // Clear pending frames
 #endif
       }
       was_recorder_active = false;
@@ -143,18 +139,17 @@ void VideoWorker::run() {
       pending_frames_during_flush.push_back(std::move(pf));
 
       reset_mp4_sample();
-      mp4_sample_ts_base_us = -1;  // Reset timestamp base so we recalculate after flush
+      mp4_sample_ts_base_us = -1; // Reset timestamp base so we recalculate after flush
       return;
     }
 
     // If we have pending frames from during the flush, write them first
     if (!pending_frames_during_flush.empty()) {
-
       int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
 
       // Find the first keyframe in pending frames to establish timestamp base
       int64_t pending_ts_base_us = -1;
-      for (const auto& pf : pending_frames_during_flush) {
+      for (const auto &pf : pending_frames_during_flush) {
         if (pf.is_keyframe) {
           pending_ts_base_us = pf.timestamp_us;
           break;
@@ -165,12 +160,13 @@ void VideoWorker::run() {
         pending_ts_base_us = pending_frames_during_flush.front().timestamp_us;
       }
 
-      for (const auto& pf : pending_frames_during_flush) {
+      for (const auto &pf : pending_frames_during_flush) {
         int64_t relative_ts_us = pf.timestamp_us;
         if (pending_ts_base_us >= 0) {
           relative_ts_us -= pending_ts_base_us;
         }
-        if (relative_ts_us < 0) relative_ts_us = 0;
+        if (relative_ts_us < 0)
+          relative_ts_us = 0;
         int64_t pts_ms = relative_ts_us / 1000 + prebuffer_offset;
 
         channel_recorder.writeVideo(pf.data.data(), pf.data.size(), pts_ms, pf.is_keyframe);
@@ -317,8 +313,8 @@ void VideoWorker::run() {
           uint8_t *start;
           uint32_t length;
           if (slices.second_len > 0) {
-            LOG_DDEBUG("video ch" << encChn << " pack[" << i << "] ring-buffer wrap: "
-                       << slices.first_len << "+" << slices.second_len << " bytes");
+            LOG_DDEBUG("video ch" << encChn << " pack[" << i << "] ring-buffer wrap: " << slices.first_len << "+"
+                                  << slices.second_len << " bytes");
             wrap_buf.resize(slices.first_len + slices.second_len);
             std::memcpy(wrap_buf.data(), slices.first_ptr, slices.first_len);
             std::memcpy(wrap_buf.data() + slices.first_len, slices.second_ptr, slices.second_len);
@@ -550,7 +546,7 @@ void VideoWorker::run() {
             // Add frame boundary metadata for complete frame detection
             static uint32_t frame_counter = 0;
             if (frame_start) {
-              frame_counter++;  // New frame starting
+              frame_counter++; // New frame starting
             }
             nalu.frame_id = frame_counter;
             nalu.packet_index = i;
@@ -582,10 +578,10 @@ void VideoWorker::run() {
                   if (global_video[encChn]->onDataCallback)
                     global_video[encChn]->onDataCallback();
                 }
-              } catch (const std::exception& e) {
+              } catch (const std::exception &e) {
                 LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id
-                         << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
-                         << " - Failed to queue: " << e.what());
+                                           << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
+                                           << " - Failed to queue: " << e.what());
                 delivered = false;
               }
               std::vector<VideoTapEntry> taps_copy;
@@ -609,8 +605,8 @@ void VideoWorker::run() {
                 clog_count[encChn]++;
                 uint64_t now_ms = monotonic_ms();
                 if (now_ms - clog_last_log_ms[encChn] >= 5000) {
-                  LOG_WARN("video channel:" << encChn << " - msgChannel sink clogged, "
-                                            << clog_count[encChn] << " frames dropped in last 5s");
+                  LOG_WARN("video channel:" << encChn << " - msgChannel sink clogged, " << clog_count[encChn]
+                                            << " frames dropped in last 5s");
                   clog_count[encChn] = 0;
                   clog_last_log_ms[encChn] = now_ms;
                 }
@@ -710,7 +706,8 @@ void VideoWorker::run() {
         }
       } else {
         error_count++;
-        LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout_ms << ") timeout !");
+        LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout_ms
+                                                << ") timeout !");
       }
     } else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
                !global_video[encChn]->run_for_jpeg && !global_force_video_active && !prebuffer_active) {
@@ -757,7 +754,7 @@ void *VideoWorker::thread_entry(void *arg) {
 
   global_video[encChn]->imp_framesource = IMPFramesource::createNew(global_video[encChn]->stream, &cfg->sensor, encChn);
   global_video[encChn]->imp_encoder =
-      IMPEncoder::createNew(global_video[encChn]->stream, encChn, encChn, global_video[encChn]->name);
+      IMPEncoder::createNew(global_video[encChn]->stream, encChn, encChn, encChn, global_video[encChn]->name);
   if (!global_video[encChn]->imp_encoder) {
     LOG_ERROR("Failed to create encoder for stream " << encChn);
     sh->has_started.release();
@@ -794,12 +791,9 @@ void *VideoWorker::thread_entry(void *arg) {
   if (cfg->recorder.prebuffer_enabled) {
     global_video[encChn]->prebuffer = std::make_unique<PreTriggerBuffer>();
     int fps = global_video[encChn]->stream ? global_video[encChn]->stream->fps : 25;
-    bool init_success = global_video[encChn]->prebuffer->init(
-        cfg->recorder.prebuffer_seconds,
-        fps,
-        cfg->recorder.prebuffer_max_memory_mb,
-        cfg->recorder.prebuffer_keyframe_only
-    );
+    bool init_success = global_video[encChn]->prebuffer->init(cfg->recorder.prebuffer_seconds, fps,
+                                                              cfg->recorder.prebuffer_max_memory_mb,
+                                                              cfg->recorder.prebuffer_keyframe_only);
     if (init_success) {
       LOG_INFO("PreTriggerBuffer initialized for channel " << encChn);
     } else {
@@ -830,6 +824,13 @@ void *VideoWorker::thread_entry(void *arg) {
   global_video[encChn]->running = true;
   VideoWorker worker(encChn);
   worker.run();
+
+#if defined(PLATFORM_T23)
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
+    return 0;
+  }
+#endif
 
   ret = IMP_Encoder_StopRecvPic(encChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");

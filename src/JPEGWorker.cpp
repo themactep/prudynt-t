@@ -6,9 +6,9 @@
 #include "globals.hpp"
 #include "imp_hal.hpp"
 
-#include <fcntl.h>  // For O_RDWR, O_CREAT, O_TRUNC flags
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>  // For O_RDWR, O_CREAT, O_TRUNC flags
 #include <unistd.h> // For open(), close(), etc.
 
 #define MODULE "JPEGWorker"
@@ -125,9 +125,9 @@ void JPEGWorker::run() {
           int new_h = global_jpeg[jpgChn]->req_height.load();
           int new_fps = global_jpeg[jpgChn]->req_fps.load();
 
-          bool size_change = (new_w > 0 && new_h > 0 &&
-                              (new_w != global_jpeg[jpgChn]->stream->width ||
-                               new_h != global_jpeg[jpgChn]->stream->height));
+          bool size_change =
+              (new_w > 0 && new_h > 0 &&
+               (new_w != global_jpeg[jpgChn]->stream->width || new_h != global_jpeg[jpgChn]->stream->height));
           bool fps_change = (new_fps > 0 && new_fps != global_jpeg[jpgChn]->stream->fps);
 
           if (size_change || fps_change) {
@@ -155,19 +155,30 @@ void JPEGWorker::run() {
         }
 
         if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn, cfg->general.imp_polling_timeout_ms) == 0) {
-          IMPEncoderStream stream;
+          IMPEncoderStream stream{};
           if (IMP_Encoder_GetStream(global_jpeg[jpgChn]->encChn, &stream, GET_STREAM_BLOCKING) == 0) {
-            fps++;
-            bps += stream.pack->length;
+            if (stream.pack == nullptr || stream.packCount <= 0) {
+              LOG_WARN("JPEGWorker: encoder returned empty stream on channel "
+                       << global_jpeg[jpgChn]->encChn << " (packCount=" << stream.packCount << ")");
+              IMP_Encoder_ReleaseStream(global_jpeg[jpgChn]->encChn, &stream);
+              continue;
+            }
 
-            // Build in-memory JPEG snapshot buffer for HTTP/IPC consumers
             size_t total_size = 0;
-            // First pass: compute total size across packs (including wrap)
             for (uint32_t i = 0; i < stream.packCount; i++) {
               auto slices = hal::encoder::get_pack_slices(stream, i);
               total_size += slices.first_len + slices.second_len;
             }
+            if (total_size == 0) {
+              LOG_WARN("JPEGWorker: encoder returned zero-length stream on channel " << global_jpeg[jpgChn]->encChn);
+              IMP_Encoder_ReleaseStream(global_jpeg[jpgChn]->encChn, &stream);
+              continue;
+            }
 
+            fps++;
+            bps += total_size;
+
+            // Build in-memory JPEG snapshot buffer for HTTP/IPC consumers
             if (total_size) {
               std::unique_lock buf_lock(mutex_main);
               auto &buf = global_jpeg[jpgChn]->snapshot_buf;
@@ -188,8 +199,7 @@ void JPEGWorker::run() {
             }
 
             uint32_t seq = ++global_jpeg[jpgChn]->frame_seq;
-            LOG_TRACE("JPG " << jpgChn << " seq=" << seq << " dt=" << diff_last_image << "ms size="
-                              << (total_size ? total_size : stream.pack->length));
+            LOG_TRACE("JPG " << jpgChn << " seq=" << seq << " dt=" << diff_last_image << "ms size=" << total_size);
 
             if (global_jpeg[jpgChn]->stream->jpeg_refresh > 0) {
               const char *tempPath = "/tmp/snapshot.tmp";
@@ -262,7 +272,8 @@ void *JPEGWorker::thread_entry(void *arg) {
   LOG_DEBUG("Start jpeg_grabber thread.");
 
   StartHelper *sh = static_cast<StartHelper *>(arg);
-  int jpgChn = sh->encChn - 2;
+  const int impEncChn = sh->encChn;
+  int jpgChn = impEncChn - 2;
   int ret;
 
   // do not use the live config variable
@@ -279,8 +290,8 @@ void *JPEGWorker::thread_entry(void *arg) {
 
   const char *stream_name = (stream_cfg == &cfg->stream2) ? "stream2" : "stream3";
 
-  global_jpeg[jpgChn]->imp_encoder =
-      IMPEncoder::createNew(stream_cfg, sh->encChn, global_jpeg[jpgChn]->streamChn, stream_name);
+  global_jpeg[jpgChn]->imp_encoder = IMPEncoder::createNew(stream_cfg, impEncChn, global_jpeg[jpgChn]->streamChn,
+                                                           global_jpeg[jpgChn]->streamChn, stream_name);
 
   if (!global_jpeg[jpgChn]->imp_encoder) {
     LOG_ERROR("Failed to create JPEG encoder for channel " << jpgChn);
@@ -298,7 +309,7 @@ void *JPEGWorker::thread_entry(void *arg) {
 
   global_jpeg[jpgChn]->active = true;
   global_jpeg[jpgChn]->running = true;
-  JPEGWorker worker(jpgChn, sh->encChn);
+  JPEGWorker worker(jpgChn, impEncChn);
   worker.run();
 
   if (global_jpeg[jpgChn]->imp_encoder) {

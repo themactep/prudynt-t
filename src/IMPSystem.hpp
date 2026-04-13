@@ -29,6 +29,7 @@ public:
 
     uint64_t imp_time_base = (static_cast<uint64_t>(timeSinceBoot.tv_sec) * 1000000ULL) +
                              (static_cast<uint64_t>(timeSinceBoot.tv_nsec) / 1000ULL);
+
 #if defined(PLATFORM_T23)
     const char *force_rebase_ts = std::getenv("PRUDYNT_FORCE_REBASE_TS");
     if (force_rebase_ts && force_rebase_ts[0] != '\0' && std::strcmp(force_rebase_ts, "1") == 0) {
@@ -44,7 +45,16 @@ public:
   }
 
   ~IMPSystem() {
+#if defined(PLATFORM_T23)
+    const char *force_destroy = std::getenv("PRUDYNT_FORCE_IMP_DESTROY");
+    if (force_destroy && force_destroy[0] != '\0' && std::strcmp(force_destroy, "1") == 0) {
+      destroy();
+    } else {
+      LOG_WARN("IMPSystem: skipping vendor destroy path on T23 (set PRUDYNT_FORCE_IMP_DESTROY=1 to enable)");
+    }
+#else
     destroy();
+#endif
   };
 
   int init();
