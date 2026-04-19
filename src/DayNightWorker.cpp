@@ -632,6 +632,8 @@ void *thread_entry(void *arg) {
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
         cfg->daynight.live_mode.store(force_mode_str, std::memory_order_relaxed);
         initial_mode_applied = true;
+        // Skip automatic algorithm for next ~10 seconds to let forced mode stick
+        anti_flap_cooldown = 10;
       }
       cfg->daynight.force_mode.store(nullptr, std::memory_order_relaxed);
     }
@@ -732,16 +734,15 @@ void *thread_entry(void *arg) {
         }
       } else if (initial_mode_fallback_countdown <= 0) {
         // Gain has been stuck in the hysteresis zone long enough that the
-        // normal confirm path will never fire. Default to Night — the camera
-        // is almost certainly in a dark environment (bright scenes produce a
-        // clear day reading well below the 300 threshold within 1-2 samples).
-        apply_mode(DayNightAlgo::Mode::Night);
-        current = DayNightAlgo::Mode::Night;
-        simple_state.is_night = true;
-        cfg->daynight.live_mode.store("night", std::memory_order_relaxed);
-        anti_flap_cooldown = anti_flap_iterations / 2;
+        // normal confirm path will never fire. Default to Day — the camera
+        // is in a borderline environment where color is still viable (actual
+        // dark scenes produce a reading above 3000 within a few samples).
+        apply_mode(DayNightAlgo::Mode::Day);
+        current = DayNightAlgo::Mode::Day;
+        simple_state.is_night = false;
+        cfg->daynight.live_mode.store("day", std::memory_order_relaxed);
         initial_mode_applied = true;
-        LOG_WARN("DayNight: initial detection timeout, defaulting to Night"
+        LOG_INFO("DayNight: initial detection timeout, defaulting to Day"
                  " (gain stuck in hysteresis zone, total_gain=" << total_gain << ")");
       }
     }

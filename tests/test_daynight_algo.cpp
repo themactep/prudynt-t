@@ -165,9 +165,9 @@ SimResult simulate_worker(const std::vector<int> &gain_seq,
                     anti_flap_cooldown = anti_flap_iterations / 2;
                 initial_mode_applied = true;
             } else if (initial_mode_fallback_countdown <= 0) {
-                // Fix C: gain stuck in hysteresis — conservatively apply Night
-                record_mode(DayNightAlgo::Mode::Night, i);
-                anti_flap_cooldown = anti_flap_iterations / 2;
+                // Fallback: gain stuck in hysteresis — conservatively apply Day
+                // (Previously defaulted to Night, but that caused "stuck in night" bugs)
+                record_mode(DayNightAlgo::Mode::Day, i);
                 initial_mode_applied = true;
             }
         }
@@ -281,7 +281,7 @@ void test_tc3_hysteresis_zone_trapping() {
 }
 
 // TC-4: Gain permanently in hysteresis zone (300-3000).
-// Fix C: after night_count_threshold * 3 = 18 samples, conservatively apply Night.
+// Fallback: after night_count_threshold * 3 = 18 samples, default to Day.
 void test_tc4_gain_stuck_in_hysteresis() {
     printf("\nTC-4: Gain permanently in hysteresis zone (300-3000)\n");
     std::vector<int> gain(30, 1500);
@@ -289,12 +289,12 @@ void test_tc4_gain_stuck_in_hysteresis() {
 
     auto r = simulate_worker(gain, ev);
 
-    EXPECT(r.final_mode == "night",
-           "Fix C: fallback timeout applies Night after 18 samples in hysteresis");
+    EXPECT(r.final_mode == "day",
+           "Fallback timeout applies Day after 18 samples in hysteresis");
     // fallback_countdown starts at 6*3=18, decrements each hysteresis sample then checks
-    // i=0: 18→17 (no), ... i=17: 1→0 (fires) → Night at i=17
-    EXPECT(r.iteration_night_applied == 17,
-           "night applied at iteration 17 (18-sample countdown, zero-indexed)");
+    // i=0: 18→17 (no), ... i=17: 1→0 (fires) → Day at i=17
+    EXPECT(r.iteration_day_applied == 17,
+           "day applied at iteration 17 (18-sample countdown, zero-indexed)");
 }
 
 // TC-5: Normal day startup then light turns off (day→night transition).
@@ -392,7 +392,7 @@ void test_tc9_marginal_gain_above_threshold() {
 }
 
 // TC-10: Gain exactly on threshold boundary (3000) — in hysteresis zone.
-// Fix C means the fallback fires after 18 samples, applying Night.
+// Fallback fires after 18 samples, applying Day.
 void test_tc10_gain_exactly_on_night_threshold() {
     printf("\nTC-10: Gain exactly = night threshold (3000) — boundary/fallback condition\n");
     std::vector<int> gain(30, 3000);
@@ -400,10 +400,10 @@ void test_tc10_gain_exactly_on_night_threshold() {
 
     auto r = simulate_worker(gain, ev);
 
-    // 3000 is not > 3000, so it's in the hysteresis zone — Fix C fallback fires at i=17
-    EXPECT(r.final_mode == "night",
-           "Fix C: fallback applies Night when gain sits exactly on threshold");
-    EXPECT(r.iteration_night_applied == 17,
+    // 3000 is not > 3000, so it's in the hysteresis zone — fallback fires at i=17
+    EXPECT(r.final_mode == "day",
+           "Fallback applies Day when gain sits exactly on threshold");
+    EXPECT(r.iteration_day_applied == 17,
            "fallback fires at iteration 17 (same countdown as TC-4)");
 }
 
@@ -427,7 +427,7 @@ int main() {
     printf("                             hard-resetting — AE oscillation no longer blocks night.\n");
     printf("  Fix B (DayNightWorker.cpp): 2 consecutive same-direction readings required before\n");
     printf("                             initial mode is committed; initial Night sets anti_flap.\n");
-    printf("  Fix C (DayNightWorker.cpp): fallback countdown (%d samples) defaults to Night\n",
+    printf("  Fix C (DayNightWorker.cpp): fallback countdown (%d samples) defaults to Day\n",
            6 * 3);
     printf("                             when gain is stuck in the hysteresis zone.\n");
     return (fail_count == 0) ? 0 : 1;
