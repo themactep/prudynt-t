@@ -72,7 +72,7 @@ The following audio parameters now apply changes immediately to the hardware wit
 
 The following parameters still require an audio subsystem restart as they affect codec, DSP, or fundamental audio pipeline settings:
 
-- `mic_enabled` - Enable/disable microphone (restart audio + RTSP)
+- `mic_enabled` - Enable/disable microphone (restart audio workers only)
 - `mic_format` - Audio codec (AAC, OPUS, PCM, G711A, G711U, G726)
 - `mic_bitrate` - Encoding bitrate (6-256 kbps)
 - `mic_sample_rate` - Sample rate (8000, 16000, 44100, 48000 Hz)
@@ -81,7 +81,7 @@ The following parameters still require an audio subsystem restart as they affect
 - `mic_agc_target_level_dbfs` - AGC target level (0-31)
 - `mic_agc_compression_gain_db` - AGC compression gain (0-90)
 - `force_stereo` - Force stereo mode
-- `spk_enabled` - Enable/disable speaker (restart audio + RTSP)
+- `spk_enabled` - Enable/disable speaker (restart audio workers only)
 - `spk_sample_rate` - Speaker sample rate
 
 ## Implementation Details

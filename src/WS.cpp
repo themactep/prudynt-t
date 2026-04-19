@@ -1128,12 +1128,10 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
             global_restart_audio = true;
-            global_restart_rtsp = true;
           }
         } else if (reason == LEJPCB_VAL_FALSE) {
           if (cfg->set<bool>(u_ctx->path, false)) {
             global_restart_audio = true;
-            global_restart_rtsp = true;
           }
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
