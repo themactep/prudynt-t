@@ -407,13 +407,13 @@ void recover_stale_imp_state() {
   LOG_WARN("Startup recovery: skipped aggressive pre-init cleanup on T23");
   return;
 #else
-  const char *skip_recover = std::getenv("PRUDYNT_SKIP_RECOVER");
-  if (skip_recover && skip_recover[0] != '\0' && strcmp(skip_recover, "1") == 0) {
-    LOG_WARN("Startup recovery: skipped via PRUDYNT_SKIP_RECOVER=1");
+  const char *force_recover = std::getenv("PRUDYNT_FORCE_RECOVER");
+  if (!force_recover || force_recover[0] == '\0' || strcmp(force_recover, "1") != 0) {
+    LOG_DEBUG("Startup recovery: disabled (set PRUDYNT_FORCE_RECOVER=1 to enable)");
     return;
   }
 
-  LOG_WARN("Startup recovery: attempting to clean stale IMP state from previous run");
+  LOG_WARN("Startup recovery: attempting to clean stale IMP state from previous crash");
 
   for (int ch = 0; ch < 4; ++ch) {
     IMP_Encoder_StopRecvPic(ch);
@@ -445,8 +445,8 @@ void recover_stale_imp_state() {
   IMP_AI_DisableChn(1, 0);
   IMP_AI_Disable(1);
 
-  IMP_ISP_DisableTuning();
   IMP_System_Exit();
+  IMP_ISP_DisableTuning();
   IMP_ISP_Close();
 
   LOG_WARN("Startup recovery: stale IMP cleanup pass completed");
