@@ -715,7 +715,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   };
 
   // Input
-  add_boolk_a("mic_enabled", "audio.mic_enabled", false, true);
+  add_boolk_a("mic_enabled", "audio.mic_enabled", true, true);
   add_strk_a("mic_format", "audio.mic_format", true);
 
   // mic_vol - apply immediately without restart

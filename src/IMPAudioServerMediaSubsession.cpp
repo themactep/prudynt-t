@@ -23,7 +23,21 @@ IMPAudioServerMediaSubsession::~IMPAudioServerMediaSubsession() {
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
 FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
-  estBitrate = global_audio[audioChn]->imp_audio->bitrate;
+  std::shared_ptr<audio_stream> audioStream = global_audio[audioChn];
+  IMPAudio *impAudio = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(mutex_main);
+    if (audioStream) {
+      impAudio = audioStream->imp_audio;
+    }
+  }
+  if (!audioStream || !impAudio) {
+    LOG_WARN("Audio stream source requested while audio engine is unavailable");
+    estBitrate = 0;
+    return nullptr;
+  }
+
+  estBitrate = impAudio->bitrate;
   auto *replicator = global_audio[audioChn]->streamReplicator;
   if (!replicator) {
     return nullptr;
@@ -39,12 +53,26 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
 }
 #else
 FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
-  estBitrate = global_audio[audioChn]->imp_audio->bitrate;
+  std::shared_ptr<audio_stream> audioStream = global_audio[audioChn];
+  IMPAudio *impAudio = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(mutex_main);
+    if (audioStream) {
+      impAudio = audioStream->imp_audio;
+    }
+  }
+  if (!audioStream || !impAudio) {
+    LOG_WARN("Audio stream source requested while audio engine is unavailable");
+    estBitrate = 0;
+    return nullptr;
+  }
+
+  estBitrate = impAudio->bitrate;
   IMPDeviceSource<AudioFrame, audio_stream> *audioSource =
       IMPDeviceSource<AudioFrame, audio_stream>::createNew(
           envir(), audioChn, global_audio[audioChn], "audio", false, clientSessionId);
 
-  if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
+  if (impAudio->format == IMPAudioFormat::PCM)
     return EndianSwap16::createNew(envir(), audioSource);
 
   return audioSource;
@@ -53,11 +81,12 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
 
 void IMPAudioServerMediaSubsession::closeStreamSource(FramedSource *inputSource) {
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
-  if (inputSource) {
-    int previous = global_audio[audioChn]->rtsp_client_count.fetch_sub(1, std::memory_order_relaxed);
+  auto audioStream = global_audio[audioChn];
+  if (inputSource && audioStream) {
+    int previous = audioStream->rtsp_client_count.fetch_sub(1, std::memory_order_relaxed);
     if (previous <= 1) {
-      global_audio[audioChn]->rtsp_client_count.store(0, std::memory_order_relaxed);
-      global_audio[audioChn]->hasDataCallback = false;
+      audioStream->rtsp_client_count.store(0, std::memory_order_relaxed);
+      audioStream->hasDataCallback = false;
     }
   }
 #endif
@@ -66,12 +95,25 @@ void IMPAudioServerMediaSubsession::closeStreamSource(FramedSource *inputSource)
 
 RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
                                                          FramedSource *inputSource) {
+  (void)inputSource;
+  IMPAudio *impAudio = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(mutex_main);
+    if (global_audio[audioChn]) {
+      impAudio = global_audio[audioChn]->imp_audio;
+    }
+  }
+  if (!impAudio) {
+    LOG_WARN("RTPSink requested while audio engine is unavailable");
+    return nullptr;
+  }
+
   unsigned rtpPayloadFormat = rtpPayloadTypeIfDynamic;
-  unsigned rtpTimestampFrequency = global_audio[audioChn]->imp_audio->sample_rate;
+  unsigned rtpTimestampFrequency = impAudio->sample_rate;
   const char *rtpPayloadFormatName = "L16";
   bool allowMultipleFramesPerPacket = true;
   int outChnCnt = cfg->audio.force_stereo ? 2 : 1;
-  switch (global_audio[audioChn]->imp_audio->format) {
+  switch (impAudio->format) {
   case IMPAudioFormat::PCM:
     break;
   case IMPAudioFormat::G711A:
