@@ -69,11 +69,11 @@ private:
                         Groupsock *&rtpGroupsock, Groupsock *&rtcpGroupsock);
   int estimatedBitrate();
 
-  char *fSDPLines = nullptr;
-  char fCNAME[MAX_CNAME_LEN + 1];
-  portNumBits fInitialPortNum;
-  bool fMultiplexRTCPWithRTP;
-  IMPBackchannelFormat fFormat;
+  char *fSDPLines = nullptr;      // Cached SDP lines
+  char fCNAME[MAX_CNAME_LEN + 1]; // For RTCP
+  portNumBits fInitialPortNum;    // Starting port for UDP allocation
+  bool fMultiplexRTCPWithRTP;     // Whether to multiplex RTCP with RTP
+  IMPBackchannelFormat fFormat;   // Audio format for this subsession
   char const *fRequireTag = nullptr;
 };
 
