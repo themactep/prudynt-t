@@ -5,6 +5,7 @@
 
 #if defined(USE_AAC) && USE_AAC
 #include <faac.h>
+#include <vector>
 
 class AACEncoder : public IMPAudioEncoder {
 public:
@@ -25,6 +26,7 @@ private:
   faacEncHandle handle = nullptr;
   int sampleRate;
   int numChn;
+  std::vector<int32_t> pcm32Buffer;
 };
 #endif
 

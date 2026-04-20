@@ -1,5 +1,6 @@
 #if defined(WEBSOCKET_ENABLED)
 #include "WS.hpp"
+#include "AudioOutputWorker.hpp"
 #include "Config.hpp"
 #include "ImagingControl.hpp"
 #include "OSD.hpp"
@@ -1127,11 +1128,15 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
       case PNT_AUDIO_OUTPUT_ENABLED:
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
-            global_restart_audio = true;
+            if (!AudioOutputWorker::applyMute(false)) {
+              AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0, true, false);
+            }
           }
         } else if (reason == LEJPCB_VAL_FALSE) {
           if (cfg->set<bool>(u_ctx->path, false)) {
-            global_restart_audio = true;
+            if (!AudioOutputWorker::applyMute(true)) {
+              AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0, true, true);
+            }
           }
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
@@ -1139,11 +1144,23 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
       case PNT_AUDIO_INPUT_ENABLED:
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
-            IMP_AI_Enable(u_ctx->value);
+            if (u_ctx->value >= 0 && u_ctx->value < NUM_AUDIO_CHANNELS && global_audio[u_ctx->value]) {
+              int ret = IMP_AI_SetVolMute(global_audio[u_ctx->value]->devId, global_audio[u_ctx->value]->aiChn, 0);
+              if (ret != 0) {
+                LOG_WARN("WS: failed to unmute AI dev=" << global_audio[u_ctx->value]->devId
+                                                        << " chn=" << global_audio[u_ctx->value]->aiChn);
+              }
+            }
           }
         } else if (reason == LEJPCB_VAL_FALSE) {
           if (cfg->set<bool>(u_ctx->path, false)) {
-            IMP_AI_Disable(u_ctx->value);
+            if (u_ctx->value >= 0 && u_ctx->value < NUM_AUDIO_CHANNELS && global_audio[u_ctx->value]) {
+              int ret = IMP_AI_SetVolMute(global_audio[u_ctx->value]->devId, global_audio[u_ctx->value]->aiChn, 1);
+              if (ret != 0) {
+                LOG_WARN("WS: failed to mute AI dev=" << global_audio[u_ctx->value]->devId
+                                                      << " chn=" << global_audio[u_ctx->value]->aiChn);
+              }
+            }
           }
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));

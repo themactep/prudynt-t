@@ -63,12 +63,25 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
     return -1;
   }
 
-  const auto frameSamples = (data->len / sizeof(int16_t)) / numChn;
-  if (frameSamples != inputSamples) {
-    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " got " << frameSamples);
+  const int totalInputSamples = data->len / static_cast<int>(sizeof(int16_t));
+  if (totalInputSamples <= 0) {
+    *outLen = 0;
+    return 0;
   }
 
-  const int frameLen = faacEncEncode(handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
+  if (static_cast<unsigned long>(totalInputSamples) != inputSamples) {
+    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " got " << totalInputSamples);
+  }
+
+  // FAAC API takes int32_t samples even for FAAC_INPUT_16BIT. Provide a
+  // sign-extended 32-bit PCM buffer to avoid reading past the 16-bit input.
+  const int16_t *pcm16 = reinterpret_cast<const int16_t *>(data->virAddr);
+  pcm32Buffer.resize(static_cast<size_t>(totalInputSamples));
+  for (int i = 0; i < totalInputSamples; ++i) {
+    pcm32Buffer[static_cast<size_t>(i)] = static_cast<int32_t>(pcm16[i]);
+  }
+
+  const int frameLen = faacEncEncode(handle, pcm32Buffer.data(), totalInputSamples,
                                      reinterpret_cast<unsigned char *>(outbuf), maxOutputBytes);
   *outLen = frameLen;
 

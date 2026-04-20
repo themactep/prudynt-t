@@ -1,6 +1,7 @@
 #include "JsonAPI.hpp"
 #include "AudioOutputWorker.hpp"
 #include "Config.hpp"
+#include "Logger.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
 #include "MP4Recorder.hpp"
@@ -715,7 +716,25 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   };
 
   // Input
-  add_boolk_a("mic_enabled", "audio.mic_enabled", false, true);
+  if (JsonValue *v = obj_get(obj, "mic_enabled")) {
+    if (v->type == JSON_BOOL) {
+      bool enabled = (v->value.boolean != 0);
+      if (cfg->set<bool>("audio.mic_enabled", enabled)) {
+        for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
+          if (global_audio[i]) {
+            int ret = IMP_AI_SetVolMute(global_audio[i]->devId, global_audio[i]->aiChn, enabled ? 0 : 1);
+            if (ret != 0) {
+              LOG_WARN("Failed to apply mic mute state for dev=" << global_audio[i]->devId
+                                                                  << " chn=" << global_audio[i]->aiChn);
+            }
+          }
+        }
+      }
+    }
+    add_key(out, s2, "mic_enabled");
+    add_bool(out, cfg->get<bool>("audio.mic_enabled"));
+    wrote = true;
+  }
   add_strk_a("mic_format", "audio.mic_format", true);
 
   // mic_vol - apply immediately without restart
@@ -808,7 +827,19 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   add_int("mic_agc_compression_gain_db", "audio.mic_agc_compression_gain_db", true);
   add_boolk_a("force_stereo", "audio.force_stereo", false, true);
   // Output
-  add_boolk_a("spk_enabled", "audio.spk_enabled", false, true);
+  if (JsonValue *v = obj_get(obj, "spk_enabled")) {
+    if (v->type == JSON_BOOL) {
+      bool enabled = (v->value.boolean != 0);
+      if (cfg->set<bool>("audio.spk_enabled", enabled)) {
+        if (!AudioOutputWorker::applyMute(!enabled)) {
+          AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0, true, !enabled);
+        }
+      }
+    }
+    add_key(out, s2, "spk_enabled");
+    add_bool(out, cfg->get<bool>("audio.spk_enabled"));
+    wrote = true;
+  }
   add_int("spk_sample_rate", "audio.spk_sample_rate", true);
 
   // spk_vol - apply immediately without restart

@@ -500,8 +500,10 @@ void AudioWorker::run() {
     }
     had_audio_clients = audio_clients_active;
     bool tap_requests_audio = tap && tap->wantsCapture();
-    bool should_capture_audio = cfg->audio.input_enabled &&
-                                (audio_clients_active || recorder_needs_audio || tap_requests_audio);
+    // Keep AI/AENC running for active consumers even when mic is logically
+    // "disabled", so runtime toggles can be implemented as mute/unmute without
+    // breaking AAC framing/timestamps in existing RTSP sessions.
+    bool should_capture_audio = (audio_clients_active || recorder_needs_audio || tap_requests_audio);
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId, global_audio[encChn]->aiChn,
@@ -540,7 +542,7 @@ void AudioWorker::run() {
       } else {
         LOG_DEBUG(global_audio[encChn]->devId << ", " << global_audio[encChn]->aiChn << " POLLING TIMEOUT");
       }
-    } else if (cfg->audio.input_enabled && !global_restart) {
+    } else if (!global_restart) {
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_audio[encChn]->active = false;
       LOG_DDEBUG("AUDIO LOCK");
