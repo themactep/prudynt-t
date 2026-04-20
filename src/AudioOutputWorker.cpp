@@ -188,6 +188,20 @@ void AudioOutputWorker::signalShutdown() {
     return;
   }
 
+#if defined(PLATFORM_T23)
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    global_audio_output->jobQueue->clear();
+    AudioPlaybackJob job;
+    job.type = AudioPlaybackJobType::STOP;
+    bool enqueued = global_audio_output->jobQueue->write(std::move(job));
+    if (!enqueued) {
+      LOG_WARN(
+          "Audio output queue was full while enqueuing fast shutdown sentinel");
+    }
+    return;
+  }
+#endif
+
   clearQueue(true);
 
   AudioPlaybackJob job;
@@ -238,6 +252,11 @@ void AudioOutputWorker::run(StartHelper *sh) {
   while (global_audio_output->running) {
     AudioPlaybackJob job = global_audio_output->jobQueue->wait_read();
     if (job.type == AudioPlaybackJobType::STOP) {
+#if defined(PLATFORM_T23)
+      if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+        break;
+      }
+#endif
       if (global_audio_output->imp_audio_output) {
         global_audio_output->imp_audio_output->flush();
       }
@@ -317,6 +336,17 @@ void AudioOutputWorker::run(StartHelper *sh) {
     }
   }
 
+#if defined(PLATFORM_T23)
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    LOG_WARN("T23 shutdown: skipping audio output teardown");
+    if (global_audio_output->imp_audio_output) {
+      global_audio_output->imp_audio_output.release();
+    }
+  } else {
+    global_audio_output->imp_audio_output.reset();
+  }
+#else
   global_audio_output->imp_audio_output.reset();
+#endif
   global_audio_output->running = false;
 }

@@ -64,7 +64,8 @@ private:
   // libschrift
   // std::vector<uint8_t> fontData;
   std::unordered_map<char, Glyph> glyphs;
-  SFT *sft;
+  SFT *sft{nullptr};
+  bool text_rendering_available{false};
   int load_font();
   int libschrift_init();
   int renderGlyph(const char *characters);

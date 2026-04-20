@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <sys/time.h>
 #include <syslog.h>
@@ -18,6 +19,9 @@ const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN",
                              "NOTICE",    "INFO",  "DEBUG",    "TRACE"};
 
 namespace {
+bool g_syslog_enabled = true;
+bool g_logger_initialized = false;
+
 void current_timestamp(char *out, size_t out_size) {
   struct timeval tv;
   gettimeofday(&tv, nullptr);
@@ -69,10 +73,18 @@ Logger::Level Logger::level = Logger::INFO;
 std::mutex Logger::log_mtx;
 
 bool Logger::init(std::string logLevel) {
-  // Initialize the syslog
-  openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
+  const char *syslog_env = std::getenv("PRUDYNT_ENABLE_SYSLOG");
+#if defined(PLATFORM_T23)
+  g_syslog_enabled = (syslog_env && std::strcmp(syslog_env, "1") == 0);
+#else
+  g_syslog_enabled = !(syslog_env && std::strcmp(syslog_env, "0") == 0);
+#endif
+
+  if (g_syslog_enabled) {
+    openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
+  }
   Logger::level = Logger::parseLevel(logLevel);
-  LOG_INFO("Logger init. level=" << logLevel);
+  g_logger_initialized = true;
   return false;
 }
 
@@ -91,8 +103,7 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
   current_timestamp(timestamp, sizeof(timestamp));
 
   // Log to syslog
-  // Filter based on the configured log level
-  if (Logger::level >= lvl) {
+  if (g_logger_initialized && g_syslog_enabled && Logger::level >= lvl) {
     int syslogPriority;
     switch (lvl) {
     case EMERGENCY:

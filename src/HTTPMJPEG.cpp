@@ -1,5 +1,6 @@
 #include "HTTPMJPEG.hpp"
 
+#include "JPEGWorker.hpp"
 #include "JsonAPI.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
@@ -28,6 +29,56 @@
 using namespace std::chrono;
 
 namespace {
+
+std::string base64_decode(const std::string &encoded);
+
+bool is_privacy_active_for_jpeg(int ch) {
+  if (ch < 0 || ch >= NUM_JPEG_CHANNELS) {
+    return false;
+  }
+  auto jpeg = global_jpeg[ch];
+  if (!jpeg) {
+    return false;
+  }
+  int source_ch = jpeg->streamChn;
+  if (source_ch < 0 || source_ch >= NUM_VIDEO_CHANNELS) {
+    return false;
+  }
+  auto video = global_video[source_ch];
+  if (!video) {
+    return false;
+  }
+  return video->privacy_requested.load(std::memory_order_acquire);
+}
+
+const std::vector<unsigned char> &privacy_placeholder_jpeg() {
+  static const std::vector<unsigned char> jpeg = []() {
+    const std::string decoded =
+        base64_decode("/9j/4AAQSkZJRgABAQAAAQABAAD/"
+                      "2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUf"
+                      "GhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/"
+                      "2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo"
+                      "KCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/"
+                      "wAARCAAJABADASIAAhEBAxEB/"
+                      "8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/"
+                      "8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBk"
+                      "aEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0N"
+                      "TY3ODk6Q0RFRkdISUpTVFVWV1hZ"
+                      "WmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ip"
+                      "qrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi"
+                      "4+Tl5ufo6erx8vP09fb3+Pn6/"
+                      "8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/"
+                      "8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIF"
+                      "EKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpK"
+                      "jU2Nzg5OkNERUZHSElKU1RVVldY"
+                      "WVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaan"
+                      "qKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna"
+                      "4uPk5ebn6Onq8vP09fb3+Pn6/"
+                      "9oADAMBAAIRAxEAPwD5UooooA//2Q==");
+    return std::vector<unsigned char>(decoded.begin(), decoded.end());
+  }();
+  return jpeg;
+}
 
 // Simple base64 decoder for HTTP Basic Authentication
 std::string base64_decode(const std::string &encoded) {
@@ -462,6 +513,14 @@ void HTTPMJPEG::handle_client(int cfd) {
     ::close(cfd);
     return;
   }
+  if (!JPEGWorker::ensure_running(ch)) {
+    const char *resp =
+        "HTTP/1.0 503 Service Unavailable\r\nContent-Type: "
+        "text/plain\r\nConnection: close\r\n\r\njpeg unavailable\n";
+    (void)write_full(cfd, resp, strlen(resp));
+    ::close(cfd);
+    return;
+  }
 
   auto *stream_cfg = global_jpeg[ch]->stream;
 
@@ -599,7 +658,9 @@ void HTTPMJPEG::handle_client(int cfd) {
     }
 
     img.clear();
-    if (have_new) {
+    if (is_privacy_active_for_jpeg(ch)) {
+      img = privacy_placeholder_jpeg();
+    } else if (have_new) {
       if (!get_snapshot_ch_local_http(ch, img) || img.empty()) {
         // reuse previous frame if capture failed
         img = last_img;

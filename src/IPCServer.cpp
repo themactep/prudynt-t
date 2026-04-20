@@ -1,4 +1,5 @@
 #include "IPCServer.hpp"
+#include "JPEGWorker.hpp"
 #include "JsonAPI.hpp" // JSON processing via jct
 #include "Logger.hpp"
 #include "globals.hpp"
@@ -415,6 +416,11 @@ int IPCServer::handle_client(int fd) {
 
     // optional: quality override (like HTTP path)
     if (ch >= 0 && ch < NUM_VIDEO_CHANNELS && global_jpeg[ch]) {
+      if (!JPEGWorker::ensure_running(ch)) {
+        const char *err = "ERR jpeg_unavailable\n";
+        write(fd, err, strlen(err));
+        return 0;
+      }
       if (q >= 1 && q <= 100)
         global_jpeg[ch]->quality_override = q;
     }
@@ -503,6 +509,11 @@ int IPCServer::handle_client(int fd) {
 
     if (ch < 0 || ch >= NUM_VIDEO_CHANNELS || !global_jpeg[ch]) {
       const char *err = "ERR bad_ch\n";
+      write(fd, err, strlen(err));
+      return 0;
+    }
+    if (!JPEGWorker::ensure_running(ch)) {
+      const char *err = "ERR jpeg_unavailable\n";
       write(fd, err, strlen(err));
       return 0;
     }

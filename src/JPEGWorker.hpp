@@ -8,6 +8,7 @@ public:
   explicit JPEGWorker(int jpgChnIndex, int impEncChn);
   ~JPEGWorker();
 
+  static bool ensure_running(int jpgChn);
   static void *thread_entry(void *arg);
 
 private:

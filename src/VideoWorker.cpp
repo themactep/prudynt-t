@@ -820,6 +820,8 @@ void VideoWorker::run() {
             nalu.packet_count = stream.packCount;
             nalu.is_frame_start = frame_start;
             nalu.is_frame_end = stream.pack[i].frameEnd;
+            nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr || nal_is_vps ||
+                                nal_is_sps || nal_is_pps);
 
             if (global_video[encChn]->idr == false) {
               if (nal_is_sps || nal_is_pps || nal_is_idr || nal_is_hevc_idr) {
@@ -1107,6 +1109,17 @@ void *VideoWorker::thread_entry(void *arg) {
   global_video[encChn]->running = true;
   VideoWorker worker(encChn);
   worker.run();
+
+#if defined(PLATFORM_T23)
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    {
+      std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
+      global_video[encChn]->privacy_mask.reset();
+    }
+    LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
+    return 0;
+  }
+#endif
 
   ret = IMP_Encoder_StopRecvPic(encChn);
   LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");

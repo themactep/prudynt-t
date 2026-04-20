@@ -683,6 +683,14 @@ void *AudioWorker::thread_entry(void *arg) {
   global_audio[encChn]->running = false;
   global_audio[encChn]->active = false;
 
+#if defined(PLATFORM_T23)
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    LOG_WARN("T23 shutdown: skipping audio teardown for channel " << encChn);
+    global_audio[encChn]->imp_audio = nullptr;
+    return 0;
+  }
+#endif
+
   if (global_audio[encChn]->imp_audio) {
     delete global_audio[encChn]->imp_audio;
     global_audio[encChn]->imp_audio = nullptr;

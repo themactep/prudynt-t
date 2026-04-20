@@ -30,7 +30,11 @@ static int aac_openDecoder(void * /*pvoidDecoderAttr*/, void * /*pDecoder*/) {
 
   memset(&aacFrameInfo, 0, sizeof(_AACFrameInfo));
   aacFrameInfo.nChans = 1;
-  aacFrameInfo.sampRateCore = cfg->audio.output_sample_rate;
+  aacFrameInfo.sampRateCore =
+      (cfg->audio.input_sample_rate > 0)
+          ? cfg->audio.input_sample_rate
+          : ((cfg->audio.output_sample_rate > 0) ? cfg->audio.output_sample_rate
+                                                 : 16000);
   aacFrameInfo.profile = AAC_PROFILE_LC;
 
   int raw_ret = AACSetRawBlockParams(tl_aacDecoder, 0, &aacFrameInfo);
@@ -145,10 +149,72 @@ IMPBackchannel *IMPBackchannel::createNew() {
   return new IMPBackchannel();
 }
 
+int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
+  int ret = 0;
+  IMPAudioDecChnAttr adec_attr;
+  adec_attr.mode = ADEC_MODE_PACK;
+  adec_attr.bufSize = 20;
+
+  int adChn = static_cast<int>(format);
+  switch (format) {
+  case IMPBackchannelFormat::PCMU:
+    adec_attr.type = PT_G711U;
+    ret = IMP_ADEC_CreateChn(adChn, &adec_attr);
+    if (ret != 0) {
+      LOG_WARN("IMP_ADEC_CreateChn(PCMU, " << adChn << ") failed ret=" << ret);
+      return ret;
+    }
+    return 0;
+
+  case IMPBackchannelFormat::PCMA:
+    adec_attr.type = PT_G711A;
+    ret = IMP_ADEC_CreateChn(adChn, &adec_attr);
+    if (ret != 0) {
+      LOG_WARN("IMP_ADEC_CreateChn(PCMA, " << adChn << ") failed ret=" << ret);
+      return ret;
+    }
+    return 0;
+
+#if defined(USE_AAC) && USE_AAC
+  case IMPBackchannelFormat::AAC:
+    if (aacDecoderHandle == -1) {
+      IMPAudioDecDecoder aacDecoderCallbacks;
+      aacDecoderCallbacks.type = PT_MAX;
+      snprintf(aacDecoderCallbacks.name, sizeof(aacDecoderCallbacks.name),
+               "AAC");
+      aacDecoderCallbacks.openDecoder = aac_openDecoder;
+      aacDecoderCallbacks.decodeFrm = aac_decodeFrm;
+      aacDecoderCallbacks.getFrmInfo = NULL;
+      aacDecoderCallbacks.closeDecoder = aac_closeDecoder;
+
+      ret = IMP_ADEC_RegisterDecoder(&aacDecoderHandle, &aacDecoderCallbacks);
+      if (ret != 0) {
+        LOG_ERROR("Failed to register AAC decoder: " << ret);
+        aacDecoderHandle = -1;
+        return ret;
+      }
+      LOG_DEBUG("Registered AAC decoder with handle: " << aacDecoderHandle);
+    }
+
+    adec_attr.type = (IMPAudioPalyloadType)aacDecoderHandle;
+    ret = IMP_ADEC_CreateChn(adChn, &adec_attr);
+    if (ret != 0) {
+      LOG_WARN("IMP_ADEC_CreateChn(AAC, " << adChn << ") failed ret=" << ret);
+      return ret;
+    }
+    return 0;
+#endif
+
+  default:
+    return -1;
+  }
+}
+
 int IMPBackchannel::init() {
   LOG_DEBUG("IMPBackchannel::init()");
   int ret = 0;
 
+#if !defined(PLATFORM_T23)
   IMPAudioDecChnAttr adec_attr;
   adec_attr.mode = ADEC_MODE_PACK;
   adec_attr.bufSize = 20;
@@ -164,6 +230,10 @@ int IMPBackchannel::init() {
   int adChn_pcma = (int)IMPBackchannelFormat::PCMA;
   ret = IMP_ADEC_CreateChn(adChn_pcma, &adec_attr);
   LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_CreateChn(PCMA, " << adChn_pcma << ")");
+#else
+  LOG_INFO(
+      "Backchannel decoder channels deferred until first incoming frame (T23)");
+#endif
 
 #if defined(USE_AAC) && USE_AAC
   // Register the custom AAC decoder callbacks with the IMP SDK if not already
@@ -190,11 +260,16 @@ int IMPBackchannel::init() {
   }
 
   if (aacDecoderHandle != -1) {
+#if defined(PLATFORM_T23)
+    LOG_DEBUG("AAC decoder registered; AAC ADEC channel will be created lazily "
+              "on first use");
+#else
     // Use the handle returned by RegisterDecoder as the type for this channel
     adec_attr.type = (IMPAudioPalyloadType)aacDecoderHandle;
     int adChn_aac = (int)IMPBackchannelFormat::AAC;
     ret = IMP_ADEC_CreateChn(adChn_aac, &adec_attr);
     LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_CreateChn(AAC, " << adChn_aac << ")");
+#endif
   }
 #endif
 

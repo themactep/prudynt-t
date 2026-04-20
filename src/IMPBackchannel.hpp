@@ -70,6 +70,7 @@ public:
   };
   int init();
   void deinit();
+  int ensureDecoderChannel(IMPBackchannelFormat format);
 
   static const char *getFormatName(IMPBackchannelFormat format) {
 #define RETURN_NAME(EnumName, NameString, PayloadType, Frequency, MimeType)    \
