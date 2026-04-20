@@ -25,8 +25,9 @@ public:
     struct timespec timeSinceBoot;
     clock_gettime(CLOCK_MONOTONIC, &timeSinceBoot);
 
-    uint64_t imp_time_base = (static_cast<uint64_t>(timeSinceBoot.tv_sec) * 1000000ULL)
-                           + (static_cast<uint64_t>(timeSinceBoot.tv_nsec) / 1000ULL);
+    uint64_t imp_time_base =
+        (static_cast<uint64_t>(timeSinceBoot.tv_sec) * 1000000ULL) +
+        (static_cast<uint64_t>(timeSinceBoot.tv_nsec) / 1000ULL);
     IMP_System_RebaseTimeStamp(imp_time_base);
 
     LOG_DEBUG("IMP_System_RebaseTimeStamp(" << imp_time_base << ");");

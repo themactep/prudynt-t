@@ -26,8 +26,10 @@ public:
 
   static bool initialize();
   static void cleanup();
-  static bool updateStreamStatus(const std::string &streamName, const StreamInfo &info);
-  static bool writeCustomParameter(const std::string &streamName, const std::string &parameter,
+  static bool updateStreamStatus(const std::string &streamName,
+                                 const StreamInfo &info);
+  static bool writeCustomParameter(const std::string &streamName,
+                                   const std::string &parameter,
                                    const std::string &value);
   static bool removeStreamStatus(const std::string &streamName);
   static StreamInfo getStreamStatus(const std::string &streamName);
@@ -40,7 +42,9 @@ private:
   static std::map<std::string, StreamInfo> activeStreams;
 
   static bool createStreamDirectory(const std::string &streamName);
-  static bool writeParameter(const std::string &streamName, const std::string &parameter, const std::string &value);
+  static bool writeParameter(const std::string &streamName,
+                             const std::string &parameter,
+                             const std::string &value);
   static bool removeStreamDirectory(const std::string &streamName);
   static bool ensureBaseDirectory();
 };

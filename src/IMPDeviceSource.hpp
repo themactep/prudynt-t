@@ -8,17 +8,22 @@
 #include <mutex>
 #include <optional>
 
-template <typename FrameType, typename Stream> class IMPDeviceSource : public FramedSource {
+template <typename FrameType, typename Stream>
+class IMPDeviceSource : public FramedSource {
 public:
-  static IMPDeviceSource *createNew(UsageEnvironment &env, int encChn, std::shared_ptr<Stream> stream,
-                                    const char *name, bool eagerActivate = false, unsigned clientSessionId = 0);
+  static IMPDeviceSource *createNew(UsageEnvironment &env, int encChn,
+                                    std::shared_ptr<Stream> stream,
+                                    const char *name,
+                                    bool eagerActivate = false,
+                                    unsigned clientSessionId = 0);
 
   void on_data_available() {
     if (eventTriggerId != 0) {
       envir().taskScheduler().triggerEvent(eventTriggerId, this);
     }
   }
-  IMPDeviceSource(UsageEnvironment &env, int encChn, std::shared_ptr<Stream> stream, const char *name,
+  IMPDeviceSource(UsageEnvironment &env, int encChn,
+                  std::shared_ptr<Stream> stream, const char *name,
                   bool eagerActivate, unsigned clientSessionId);
   virtual ~IMPDeviceSource();
 
@@ -41,12 +46,13 @@ private:
   std::optional<typename StreamCore<FrameType>::Cursor> cursor;
 
   // Presentation time normalization (from Prudynt-SE)
-  uint64_t presentationAnchorUs{0};      // Anchor point for timestamp normalization
-  uint64_t lastSourceFrameUs{0};         // Last raw source timestamp
-  uint64_t lastPresentationFrameUs{0};   // Last normalized presentation timestamp
-  
+  uint64_t presentationAnchorUs{0}; // Anchor point for timestamp normalization
+  uint64_t lastSourceFrameUs{0};    // Last raw source timestamp
+  uint64_t lastPresentationFrameUs{0}; // Last normalized presentation timestamp
+
   // Helper for timestamp normalization
-  uint64_t normalizePresentationTimeUs(uint64_t sourceFrameUs, uint64_t durationUs);
+  uint64_t normalizePresentationTimeUs(uint64_t sourceFrameUs,
+                                       uint64_t durationUs);
 };
 
 #endif

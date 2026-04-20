@@ -161,9 +161,10 @@ struct _daynight {
   std::atomic<int> live_ev{-1};
   std::atomic<int> live_gb{-1};
   std::atomic<int> live_gr{-1};
-  std::atomic<int> live_total_gain{-1};      // Total ISP gain (analog + digital)
-  std::atomic<int> live_ae_luma{-1};         // AE luma value
-  std::atomic<int> live_awb_color_temp{-1};  // AWB color temperature (when available)
+  std::atomic<int> live_total_gain{-1}; // Total ISP gain (analog + digital)
+  std::atomic<int> live_ae_luma{-1};    // AE luma value
+  std::atomic<int> live_awb_color_temp{
+      -1}; // AWB color temperature (when available)
   std::atomic<const char *> live_mode{"unknown"};
 };
 struct _general {
@@ -436,7 +437,8 @@ public:
     return result;
   }
 
-  template <typename T> bool set(const std::string &name, T value, bool noSave = false) {
+  template <typename T>
+  bool set(const std::string &name, T value, bool noSave = false) {
     // std::cout << name << "=" << value << std::endl;
     std::vector<ConfigItem<T>> *items = nullptr;
     if constexpr (std::is_same_v<T, bool>) {

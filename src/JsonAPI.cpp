@@ -2,9 +2,9 @@
 #include "AudioOutputWorker.hpp"
 #include "Config.hpp"
 #include "Logger.hpp"
+#include "MP4Recorder.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
-#include "MP4Recorder.hpp"
 
 extern "C" {
 #include <json_config.h>
@@ -14,16 +14,17 @@ JsonValue *parse_json_string(const char *json_str);
 
 #include <algorithm>
 #include <cstring>
+#include <fcntl.h>
+#include <imp/imp_audio.h>
 #include <imp/imp_isp.h>
 #include <sstream>
-#include <imp/imp_audio.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 namespace {
 
 // Tiny JSON builder helpers (string-based)
-inline void add_key(std::string &out, bool &sep, const char *k, const char *open = "") {
+inline void add_key(std::string &out, bool &sep, const char *k,
+                    const char *open = "") {
   if (sep)
     out.push_back(',');
   else
@@ -119,12 +120,14 @@ inline unsigned int hexColorToUint(const char *s) {
 
 inline void add_hexstr(std::string &out, unsigned int argb) {
   char hexbuf[12];
-  unsigned a = (argb >> 24) & 0xFF, r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = (argb) & 0xFF;
+  unsigned a = (argb >> 24) & 0xFF, r = (argb >> 16) & 0xFF,
+           g = (argb >> 8) & 0xFF, b = (argb) & 0xFF;
   std::snprintf(hexbuf, sizeof(hexbuf), "#%02X%02X%02X%02X", r, g, b, a);
   add_str(out, hexbuf);
 }
 // Forward declaration for nested OSD helper used by handle_stream
-void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrote);
+void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
+                bool &wrote);
 
 void handle_stream_stats(int idx, std::string &out) {
   int fps = 0;
@@ -176,7 +179,8 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  auto add_strk = [&](const char *key, const std::string &path, bool upper = false) {
+  auto add_strk = [&](const char *key, const std::string &path,
+                      bool upper = false) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_STRING && v->value.string) {
         std::string val = v->value.string;
@@ -230,12 +234,14 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   add_int("max_bitrate", std::string(root) + ".max_bitrate");
 
   // Actions / stats
-  if (JsonValue *stats = obj_get(obj, "stats"); stats && stats->type == JSON_NULL) {
+  if (JsonValue *stats = obj_get(obj, "stats");
+      stats && stats->type == JSON_NULL) {
     add_key(sect, s2, "stats");
     handle_stream_stats(idx, sect);
     wrote = true;
   }
-  if (JsonValue *req_idr = obj_get(obj, "request_idr"); req_idr && req_idr->type == JSON_NULL) {
+  if (JsonValue *req_idr = obj_get(obj, "request_idr");
+      req_idr && req_idr->type == JSON_NULL) {
     if (idx < 2 && global_video[idx]) {
       global_video[idx]->idr_fix = 1;
     }
@@ -278,7 +284,8 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  auto add_boolk = [&](const char *key, const char *path, auto setter_true, auto setter_false) {
+  auto add_boolk = [&](const char *key, const char *path, auto setter_true,
+                       auto setter_false) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_BOOL) {
         cfg->set<bool>(path, v->value.boolean != 0);
@@ -297,13 +304,17 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
   };
 
   // Scalars and side-effects
-  add_int("brightness", "image.brightness", [] { hal::isp::set_brightness(cfg->image.brightness); });
-  add_int("contrast", "image.contrast", [] { hal::isp::set_contrast(cfg->image.contrast); });
+  add_int("brightness", "image.brightness",
+          [] { hal::isp::set_brightness(cfg->image.brightness); });
+  add_int("contrast", "image.contrast",
+          [] { hal::isp::set_contrast(cfg->image.contrast); });
   if (hal::caps().has_isp_hue) {
     add_int("hue", "image.hue", [] { hal::isp::set_hue(cfg->image.hue); });
   }
-  add_int("saturation", "image.saturation", [] { hal::isp::set_saturation(cfg->image.saturation); });
-  add_int("sharpness", "image.sharpness", [] { hal::isp::set_sharpness(cfg->image.sharpness); });
+  add_int("saturation", "image.saturation",
+          [] { hal::isp::set_saturation(cfg->image.saturation); });
+  add_int("sharpness", "image.sharpness",
+          [] { hal::isp::set_sharpness(cfg->image.sharpness); });
   if (hal::caps().has_isp_sinter) {
     add_int("sinter_strength", "image.sinter_strength",
             [] { hal::isp::set_sinter_strength(cfg->image.sinter_strength); });
@@ -317,10 +328,15 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
     wrote = true;
   }
 
-  add_boolk("vflip", "image.vflip", [] { hal::isp::set_vflip(true); }, [] { hal::isp::set_vflip(false); });
-  add_boolk("hflip", "image.hflip", [] { hal::isp::set_hflip(true); }, [] { hal::isp::set_hflip(false); });
+  add_boolk(
+      "vflip", "image.vflip", [] { hal::isp::set_vflip(true); },
+      [] { hal::isp::set_vflip(false); });
+  add_boolk(
+      "hflip", "image.hflip", [] { hal::isp::set_hflip(true); },
+      [] { hal::isp::set_hflip(false); });
 
-  add_int("anti_flicker", "image.anti_flicker", [] { hal::isp::set_anti_flicker(cfg->image.anti_flicker); });
+  add_int("anti_flicker", "image.anti_flicker",
+          [] { hal::isp::set_anti_flicker(cfg->image.anti_flicker); });
 
   if (JsonValue *rm = obj_get(obj, "running_mode")) {
     if (rm->type == JSON_NUMBER) {
@@ -336,7 +352,8 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
             hal::isp::switch_bin(day_bin);
           }
         } else if (mode == 1) { // Night mode
-          const char *night_bin = cfg->get<const char *>("daynight.night_bin_path");
+          const char *night_bin =
+              cfg->get<const char *>("daynight.night_bin_path");
           if (night_bin && night_bin[0] != '\0') {
             hal::isp::switch_bin(night_bin);
           }
@@ -352,26 +369,34 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
             [] { hal::isp::set_ae_compensation(cfg->image.ae_compensation); });
   }
   if (hal::caps().has_isp_dpc) {
-    add_int("dpc_strength", "image.dpc_strength", [] { hal::isp::set_dpc_strength(cfg->image.dpc_strength); });
+    add_int("dpc_strength", "image.dpc_strength",
+            [] { hal::isp::set_dpc_strength(cfg->image.dpc_strength); });
   }
   if (hal::caps().has_isp_drc) {
-    add_int("drc_strength", "image.drc_strength", [] { hal::isp::set_drc_strength(cfg->image.drc_strength); });
+    add_int("drc_strength", "image.drc_strength",
+            [] { hal::isp::set_drc_strength(cfg->image.drc_strength); });
   }
   if (hal::caps().has_isp_defog) {
-    add_int("defog_strength", "image.defog_strength",
-            [] { hal::isp::set_defog_strength((uint8_t)cfg->image.defog_strength); });
+    add_int("defog_strength", "image.defog_strength", [] {
+      hal::isp::set_defog_strength((uint8_t)cfg->image.defog_strength);
+    });
   }
   if (hal::caps().has_isp_backlight_comp) {
-    add_int("backlight_compensation", "image.backlight_compensation",
-            [] { hal::isp::set_backlight_comp(cfg->image.backlight_compensation); });
+    add_int("backlight_compensation", "image.backlight_compensation", [] {
+      hal::isp::set_backlight_comp(cfg->image.backlight_compensation);
+    });
   }
-  add_int("highlight_depress", "image.highlight_depress",
-          [] { hal::isp::set_highlight_depress(cfg->image.highlight_depress); });
-  add_int("max_again", "image.max_again", [] { hal::isp::set_max_again(cfg->image.max_again); });
-  add_int("max_dgain", "image.max_dgain", [] { hal::isp::set_max_dgain(cfg->image.max_dgain); });
+  add_int("highlight_depress", "image.highlight_depress", [] {
+    hal::isp::set_highlight_depress(cfg->image.highlight_depress);
+  });
+  add_int("max_again", "image.max_again",
+          [] { hal::isp::set_max_again(cfg->image.max_again); });
+  add_int("max_dgain", "image.max_dgain",
+          [] { hal::isp::set_max_dgain(cfg->image.max_dgain); });
 
   // WB bundle
-  if (JsonValue *wbmode = obj_get(obj, "core_wb_mode"); wbmode && wbmode->type == JSON_NUMBER) {
+  if (JsonValue *wbmode = obj_get(obj, "core_wb_mode");
+      wbmode && wbmode->type == JSON_NUMBER) {
     cfg->set<int>("image.core_wb_mode", (int)wbmode->value.number.integer);
   }
   if (JsonValue *rg = obj_get(obj, "wb_rgain"); rg && rg->type == JSON_NUMBER) {
@@ -380,8 +405,10 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
   if (JsonValue *bg = obj_get(obj, "wb_bgain"); bg && bg->type == JSON_NUMBER) {
     cfg->set<int>("image.wb_bgain", (int)bg->value.number.integer);
   }
-  if (obj_get(obj, "core_wb_mode") || obj_get(obj, "wb_rgain") || obj_get(obj, "wb_bgain")) {
-    hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain, cfg->image.wb_bgain);
+  if (obj_get(obj, "core_wb_mode") || obj_get(obj, "wb_rgain") ||
+      obj_get(obj, "wb_bgain")) {
+    hal::isp::set_wb(cfg->image.core_wb_mode, cfg->image.wb_rgain,
+                     cfg->image.wb_bgain);
     add_key(out, s2, "core_wb_mode");
     add_num(out, cfg->get<int>("image.core_wb_mode"));
     add_key(out, s2, "wb_rgain");
@@ -399,7 +426,8 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
   out += "}";
 }
 
-void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrote) {
+void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
+                bool &wrote) {
   const char *root = idx == 0 ? "stream0.osd" : "stream1.osd";
 
   auto add_int = [&](const char *key, const std::string &path) {
@@ -430,7 +458,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
   };
 
-  auto update_text_block = [&](JsonValue *node, const std::string &name, bool include_format) {
+  auto update_text_block = [&](JsonValue *node, const std::string &name,
+                               bool include_format) {
     if (!node || node->type != JSON_OBJECT)
       return;
     const std::string base = std::string(root) + "." + name + ".";
@@ -446,7 +475,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *position = obj_get(node, "position")) {
       if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position", strdup(position->value.string));
+        cfg->set<const char *>(base + "position",
+                               strdup(position->value.string));
     }
     if (JsonValue *rotation = obj_get(node, "rotation")) {
       if (rotation->type == JSON_NUMBER)
@@ -454,11 +484,13 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *fill = obj_get(node, "fill_color")) {
       if (fill->type == JSON_STRING && fill->value.string)
-        cfg->set<unsigned int>(base + "fill_color", hexColorToUint(fill->value.string));
+        cfg->set<unsigned int>(base + "fill_color",
+                               hexColorToUint(fill->value.string));
     }
     if (JsonValue *stroke = obj_get(node, "stroke_color")) {
       if (stroke->type == JSON_STRING && stroke->value.string)
-        cfg->set<unsigned int>(base + "stroke_color", hexColorToUint(stroke->value.string));
+        cfg->set<unsigned int>(base + "stroke_color",
+                               hexColorToUint(stroke->value.string));
     }
   };
 
@@ -484,7 +516,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
   };
 
   auto handle_text_block = [&](const char *name, bool include_format) {
-    if (JsonValue *node = obj_get(obj, name); node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    if (JsonValue *node = obj_get(obj, name);
+        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
       if (node->type == JSON_OBJECT)
         update_text_block(node, name, include_format);
       emit_text_block(name, include_format);
@@ -506,7 +539,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *position = obj_get(node, "position")) {
       if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position", strdup(position->value.string));
+        cfg->set<const char *>(base + "position",
+                               strdup(position->value.string));
     }
     if (JsonValue *width = obj_get(node, "width")) {
       if (width->type == JSON_NUMBER)
@@ -522,7 +556,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *transparency = obj_get(node, "transparency")) {
       if (transparency->type == JSON_NUMBER)
-        cfg->set<int>(base + "transparency", (int)transparency->value.number.integer);
+        cfg->set<int>(base + "transparency",
+                      (int)transparency->value.number.integer);
     }
   };
 
@@ -548,7 +583,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
   };
 
   auto handle_logo_block = [&]() {
-    if (JsonValue *node = obj_get(obj, "logo"); node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    if (JsonValue *node = obj_get(obj, "logo");
+        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
       if (node->type == JSON_OBJECT)
         update_logo_block(node);
       emit_logo_block();
@@ -570,7 +606,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *position = obj_get(node, "position")) {
       if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position", strdup(position->value.string));
+        cfg->set<const char *>(base + "position",
+                               strdup(position->value.string));
     }
     if (JsonValue *rotation = obj_get(node, "rotation")) {
       if (rotation->type == JSON_NUMBER)
@@ -582,27 +619,33 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
     }
     if (JsonValue *stroke_size = obj_get(node, "stroke_size")) {
       if (stroke_size->type == JSON_NUMBER)
-        cfg->set<int>(base + "stroke_size", (int)stroke_size->value.number.integer);
+        cfg->set<int>(base + "stroke_size",
+                      (int)stroke_size->value.number.integer);
     }
     if (JsonValue *fill = obj_get(node, "fill_color")) {
       if (fill->type == JSON_STRING && fill->value.string)
-        cfg->set<unsigned int>(base + "fill_color", hexColorToUint(fill->value.string));
+        cfg->set<unsigned int>(base + "fill_color",
+                               hexColorToUint(fill->value.string));
     }
     if (JsonValue *stroke = obj_get(node, "stroke_color")) {
       if (stroke->type == JSON_STRING && stroke->value.string)
-        cfg->set<unsigned int>(base + "stroke_color", hexColorToUint(stroke->value.string));
+        cfg->set<unsigned int>(base + "stroke_color",
+                               hexColorToUint(stroke->value.string));
     }
     if (JsonValue *image_path = obj_get(node, "image_path")) {
       if (image_path->type == JSON_STRING && image_path->value.string)
-        cfg->set<const char *>(base + "image_path", strdup(image_path->value.string));
+        cfg->set<const char *>(base + "image_path",
+                               strdup(image_path->value.string));
     }
     if (JsonValue *image_width = obj_get(node, "image_width")) {
       if (image_width->type == JSON_NUMBER)
-        cfg->set<int>(base + "image_width", (int)image_width->value.number.integer);
+        cfg->set<int>(base + "image_width",
+                      (int)image_width->value.number.integer);
     }
     if (JsonValue *image_height = obj_get(node, "image_height")) {
       if (image_height->type == JSON_NUMBER)
-        cfg->set<int>(base + "image_height", (int)image_height->value.number.integer);
+        cfg->set<int>(base + "image_height",
+                      (int)image_height->value.number.integer);
     }
     if (JsonValue *layer = obj_get(node, "layer")) {
       if (layer->type == JSON_NUMBER)
@@ -648,7 +691,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2, bool &wrot
   };
 
   auto handle_privacy_block = [&]() {
-    if (JsonValue *node = obj_get(obj, "privacy"); node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    if (JsonValue *node = obj_get(obj, "privacy");
+        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
       if (node->type == JSON_OBJECT)
         update_privacy_block(node);
       emit_privacy_block();
@@ -688,7 +732,8 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  auto add_boolk_a = [&](const char *key, const char *path, bool rest_rtsp, bool rest_audio) {
+  auto add_boolk_a = [&](const char *key, const char *path, bool rest_rtsp,
+                         bool rest_audio) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_BOOL) {
         cfg->set<bool>(path, v->value.boolean != 0);
@@ -722,10 +767,13 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
       if (cfg->set<bool>("audio.mic_enabled", enabled)) {
         for (int i = 0; i < NUM_AUDIO_CHANNELS; i++) {
           if (global_audio[i]) {
-            int ret = IMP_AI_SetVolMute(global_audio[i]->devId, global_audio[i]->aiChn, enabled ? 0 : 1);
+            int ret =
+                IMP_AI_SetVolMute(global_audio[i]->devId,
+                                  global_audio[i]->aiChn, enabled ? 0 : 1);
             if (ret != 0) {
-              LOG_WARN("Failed to apply mic mute state for dev=" << global_audio[i]->devId
-                                                                  << " chn=" << global_audio[i]->aiChn);
+              LOG_WARN("Failed to apply mic mute state for dev="
+                       << global_audio[i]->devId
+                       << " chn=" << global_audio[i]->aiChn);
             }
           }
         }
@@ -824,7 +872,8 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 
   add_boolk_a("mic_agc_enabled", "audio.mic_agc_enabled", false, true);
   add_int("mic_agc_target_level_dbfs", "audio.mic_agc_target_level_dbfs", true);
-  add_int("mic_agc_compression_gain_db", "audio.mic_agc_compression_gain_db", true);
+  add_int("mic_agc_compression_gain_db", "audio.mic_agc_compression_gain_db",
+          true);
   add_boolk_a("force_stereo", "audio.force_stereo", false, true);
   // Output
   if (JsonValue *v = obj_get(obj, "spk_enabled")) {
@@ -832,7 +881,8 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
       bool enabled = (v->value.boolean != 0);
       if (cfg->set<bool>("audio.spk_enabled", enabled)) {
         if (!AudioOutputWorker::applyMute(!enabled)) {
-          AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false, 0, true, !enabled);
+          AudioOutputWorker::enqueuePcm(std::vector<int16_t>{}, false, 0, false,
+                                        0, true, !enabled);
         }
       }
     }
@@ -893,7 +943,8 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  auto add_boolk_m = [&](const char *key, const char *path, bool restart_video = false) {
+  auto add_boolk_m = [&](const char *key, const char *path,
+                         bool restart_video = false) {
     if (JsonValue *v = obj_get(obj, key)) {
       if (v->type == JSON_BOOL) {
         cfg->set<bool>(path, v->value.boolean != 0);
@@ -961,12 +1012,14 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
     } else if (rois->type == JSON_ARRAY) {
       // Expect array of [x0,y0,x1,y1]
       int i = 0;
-      for (JsonArrayItem *it = rois->value.array_head; it && i < (int)cfg->motion.rois.size(); it = it->next, ++i) {
+      for (JsonArrayItem *it = rois->value.array_head;
+           it && i < (int)cfg->motion.rois.size(); it = it->next, ++i) {
         JsonValue *sub = it->value;
         if (sub && sub->type == JSON_ARRAY) {
           int vals[4] = {0};
           int j = 0;
-          for (JsonArrayItem *jt = sub->value.array_head; jt && j < 4; jt = jt->next, ++j) {
+          for (JsonArrayItem *jt = sub->value.array_head; jt && j < 4;
+               jt = jt->next, ++j) {
             JsonValue *jv = jt->value;
             if (jv && jv->type == JSON_NUMBER)
               vals[j] = (int)jv->value.number.integer;
@@ -1004,7 +1057,8 @@ void handle_privacy(JsonValue *obj, std::string &out, bool &sep) {
       const char *fifo_path = "/run/prudynt/video_ctrl";
       int fd = open(fifo_path, O_WRONLY | O_NONBLOCK);
       if (fd >= 0) {
-        const char *cmd = enabled ? "PRIVACY channel=all value=1\n" : "PRIVACY channel=all value=0\n";
+        const char *cmd = enabled ? "PRIVACY channel=all value=1\n"
+                                  : "PRIVACY channel=all value=0\n";
         write(fd, cmd, strlen(cmd));
         close(fd);
       }
@@ -1015,7 +1069,8 @@ void handle_privacy(JsonValue *obj, std::string &out, bool &sep) {
       // Just query the state
       bool any_privacy = false;
       for (int i = 0; i < NUM_VIDEO_CHANNELS; i++) {
-        if (global_video[i] && global_video[i]->privacy_requested.load(std::memory_order_relaxed)) {
+        if (global_video[i] && global_video[i]->privacy_requested.load(
+                                   std::memory_order_relaxed)) {
           any_privacy = true;
           break;
         }
@@ -1188,7 +1243,8 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   add_int("ev_day_low_secondary", "daynight.ev_day_low_secondary");
   add_int("gb_gain_delta", "daynight.gb_gain_delta");
   add_int("gb_gain_absolute", "daynight.gb_gain_absolute");
-  add_int("settle_samples_for_gb_record", "daynight.settle_samples_for_gb_record");
+  add_int("settle_samples_for_gb_record",
+          "daynight.settle_samples_for_gb_record");
 
   // Manual mode override
   if (JsonValue *v = obj_get(obj, "force_mode")) {
@@ -1350,7 +1406,8 @@ void handle_info(JsonValue *obj, std::string &out, bool &sep) {
   bool s2 = false;
   bool wrote = false;
   // Currently only imp_system_version (read)
-  if (JsonValue *v = obj_get(obj, "imp_system_version"); v && v->type == JSON_NULL) {
+  if (JsonValue *v = obj_get(obj, "imp_system_version");
+      v && v->type == JSON_NULL) {
     add_key(out, s2, "imp_system_version");
     add_str(out, "unknown");
     wrote = true;
@@ -1366,7 +1423,8 @@ void handle_action(JsonValue *obj, std::string &out, bool &sep) {
   add_key(out, sep, "action", "{");
   bool s2 = false;
   bool wrote = false;
-  if (JsonValue *rst = obj_get(obj, "restart_thread"); rst && rst->type == JSON_NUMBER) {
+  if (JsonValue *rst = obj_get(obj, "restart_thread");
+      rst && rst->type == JSON_NUMBER) {
     int mask = (int)rst->value.number.integer;
     if (mask & 1)
       global_restart_rtsp = true;
@@ -1378,7 +1436,8 @@ void handle_action(JsonValue *obj, std::string &out, bool &sep) {
     add_str(out, "ok");
     wrote = true;
   }
-  if (JsonValue *sv = obj_get(obj, "save_config"); sv && sv->type == JSON_NULL) {
+  if (JsonValue *sv = obj_get(obj, "save_config");
+      sv && sv->type == JSON_NULL) {
     cfg->updateConfig();
     add_key(out, s2, "save_config");
     add_str(out, "ok");
@@ -1507,7 +1566,8 @@ void handle_stream2(JsonValue *obj, std::string &out, bool &sep) {
       wrote = true;
     }
   };
-  if (JsonValue *stats = obj_get(obj, "stats"); stats && stats->type == JSON_NULL) {
+  if (JsonValue *stats = obj_get(obj, "stats");
+      stats && stats->type == JSON_NULL) {
     add_key(out, s2, "stats");
     handle_stream_stats(2, out);
     wrote = true;
@@ -1529,7 +1589,8 @@ void handle_general(JsonValue *obj, std::string &out, bool &sep) {
     add_key(out, sep, "general", "{");
     bool s2 = false;
     if (ll->type == JSON_STRING) {
-      cfg->set<const char *>(std::string("general.loglevel"), strdup(ll->value.string));
+      cfg->set<const char *>(std::string("general.loglevel"),
+                             strdup(ll->value.string));
       add_key(out, s2, "loglevel");
       add_str(out, cfg->general.loglevel);
     } else if (ll->type == JSON_NULL) {
@@ -1726,8 +1787,10 @@ bool process_json(const std::string &in, std::string &out) {
   }
 
   // Special case: dump_config returns full config directly, not wrapped
-  if (JsonValue *action_obj = obj_get(root, "action"); action_obj && action_obj->type == JSON_OBJECT) {
-    if (JsonValue *dump_val = obj_get(action_obj, "dump_config"); dump_val && dump_val->type == JSON_NULL) {
+  if (JsonValue *action_obj = obj_get(root, "action");
+      action_obj && action_obj->type == JSON_OBJECT) {
+    if (JsonValue *dump_val = obj_get(action_obj, "dump_config");
+        dump_val && dump_val->type == JSON_NULL) {
       char *json_str = json_to_string(cfg->jsonConfig, 0); // 0 = compact
       if (json_str) {
         out = json_str;
@@ -1787,7 +1850,8 @@ bool process_json(const std::string &in, std::string &out) {
   free_json_value(root);
 
   // Notify main thread if any restart flags were set
-  if (global_restart_rtsp != prev_restart_rtsp || global_restart_video != prev_restart_video ||
+  if (global_restart_rtsp != prev_restart_rtsp ||
+      global_restart_video != prev_restart_video ||
       global_restart_audio != prev_restart_audio) {
     global_cv_worker_restart.notify_one();
   }

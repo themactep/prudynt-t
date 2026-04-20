@@ -9,7 +9,8 @@ AACEncoder *AACEncoder::createNew(int sampleRate, int numChn) {
   return new AACEncoder(sampleRate, numChn);
 }
 
-AACEncoder::AACEncoder(int sampleRate, int numChn) : sampleRate(sampleRate), numChn(numChn) {
+AACEncoder::AACEncoder(int sampleRate, int numChn)
+    : sampleRate(sampleRate), numChn(numChn) {
 }
 
 AACEncoder::~AACEncoder() {
@@ -57,7 +58,8 @@ int AACEncoder::close() {
   return 0;
 }
 
-int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
+int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf,
+                       int *outLen) {
   if (!handle) {
     LOG_ERROR("FAAC encoder not available");
     return -1;
@@ -70,7 +72,8 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
   }
 
   if (static_cast<unsigned long>(totalInputSamples) != inputSamples) {
-    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " got " << totalInputSamples);
+    LOG_WARN("FAAC sample mismatch: expected " << inputSamples << " got "
+                                               << totalInputSamples);
   }
 
   // FAAC API takes int32_t samples even for FAAC_INPUT_16BIT. Provide a
@@ -81,8 +84,9 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) 
     pcm32Buffer[static_cast<size_t>(i)] = static_cast<int32_t>(pcm16[i]);
   }
 
-  const int frameLen = faacEncEncode(handle, pcm32Buffer.data(), totalInputSamples,
-                                     reinterpret_cast<unsigned char *>(outbuf), maxOutputBytes);
+  const int frameLen =
+      faacEncEncode(handle, pcm32Buffer.data(), totalInputSamples,
+                    reinterpret_cast<unsigned char *>(outbuf), maxOutputBytes);
   *outLen = frameLen;
 
   if (frameLen < 0) {

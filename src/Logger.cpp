@@ -14,7 +14,8 @@
 
 #include "Logger.hpp"
 
-const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN", "NOTICE", "INFO", "DEBUG", "TRACE"};
+const char *text_levels[] = {"EMERGENCY", "ALERT", "CRITICAL", "ERROR", "WARN",
+                             "NOTICE",    "INFO",  "DEBUG",    "TRACE"};
 
 namespace {
 void current_timestamp(char *out, size_t out_size) {
@@ -29,12 +30,14 @@ void current_timestamp(char *out, size_t out_size) {
   }
 
   char time_buf[32];
-  if (strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &local_tm) == 0) {
+  if (strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &local_tm) ==
+      0) {
     snprintf(out, out_size, "1970-01-01 00:00:00.000");
     return;
   }
 
-  snprintf(out, out_size, "%s.%03ld", time_buf, static_cast<long>(tv.tv_usec / 1000));
+  snprintf(out, out_size, "%s.%03ld", time_buf,
+           static_cast<long>(tv.tv_usec / 1000));
 }
 } // namespace
 
@@ -123,11 +126,13 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
       syslogPriority = 7;
       break; // Default case for undefined levels
     }
-    syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(), msg.log_str.c_str());
+    syslog(syslogPriority, "[%s:%s]: %s", text_levels[lvl], module.c_str(),
+           msg.log_str.c_str());
   }
 
   // Log to console
-  std::fprintf(stdout, "%s [%s:%s]: %s\n", timestamp, text_levels[lvl], module.c_str(), msg.log_str.c_str());
+  std::fprintf(stdout, "%s [%s:%s]: %s\n", timestamp, text_levels[lvl],
+               module.c_str(), msg.log_str.c_str());
   std::fflush(stdout);
 }
 

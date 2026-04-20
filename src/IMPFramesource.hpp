@@ -6,7 +6,8 @@
 
 class IMPFramesource {
 public:
-  static IMPFramesource *createNew(_stream *stream, _sensor *sensor, int chnNr, int sourceChn);
+  static IMPFramesource *createNew(_stream *stream, _sensor *sensor, int chnNr,
+                                   int sourceChn);
 
   IMPFramesource(_stream *stream, _sensor *sensor, int chnNr, int sourceChn)
       : stream(stream), sensor(sensor), chnNr(chnNr), sourceChn(sourceChn) {

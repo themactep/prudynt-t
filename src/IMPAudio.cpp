@@ -15,8 +15,10 @@
 
 static thread_local IMPAudioEncoder *encoder = nullptr;
 
-int IMPAudio::encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf, int *outLen) {
-  if (!encoder) return -1;
+int IMPAudio::encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf,
+                           int *outLen) {
+  if (!encoder)
+    return -1;
   return encoder->encode(frame, outbuf, outLen);
 }
 
@@ -29,13 +31,15 @@ int IMPAudio::init() {
   int ret;
 
   format = IMPAudioFormat::PCM;
-  IMPAudioIOAttr ioattr = {.samplerate = static_cast<IMPAudioSampleRate>(cfg->audio.input_sample_rate),
+  IMPAudioIOAttr ioattr = {.samplerate = static_cast<IMPAudioSampleRate>(
+                               cfg->audio.input_sample_rate),
                            .bitwidth = AUDIO_BIT_WIDTH_16,
                            .soundmode = AUDIO_SOUND_MODE_MONO,
                            .frmNum = 30,
                            .numPerFrm = 0,
                            .chnCnt = 1};
-  IMPAudioEncChnAttr encattr = {.type = IMPAudioPalyloadType::PT_PCM, .bufSize = 20, .value = 0};
+  IMPAudioEncChnAttr encattr = {
+      .type = IMPAudioPalyloadType::PT_PCM, .bufSize = 20, .value = 0};
   float frameDuration = 0.040;
 
   // Berechne PCM Bitrate basierend auf outChnCnt
@@ -50,7 +54,8 @@ int IMPAudio::init() {
     bitrate = cfg->audio.input_bitrate;
     encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
 #else
-    LOG_ERROR("OPUS input_format requested but OPUS support is disabled at build time.");
+    LOG_ERROR("OPUS input_format requested but OPUS support is disabled at "
+              "build time.");
 #endif
   } else if (strcmp(cfg->audio.input_format, "AAC") == 0) {
 #if defined(USE_AAC) && USE_AAC
@@ -58,7 +63,8 @@ int IMPAudio::init() {
     bitrate = cfg->audio.input_bitrate;
     encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);
 #else
-    LOG_ERROR("AAC input_format requested but AAC support is disabled at build time.");
+    LOG_ERROR("AAC input_format requested but AAC support is disabled at build "
+              "time.");
 #endif
   } else if (strcmp(cfg->audio.input_format, "G711A") == 0) {
     outChnCnt = 1; // G711A is mono
@@ -82,15 +88,17 @@ int IMPAudio::init() {
     // PCM format - keep the default format = IMPAudioFormat::PCM set above
     LOG_INFO("Using PCM format (no encoding)");
   } else {
-    LOG_ERROR("unsupported audio->input_format (" << cfg->audio.input_format
-                                                  << "). we only support OPUS, AAC, G711A, G711U, G726, and PCM.");
+    LOG_ERROR("unsupported audio->input_format ("
+              << cfg->audio.input_format
+              << "). we only support OPUS, AAC, G711A, G711U, G726, and PCM.");
   }
 
   sample_rate = ioattr.samplerate;
   if (sample_rate != cfg->audio.input_sample_rate) {
-    LOG_INFO("Overriding configured input sample rate of " << cfg->audio.input_sample_rate << " Hz because "
-                                                           << cfg->audio.input_format << " requires " << sample_rate
-                                                           << " Hz.");
+    LOG_INFO("Overriding configured input sample rate of "
+             << cfg->audio.input_sample_rate << " Hz because "
+             << cfg->audio.input_format << " requires " << sample_rate
+             << " Hz.");
   }
 
   // sample points per frame
@@ -104,10 +112,12 @@ int IMPAudio::init() {
     directEncode = true;
     ret = encoder->open();
     if (ret != 0) {
-      LOG_ERROR("Failed to open " << cfg->audio.input_format << " encoder directly");
+      LOG_ERROR("Failed to open " << cfg->audio.input_format
+                                  << " encoder directly");
       return ret;
     }
-    LOG_DEBUG("Opened " << cfg->audio.input_format << " encoder directly (bypassing IMP_AENC)");
+    LOG_DEBUG("Opened " << cfg->audio.input_format
+                        << " encoder directly (bypassing IMP_AENC)");
   }
 
   if (encattr.type > IMPAudioPalyloadType::PT_PCM) {
@@ -131,8 +141,9 @@ int IMPAudio::init() {
   ret = IMP_AI_SetChnParam(devId, inChn, &chnParam);
   if (ret != 0) {
     int err = errno;
-    LOG_ERROR("IMP_AI_SetChnParam(" << devId << ", " << inChn << ") failed: ret=" << ret << ", errno=" << err << " ("
-                                    << strerror(err) << ")");
+    LOG_ERROR("IMP_AI_SetChnParam("
+              << devId << ", " << inChn << ") failed: ret=" << ret
+              << ", errno=" << err << " (" << strerror(err) << ")");
     return ret;
   } else {
     LOG_DEBUG("IMP_AI_SetChnParam(" << devId << ", " << inChn << ")");
@@ -149,38 +160,46 @@ int IMPAudio::init() {
   ret = IMP_AI_EnableChn(devId, inChn);
   if (ret != 0) {
     int err = errno;
-    LOG_ERROR("IMP_AI_EnableChn(" << devId << ", " << inChn << ") failed: ret=" << ret << ", errno=" << err << " ("
-                                  << strerror(err) << ")");
+    LOG_ERROR("IMP_AI_EnableChn("
+              << devId << ", " << inChn << ") failed: ret=" << ret
+              << ", errno=" << err << " (" << strerror(err) << ")");
     return ret;
   } else {
     LOG_DEBUG("IMP_AI_EnableChn(" << devId << ", " << inChn << ")");
   }
   ret = IMP_AI_SetVol(devId, inChn, cfg->audio.input_vol);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", " << cfg->audio.input_vol << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetVol(" << devId << ", " << inChn << ", "
+                                           << cfg->audio.input_vol << ")");
 
   int vol;
   ret = IMP_AI_GetVol(devId, inChn, &vol);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetVol(" << devId << ", " << inChn << ", &vol)");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_GetVol(" << devId << ", " << inChn << ", &vol)");
 
   if (cfg->audio.input_gain >= 0) {
     ret = IMP_AI_SetGain(devId, inChn, cfg->audio.input_gain);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", " << cfg->audio.input_gain << ")");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetGain(" << devId << ", " << inChn << ", "
+                                              << cfg->audio.input_gain << ")");
   }
 
   int gain;
   ret = IMP_AI_GetGain(devId, inChn, &gain);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetGain(" << devId << ", " << inChn << ", &gain)");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_GetGain(" << devId << ", " << inChn << ", &gain)");
 
-  LOG_INFO("Audio In: format:" << cfg->audio.input_format << ", vol:" << vol << ", gain:" << gain
-                               << ", samplerate:" << ioattr.samplerate << ", bitwidth:" << ioattr.bitwidth
-                               << ", soundmode:" << ioattr.soundmode << ", frmNum:" << ioattr.frmNum
-                               << ", numPerFrm:" << ioattr.numPerFrm << ", chnCnt:" << ioattr.chnCnt
-                               << ", usrFrmDepth:" << chnParam.usrFrmDepth);
+  LOG_INFO("Audio In: format:"
+           << cfg->audio.input_format << ", vol:" << vol << ", gain:" << gain
+           << ", samplerate:" << ioattr.samplerate
+           << ", bitwidth:" << ioattr.bitwidth
+           << ", soundmode:" << ioattr.soundmode << ", frmNum:" << ioattr.frmNum
+           << ", numPerFrm:" << ioattr.numPerFrm << ", chnCnt:" << ioattr.chnCnt
+           << ", usrFrmDepth:" << chnParam.usrFrmDepth);
 
 #if defined(LIB_AUDIO_PROCESSING)
   if (cfg->audio.input_noise_suppression) {
     ret = IMP_AI_EnableNs(&ioattr, cfg->audio.input_noise_suppression);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableNs(&ioattr, " << cfg->audio.input_noise_suppression << ")");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableNs(&ioattr, "
+                                << cfg->audio.input_noise_suppression << ")");
     enabledNs = true;
   }
 
@@ -202,14 +221,17 @@ int IMPAudio::init() {
     };
     /* Enable automatic gain control on platforms that advertise it. */
     ret = IMP_AI_EnableAgc(&ioattr, agcConfig);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableAgc({" << agcConfig.TargetLevelDbfs << ", " << agcConfig.CompressionGaindB
-                                                 << "})");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_EnableAgc({"
+                                << agcConfig.TargetLevelDbfs << ", "
+                                << agcConfig.CompressionGaindB << "})");
     enabledAgc = true;
   }
 #if defined(PLATFORM_T21) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
   if (cfg->audio.input_alc_gain > 0 && hal::caps().has_audio_alc) {
     ret = IMP_AI_SetAlcGain(devId, inChn, cfg->audio.input_alc_gain);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain(" << devId << ", " << inChn << ", " << cfg->audio.input_alc_gain << ")");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetAlcGain("
+                                << devId << ", " << inChn << ", "
+                                << cfg->audio.input_alc_gain << ")");
   }
 #endif
 #endif // LIB_AUDIO_PROCESSING
@@ -257,7 +279,8 @@ int IMPAudio::deinit() {
   }
 
   ret = IMP_AI_DisableChn(devId, inChn);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_DisableChn(" << devId << ", " << inChn << ")");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_AI_DisableChn(" << devId << ", " << inChn << ")");
 
   ret = IMP_AI_Disable(devId);
   LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Disable(" << devId << ")");

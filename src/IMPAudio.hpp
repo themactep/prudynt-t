@@ -19,7 +19,8 @@ enum IMPAudioFormat {
 class IMPAudioEncoder {
 public:
   virtual int open() = 0;
-  virtual int encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) = 0;
+  virtual int encode(IMPAudioFrame *data, unsigned char *outbuf,
+                     int *outLen) = 0;
   virtual int close() = 0;
   virtual ~IMPAudioEncoder() = default;
 };
@@ -27,9 +28,11 @@ public:
 class IMPAudio {
 public:
   static IMPAudio *createNew(int devId, int inChn, int aeChn);
-  static int encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf, int *outLen);
+  static int encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf,
+                          int *outLen);
 
-  IMPAudio(int devId, int inChn, int aeChn) : devId(devId), inChn(inChn), aeChn(aeChn) {
+  IMPAudio(int devId, int inChn, int aeChn)
+      : devId(devId), inChn(inChn), aeChn(aeChn) {
     if (init() != 0) {
       throw std::runtime_error("Failed to initialize IMPAudio - hardware may "
                                "not be properly initialized");

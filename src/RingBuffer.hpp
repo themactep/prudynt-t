@@ -5,7 +5,9 @@
 
 class RingBuffer {
 public:
-  RingBuffer(size_t capacity) : buffer(new uint8_t[capacity]), capacity(capacity), head(0), tail(0), size(0) {
+  RingBuffer(size_t capacity)
+      : buffer(new uint8_t[capacity]), capacity(capacity), head(0), tail(0),
+        size(0) {
   }
 
   ~RingBuffer() {

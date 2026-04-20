@@ -11,7 +11,8 @@ bool ignoreInitialPeriod = true;
 namespace {
 constexpr const char *kPrudyntRunDir = "/run/prudynt";
 constexpr const char *kMotionStatePath = "/run/prudynt/motion.active";
-constexpr const char *kMotionDetectedPath = "/run/prudynt/motion_detected.active";
+constexpr const char *kMotionDetectedPath =
+    "/run/prudynt/motion_detected.active";
 constexpr const char *kMotorsActivePath = "/run/motors-active";
 
 void write_motion_detection_state_file() {
@@ -33,7 +34,8 @@ void remove_motion_detection_state_file() {
 void write_motion_detected_state_file() {
   int fd = ::open(kMotionDetectedPath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (fd < 0) {
-    LOG_WARN("Motion: failed to create detected state file " << kMotionDetectedPath);
+    LOG_WARN("Motion: failed to create detected state file "
+             << kMotionDetectedPath);
     return;
   }
   const char *payload = "motion=true\n";
@@ -69,7 +71,8 @@ void Motion::detect() {
 
   global_motion_thread_signal = true;
   bool motorMovementActive = false;
-  auto motorSettleWindow = std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
+  auto motorSettleWindow =
+      std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
   auto lastMotorEventTime = startTime - motorSettleWindow;
   while (global_motion_thread_signal) {
     ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout_ms);
@@ -87,32 +90,32 @@ void Motion::detect() {
     auto currentTime = steady_clock::now();
     auto elapsedTime = duration_cast<seconds>(currentTime - startTime);
 
-    motorSettleWindow = std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
+    motorSettleWindow =
+        std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
     bool motorFlagPresent = (::access(kMotorsActivePath, F_OK) == 0);
 
     if (motorFlagPresent) {
       lastMotorEventTime = currentTime;
     }
 
-    auto sinceLastMotor = duration_cast<milliseconds>(currentTime - lastMotorEventTime);
+    auto sinceLastMotor =
+        duration_cast<milliseconds>(currentTime - lastMotorEventTime);
 
-    bool motorActiveOrSettling = motorFlagPresent || (sinceLastMotor < motorSettleWindow);
+    bool motorActiveOrSettling =
+        motorFlagPresent || (sinceLastMotor < motorSettleWindow);
 
     if (motorActiveOrSettling && !motorMovementActive) {
-      LOG_INFO("Motion suppressed: motor movement detected (flag=" << motorFlagPresent
-                                                                       << ", settle_ms="
-                                                                       << motorSettleWindow.count()
-                                                                       << ", since_last_ms="
-                                                                       << sinceLastMotor.count() << ")");
+      LOG_INFO("Motion suppressed: motor movement detected (flag="
+               << motorFlagPresent
+               << ", settle_ms=" << motorSettleWindow.count()
+               << ", since_last_ms=" << sinceLastMotor.count() << ")");
     } else if (!motorActiveOrSettling && motorMovementActive) {
-      LOG_INFO("Motor movement ended; resuming motion monitoring (cooldown applies) (flag=" << motorFlagPresent
-                                                                                           << ", settle_ms="
-                                                                                           << motorSettleWindow.count()
-                                                                                           << ", since_last_ms="
-                                                                                           << sinceLastMotor.count()
-                                                                                           << ", cooldown_s="
-                                                                                           << cfg->motion.cooldown_time_s
-                                                                                           << ")");
+      LOG_INFO("Motor movement ended; resuming motion monitoring (cooldown "
+               "applies) (flag="
+               << motorFlagPresent
+               << ", settle_ms=" << motorSettleWindow.count()
+               << ", since_last_ms=" << sinceLastMotor.count()
+               << ", cooldown_s=" << cfg->motion.cooldown_time_s << ")");
       isInCooldown = true;
       cooldownEndTime = steady_clock::now();
     }
@@ -124,7 +127,9 @@ void Motion::detect() {
       ignoreInitialPeriod = false;
     }
 
-    if (isInCooldown && duration_cast<seconds>(currentTime - cooldownEndTime).count() < cfg->motion.cooldown_time_s) {
+    if (isInCooldown &&
+        duration_cast<seconds>(currentTime - cooldownEndTime).count() <
+            cfg->motion.cooldown_time_s) {
       continue;
     } else {
       isInCooldown = false;
@@ -162,8 +167,10 @@ void Motion::detect() {
 
     if (!motionDetected) {
       debounce = 0;
-      auto duration = duration_cast<seconds>(currentTime - motionEndTime).count();
-      if (moving && duration >= cfg->motion.min_time_s && duration >= cfg->motion.post_time_s) {
+      auto duration =
+          duration_cast<seconds>(currentTime - motionEndTime).count();
+      if (moving && duration >= cfg->motion.min_time_s &&
+          duration >= cfg->motion.post_time_s) {
         LOG_INFO("End of Motion");
         remove_motion_detected_state_file();
         char cmd[128];
@@ -210,27 +217,34 @@ int Motion::init() {
   ret = IMP_Encoder_GetChnAttr(cfg->motion.monitor_stream, &channelAttributes);
   if (ret == 0) {
     if (cfg->motion.frame_width == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("frame_width"), HAL_ENC_ATTR_WIDTH(channelAttributes), true);
+      cfg->set<int>(getConfigPath("frame_width"),
+                    HAL_ENC_ATTR_WIDTH(channelAttributes), true);
     }
     if (cfg->motion.frame_height == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("frame_height"), HAL_ENC_ATTR_HEIGHT(channelAttributes), true);
+      cfg->set<int>(getConfigPath("frame_height"),
+                    HAL_ENC_ATTR_HEIGHT(channelAttributes), true);
     }
     if (cfg->motion.roi_1_x == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("roi_1_x"), HAL_ENC_ATTR_WIDTH(channelAttributes) - 1, true);
+      cfg->set<int>(getConfigPath("roi_1_x"),
+                    HAL_ENC_ATTR_WIDTH(channelAttributes) - 1, true);
     }
     if (cfg->motion.roi_1_y == IVS_AUTO_VALUE) {
-      cfg->set<int>(getConfigPath("roi_1_y"), HAL_ENC_ATTR_HEIGHT(channelAttributes) - 1, true);
+      cfg->set<int>(getConfigPath("roi_1_y"),
+                    HAL_ENC_ATTR_HEIGHT(channelAttributes) - 1, true);
     }
   }
 
   memset(&move_param, 0, sizeof(IMP_IVS_MoveParam));
 
   // Map web UI sensitivity (1-8) to hardware range (0-max)
-  // Hardware max varies by platform: older T20 supports 0-4, newer platforms support 0-8 for panoramic/fisheye cameras
+  // Hardware max varies by platform: older T20 supports 0-4, newer platforms
+  // support 0-8 for panoramic/fisheye cameras
   int hw_sensitivity = cfg->motion.sensitivity - 1;
-  if (hw_sensitivity < 0) hw_sensitivity = 0;
+  if (hw_sensitivity < 0)
+    hw_sensitivity = 0;
   int hw_max = hal::caps().motion_sensitivity_max;
-  if (hw_sensitivity > hw_max) hw_sensitivity = hw_max;
+  if (hw_sensitivity > hw_max)
+    hw_sensitivity = hw_max;
 
   move_param.sense[0] = hw_sensitivity;
   move_param.skipFrameCnt = cfg->motion.skip_frame_count;
@@ -254,18 +268,20 @@ int Motion::init() {
   // Swap dimensions if video is rotated
   if (monitor_stream_cfg && monitor_stream_cfg->rotation != 0) {
     std::swap(motion_width, motion_height);
-    LOG_DEBUG("Motion detection dimensions adjusted for " << monitor_stream_cfg->rotation
-                                                          << "° rotation: " << motion_width << "x" << motion_height);
+    LOG_DEBUG("Motion detection dimensions adjusted for "
+              << monitor_stream_cfg->rotation << "° rotation: " << motion_width
+              << "x" << motion_height);
   }
 
   move_param.frameInfo.width = motion_width;
   move_param.frameInfo.height = motion_height;
 
-  LOG_INFO("Motion detection: sensitivity: " << move_param.sense[0] << " (UI: " << cfg->motion.sensitivity 
-                               << ", HW max: " << hal::caps().motion_sensitivity_max << ")"
-                               << ", skipCnt:" << move_param.skipFrameCnt
-                               << ", width:" << move_param.frameInfo.width
-                               << ", height:" << move_param.frameInfo.height);
+  LOG_INFO("Motion detection: sensitivity: "
+           << move_param.sense[0] << " (UI: " << cfg->motion.sensitivity
+           << ", HW max: " << hal::caps().motion_sensitivity_max << ")"
+           << ", skipCnt:" << move_param.skipFrameCnt
+           << ", width:" << move_param.frameInfo.width
+           << ", height:" << move_param.frameInfo.height);
 
   move_param.roiRect[0].p0.x = cfg->motion.roi_0_x;
   move_param.roiRect[0].p0.y = cfg->motion.roi_0_y;
@@ -273,16 +289,20 @@ int Motion::init() {
   move_param.roiRect[0].p1.y = cfg->motion.roi_1_y - 1;
   move_param.roiRectCnt = cfg->motion.roi_count;
 
-  LOG_INFO("Motion detection roi[0]:" << " roi_0_x: " << cfg->motion.roi_0_x << ", roi_0_y:" << cfg->motion.roi_0_y
-                                      << ", roi_1_x: " << cfg->motion.roi_1_x << ", roi_1_y:" << cfg->motion.roi_1_y);
+  LOG_INFO("Motion detection roi[0]:" << " roi_0_x: " << cfg->motion.roi_0_x
+                                      << ", roi_0_y:" << cfg->motion.roi_0_y
+                                      << ", roi_1_x: " << cfg->motion.roi_1_x
+                                      << ", roi_1_y:" << cfg->motion.roi_1_y);
 
   move_intf = IMP_IVS_CreateMoveInterface(&move_param);
 
   ret = IMP_IVS_CreateChn(ivsChn, move_intf);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateChn(" << ivsChn << ", move_intf)");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                              "IMP_IVS_CreateChn(" << ivsChn << ", move_intf)");
 
   ret = IMP_IVS_RegisterChn(ivsGrp, ivsChn);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_RegisterChn(" << ivsGrp << ", " << ivsChn << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_RegisterChn(" << ivsGrp << ", "
+                                                          << ivsChn << ")");
 
   ret = IMP_IVS_StartRecvPic(ivsChn);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_StartRecvPic(" << ivsChn << ")")

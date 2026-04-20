@@ -9,10 +9,10 @@ public:
   HTTPMJPEG();
   ~HTTPMJPEG();
 
-  void start(int port = 8081, bool enable_mjpeg = true, bool enable_api = false, 
-             bool auth_required = true, const char *username = "thingino", 
+  void start(int port = 8081, bool enable_mjpeg = true, bool enable_api = false,
+             bool auth_required = true, const char *username = "thingino",
              const char *password = "thingino"); // no-op if already running
-  void stop();                 // best-effort stop
+  void stop();                                   // best-effort stop
 
 private:
   void server_loop(int port);

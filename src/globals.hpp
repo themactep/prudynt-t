@@ -11,17 +11,17 @@
 #ifdef PREBUFFER_ENABLED
 #include "PreTriggerBuffer.hpp"
 #endif
-#include "liveMedia.hh"
 #include "StreamCore.hpp"
+#include "liveMedia.hh"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <condition_variable>
-#include <functional>
-#include <future>
 #include <cstdint>
 #include <deque>
+#include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -45,14 +45,18 @@ inline constexpr int kMainPhysicalFrameSourceChannel = 0;
 inline constexpr int kSubPhysicalFrameSourceChannel = 1;
 inline constexpr int kExtSubFrameSourceChannel = 2;
 
-inline bool uses_shared_primary_encoder(int video_channel, const _sensor &sensor, const _stream &stream) {
+inline bool uses_shared_primary_encoder(int video_channel,
+                                        const _sensor &sensor,
+                                        const _stream &stream) {
   (void)video_channel;
   (void)sensor;
   (void)stream;
   return false;
 }
 
-inline FrameSourceBinding framesource_binding_for_video(int video_channel, const _sensor &sensor, const _stream &stream) {
+inline FrameSourceBinding framesource_binding_for_video(int video_channel,
+                                                        const _sensor &sensor,
+                                                        const _stream &stream) {
   (void)sensor;
   (void)stream;
 
@@ -67,8 +71,11 @@ inline FrameSourceBinding framesource_binding_for_video(int video_channel, const
   return {video_channel, video_channel};
 }
 
-inline int encoder_group_for_video(int video_channel, const _sensor &sensor, const _stream &stream) {
-  return uses_shared_primary_encoder(video_channel, sensor, stream) ? 0 : video_channel;
+inline int encoder_group_for_video(int video_channel, const _sensor &sensor,
+                                   const _stream &stream) {
+  return uses_shared_primary_encoder(video_channel, sensor, stream)
+             ? 0
+             : video_channel;
 }
 
 // Simple binary semaphore compatible with environments lacking
@@ -98,7 +105,8 @@ private:
   int count;
 };
 
-extern std::mutex mutex_main; // protects global_restart_rtsp and global_restart_video
+extern std::mutex
+    mutex_main; // protects global_restart_rtsp and global_restart_video
 
 struct AudioFrame {
   std::vector<uint8_t> data;
@@ -110,11 +118,11 @@ struct H264NALUnit {
   std::vector<uint8_t> data;
 
   // Frame boundary tracking (detect incomplete frames)
-  bool is_frame_start = false;      // First NAL unit of frame
-  bool is_frame_end = false;        // Last NAL unit of frame
-  uint32_t frame_id = 0;            // Unique per video frame
-  uint32_t packet_index = 0;        // Position within frame (0-based)
-  uint32_t packet_count = 0;        // Total NAL units in frame
+  bool is_frame_start = false; // First NAL unit of frame
+  bool is_frame_end = false;   // Last NAL unit of frame
+  uint32_t frame_id = 0;       // Unique per video frame
+  uint32_t packet_index = 0;   // Position within frame (0-based)
+  uint32_t packet_count = 0;   // Total NAL units in frame
 
   struct timeval time{0, 0};
   // Encoder timestamp in microseconds (from IMP encoder, monotonic)
@@ -132,38 +140,31 @@ struct BackchannelFrame {
  * StreamCoreTraits specializations for H264NALUnit and AudioFrame.
  * These traits allow StreamCore to identify sync frames (keyframes/IDR).
  */
-template <>
-struct StreamCoreTraits<H264NALUnit>
-{
-    static bool is_sync(const H264NALUnit &nalu)
-    {
-        if (nalu.data.size() < 1)
-            return false;
-        // NAL unit type is in bits 0-4 of first byte (strip start code if present)
-        size_t offset = 0;
-        while (offset + 2 < nalu.data.size() && nalu.data[offset] == 0 && nalu.data[offset + 1] == 0)
-        {
-            if (nalu.data[offset + 2] == 1)
-            {
-                offset += 3;
-                break;
-            }
-            offset++;
-        }
-        if (offset >= nalu.data.size())
-            return false;
-        uint8_t nalType = nalu.data[offset] & 0x1F;
-        return nalType == 5; // IDR slice
+template <> struct StreamCoreTraits<H264NALUnit> {
+  static bool is_sync(const H264NALUnit &nalu) {
+    if (nalu.data.size() < 1)
+      return false;
+    // NAL unit type is in bits 0-4 of first byte (strip start code if present)
+    size_t offset = 0;
+    while (offset + 2 < nalu.data.size() && nalu.data[offset] == 0 &&
+           nalu.data[offset + 1] == 0) {
+      if (nalu.data[offset + 2] == 1) {
+        offset += 3;
+        break;
+      }
+      offset++;
     }
+    if (offset >= nalu.data.size())
+      return false;
+    uint8_t nalType = nalu.data[offset] & 0x1F;
+    return nalType == 5; // IDR slice
+  }
 };
 
-template <>
-struct StreamCoreTraits<AudioFrame>
-{
-    static bool is_sync(const AudioFrame &)
-    {
-        return false; // Audio frames are not sync frames
-    }
+template <> struct StreamCoreTraits<AudioFrame> {
+  static bool is_sync(const AudioFrame &) {
+    return false; // Audio frames are not sync frames
+  }
 };
 
 class VideoPrivacyMask;
@@ -222,13 +223,15 @@ struct jpeg_stream {
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
 
-  // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when updated
+  // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when
+  // updated
   std::vector<unsigned char> snapshot_buf;
   // Per-request JPEG quality override (1..100, -1 = none)
   std::atomic<int> quality_override{-1};
 
   // Dynamic reconfiguration requests (applied by JPEGWorker)
-  // Sequential frame counter for TRACE diagnostics (32-bit to avoid 64-bit atomics)
+  // Sequential frame counter for TRACE diagnostics (32-bit to avoid 64-bit
+  // atomics)
   std::atomic<uint32_t> frame_seq{0};
   std::atomic<int> req_width{-1};
   std::atomic<int> req_height{-1};
@@ -249,10 +252,12 @@ struct jpeg_stream {
   }
 
   bool request_or_overrun() {
-    return duration_cast<milliseconds>(steady_clock::now() - last_subscriber).count() < 1000;
+    return duration_cast<milliseconds>(steady_clock::now() - last_subscriber)
+               .count() < 1000;
   }
 
-  jpeg_stream(int encChn, _stream *stream) : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {
+  jpeg_stream(int encChn, _stream *stream)
+      : encChn(encChn), stream(stream), running(false), imp_encoder(nullptr) {
   }
 };
 
@@ -278,14 +283,15 @@ struct audio_stream {
 
   StreamReplicator *streamReplicator = nullptr;
   std::atomic<int> rtsp_client_count{0};
-  
+
   // Timestamp normalization tracking (from Prudynt-SE)
   std::atomic<uint64_t> last_timestamp_us{0};
   std::atomic<uint64_t> timestamp_origin_raw{0};
   std::atomic<uint64_t> presentation_origin_us{0};
 
   audio_stream(int devId, int aiChn, int aeChn)
-      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false), imp_audio(nullptr),
+      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false),
+        imp_audio(nullptr),
         audioCore(std::make_unique<StreamCore<AudioFrame>>(MSG_CHANNEL_SIZE)),
         onDataCallback{nullptr}, hasDataCallback{false} {
   }
@@ -307,14 +313,14 @@ struct video_stream {
   IMPFramesource *imp_framesource;
   // StreamCore replaces msgChannel + video_taps mechanism
   std::unique_ptr<StreamCore<H264NALUnit>> videoCore;
-  
+
   // Timestamp normalization tracking (from Prudynt-SE)
   std::atomic<uint64_t> timestamp_origin_raw{0};
   std::atomic<uint64_t> last_frame_timestamp_raw{0};
   std::atomic<uint64_t> last_timestamp_us{0};
   std::atomic<uint64_t> presentation_origin_us{0};
   std::function<void(void)> onDataCallback;
-  bool run_for_jpeg;                 // see comment in audio_stream
+  bool run_for_jpeg; // see comment in audio_stream
   std::atomic<bool> bootstrap_requested{false};
   bool owns_framesource{true};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
@@ -322,9 +328,11 @@ struct video_stream {
   std::atomic<int64_t> mp4_required_idr_ts_us;
   std::atomic<int64_t> mp4_last_idr_ts_us;
   std::atomic<uint64_t> mp4_last_idr_request_ms;
-  std::atomic<int64_t> mp4_prebuffer_offset_ms;  // Offset for live frames when prebuffer is used
-  std::atomic<bool> mp4_prebuffer_flushing;      // True while prebuffer frames are being written
-  std::mutex onDataCallbackLock;     // protects onDataCallback from deallocation
+  std::atomic<int64_t>
+      mp4_prebuffer_offset_ms; // Offset for live frames when prebuffer is used
+  std::atomic<bool>
+      mp4_prebuffer_flushing; // True while prebuffer frames are being written
+  std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
   video_parameter_cache parameterCache;
@@ -337,13 +345,16 @@ struct video_stream {
   std::unique_ptr<PreTriggerBuffer> prebuffer;
 #endif
 
-  video_stream(int encChn, int encGrp, int fsChn, int sourceChn, _stream *stream, const char *name)
-      : encChn(encChn), encGrp(encGrp), fsChn(fsChn), sourceChn(sourceChn), stream(stream), name(name), running(false),
-        idr(false), idr_fix(0), imp_encoder(nullptr),
-        imp_framesource(nullptr), videoCore(std::make_unique<StreamCore<H264NALUnit>>(MSG_CHANNEL_SIZE)),
-        onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false}, mp4_waiting_for_idr{false},
-        mp4_required_idr_ts_us{-1}, mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0}, mp4_prebuffer_offset_ms{0},
-        mp4_prebuffer_flushing{false} {
+  video_stream(int encChn, int encGrp, int fsChn, int sourceChn,
+               _stream *stream, const char *name)
+      : encChn(encChn), encGrp(encGrp), fsChn(fsChn), sourceChn(sourceChn),
+        stream(stream), name(name), running(false), idr(false), idr_fix(0),
+        imp_encoder(nullptr), imp_framesource(nullptr),
+        videoCore(std::make_unique<StreamCore<H264NALUnit>>(MSG_CHANNEL_SIZE)),
+        onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
+        mp4_waiting_for_idr{false}, mp4_required_idr_ts_us{-1},
+        mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0},
+        mp4_prebuffer_offset_ms{0}, mp4_prebuffer_flushing{false} {
   }
 };
 
@@ -357,8 +368,9 @@ struct backchannel_stream {
   std::atomic<unsigned int> is_sending{0};
 
   backchannel_stream()
-      : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(BACKCHANNEL_QUEUE_SIZE)), imp_backchannel(nullptr),
-        running(false) {
+      : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(
+            BACKCHANNEL_QUEUE_SIZE)),
+        imp_backchannel(nullptr), running(false) {
   }
 };
 
@@ -376,7 +388,9 @@ struct audio_output_stream {
   /// is shared between AI and AO (T10/T20/T21).
   std::atomic<int> hardwareSampleRate{0};
 
-  audio_output_stream() : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(AUDIO_OUTPUT_QUEUE_SIZE)) {
+  audio_output_stream()
+      : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(
+            AUDIO_OUTPUT_QUEUE_SIZE)) {
   }
 };
 

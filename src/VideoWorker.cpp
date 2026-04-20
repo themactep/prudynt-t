@@ -27,11 +27,12 @@ struct timeval timeval_from_us(uint64_t ts_us) {
   return tv;
 }
 
-struct timeval frame_timestamp_to_timeval(video_stream &stream_state, uint64_t raw_ts) {
+struct timeval frame_timestamp_to_timeval(video_stream &stream_state,
+                                          uint64_t raw_ts) {
   const uint64_t expected_frame_us =
       (stream_state.stream && stream_state.stream->fps > 0)
-      ? (1000000ULL / static_cast<uint64_t>(stream_state.stream->fps))
-      : 40000ULL;
+          ? (1000000ULL / static_cast<uint64_t>(stream_state.stream->fps))
+          : 40000ULL;
 
   uint64_t step_us = 0;
   const uint64_t last_raw =
@@ -43,7 +44,8 @@ struct timeval frame_timestamp_to_timeval(video_stream &stream_state, uint64_t r
     return timeval_from_us(last_ts);
 
   if (raw_ts > 0) {
-    uint64_t origin_raw = stream_state.timestamp_origin_raw.load(std::memory_order_relaxed);
+    uint64_t origin_raw =
+        stream_state.timestamp_origin_raw.load(std::memory_order_relaxed);
     if (origin_raw == 0) {
       uint64_t expected = 0;
       if (stream_state.timestamp_origin_raw.compare_exchange_strong(
@@ -63,7 +65,8 @@ struct timeval frame_timestamp_to_timeval(video_stream &stream_state, uint64_t r
       }
     }
 
-    stream_state.last_frame_timestamp_raw.store(raw_ts, std::memory_order_relaxed);
+    stream_state.last_frame_timestamp_raw.store(raw_ts,
+                                                std::memory_order_relaxed);
   }
 
   uint64_t presentation_origin_us =
@@ -101,19 +104,28 @@ void publish_video_runtime_status(video_stream &stream_state,
     return;
   }
 
-  const std::string streamName = stream_state.name
-                                     ? std::string(stream_state.name)
-                                     : ("stream" + std::to_string(stream_state.encChn));
-  const auto ringDepth = stream_state.videoCore ? stream_state.videoCore->depth() : 0;
-  const auto clientCount = stream_state.videoCore ? stream_state.videoCore->subscriberCount() : 0;
-  const auto dropCount = stream_state.videoCore ? stream_state.videoCore->producerDropCount() : 0;
+  const std::string streamName =
+      stream_state.name ? std::string(stream_state.name)
+                        : ("stream" + std::to_string(stream_state.encChn));
+  const auto ringDepth =
+      stream_state.videoCore ? stream_state.videoCore->depth() : 0;
+  const auto clientCount =
+      stream_state.videoCore ? stream_state.videoCore->subscriberCount() : 0;
+  const auto dropCount =
+      stream_state.videoCore ? stream_state.videoCore->producerDropCount() : 0;
 
-  RTSPStatus::writeCustomParameter(streamName, "gop", std::to_string(stream_state.stream->gop));
-  RTSPStatus::writeCustomParameter(streamName, "fs_channel", std::to_string(stream_state.fsChn));
-  RTSPStatus::writeCustomParameter(streamName, "source_channel", std::to_string(stream_state.sourceChn));
-  RTSPStatus::writeCustomParameter(streamName, "ring_depth", std::to_string(ringDepth));
-  RTSPStatus::writeCustomParameter(streamName, "client_count", std::to_string(clientCount));
-  RTSPStatus::writeCustomParameter(streamName, "drop_count", std::to_string(dropCount));
+  RTSPStatus::writeCustomParameter(streamName, "gop",
+                                   std::to_string(stream_state.stream->gop));
+  RTSPStatus::writeCustomParameter(streamName, "fs_channel",
+                                   std::to_string(stream_state.fsChn));
+  RTSPStatus::writeCustomParameter(streamName, "source_channel",
+                                   std::to_string(stream_state.sourceChn));
+  RTSPStatus::writeCustomParameter(streamName, "ring_depth",
+                                   std::to_string(ringDepth));
+  RTSPStatus::writeCustomParameter(streamName, "client_count",
+                                   std::to_string(clientCount));
+  RTSPStatus::writeCustomParameter(streamName, "drop_count",
+                                   std::to_string(dropCount));
 
   uint64_t last_idr_us = 0;
   uint8_t profile_idc = 0;
@@ -128,22 +140,30 @@ void publish_video_runtime_status(video_stream &stream_state,
   uint64_t lastIdrAgeMs = 0;
   if (last_idr_us > 0) {
     const uint64_t nowUs =
-        duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
+        duration_cast<microseconds>(steady_clock::now().time_since_epoch())
+            .count();
     if (nowUs >= last_idr_us) {
       lastIdrAgeMs = (nowUs - last_idr_us) / 1000ULL;
     }
   }
 
-  RTSPStatus::writeCustomParameter(streamName, "last_idr_age_ms", std::to_string(lastIdrAgeMs));
-  RTSPStatus::writeCustomParameter(streamName, "profile", std::to_string(profile_idc));
-  RTSPStatus::writeCustomParameter(streamName, "level", std::to_string(level_idc));
-  RTSPStatus::writeCustomParameter(streamName, "observed_fps", std::to_string(observed_fps));
-  RTSPStatus::writeCustomParameter(streamName, "producer_wall_delta_ms",
-                                   std::to_string(producer_wall_delta_us / 1000ULL));
-  RTSPStatus::writeCustomParameter(streamName, "producer_raw_delta_ms",
-                                   std::to_string(producer_raw_delta_us / 1000ULL));
-  RTSPStatus::writeCustomParameter(streamName, "producer_state",
-                                   producer_has_keyframe ? "streaming" : "waiting_for_keyframe");
+  RTSPStatus::writeCustomParameter(streamName, "last_idr_age_ms",
+                                   std::to_string(lastIdrAgeMs));
+  RTSPStatus::writeCustomParameter(streamName, "profile",
+                                   std::to_string(profile_idc));
+  RTSPStatus::writeCustomParameter(streamName, "level",
+                                   std::to_string(level_idc));
+  RTSPStatus::writeCustomParameter(streamName, "observed_fps",
+                                   std::to_string(observed_fps));
+  RTSPStatus::writeCustomParameter(
+      streamName, "producer_wall_delta_ms",
+      std::to_string(producer_wall_delta_us / 1000ULL));
+  RTSPStatus::writeCustomParameter(
+      streamName, "producer_raw_delta_ms",
+      std::to_string(producer_raw_delta_us / 1000ULL));
+  RTSPStatus::writeCustomParameter(
+      streamName, "producer_state",
+      producer_has_keyframe ? "streaming" : "waiting_for_keyframe");
 }
 
 } // namespace
@@ -162,7 +182,8 @@ void VideoWorker::run() {
   auto &channel_recorder = global_mp4_recorders[encChn];
   auto monotonic_ms = []() -> uint64_t {
     return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
             .count());
   };
   constexpr uint64_t kIdrRequestIntervalMs = 250;
@@ -199,8 +220,10 @@ void VideoWorker::run() {
     int64_t frame_period = 1000000LL / fps;
     return std::max<int64_t>(frame_period / 2, 2000LL);
   };
-  int last_mp4_fps = (video_state && video_state->stream) ? video_state->stream->fps : 0;
-  int64_t mp4_frame_switch_threshold_us = compute_frame_switch_threshold(last_mp4_fps);
+  int last_mp4_fps =
+      (video_state && video_state->stream) ? video_state->stream->fps : 0;
+  int64_t mp4_frame_switch_threshold_us =
+      compute_frame_switch_threshold(last_mp4_fps);
 
   int64_t ts_last_nonzero_us = 0;
   int64_t ts_last_frame_us = 0;
@@ -235,11 +258,8 @@ void VideoWorker::run() {
     }
 
     global_video[encChn]->prebuffer->addFrame(
-      prebuffer_sample.data(),
-      prebuffer_sample.size(),
-      prebuffer_sample_ts_us,
-      prebuffer_sample_is_key
-    );
+        prebuffer_sample.data(), prebuffer_sample.size(),
+        prebuffer_sample_ts_us, prebuffer_sample_is_key);
     reset_prebuffer_sample();
   };
 #endif
@@ -255,7 +275,7 @@ void VideoWorker::run() {
     if (!recorder_active) {
       if (was_recorder_active) {
 #ifdef PREBUFFER_ENABLED
-        pending_frames_during_flush.clear();  // Clear pending frames
+        pending_frames_during_flush.clear(); // Clear pending frames
 #endif
       }
       was_recorder_active = false;
@@ -271,7 +291,8 @@ void VideoWorker::run() {
 
 #ifdef PREBUFFER_ENABLED
     // Queue frames while prebuffer is being flushed (instead of skipping)
-    if (video_state && video_state->mp4_prebuffer_flushing.load(std::memory_order_acquire)) {
+    if (video_state &&
+        video_state->mp4_prebuffer_flushing.load(std::memory_order_acquire)) {
       // Queue this frame for later
       PendingFrame pf;
       pf.data = std::move(mp4_sample);
@@ -280,18 +301,21 @@ void VideoWorker::run() {
       pending_frames_during_flush.push_back(std::move(pf));
 
       reset_mp4_sample();
-      mp4_sample_ts_base_us = -1;  // Reset timestamp base so we recalculate after flush
+      mp4_sample_ts_base_us =
+          -1; // Reset timestamp base so we recalculate after flush
       return;
     }
 
     // If we have pending frames from during the flush, write them first
     if (!pending_frames_during_flush.empty()) {
-
-      int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
+      int64_t prebuffer_offset =
+          video_state ? video_state->mp4_prebuffer_offset_ms.load(
+                            std::memory_order_relaxed)
+                      : 0;
 
       // Find the first keyframe in pending frames to establish timestamp base
       int64_t pending_ts_base_us = -1;
-      for (const auto& pf : pending_frames_during_flush) {
+      for (const auto &pf : pending_frames_during_flush) {
         if (pf.is_keyframe) {
           pending_ts_base_us = pf.timestamp_us;
           break;
@@ -302,15 +326,17 @@ void VideoWorker::run() {
         pending_ts_base_us = pending_frames_during_flush.front().timestamp_us;
       }
 
-      for (const auto& pf : pending_frames_during_flush) {
+      for (const auto &pf : pending_frames_during_flush) {
         int64_t relative_ts_us = pf.timestamp_us;
         if (pending_ts_base_us >= 0) {
           relative_ts_us -= pending_ts_base_us;
         }
-        if (relative_ts_us < 0) relative_ts_us = 0;
+        if (relative_ts_us < 0)
+          relative_ts_us = 0;
         int64_t pts_ms = relative_ts_us / 1000 + prebuffer_offset;
 
-        channel_recorder.writeVideo(pf.data.data(), pf.data.size(), pts_ms, pf.is_keyframe);
+        channel_recorder.writeVideo(pf.data.data(), pf.data.size(), pts_ms,
+                                    pf.is_keyframe);
       }
 
       // Update timestamp base for subsequent live frames
@@ -322,14 +348,20 @@ void VideoWorker::run() {
     }
 #endif
 
-    bool waiting_for_idr = video_state ? video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed) : false;
+    bool waiting_for_idr =
+        video_state
+            ? video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed)
+            : false;
     if (waiting_for_idr) {
       if (!mp4_sample_is_key) {
         // Reset full state including timestamp base so next frame starts fresh
         reset_mp4_state();
         return;
       }
-      int64_t required_ts = video_state ? video_state->mp4_required_idr_ts_us.load(std::memory_order_relaxed) : -1;
+      int64_t required_ts = video_state
+                                ? video_state->mp4_required_idr_ts_us.load(
+                                      std::memory_order_relaxed)
+                                : -1;
       if (required_ts >= 0 && mp4_sample_ts_us <= required_ts) {
         // Reset full state including timestamp base so next frame starts fresh
         reset_mp4_state();
@@ -352,16 +384,22 @@ void VideoWorker::run() {
       pts_ms = relative_ts_us / 1000;
 
       // Add prebuffer offset so live frames continue after prebuffer frames
-      int64_t prebuffer_offset = video_state ? video_state->mp4_prebuffer_offset_ms.load(std::memory_order_relaxed) : 0;
+      int64_t prebuffer_offset =
+          video_state ? video_state->mp4_prebuffer_offset_ms.load(
+                            std::memory_order_relaxed)
+                      : 0;
       if (prebuffer_offset > 0) {
         pts_ms += prebuffer_offset;
       }
     }
     if (mp4_sample_is_key && video_state) {
-      video_state->mp4_last_idr_ts_us.store(mp4_sample_ts_us, std::memory_order_relaxed);
-      video_state->mp4_required_idr_ts_us.store(mp4_sample_ts_us, std::memory_order_relaxed);
+      video_state->mp4_last_idr_ts_us.store(mp4_sample_ts_us,
+                                            std::memory_order_relaxed);
+      video_state->mp4_required_idr_ts_us.store(mp4_sample_ts_us,
+                                                std::memory_order_relaxed);
     }
-    channel_recorder.writeVideo(mp4_sample.data(), mp4_sample.size(), pts_ms, mp4_sample_is_key);
+    channel_recorder.writeVideo(mp4_sample.data(), mp4_sample.size(), pts_ms,
+                                mp4_sample_is_key);
     reset_mp4_sample();
   };
 
@@ -371,12 +409,15 @@ void VideoWorker::run() {
       stream_is_h265 = (std::strcmp(video_state->stream->format, "H265") == 0);
     }
 
-    if (video_state && video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed)) {
+    if (video_state &&
+        video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed)) {
       uint64_t now_ms = monotonic_ms();
-      uint64_t last_req = video_state->mp4_last_idr_request_ms.load(std::memory_order_relaxed);
+      uint64_t last_req =
+          video_state->mp4_last_idr_request_ms.load(std::memory_order_relaxed);
       if (now_ms - last_req >= kIdrRequestIntervalMs) {
         IMP_Encoder_RequestIDR(encChn);
-        video_state->mp4_last_idr_request_ms.store(now_ms, std::memory_order_relaxed);
+        video_state->mp4_last_idr_request_ms.store(now_ms,
+                                                   std::memory_order_relaxed);
       }
     }
 
@@ -392,19 +433,25 @@ void VideoWorker::run() {
       }
     }
     run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
-    bool video_clients_active = global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
-    bool bootstrap_requested = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
+    bool video_clients_active =
+        global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+    bool bootstrap_requested = global_video[encChn]->bootstrap_requested.load(
+        std::memory_order_relaxed);
     if (video_clients_active && !had_video_clients) {
       IMP_Encoder_RequestIDR(encChn);
       int flush_ret = IMP_Encoder_FlushStream(encChn);
       if (flush_ret != 0) {
-        LOG_WARN("VideoWorker: IMP_Encoder_FlushStream(" << encChn
-                 << ") failed during subscriber startup");
+        LOG_WARN("VideoWorker: IMP_Encoder_FlushStream("
+                 << encChn << ") failed during subscriber startup");
       }
-      global_video[encChn]->last_timestamp_us.store(0, std::memory_order_relaxed);
-      global_video[encChn]->timestamp_origin_raw.store(0, std::memory_order_relaxed);
-      global_video[encChn]->last_frame_timestamp_raw.store(0, std::memory_order_relaxed);
-      global_video[encChn]->presentation_origin_us.store(0, std::memory_order_relaxed);
+      global_video[encChn]->last_timestamp_us.store(0,
+                                                    std::memory_order_relaxed);
+      global_video[encChn]->timestamp_origin_raw.store(
+          0, std::memory_order_relaxed);
+      global_video[encChn]->last_frame_timestamp_raw.store(
+          0, std::memory_order_relaxed);
+      global_video[encChn]->presentation_origin_us.store(
+          0, std::memory_order_relaxed);
       ts_last_nonzero_us = 0;
       ts_last_frame_us = 0;
       ts_last_rtp_us = 0;
@@ -418,20 +465,26 @@ void VideoWorker::run() {
      * 2. a jpeg is requested
      * 3. recording explicitly forces the video loop active
      */
-    // Keep video loop active when prebuffer is enabled (even without RTSP clients)
+    // Keep video loop active when prebuffer is enabled (even without RTSP
+    // clients)
 #ifdef PREBUFFER_ENABLED
-    bool prebuffer_active = global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled();
+    bool prebuffer_active = global_video[encChn]->prebuffer &&
+                            global_video[encChn]->prebuffer->isEnabled();
 #else
     bool prebuffer_active = false;
 #endif
     if (video_clients_active || run_for_jpeg || bootstrap_requested ||
         global_force_video_active || prebuffer_active) {
-      int current_stream_fps = (video_state && video_state->stream) ? video_state->stream->fps : last_mp4_fps;
+      int current_stream_fps = (video_state && video_state->stream)
+                                   ? video_state->stream->fps
+                                   : last_mp4_fps;
       if (current_stream_fps != last_mp4_fps) {
         last_mp4_fps = current_stream_fps;
-        mp4_frame_switch_threshold_us = compute_frame_switch_threshold(last_mp4_fps);
+        mp4_frame_switch_threshold_us =
+            compute_frame_switch_threshold(last_mp4_fps);
       }
-      if (IMP_Encoder_PollingStream(encChn, cfg->general.imp_polling_timeout_ms) == 0) {
+      if (IMP_Encoder_PollingStream(encChn,
+                                    cfg->general.imp_polling_timeout_ms) == 0) {
         IMPEncoderStream stream;
         memset(&stream, 0, sizeof(stream));
         if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) != 0) {
@@ -446,7 +499,8 @@ void VideoWorker::run() {
         }
 
         int64_t nominal_frame_step_us = 33333;
-        if (video_state && video_state->stream && video_state->stream->fps > 0) {
+        if (video_state && video_state->stream &&
+            video_state->stream->fps > 0) {
           nominal_frame_step_us = 1000000LL / video_state->stream->fps;
         }
         if (nominal_frame_step_us < 1000) {
@@ -456,7 +510,8 @@ void VideoWorker::run() {
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
-          if ((!recorder_active || !recorder_accepts_samples) && mp4_sample_ts_us != -1) {
+          if ((!recorder_active || !recorder_accepts_samples) &&
+              mp4_sample_ts_us != -1) {
             reset_mp4_state();
           }
           if (!recorder_accepts_samples) {
@@ -475,11 +530,13 @@ void VideoWorker::run() {
           uint8_t *start;
           uint32_t length;
           if (slices.second_len > 0) {
-            LOG_DDEBUG("video ch" << encChn << " pack[" << i << "] ring-buffer wrap: "
-                       << slices.first_len << "+" << slices.second_len << " bytes");
+            LOG_DDEBUG("video ch" << encChn << " pack[" << i
+                                  << "] ring-buffer wrap: " << slices.first_len
+                                  << "+" << slices.second_len << " bytes");
             wrap_buf.resize(slices.first_len + slices.second_len);
             std::memcpy(wrap_buf.data(), slices.first_ptr, slices.first_len);
-            std::memcpy(wrap_buf.data() + slices.first_len, slices.second_ptr, slices.second_len);
+            std::memcpy(wrap_buf.data() + slices.first_len, slices.second_ptr,
+                        slices.second_len);
             start = wrap_buf.data();
             length = static_cast<uint32_t>(wrap_buf.size());
           } else {
@@ -490,7 +547,8 @@ void VideoWorker::run() {
           bool frame_start = (i == 0) || stream.pack[i - 1].frameEnd;
           if (frame_start) {
             uint32_t frame_end_idx = i;
-            while (frame_end_idx + 1 < stream.packCount && !stream.pack[frame_end_idx].frameEnd) {
+            while (frame_end_idx + 1 < stream.packCount &&
+                   !stream.pack[frame_end_idx].frameEnd) {
               ++frame_end_idx;
             }
 
@@ -514,16 +572,22 @@ void VideoWorker::run() {
             }
 
             if (frame_ts_us > 0) {
-              if (producer_last_raw_tick_us > 0 && frame_ts_us > producer_last_raw_tick_us) {
-                producer_last_raw_delta_us = static_cast<uint64_t>(frame_ts_us - producer_last_raw_tick_us);
+              if (producer_last_raw_tick_us > 0 &&
+                  frame_ts_us > producer_last_raw_tick_us) {
+                producer_last_raw_delta_us = static_cast<uint64_t>(
+                    frame_ts_us - producer_last_raw_tick_us);
               }
               producer_last_raw_tick_us = frame_ts_us;
             }
 
             const uint64_t now_wall_us =
-                duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
-            if (producer_last_wall_tick_us > 0 && now_wall_us > producer_last_wall_tick_us) {
-              producer_last_wall_delta_us = now_wall_us - producer_last_wall_tick_us;
+                duration_cast<microseconds>(
+                    steady_clock::now().time_since_epoch())
+                    .count();
+            if (producer_last_wall_tick_us > 0 &&
+                now_wall_us > producer_last_wall_tick_us) {
+              producer_last_wall_delta_us =
+                  now_wall_us - producer_last_wall_tick_us;
             }
             producer_last_wall_tick_us = now_wall_us;
 
@@ -541,7 +605,9 @@ void VideoWorker::run() {
               frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
             }
             if (frame_ts_us <= 0) {
-              frame_ts_us = (ts_last_frame_us > 0) ? (ts_last_frame_us + nominal_frame_step_us) : nominal_frame_step_us;
+              frame_ts_us = (ts_last_frame_us > 0)
+                                ? (ts_last_frame_us + nominal_frame_step_us)
+                                : nominal_frame_step_us;
             }
 
             ts_current_frame_us = frame_ts_us;
@@ -564,7 +630,9 @@ void VideoWorker::run() {
 
           int64_t rtsp_ts_us = pack_ts_us;
           if (rtsp_ts_us <= 0) {
-            rtsp_ts_us = (ts_last_rtp_us > 0) ? (ts_last_rtp_us + nominal_frame_step_us) : nominal_frame_step_us;
+            rtsp_ts_us = (ts_last_rtp_us > 0)
+                             ? (ts_last_rtp_us + nominal_frame_step_us)
+                             : nominal_frame_step_us;
           }
           constexpr int64_t kMinRtpStepUs = 12;
           if (ts_last_rtp_us > 0 && rtsp_ts_us <= ts_last_rtp_us) {
@@ -588,7 +656,8 @@ void VideoWorker::run() {
           bool nal_is_idr = false;
           bool nal_is_hevc_idr = false;
 
-          auto append_length_prefixed_nal = [&](const uint8_t *src, size_t len) {
+          auto append_length_prefixed_nal = [&](const uint8_t *src,
+                                                size_t len) {
             if (!src || len == 0) {
               return;
             }
@@ -603,11 +672,12 @@ void VideoWorker::run() {
             std::memcpy(dst + 4, src, len);
           };
 
-          auto append_length_prefixed_nal_vec = [&](const std::vector<uint8_t> &nal) {
-            if (!nal.empty()) {
-              append_length_prefixed_nal(nal.data(), nal.size());
-            }
-          };
+          auto append_length_prefixed_nal_vec =
+              [&](const std::vector<uint8_t> &nal) {
+                if (!nal.empty()) {
+                  append_length_prefixed_nal(nal.data(), nal.size());
+                }
+              };
 
           if (payload_len > 0) {
             if (stream_is_h265) {
@@ -632,15 +702,19 @@ void VideoWorker::run() {
 
           if (nal_is_vps || nal_is_sps || nal_is_pps) {
             {
-              std::lock_guard<std::mutex> lock(global_video[encChn]->parameterCache.mutex);
+              std::lock_guard<std::mutex> lock(
+                  global_video[encChn]->parameterCache.mutex);
               if (nal_is_vps) {
-                global_video[encChn]->parameterCache.vps.data.assign(start + 4, end);
+                global_video[encChn]->parameterCache.vps.data.assign(start + 4,
+                                                                     end);
                 global_video[encChn]->parameterCache.have_vps = true;
               } else if (nal_is_sps) {
-                global_video[encChn]->parameterCache.sps.data.assign(start + 4, end);
+                global_video[encChn]->parameterCache.sps.data.assign(start + 4,
+                                                                     end);
                 global_video[encChn]->parameterCache.have_sps = true;
               } else {
-                global_video[encChn]->parameterCache.pps.data.assign(start + 4, end);
+                global_video[encChn]->parameterCache.pps.data.assign(start + 4,
+                                                                     end);
                 global_video[encChn]->parameterCache.have_pps = true;
               }
             }
@@ -648,14 +722,18 @@ void VideoWorker::run() {
           }
 
           if ((nal_is_idr || nal_is_hevc_idr) && video_state) {
-            video_state->mp4_last_idr_ts_us.store(pack_ts_us, std::memory_order_relaxed);
+            video_state->mp4_last_idr_ts_us.store(pack_ts_us,
+                                                  std::memory_order_relaxed);
             {
-              std::lock_guard<std::mutex> lock(global_video[encChn]->parameterCache.mutex);
-              global_video[encChn]->parameterCache.last_idr_us = static_cast<uint64_t>(pack_ts_us);
+              std::lock_guard<std::mutex> lock(
+                  global_video[encChn]->parameterCache.mutex);
+              global_video[encChn]->parameterCache.last_idr_us =
+                  static_cast<uint64_t>(pack_ts_us);
             }
           }
 
-          if (recorder_accepts_samples && payload_len > 0 && !(nal_is_vps || nal_is_sps || nal_is_pps)) {
+          if (recorder_accepts_samples && payload_len > 0 &&
+              !(nal_is_vps || nal_is_sps || nal_is_pps)) {
             bool pack_frame_end = stream.pack[i].frameEnd;
 
             if (mp4_sample_ts_us != -1 && !mp4_sample.empty()) {
@@ -683,13 +761,17 @@ void VideoWorker::run() {
             }
 
             bool waiting_for_idr_flag =
-                video_state ? video_state->mp4_waiting_for_idr.load(std::memory_order_relaxed) : false;
-            if (mp4_sample.empty() && waiting_for_idr_flag && !mp4_inserted_codec_config && video_state) {
+                video_state ? video_state->mp4_waiting_for_idr.load(
+                                  std::memory_order_relaxed)
+                            : false;
+            if (mp4_sample.empty() && waiting_for_idr_flag &&
+                !mp4_inserted_codec_config && video_state) {
               std::vector<uint8_t> vps_copy;
               std::vector<uint8_t> sps_copy;
               std::vector<uint8_t> pps_copy;
               {
-                std::lock_guard<std::mutex> lock(video_state->parameterCache.mutex);
+                std::lock_guard<std::mutex> lock(
+                    video_state->parameterCache.mutex);
                 vps_copy = video_state->parameterCache.vps.data;
                 sps_copy = video_state->parameterCache.sps.data;
                 pps_copy = video_state->parameterCache.pps.data;
@@ -721,7 +803,8 @@ void VideoWorker::run() {
 
             nalu.imp_ts = rtsp_ts_us;
             // Use frame_timestamp_to_timeval for proper normalization
-            nalu.time = frame_timestamp_to_timeval(*global_video[encChn], rtsp_ts_us);
+            nalu.time =
+                frame_timestamp_to_timeval(*global_video[encChn], rtsp_ts_us);
 
             // We use start+4 because the encoder inserts 4-byte MPEG
             // 'startcodes' at the beginning of each NAL. Live555 complains.
@@ -730,7 +813,7 @@ void VideoWorker::run() {
             // Add frame boundary metadata for complete frame detection
             static uint32_t frame_counter = 0;
             if (frame_start) {
-              frame_counter++;  // New frame starting
+              frame_counter++; // New frame starting
             }
             nalu.frame_id = frame_counter;
             nalu.packet_index = i;
@@ -745,20 +828,24 @@ void VideoWorker::run() {
             }
 
             if (global_video[encChn]->idr == true) {
-              // Use non-blocking write() to avoid stalling encoder on slow clients
-              // (go2rtc-inspired: drop oldest frame rather than block producer)
-              // Publish to StreamCore (replaces msgChannel + tap mechanism)
+              // Use non-blocking write() to avoid stalling encoder on slow
+              // clients (go2rtc-inspired: drop oldest frame rather than block
+              // producer) Publish to StreamCore (replaces msgChannel + tap
+              // mechanism)
               try {
                 global_video[encChn]->videoCore->publish(nalu);
-                
+
                 // Notify live555 callback if registered
-                std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+                std::unique_lock<std::mutex> lock_stream{
+                    global_video[encChn]->onDataCallbackLock};
                 if (global_video[encChn]->onDataCallback)
                   global_video[encChn]->onDataCallback();
-              } catch (const std::exception& e) {
-                LOG_ERROR("video channel:" << encChn << ", frame_id:" << nalu.frame_id
-                         << ", packet:" << nalu.packet_index << "/" << nalu.packet_count
-                         << " - Failed to publish: " << e.what());
+              } catch (const std::exception &e) {
+                LOG_ERROR("video channel:"
+                          << encChn << ", frame_id:" << nalu.frame_id
+                          << ", packet:" << nalu.packet_index << "/"
+                          << nalu.packet_count
+                          << " - Failed to publish: " << e.what());
               }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
@@ -767,8 +854,10 @@ void VideoWorker::run() {
              * controlled by the video threads we need to wakeup the audio
              * thread
              */
-            if (cfg->audio.input_enabled && !global_audio[0]->active && !global_restart) {
-              LOG_DDEBUG("NOTIFY AUDIO " << !global_audio[0]->active << " " << cfg->audio.input_enabled);
+            if (cfg->audio.input_enabled && !global_audio[0]->active &&
+                !global_restart) {
+              LOG_DDEBUG("NOTIFY AUDIO " << !global_audio[0]->active << " "
+                                         << cfg->audio.input_enabled);
               global_audio[0]->should_grab_frames.notify_one();
             }
 #endif
@@ -776,9 +865,11 @@ void VideoWorker::run() {
 
 #ifdef PREBUFFER_ENABLED
           // Capture frame for prebuffer if enabled
-          // This is OUTSIDE the hasDataCallback block so prebuffer works without RTSP clients
-          // Accumulate all NAL units (except SPS/PPS) into prebuffer_sample, flush on frameEnd
-          if (global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled()) {
+          // This is OUTSIDE the hasDataCallback block so prebuffer works
+          // without RTSP clients Accumulate all NAL units (except SPS/PPS) into
+          // prebuffer_sample, flush on frameEnd
+          if (global_video[encChn]->prebuffer &&
+              global_video[encChn]->prebuffer->isEnabled()) {
             // Skip VPS/SPS/PPS for prebuffer (they're in the avcC/hvcC)
             if (!(nal_is_vps || nal_is_sps || nal_is_pps) && payload_len > 0) {
               // Set timestamp from first NAL unit of frame
@@ -815,7 +906,8 @@ void VideoWorker::run() {
         // Even if last write failed silently in edge cases,
         // call callback again to ensure last packet is processed
         if (global_video[encChn]->hasDataCallback && stream.packCount > 0) {
-          std::unique_lock<std::mutex> lock_stream{global_video[encChn]->onDataCallbackLock};
+          std::unique_lock<std::mutex> lock_stream{
+              global_video[encChn]->onDataCallbackLock};
           if (global_video[encChn]->onDataCallback) {
             global_video[encChn]->onDataCallback();
           }
@@ -823,7 +915,8 @@ void VideoWorker::run() {
 
         IMP_Encoder_ReleaseStream(encChn, &stream);
 
-        ms = WorkerUtils::getMonotonicTimeDiffInMs(&global_video[encChn]->stream->stats.ts);
+        ms = WorkerUtils::getMonotonicTimeDiffInMs(
+            &global_video[encChn]->stream->stats.ts);
         if (ms > 1000) {
           /* currently we write into osd and stream stats,
            * osd will be removed and redesigned in future
@@ -836,8 +929,10 @@ void VideoWorker::run() {
           const uint32_t observed_fps = fps;
           fps = 0;
           bps = 0;
-          WorkerUtils::getMonotonicTimeOfDay(&global_video[encChn]->stream->stats.ts);
-          global_video[encChn]->stream->osd.stats.ts = global_video[encChn]->stream->stats.ts;
+          WorkerUtils::getMonotonicTimeOfDay(
+              &global_video[encChn]->stream->stats.ts);
+          global_video[encChn]->stream->osd.stats.ts =
+              global_video[encChn]->stream->stats.ts;
           /*
           IMPEncoderCHNStat encChnStats;
           IMP_Encoder_Query(channel->encChn, &encChnStats);
@@ -853,22 +948,26 @@ void VideoWorker::run() {
             IMP_Encoder_RequestIDR(encChn);
             global_video[encChn]->idr_fix--;
           }
-          publish_video_runtime_status(*global_video[encChn], observed_fps,
-                                       producer_last_wall_delta_us, producer_last_raw_delta_us,
-                                       global_video[encChn]->idr);
+          publish_video_runtime_status(
+              *global_video[encChn], observed_fps, producer_last_wall_delta_us,
+              producer_last_raw_delta_us, global_video[encChn]->idr);
         }
       } else {
         error_count++;
-        LOG_DDEBUG("IMP_Encoder_PollingStream(" << encChn << ", " << cfg->general.imp_polling_timeout_ms << ") timeout !");
+        LOG_DDEBUG("IMP_Encoder_PollingStream("
+                   << encChn << ", " << cfg->general.imp_polling_timeout_ms
+                   << ") timeout !");
       }
-    } else if (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-               !global_video[encChn]->run_for_jpeg && !bootstrap_requested &&
-               !global_force_video_active && !prebuffer_active) {
-      LOG_DDEBUG("VIDEO LOCK" << " channel:" << encChn
-                              << " hasCallbackIsNull:" << (global_video[encChn]->onDataCallback == nullptr)
-                              << " restartVideo:" << global_restart_video
-                              << " runForJpeg:" << global_video[encChn]->run_for_jpeg
-                              << " bootstrapRequested:" << bootstrap_requested);
+    } else if (global_video[encChn]->onDataCallback == nullptr &&
+               !global_restart_video && !global_video[encChn]->run_for_jpeg &&
+               !bootstrap_requested && !global_force_video_active &&
+               !prebuffer_active) {
+      LOG_DDEBUG("VIDEO LOCK"
+                 << " channel:" << encChn << " hasCallbackIsNull:"
+                 << (global_video[encChn]->onDataCallback == nullptr)
+                 << " restartVideo:" << global_restart_video
+                 << " runForJpeg:" << global_video[encChn]->run_for_jpeg
+                 << " bootstrapRequested:" << bootstrap_requested);
 
       global_video[encChn]->stream->stats.bps = 0;
       global_video[encChn]->stream->stats.fps = 0;
@@ -877,18 +976,26 @@ void VideoWorker::run() {
 
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_video[encChn]->active = false;
-      // Also check prebuffer_active to prevent sleeping when prebuffer needs frames
+      // Also check prebuffer_active to prevent sleeping when prebuffer needs
+      // frames
 #ifdef PREBUFFER_ENABLED
-      bool prebuffer_active_inner = global_video[encChn]->prebuffer && global_video[encChn]->prebuffer->isEnabled();
+      bool prebuffer_active_inner =
+          global_video[encChn]->prebuffer &&
+          global_video[encChn]->prebuffer->isEnabled();
 #else
       bool prebuffer_active_inner = false;
 #endif
-      bool bootstrap_requested_inner = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
-      while (global_video[encChn]->onDataCallback == nullptr && !global_restart_video &&
-             !global_video[encChn]->run_for_jpeg && !bootstrap_requested_inner &&
-             !global_force_video_active && !prebuffer_active_inner) {
+      bool bootstrap_requested_inner =
+          global_video[encChn]->bootstrap_requested.load(
+              std::memory_order_relaxed);
+      while (global_video[encChn]->onDataCallback == nullptr &&
+             !global_restart_video && !global_video[encChn]->run_for_jpeg &&
+             !bootstrap_requested_inner && !global_force_video_active &&
+             !prebuffer_active_inner) {
         global_video[encChn]->should_grab_frames.wait(lock_stream);
-        bootstrap_requested_inner = global_video[encChn]->bootstrap_requested.load(std::memory_order_relaxed);
+        bootstrap_requested_inner =
+            global_video[encChn]->bootstrap_requested.load(
+                std::memory_order_relaxed);
       }
 
       global_video[encChn]->active = true;
@@ -911,16 +1018,19 @@ void *VideoWorker::thread_entry(void *arg) {
 
   int ret;
 
-  if (encChn == 1 && stream_state->encGrp == 0 && global_video[0] && global_video[0]->imp_framesource) {
+  if (encChn == 1 && stream_state->encGrp == 0 && global_video[0] &&
+      global_video[0]->imp_framesource) {
     stream_state->imp_framesource = global_video[0]->imp_framesource;
     stream_state->owns_framesource = false;
   } else {
     stream_state->owns_framesource = true;
-    stream_state->imp_framesource = IMPFramesource::createNew(stream_state->stream, &cfg->sensor, stream_state->fsChn,
-                                                              stream_state->sourceChn);
+    stream_state->imp_framesource =
+        IMPFramesource::createNew(stream_state->stream, &cfg->sensor,
+                                  stream_state->fsChn, stream_state->sourceChn);
   }
   stream_state->imp_encoder =
-      IMPEncoder::createNew(stream_state->stream, encChn, stream_state->encGrp, stream_state->fsChn, stream_state->name);
+      IMPEncoder::createNew(stream_state->stream, encChn, stream_state->encGrp,
+                            stream_state->fsChn, stream_state->name);
   if (!stream_state->imp_encoder) {
     LOG_ERROR("Failed to create encoder for stream " << encChn);
     sh->has_started.release();
@@ -940,12 +1050,14 @@ void *VideoWorker::thread_entry(void *arg) {
   {
     std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
     global_video[encChn]->privacy_mask.reset();
-    global_video[encChn]->privacy_mask = std::make_shared<VideoPrivacyMask>(encChn, global_video[encChn]->stream);
+    global_video[encChn]->privacy_mask = std::make_shared<VideoPrivacyMask>(
+        encChn, global_video[encChn]->stream);
     privacy_mask = global_video[encChn]->privacy_mask;
   }
 
   if (privacy_mask) {
-    bool desired = global_video[encChn]->privacy_requested.load(std::memory_order_relaxed);
+    bool desired =
+        global_video[encChn]->privacy_requested.load(std::memory_order_relaxed);
     if (desired) {
       privacy_mask->setEnabled(true);
     }
@@ -958,13 +1070,12 @@ void *VideoWorker::thread_entry(void *arg) {
   // Initialize prebuffer if enabled
   if (cfg->recorder.prebuffer_enabled) {
     global_video[encChn]->prebuffer = std::make_unique<PreTriggerBuffer>();
-    int fps = global_video[encChn]->stream ? global_video[encChn]->stream->fps : 25;
+    int fps =
+        global_video[encChn]->stream ? global_video[encChn]->stream->fps : 25;
     bool init_success = global_video[encChn]->prebuffer->init(
-        cfg->recorder.prebuffer_seconds,
-        fps,
+        cfg->recorder.prebuffer_seconds, fps,
         cfg->recorder.prebuffer_max_memory_mb,
-        cfg->recorder.prebuffer_keyframe_only
-    );
+        cfg->recorder.prebuffer_keyframe_only);
     if (init_success) {
       LOG_INFO("PreTriggerBuffer initialized for channel " << encChn);
     } else {
@@ -985,7 +1096,8 @@ void *VideoWorker::thread_entry(void *arg) {
   // forward timestamp jump visible to the first RTSP client that connects.
   IMP_Encoder_RequestIDR(encChn);
   IMP_Encoder_FlushStream(encChn);
-  LOG_DEBUG("IMPEncoder flush after StartRecvPic(" << encChn << ") to clear startup timestamp transition");
+  LOG_DEBUG("IMPEncoder flush after StartRecvPic("
+            << encChn << ") to clear startup timestamp transition");
 
   /* 'active' indicates, the thread is activly polling and grabbing images
    * 'running' describes the runlevel of the thread, if this value is set to
@@ -1005,7 +1117,8 @@ void *VideoWorker::thread_entry(void *arg) {
     global_video[encChn]->imp_encoder = nullptr;
   }
 
-  if (global_video[encChn]->imp_framesource && global_video[encChn]->owns_framesource) {
+  if (global_video[encChn]->imp_framesource &&
+      global_video[encChn]->owns_framesource) {
     global_video[encChn]->imp_framesource->disable();
     delete global_video[encChn]->imp_framesource;
   }

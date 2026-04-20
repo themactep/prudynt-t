@@ -10,7 +10,8 @@ bool RTSPStatus::initialize() {
   std::lock_guard<std::mutex> lock(statusMutex);
 
   if (!ensureBaseDirectory()) {
-    LOG_ERROR("RTSPStatus: failed to create base directory: " << STATUS_BASE_DIR);
+    LOG_ERROR(
+        "RTSPStatus: failed to create base directory: " << STATUS_BASE_DIR);
     return false;
   }
 
@@ -32,7 +33,8 @@ void RTSPStatus::cleanup() {
   activeStreams.clear();
 }
 
-bool RTSPStatus::updateStreamStatus(const std::string &streamName, const StreamInfo &info) {
+bool RTSPStatus::updateStreamStatus(const std::string &streamName,
+                                    const StreamInfo &info) {
   std::lock_guard<std::mutex> lock(statusMutex);
 
   if (!ensureBaseDirectory()) {
@@ -41,7 +43,8 @@ bool RTSPStatus::updateStreamStatus(const std::string &streamName, const StreamI
   }
 
   if (!createStreamDirectory(streamName)) {
-    LOG_ERROR("RTSPStatus: failed to create stream directory for " << streamName);
+    LOG_ERROR("RTSPStatus: failed to create stream directory for "
+              << streamName);
     return false;
   }
 
@@ -52,20 +55,24 @@ bool RTSPStatus::updateStreamStatus(const std::string &streamName, const StreamI
   success &= writeParameter(streamName, "height", std::to_string(info.height));
   success &= writeParameter(streamName, "endpoint", info.endpoint);
   success &= writeParameter(streamName, "url", info.url);
-  success &= writeParameter(streamName, "bitrate", std::to_string(info.bitrate));
+  success &=
+      writeParameter(streamName, "bitrate", std::to_string(info.bitrate));
   success &= writeParameter(streamName, "mode", info.mode);
-  success &= writeParameter(streamName, "enabled", info.enabled ? "true" : "false");
+  success &=
+      writeParameter(streamName, "enabled", info.enabled ? "true" : "false");
 
   if (success) {
     activeStreams[streamName] = info;
   } else {
-    LOG_ERROR("RTSPStatus: failed to write one or more parameters for " << streamName);
+    LOG_ERROR("RTSPStatus: failed to write one or more parameters for "
+              << streamName);
   }
 
   return success;
 }
 
-bool RTSPStatus::writeCustomParameter(const std::string &streamName, const std::string &parameter,
+bool RTSPStatus::writeCustomParameter(const std::string &streamName,
+                                      const std::string &parameter,
                                       const std::string &value) {
   std::lock_guard<std::mutex> lock(statusMutex);
 
@@ -75,7 +82,8 @@ bool RTSPStatus::writeCustomParameter(const std::string &streamName, const std::
   }
 
   if (!createStreamDirectory(streamName)) {
-    LOG_ERROR("RTSPStatus: failed to create stream directory for " << streamName);
+    LOG_ERROR("RTSPStatus: failed to create stream directory for "
+              << streamName);
     return false;
   }
 
@@ -95,7 +103,8 @@ bool RTSPStatus::removeStreamStatus(const std::string &streamName) {
   return success;
 }
 
-RTSPStatus::StreamInfo RTSPStatus::getStreamStatus(const std::string &streamName) {
+RTSPStatus::StreamInfo
+RTSPStatus::getStreamStatus(const std::string &streamName) {
   std::lock_guard<std::mutex> lock(statusMutex);
 
   auto it = activeStreams.find(streamName);
@@ -108,7 +117,8 @@ RTSPStatus::StreamInfo RTSPStatus::getStreamStatus(const std::string &streamName
 
 bool RTSPStatus::isAvailable() {
   std::lock_guard<std::mutex> lock(statusMutex);
-  return std::filesystem::exists(STATUS_BASE_DIR) && std::filesystem::is_directory(STATUS_BASE_DIR);
+  return std::filesystem::exists(STATUS_BASE_DIR) &&
+         std::filesystem::is_directory(STATUS_BASE_DIR);
 }
 
 std::vector<std::string> RTSPStatus::getActiveStreams() {
@@ -131,12 +141,14 @@ bool RTSPStatus::createStreamDirectory(const std::string &streamName) {
     std::filesystem::create_directories(streamDir);
     return true;
   } catch (const std::exception &e) {
-    LOG_ERROR("RTSPStatus: failed to create stream directory " << streamDir << ": " << e.what());
+    LOG_ERROR("RTSPStatus: failed to create stream directory "
+              << streamDir << ": " << e.what());
     return false;
   }
 }
 
-bool RTSPStatus::writeParameter(const std::string &streamName, const std::string &parameter,
+bool RTSPStatus::writeParameter(const std::string &streamName,
+                                const std::string &parameter,
                                 const std::string &value) {
   std::string filePath = STATUS_BASE_DIR + streamName + "/" + parameter;
 
@@ -165,7 +177,8 @@ bool RTSPStatus::removeStreamDirectory(const std::string &streamName) {
     }
     return true;
   } catch (const std::exception &e) {
-    LOG_ERROR("RTSPStatus: failed to remove stream directory " << streamDir << ": " << e.what());
+    LOG_ERROR("RTSPStatus: failed to remove stream directory "
+              << streamDir << ": " << e.what());
     return false;
   }
 }
@@ -177,7 +190,8 @@ bool RTSPStatus::ensureBaseDirectory() {
     }
     return true;
   } catch (const std::exception &e) {
-    LOG_ERROR("RTSPStatus: failed to ensure base directory " << STATUS_BASE_DIR << ": " << e.what());
+    LOG_ERROR("RTSPStatus: failed to ensure base directory "
+              << STATUS_BASE_DIR << ": " << e.what());
     return false;
   }
 }

@@ -6,18 +6,18 @@
 #include "globals.hpp"
 #include "imp_hal.hpp"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <filesystem>
 #include <limits>
 #include <string>
-#include <thread>
-#include <cerrno>
-#include <fcntl.h>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 
 using namespace std::chrono;
@@ -102,16 +102,19 @@ static inline int clampi(int v, int lo, int hi) {
 
 static inline int ev_from_percent(const Profile &pr, int pct) {
   pct = clampi(pct, 0, 100);
-  long long range = static_cast<long long>(pr.EVmax) - static_cast<long long>(pr.EVmin);
+  long long range =
+      static_cast<long long>(pr.EVmax) - static_cast<long long>(pr.EVmin);
   long long ev = static_cast<long long>(pr.EVmax) - (range * pct) / 100LL;
   return static_cast<int>(ev);
 }
 
 static inline int percent_from_ev(const Profile &pr, int ev) {
-  long long range = static_cast<long long>(pr.EVmax) - static_cast<long long>(pr.EVmin);
+  long long range =
+      static_cast<long long>(pr.EVmax) - static_cast<long long>(pr.EVmin);
   if (range <= 0)
     return 0;
-  long long num = (static_cast<long long>(pr.EVmax) - static_cast<long long>(ev)) * 100LL;
+  long long num =
+      (static_cast<long long>(pr.EVmax) - static_cast<long long>(ev)) * 100LL;
   int pct = static_cast<int>(num / range);
   return clampi(pct, 0, 100);
 }
@@ -131,7 +134,8 @@ static inline int brightness_percent_from_ev(const Profile &pr,
     long long nominal_range = dark_ev - bright_ev;
     long long bright_extended = bright_ev - (nominal_range / 2);
     long long dark_extended = dark_ev + (nominal_range / 2);
-    long long extended_range = dark_extended - bright_extended; // Double the range
+    long long extended_range =
+        dark_extended - bright_extended; // Double the range
 
     if (extended_range > 0) {
       long long num = (static_cast<long long>(ev) - bright_extended) * 100LL;
@@ -156,15 +160,20 @@ static void export_brightness_value(int pct, const char *mode) {
   std::error_code ec;
   fs::create_directories(kPrudyntRunDir, ec);
   if (ec && daynight_should_log(Logger::DEBUG)) {
-    LOG_DEBUG("DayNight: failed to create run directory " << kPrudyntRunDir << ": " << ec.message());
+    LOG_DEBUG("DayNight: failed to create run directory "
+              << kPrudyntRunDir << ": " << ec.message());
   }
 
   if (pct < 0) {
-    if (::unlink(kBrightnessPath) != 0 && errno != ENOENT && daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: failed to unlink " << kBrightnessPath << ": " << strerror(errno));
+    if (::unlink(kBrightnessPath) != 0 && errno != ENOENT &&
+        daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to unlink " << kBrightnessPath << ": "
+                                              << strerror(errno));
     }
-    if (::unlink(kModePath) != 0 && errno != ENOENT && daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: failed to unlink " << kModePath << ": " << strerror(errno));
+    if (::unlink(kModePath) != 0 && errno != ENOENT &&
+        daynight_should_log(Logger::DEBUG)) {
+      LOG_DEBUG("DayNight: failed to unlink " << kModePath << ": "
+                                              << strerror(errno));
     }
     last_written_pct = pct;
     last_written_mode.clear();
@@ -179,12 +188,14 @@ static void export_brightness_value(int pct, const char *mode) {
   int fd = ::open(kBrightnessPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (fd < 0) {
     if (daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: failed to open " << kBrightnessPath << ": " << strerror(errno));
+      LOG_DEBUG("DayNight: failed to open " << kBrightnessPath << ": "
+                                            << strerror(errno));
     }
   } else {
     ssize_t written = ::write(fd, buf, len);
     if (written != len && daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: short write to " << kBrightnessPath << ": " << strerror(errno));
+      LOG_DEBUG("DayNight: short write to " << kBrightnessPath << ": "
+                                            << strerror(errno));
     }
     ::close(fd);
   }
@@ -192,16 +203,20 @@ static void export_brightness_value(int pct, const char *mode) {
   int mode_fd = ::open(kModePath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (mode_fd < 0) {
     if (daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: failed to open " << kModePath << ": " << strerror(errno));
+      LOG_DEBUG("DayNight: failed to open " << kModePath << ": "
+                                            << strerror(errno));
     }
   } else {
     size_t mode_len = std::strlen(mode_str);
-    if (::write(mode_fd, mode_str, mode_len) != static_cast<ssize_t>(mode_len) &&
+    if (::write(mode_fd, mode_str, mode_len) !=
+            static_cast<ssize_t>(mode_len) &&
         daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: short write to " << kModePath << ": " << strerror(errno));
+      LOG_DEBUG("DayNight: short write to " << kModePath << ": "
+                                            << strerror(errno));
     }
     if (::write(mode_fd, "\n", 1) != 1 && daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: failed to terminate " << kModePath << ": " << strerror(errno));
+      LOG_DEBUG("DayNight: failed to terminate " << kModePath << ": "
+                                                 << strerror(errno));
     }
     ::close(mode_fd);
   }
@@ -219,7 +234,8 @@ static bool is_within_schedule() {
   const char *start_at = cfg->daynight.schedule.start_at;
   const char *stop_at = cfg->daynight.schedule.stop_at;
 
-  if (!start_at || !stop_at || std::strlen(start_at) == 0 || std::strlen(stop_at) == 0) {
+  if (!start_at || !stop_at || std::strlen(start_at) == 0 ||
+      std::strlen(stop_at) == 0) {
     return true; // No times configured, always active
   }
 
@@ -263,7 +279,9 @@ static int read_awb(int &out_gr, int &out_gb) {
 
 static void apply_mode(DayNightAlgo::Mode m) {
   const char *script_cfg = cfg->get<const char *>("daynight.script_path");
-  const char *script = (script_cfg && std::strlen(script_cfg) > 0) ? script_cfg : "/sbin/daynight";
+  const char *script = (script_cfg && std::strlen(script_cfg) > 0)
+                           ? script_cfg
+                           : "/sbin/daynight";
 
   if (m == DayNightAlgo::Mode::Day) {
     // Switch to day bin if configured and enabled
@@ -272,7 +290,8 @@ static void apply_mode(DayNightAlgo::Mode m) {
       if (day_bin && day_bin[0] != '\0') {
         int bin_ret = hal::isp::switch_bin(day_bin);
         if (bin_ret != 0 && daynight_should_log(Logger::WARN)) {
-          LOG_WARN("Failed to switch to day bin '" << day_bin << "': " << bin_ret);
+          LOG_WARN("Failed to switch to day bin '" << day_bin
+                                                   << "': " << bin_ret);
         } else if (bin_ret == 0 && daynight_should_log(Logger::INFO)) {
           LOG_INFO("Switched to day IQ bin: " << day_bin);
         }
@@ -303,7 +322,8 @@ static void apply_mode(DayNightAlgo::Mode m) {
       if (night_bin && night_bin[0] != '\0') {
         int bin_ret = hal::isp::switch_bin(night_bin);
         if (bin_ret != 0 && daynight_should_log(Logger::WARN)) {
-          LOG_WARN("Failed to switch to night bin '" << night_bin << "': " << bin_ret);
+          LOG_WARN("Failed to switch to night bin '" << night_bin
+                                                     << "': " << bin_ret);
         } else if (bin_ret == 0 && daynight_should_log(Logger::INFO)) {
           LOG_INFO("Switched to night IQ bin: " << night_bin);
         }
@@ -318,7 +338,8 @@ static void apply_mode(DayNightAlgo::Mode m) {
           LOG_WARN("SetISPRunningMode(NIGHT) failed: " << ret);
         }
       } else {
-        cfg->image.running_mode = static_cast<int>(hal::isp::RunningMode::Night);
+        cfg->image.running_mode =
+            static_cast<int>(hal::isp::RunningMode::Night);
       }
     }
     std::string cmd = std::string(script) + " night";
@@ -358,7 +379,8 @@ void *thread_entry(void *arg) {
   (void)arg;
   refresh_daynight_log_level();
   if (daynight_should_log(Logger::INFO)) {
-    LOG_INFO("DayNightWorker: starting (SIMPLE total_gain algorithm, loglevel=" << daynight_log_level_label << ")");
+    LOG_INFO("DayNightWorker: starting (SIMPLE total_gain algorithm, loglevel="
+             << daynight_log_level_label << ")");
   }
 
   // ============================================================================
@@ -366,7 +388,8 @@ void *thread_entry(void *arg) {
   // ============================================================================
   // The original algorithm below is disabled because:
   // 1. GB/GR gains are always 0 on T23 platforms (ISP limitation)
-  // 2. EV thresholds are miscalibrated (expects 42k-2.2M range, actual is 1k-30k)
+  // 2. EV thresholds are miscalibrated (expects 42k-2.2M range, actual is
+  // 1k-30k)
   // 3. Brightness percentage calculation is broken due to wrong EV ranges
   //
   // This code is preserved for reference but not executed.
@@ -381,7 +404,8 @@ void *thread_entry(void *arg) {
 
   // Anti-flapping: prevent rapid mode changes
   int anti_flap_cooldown = 0;
-  const int anti_flap_iterations = 30; // ~30 seconds minimum between automatic switches
+  const int anti_flap_iterations = 30; // ~30 seconds minimum between automatic
+  switches
 
   // SoC profile mapping
   Profile pr = get_profile();
@@ -401,7 +425,8 @@ void *thread_entry(void *arg) {
     params.ev_day_low_primary = ev_day_low_primary_cfg;
     // default to primary if secondary not set
     params.ev_day_low_secondary =
-        (ev_day_low_secondary_cfg > 0) ? ev_day_low_secondary_cfg : ev_day_low_primary_cfg;
+        (ev_day_low_secondary_cfg > 0) ? ev_day_low_secondary_cfg :
+  ev_day_low_primary_cfg;
     // derive counters from tolerance percent if provided
     params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25;
     params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
@@ -411,8 +436,8 @@ void *thread_entry(void *arg) {
     params.ev_day_low_primary = ev_from_percent(pr, above_pct);
     int secondary_pct = clampi(above_pct + pr.sec_margin_percent, 0, 100);
     params.ev_day_low_secondary = ev_from_percent(pr, secondary_pct);
-    params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25; // +1 per 25%
-    params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
+    params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25; // +1
+  per 25% params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
   }
 
   params.gb_gain_delta = pr.gb_delta;
@@ -433,18 +458,17 @@ void *thread_entry(void *arg) {
     refresh_daynight_log_level();
 
     // Check for manual force_mode override
-    const char *force_mode_str = cfg->daynight.force_mode.load(std::memory_order_relaxed);
-    if (force_mode_str != nullptr) {
-      DayNightAlgo::Mode forced_mode = DayNightAlgo::Mode::Unknown;
-      if (std::strcmp(force_mode_str, "day") == 0) {
-        forced_mode = DayNightAlgo::Mode::Day;
-      } else if (std::strcmp(force_mode_str, "night") == 0) {
-        forced_mode = DayNightAlgo::Mode::Night;
+    const char *force_mode_str =
+  cfg->daynight.force_mode.load(std::memory_order_relaxed); if (force_mode_str
+  != nullptr) { DayNightAlgo::Mode forced_mode = DayNightAlgo::Mode::Unknown; if
+  (std::strcmp(force_mode_str, "day") == 0) { forced_mode =
+  DayNightAlgo::Mode::Day; } else if (std::strcmp(force_mode_str, "night") == 0)
+  { forced_mode = DayNightAlgo::Mode::Night;
       }
 
-      if (forced_mode != DayNightAlgo::Mode::Unknown && forced_mode != current) {
-        if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: applying forced mode " << force_mode_str);
+      if (forced_mode != DayNightAlgo::Mode::Unknown && forced_mode != current)
+  { if (daynight_should_log(Logger::INFO)) { LOG_INFO("DayNight: applying forced
+  mode " << force_mode_str);
         }
         apply_mode(forced_mode);
         current = forced_mode;
@@ -452,10 +476,10 @@ void *thread_entry(void *arg) {
           DayNightAlgo::on_enter_night(params, state);
         else if (current == DayNightAlgo::Mode::Day)
           DayNightAlgo::on_enter_day(state);
-        cfg->daynight.live_mode.store(force_mode_str, std::memory_order_relaxed);
-        initial_mode_applied = true;
-        // Skip automatic algorithm for next ~10 seconds to let forced mode stick
-        skip_auto_switch_iterations = 10;
+        cfg->daynight.live_mode.store(force_mode_str,
+  std::memory_order_relaxed); initial_mode_applied = true;
+        // Skip automatic algorithm for next ~10 seconds to let forced mode
+  stick skip_auto_switch_iterations = 10;
       }
       // Clear the force flag after applying
       cfg->daynight.force_mode.store(nullptr, std::memory_order_relaxed);
@@ -477,22 +501,27 @@ void *thread_entry(void *arg) {
 
     // Live status update for metrics - export ALL raw sensor values
     int bright_pct = brightness_percent_from_ev(pr, params, ev);
-    cfg->daynight.live_brightness_percent.store(bright_pct, std::memory_order_relaxed);
-    cfg->daynight.live_ev.store(ev, std::memory_order_relaxed);
-    cfg->daynight.live_gb.store(gb, std::memory_order_relaxed);
-    cfg->daynight.live_gr.store(gr, std::memory_order_relaxed);
-    cfg->daynight.live_total_gain.store(total_gain, std::memory_order_relaxed);
-    cfg->daynight.live_ae_luma.store(ae_luma, std::memory_order_relaxed);
-    cfg->daynight.live_awb_color_temp.store(awb_ct, std::memory_order_relaxed);
+    cfg->daynight.live_brightness_percent.store(bright_pct,
+  std::memory_order_relaxed); cfg->daynight.live_ev.store(ev,
+  std::memory_order_relaxed); cfg->daynight.live_gb.store(gb,
+  std::memory_order_relaxed); cfg->daynight.live_gr.store(gr,
+  std::memory_order_relaxed); cfg->daynight.live_total_gain.store(total_gain,
+  std::memory_order_relaxed); cfg->daynight.live_ae_luma.store(ae_luma,
+  std::memory_order_relaxed); cfg->daynight.live_awb_color_temp.store(awb_ct,
+  std::memory_order_relaxed);
 
     if (daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: brightness%=" << bright_pct << " EV=" << ev << " GB=" << gb << " GR=" << gr
-                                          << " TotalGain=" << total_gain << " AELuma=" << ae_luma
-                                          << " recGB=" << state.gb_gain_record << " nCnt=" << state.night_count
+      LOG_DEBUG("DayNight: brightness%=" << bright_pct << " EV=" << ev << " GB="
+  << gb << " GR=" << gr
+                                          << " TotalGain=" << total_gain << "
+  AELuma=" << ae_luma
+                                          << " recGB=" << state.gb_gain_record
+  << " nCnt=" << state.night_count
                                           << " dCnt=" << state.day_count
-                                          << " ircut=" << (state.ircut_engaged ? "1" : "0") << " -> "
-                                          << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
-                                                         : "HOLD"));
+                                          << " ircut=" << (state.ircut_engaged ?
+  "1" : "0") << " -> "
+                                          << (dec.toggled ? (dec.target ==
+  DayNightAlgo::Mode::Day ? "DAY" : "NIGHT") : "HOLD"));
     }
 
     if (!initial_mode_applied) {
@@ -504,11 +533,10 @@ void *thread_entry(void *arg) {
           DayNightAlgo::on_enter_night(params, state);
         else if (current == DayNightAlgo::Mode::Day)
           DayNightAlgo::on_enter_day(state);
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                      std::memory_order_relaxed);
-        initial_mode_applied = true;
-        if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: applied initial mode "
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day"
+  : "night", std::memory_order_relaxed); initial_mode_applied = true; if
+  (daynight_should_log(Logger::INFO)) { LOG_INFO("DayNight: applied initial mode
+  "
                    << (current == DayNightAlgo::Mode::Day ? "day" : "night"));
         }
       }
@@ -518,7 +546,8 @@ void *thread_entry(void *arg) {
       // Skip automatic switching if we just forced a mode
       if (skip_auto_switch_iterations > 0) {
         if (daynight_should_log(Logger::DEBUG)) {
-          LOG_DEBUG("DayNight: skipping automatic switch (forced mode cooldown: "
+          LOG_DEBUG("DayNight: skipping automatic switch (forced mode cooldown:
+  "
                     << skip_auto_switch_iterations << " iterations left)");
         }
         skip_auto_switch_iterations--;
@@ -537,12 +566,13 @@ void *thread_entry(void *arg) {
         else if (current == DayNightAlgo::Mode::Day)
           DayNightAlgo::on_enter_day(state);
         // reflect new mode in metrics
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                      std::memory_order_relaxed);
+        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day"
+  : "night", std::memory_order_relaxed);
         // Set anti-flap cooldown after successful switch
         anti_flap_cooldown = anti_flap_iterations;
         if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: automatic mode switch completed, cooldown set for "
+          LOG_INFO("DayNight: automatic mode switch completed, cooldown set for
+  "
                    << anti_flap_iterations << " iterations");
         }
       }
@@ -558,9 +588,9 @@ void *thread_entry(void *arg) {
 
     const char *mode_str = (current == DayNightAlgo::Mode::Day)
                    ? "day"
-                   : (current == DayNightAlgo::Mode::Night ? "night" : "unknown");
-    cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
-    export_brightness_value(bright_pct, mode_str);
+                   : (current == DayNightAlgo::Mode::Night ? "night" :
+  "unknown"); cfg->daynight.live_mode.store(mode_str,
+  std::memory_order_relaxed); export_brightness_value(bright_pct, mode_str);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
   }
@@ -575,17 +605,26 @@ void *thread_entry(void *arg) {
   DayNightAlgo::simple_init(simple_state);
 
   // Load thresholds from config
-  simple_params.total_gain_night_threshold = cfg->get<int>("daynight.total_gain_night_threshold");
-  simple_params.total_gain_day_threshold = cfg->get<int>("daynight.total_gain_day_threshold");
-  simple_params.night_count_threshold = cfg->get<int>("daynight.night_count_threshold");
-  simple_params.day_count_threshold = cfg->get<int>("daynight.day_count_threshold");
-  simple_params.ev_night_threshold = cfg->get<int>("daynight.ev_night_threshold");
+  simple_params.total_gain_night_threshold =
+      cfg->get<int>("daynight.total_gain_night_threshold");
+  simple_params.total_gain_day_threshold =
+      cfg->get<int>("daynight.total_gain_day_threshold");
+  simple_params.night_count_threshold =
+      cfg->get<int>("daynight.night_count_threshold");
+  simple_params.day_count_threshold =
+      cfg->get<int>("daynight.day_count_threshold");
+  simple_params.ev_night_threshold =
+      cfg->get<int>("daynight.ev_night_threshold");
   simple_params.ev_day_threshold = cfg->get<int>("daynight.ev_day_threshold");
 
-  if (simple_params.total_gain_day_threshold >= simple_params.total_gain_night_threshold) {
-    LOG_WARN("DayNight: day_threshold (" << simple_params.total_gain_day_threshold
-             << ") >= night_threshold (" << simple_params.total_gain_night_threshold
-             << ") — hysteresis zone is inverted, automatic switching will not work");
+  if (simple_params.total_gain_day_threshold >=
+      simple_params.total_gain_night_threshold) {
+    LOG_WARN("DayNight: day_threshold ("
+             << simple_params.total_gain_day_threshold
+             << ") >= night_threshold ("
+             << simple_params.total_gain_night_threshold
+             << ") — hysteresis zone is inverted, automatic switching will not "
+                "work");
   }
 
   int interval_ms = cfg->get<int>("daynight.sample_interval_ms");
@@ -599,7 +638,7 @@ void *thread_entry(void *arg) {
   // initial mode. Prevents a single under-settled AE sample (TC-2) from
   // locking the wrong mode at boot.
   int initial_night_confirm = 0;
-  int initial_day_confirm   = 0;
+  int initial_day_confirm = 0;
 
   // If initial mode cannot be determined within this many samples (gain stays
   // in the hysteresis zone), default to Night — the safe fallback for the
@@ -614,7 +653,8 @@ void *thread_entry(void *arg) {
     refresh_daynight_log_level();
 
     // Check for manual force_mode override
-    const char *force_mode_str = cfg->daynight.force_mode.load(std::memory_order_relaxed);
+    const char *force_mode_str =
+        cfg->daynight.force_mode.load(std::memory_order_relaxed);
     if (force_mode_str != nullptr) {
       DayNightAlgo::Mode forced_mode = DayNightAlgo::Mode::Unknown;
       if (std::strcmp(force_mode_str, "day") == 0) {
@@ -623,16 +663,19 @@ void *thread_entry(void *arg) {
         forced_mode = DayNightAlgo::Mode::Night;
       }
 
-      if (forced_mode != DayNightAlgo::Mode::Unknown && forced_mode != current) {
+      if (forced_mode != DayNightAlgo::Mode::Unknown &&
+          forced_mode != current) {
         if (daynight_should_log(Logger::INFO)) {
           LOG_INFO("DayNight: applying forced mode " << force_mode_str);
         }
         apply_mode(forced_mode);
         current = forced_mode;
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
-        cfg->daynight.live_mode.store(force_mode_str, std::memory_order_relaxed);
+        cfg->daynight.live_mode.store(force_mode_str,
+                                      std::memory_order_relaxed);
         initial_mode_applied = true;
-        // Skip automatic algorithm for next ~10 seconds to let forced mode stick
+        // Skip automatic algorithm for next ~10 seconds to let forced mode
+        // stick
         anti_flap_cooldown = 10;
       }
       cfg->daynight.force_mode.store(nullptr, std::memory_order_relaxed);
@@ -660,29 +703,35 @@ void *thread_entry(void *arg) {
     Profile pr = get_profile();
     DayNightAlgo::Params legacy_params{};
     int bright_pct = brightness_percent_from_ev(pr, legacy_params, ev);
-    cfg->daynight.live_brightness_percent.store(bright_pct, std::memory_order_relaxed);
+    cfg->daynight.live_brightness_percent.store(bright_pct,
+                                                std::memory_order_relaxed);
 
     // Run the simple algorithm using total_gain (or EV fallback for T10/T20)
     // Only run if within schedule window
     bool within_schedule = is_within_schedule();
-    auto dec = DayNightAlgo::simple_decide(simple_params, simple_state, total_gain, ev);
+    auto dec = DayNightAlgo::simple_decide(simple_params, simple_state,
+                                           total_gain, ev);
 
     if (daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: TotalGain=" << total_gain << " EV=" << ev << " AELuma=" << ae_luma
-                                       << " nCnt=" << simple_state.night_count
-                                       << " dCnt=" << simple_state.day_count
-                                       << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY")
-                                       << " schedule=" << (within_schedule ? "ACTIVE" : "INACTIVE") << " -> "
-                                       << (dec.toggled ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
-                                                      : "HOLD"));
+      LOG_DEBUG(
+          "DayNight: TotalGain="
+          << total_gain << " EV=" << ev << " AELuma=" << ae_luma << " nCnt="
+          << simple_state.night_count << " dCnt=" << simple_state.day_count
+          << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY")
+          << " schedule=" << (within_schedule ? "ACTIVE" : "INACTIVE") << " -> "
+          << (dec.toggled
+                  ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
+                  : "HOLD"));
     }
 
     // Apply initial mode if not set - infer from current sensor readings
-    // IMPORTANT: This happens regardless of schedule to ensure camera starts in correct mode
+    // IMPORTANT: This happens regardless of schedule to ensure camera starts in
+    // correct mode
     if (!initial_mode_applied) {
       DayNightAlgo::Mode initial = DayNightAlgo::Mode::Unknown;
 
-      // Infer initial mode from sensor readings to avoid black screen on boot in dark conditions
+      // Infer initial mode from sensor readings to avoid black screen on boot
+      // in dark conditions
       if (total_gain >= 0) {
         if (total_gain > simple_params.total_gain_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
@@ -710,7 +759,7 @@ void *thread_entry(void *arg) {
       } else {
         // Hysteresis zone — tick down the fallback countdown
         initial_night_confirm = 0;
-        initial_day_confirm   = 0;
+        initial_day_confirm = 0;
         --initial_mode_fallback_countdown;
       }
 
@@ -718,8 +767,9 @@ void *thread_entry(void *arg) {
         apply_mode(initial);
         current = initial;
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                      std::memory_order_relaxed);
+        cfg->daynight.live_mode.store(
+            current == DayNightAlgo::Mode::Day ? "day" : "night",
+            std::memory_order_relaxed);
         // Protect initial Night from an immediate bright-burst flip (TC-8b):
         // the anti_flap path only fires on counter-triggered switches, so set
         // it explicitly here when starting in Night.
@@ -727,10 +777,15 @@ void *thread_entry(void *arg) {
           anti_flap_cooldown = anti_flap_iterations / 2;
         initial_mode_applied = true;
         if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: applied initial mode " << (current == DayNightAlgo::Mode::Day ? "day" : "night")
-                   << " (total_gain=" << total_gain << ", ev=" << ev
-                   << ", confirm=" << (current == DayNightAlgo::Mode::Night ? initial_night_confirm : initial_day_confirm)
-                   << ", " << (within_schedule ? "within schedule" : "outside schedule") << ")");
+          LOG_INFO(
+              "DayNight: applied initial mode "
+              << (current == DayNightAlgo::Mode::Day ? "day" : "night")
+              << " (total_gain=" << total_gain << ", ev=" << ev << ", confirm="
+              << (current == DayNightAlgo::Mode::Night ? initial_night_confirm
+                                                       : initial_day_confirm)
+              << ", "
+              << (within_schedule ? "within schedule" : "outside schedule")
+              << ")");
         }
       } else if (initial_mode_fallback_countdown <= 0) {
         // Gain has been stuck in the hysteresis zone long enough that the
@@ -743,38 +798,45 @@ void *thread_entry(void *arg) {
         cfg->daynight.live_mode.store("day", std::memory_order_relaxed);
         initial_mode_applied = true;
         LOG_INFO("DayNight: initial detection timeout, defaulting to Day"
-                 " (gain stuck in hysteresis zone, total_gain=" << total_gain << ")");
+                 " (gain stuck in hysteresis zone, total_gain="
+                 << total_gain << ")");
       }
     }
 
     // Handle mode switching with anti-flap cooldown
-    // Schedule check ONLY applies to automatic switches, NOT to initial mode detection
-    // This ensures camera starts in correct mode even when booting outside schedule window
+    // Schedule check ONLY applies to automatic switches, NOT to initial mode
+    // detection This ensures camera starts in correct mode even when booting
+    // outside schedule window
     if (dec.toggled && dec.target != current) {
       if (!cfg->daynight.enabled) {
         // Photosensing is disabled globally - skip automatic switching
         if (daynight_should_log(Logger::DEBUG)) {
-          LOG_DEBUG("DayNight: skipping automatic switch (photosensing disabled)");
+          LOG_DEBUG(
+              "DayNight: skipping automatic switch (photosensing disabled)");
         }
       } else if (!within_schedule) {
         // Outside schedule window - skip automatic switching
         if (daynight_should_log(Logger::DEBUG)) {
-          LOG_DEBUG("DayNight: skipping automatic switch (outside schedule window)");
+          LOG_DEBUG(
+              "DayNight: skipping automatic switch (outside schedule window)");
         }
       } else if (anti_flap_cooldown > 0) {
         if (daynight_should_log(Logger::DEBUG)) {
-          LOG_DEBUG("DayNight: skipping switch (anti-flap cooldown: " << anti_flap_cooldown << " iterations)");
+          LOG_DEBUG("DayNight: skipping switch (anti-flap cooldown: "
+                    << anti_flap_cooldown << " iterations)");
         }
         anti_flap_cooldown--;
       } else {
         apply_mode(dec.target);
         current = dec.target;
         simple_state.is_night = (current == DayNightAlgo::Mode::Night);
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day" : "night",
-                                      std::memory_order_relaxed);
+        cfg->daynight.live_mode.store(
+            current == DayNightAlgo::Mode::Day ? "day" : "night",
+            std::memory_order_relaxed);
         anti_flap_cooldown = anti_flap_iterations;
         if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: switched to " << (current == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
+          LOG_INFO("DayNight: switched to "
+                   << (current == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
                    << " (total_gain=" << total_gain << ")");
         }
       }
@@ -782,7 +844,8 @@ void *thread_entry(void *arg) {
       anti_flap_cooldown--;
     }
 
-    const char *mode_str = (current == DayNightAlgo::Mode::Day) ? "day" : "night";
+    const char *mode_str =
+        (current == DayNightAlgo::Mode::Day) ? "day" : "night";
     cfg->daynight.live_mode.store(mode_str, std::memory_order_relaxed);
     export_brightness_value(bright_pct, mode_str);
 
@@ -795,7 +858,8 @@ void *thread_entry(void *arg) {
     sample.ae_luma = ae_luma;
     sample.awb_color_temp = awb_ct;
     sample.daynight_brightness = bright_pct;
-    sample.total_gain_night_threshold = cfg->daynight.total_gain_night_threshold;
+    sample.total_gain_night_threshold =
+        cfg->daynight.total_gain_night_threshold;
     sample.total_gain_day_threshold = cfg->daynight.total_gain_day_threshold;
     sample.daynight_mode = mode_str;
     global_daynight_history.push(sample);

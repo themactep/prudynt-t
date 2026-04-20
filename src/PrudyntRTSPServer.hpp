@@ -5,9 +5,10 @@
 
 class PrudyntRTSPServer : public RTSPServer {
 public:
-  static PrudyntRTSPServer *createNew(UsageEnvironment &env, Port ourPort = 554,
-                                      UserAuthenticationDatabase *authDatabase = nullptr,
-                                      unsigned reclamationSeconds = 65);
+  static PrudyntRTSPServer *
+  createNew(UsageEnvironment &env, Port ourPort = 554,
+            UserAuthenticationDatabase *authDatabase = nullptr,
+            unsigned reclamationSeconds = 65);
 
 protected:
   PrudyntRTSPServer(UsageEnvironment &env, int ourSocketIPv4, int ourSocketIPv6,
@@ -23,7 +24,8 @@ protected:
     virtual void handleCmd_DESCRIBE(char const *urlPreSuffix,
                                     char const *urlSuffix,
                                     char const *fullRequestStr) override;
-    virtual void handleCmd_DESCRIBE_afterLookup(ServerMediaSession *session) override;
+    virtual void
+    handleCmd_DESCRIBE_afterLookup(ServerMediaSession *session) override;
 
   private:
     static bool requestHasBackchannelRequire(char const *fullRequestStr);
@@ -32,8 +34,9 @@ protected:
   };
 
 protected: // redefined virtual function:
-  virtual ClientConnection *createNewClientConnection(
-      int clientSocket, struct sockaddr_storage const &clientAddr) override;
+  virtual ClientConnection *
+  createNewClientConnection(int clientSocket,
+                            struct sockaddr_storage const &clientAddr) override;
 };
 
 #endif // PRUDYNT_RTSP_SERVER_HPP

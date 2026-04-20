@@ -39,7 +39,8 @@ Opus::~Opus() {
 int Opus::open() {
   int opusError;
 
-  encoder = opus_encoder_create(sampleRate, numChn, OPUS_APPLICATION_RESTRICTED_LOWDELAY, &opusError);
+  encoder = opus_encoder_create(
+      sampleRate, numChn, OPUS_APPLICATION_RESTRICTED_LOWDELAY, &opusError);
   if (opusError != OPUS_OK) {
     LOG_ERROR("Failed to create Opus encoder: " << opus_strerror(opusError));
     return -1;
@@ -49,12 +50,14 @@ int Opus::open() {
   int bitrate = cfg->audio.input_bitrate * 1000; // bps
   opusError = opus_encoder_ctl(encoder, OPUS_SET_BITRATE(bitrate));
   if (opusError != OPUS_OK) {
-    LOG_ERROR("Failed to set bitrate (" << bitrate << ") for Opus encoder: " << opus_strerror(opusError));
+    LOG_ERROR("Failed to set bitrate ("
+              << bitrate << ") for Opus encoder: " << opus_strerror(opusError));
   }
 
   opusError = opus_encoder_ctl(encoder, OPUS_GET_BITRATE(&bitrate));
   if (opusError != OPUS_OK) {
-    LOG_ERROR("Failed to get bitrate from Opus encoder: " << opus_strerror(opusError));
+    LOG_ERROR("Failed to get bitrate from Opus encoder: "
+              << opus_strerror(opusError));
     return -1;
   }
 
@@ -74,22 +77,23 @@ int Opus::close() {
 }
 
 int Opus::encode(IMPAudioFrame *data, unsigned char *outbuf, int *outLen) {
-  const int samples_per_channel = (data->len / static_cast<int>(sizeof(int16_t))) / numChn;
+  const int samples_per_channel =
+      (data->len / static_cast<int>(sizeof(int16_t))) / numChn;
   if (!is_valid_opus_frame_size(sampleRate, samples_per_channel)) {
     uint32_t mismatch_count = ++g_opus_mismatch_count;
     RTSPStatus::writeCustomParameter("audio0", "opus_mismatch_count",
                                      std::to_string(mismatch_count));
     if (mismatch_count <= 10 || (mismatch_count % 100) == 0) {
-      LOG_WARN("Opus frame size mismatch: got " << samples_per_channel
-                                                << " samples/ch at " << sampleRate
-                                                << " Hz, dropping frame");
+      LOG_WARN("Opus frame size mismatch: got "
+               << samples_per_channel << " samples/ch at " << sampleRate
+               << " Hz, dropping frame");
     }
     return -1;
   }
 
-  opus_int32 bytesEncoded =
-      opus_encode(encoder, reinterpret_cast<const opus_int16 *>(data->virAddr), samples_per_channel,
-                  reinterpret_cast<unsigned char *>(outbuf), 1024);
+  opus_int32 bytesEncoded = opus_encode(
+      encoder, reinterpret_cast<const opus_int16 *>(data->virAddr),
+      samples_per_channel, reinterpret_cast<unsigned char *>(outbuf), 1024);
 
   if (bytesEncoded < 0) {
     LOG_WARN("Opus encoding failed with error code: " << bytesEncoded);

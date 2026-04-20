@@ -57,7 +57,8 @@ bool parsePosition(const char *position, int &x, int &y) {
   return true;
 }
 
-void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int width, int height) {
+void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int width,
+              int height) {
   if (x < 0 || y < 0 || x >= width || y >= height) {
     return;
   }
@@ -68,8 +69,9 @@ void setPixel(uint8_t *image, int x, int y, const uint8_t *color, int width, int
   image[index + 3] = color[3];
 }
 
-void drawOutline(std::vector<uint8_t> &pixels, const RenderedGlyph &glyph, int originX, int originY, int outline,
-                 int width, int height, const uint8_t *strokeColor) {
+void drawOutline(std::vector<uint8_t> &pixels, const RenderedGlyph &glyph,
+                 int originX, int originY, int outline, int width, int height,
+                 const uint8_t *strokeColor) {
   if (outline <= 0 || glyph.bitmap.empty()) {
     return;
   }
@@ -85,16 +87,20 @@ void drawOutline(std::vector<uint8_t> &pixels, const RenderedGlyph &glyph, int o
           if (alpha == 0) {
             continue;
           }
-          uint8_t combinedAlpha = static_cast<uint8_t>((alpha * strokeColor[3]) / 255);
-          uint8_t color[4] = {strokeColor[0], strokeColor[1], strokeColor[2], combinedAlpha};
-          setPixel(pixels.data(), originX + x + i, originY + y + j, color, width, height);
+          uint8_t combinedAlpha =
+              static_cast<uint8_t>((alpha * strokeColor[3]) / 255);
+          uint8_t color[4] = {strokeColor[0], strokeColor[1], strokeColor[2],
+                              combinedAlpha};
+          setPixel(pixels.data(), originX + x + i, originY + y + j, color,
+                   width, height);
         }
       }
     }
   }
 }
 
-bool renderGlyphSequence(SFT &sft, const std::string &text, std::vector<RenderedGlyph> &glyphs) {
+bool renderGlyphSequence(SFT &sft, const std::string &text,
+                         std::vector<RenderedGlyph> &glyphs) {
   glyphs.clear();
   glyphs.reserve(text.size());
   for (char c : text) {
@@ -128,8 +134,8 @@ bool renderGlyphSequence(SFT &sft, const std::string &text, std::vector<Rendered
   return !glyphs.empty();
 }
 
-void computeTextSize(const std::vector<RenderedGlyph> &glyphs, const SFT &sft, int outline, uint16_t &width,
-                     uint16_t &height) {
+void computeTextSize(const std::vector<RenderedGlyph> &glyphs, const SFT &sft,
+                     int outline, uint16_t &width, uint16_t &height) {
   width = 0;
   height = 0;
   for (const auto &glyph : glyphs) {
@@ -145,15 +151,19 @@ void computeTextSize(const std::vector<RenderedGlyph> &glyphs, const SFT &sft, i
   }
 }
 
-bool drawTextBitmap(const std::vector<RenderedGlyph> &glyphs, const SFT &sft, int outline, unsigned int fontColor,
-                    unsigned int strokeColor, std::vector<uint8_t> &pixels, uint16_t width, uint16_t height) {
+bool drawTextBitmap(const std::vector<RenderedGlyph> &glyphs, const SFT &sft,
+                    int outline, unsigned int fontColor,
+                    unsigned int strokeColor, std::vector<uint8_t> &pixels,
+                    uint16_t width, uint16_t height) {
   pixels.assign(static_cast<size_t>(width) * height * 4, 0);
 
-  uint8_t textColor[4] = {static_cast<uint8_t>(fontColor & 0xFF), static_cast<uint8_t>((fontColor >> 8) & 0xFF),
+  uint8_t textColor[4] = {static_cast<uint8_t>(fontColor & 0xFF),
+                          static_cast<uint8_t>((fontColor >> 8) & 0xFF),
                           static_cast<uint8_t>((fontColor >> 16) & 0xFF),
                           static_cast<uint8_t>((fontColor >> 24) & 0xFF)};
 
-  uint8_t outlineColor[4] = {static_cast<uint8_t>(strokeColor & 0xFF), static_cast<uint8_t>((strokeColor >> 8) & 0xFF),
+  uint8_t outlineColor[4] = {static_cast<uint8_t>(strokeColor & 0xFF),
+                             static_cast<uint8_t>((strokeColor >> 8) & 0xFF),
                              static_cast<uint8_t>((strokeColor >> 16) & 0xFF),
                              static_cast<uint8_t>((strokeColor >> 24) & 0xFF)};
 
@@ -162,7 +172,8 @@ bool drawTextBitmap(const std::vector<RenderedGlyph> &glyphs, const SFT &sft, in
   for (const auto &glyph : glyphs) {
     const int originX = penX + glyph.xmin + outline;
     const int originY = penY + (sft.yScale + glyph.ymin);
-    drawOutline(pixels, glyph, originX, originY, outline, width, height, outlineColor);
+    drawOutline(pixels, glyph, originX, originY, outline, width, height,
+                outlineColor);
     if (!glyph.bitmap.empty()) {
       for (int y = 0; y < glyph.height; ++y) {
         for (int x = 0; x < glyph.width; ++x) {
@@ -171,9 +182,12 @@ bool drawTextBitmap(const std::vector<RenderedGlyph> &glyphs, const SFT &sft, in
           if (alpha == 0) {
             continue;
           }
-          uint8_t combinedAlpha = static_cast<uint8_t>((alpha * textColor[3]) / 255);
-          uint8_t color[4] = {textColor[0], textColor[1], textColor[2], combinedAlpha};
-          setPixel(pixels.data(), originX + x, originY + y, color, width, height);
+          uint8_t combinedAlpha =
+              static_cast<uint8_t>((alpha * textColor[3]) / 255);
+          uint8_t color[4] = {textColor[0], textColor[1], textColor[2],
+                              combinedAlpha};
+          setPixel(pixels.data(), originX + x, originY + y, color, width,
+                   height);
         }
       }
     }
@@ -182,7 +196,8 @@ bool drawTextBitmap(const std::vector<RenderedGlyph> &glyphs, const SFT &sft, in
   return true;
 }
 
-void rotateImage(std::vector<uint8_t> &pixels, uint16_t &width, uint16_t &height, int angle) {
+void rotateImage(std::vector<uint8_t> &pixels, uint16_t &width,
+                 uint16_t &height, int angle) {
   if (pixels.empty() || angle % 360 == 0) {
     return;
   }
@@ -201,8 +216,10 @@ void rotateImage(std::vector<uint8_t> &pixels, uint16_t &width, uint16_t &height
   for (auto &corner : corners) {
     int x = corner[0];
     int y = corner[1];
-    int newX = static_cast<int>(x * std::cos(angleRad) - y * std::sin(angleRad));
-    int newY = static_cast<int>(x * std::sin(angleRad) + y * std::cos(angleRad));
+    int newX =
+        static_cast<int>(x * std::cos(angleRad) - y * std::sin(angleRad));
+    int newY =
+        static_cast<int>(x * std::sin(angleRad) + y * std::cos(angleRad));
     minX = std::min(minX, newX);
     maxX = std::max(maxX, newX);
     minY = std::min(minY, newY);
@@ -216,13 +233,18 @@ void rotateImage(std::vector<uint8_t> &pixels, uint16_t &width, uint16_t &height
   const int newCenterX = newWidth / 2;
   const int newCenterY = newHeight / 2;
 
-  std::vector<uint8_t> rotated(static_cast<size_t>(newWidth) * newHeight * 4, 0);
+  std::vector<uint8_t> rotated(static_cast<size_t>(newWidth) * newHeight * 4,
+                               0);
   for (int y = 0; y < newHeight; ++y) {
     for (int x = 0; x < newWidth; ++x) {
       int newX = x - newCenterX;
       int newY = y - newCenterY;
-      int origX = static_cast<int>(newX * std::cos(angleRad) + newY * std::sin(angleRad)) + centerX;
-      int origY = static_cast<int>(-newX * std::sin(angleRad) + newY * std::cos(angleRad)) + centerY;
+      int origX = static_cast<int>(newX * std::cos(angleRad) +
+                                   newY * std::sin(angleRad)) +
+                  centerX;
+      int origY = static_cast<int>(-newX * std::sin(angleRad) +
+                                   newY * std::cos(angleRad)) +
+                  centerY;
       if (origX < 0 || origY < 0 || origX >= width || origY >= height) {
         continue;
       }
@@ -250,8 +272,8 @@ uint16_t getAbsPos(uint16_t max, uint16_t size, int pos) {
   return static_cast<uint16_t>(pos);
 }
 
-void setRegionPos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t height, uint16_t maxWidth,
-                  uint16_t maxHeight) {
+void setRegionPos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
+                  uint16_t height, uint16_t maxWidth, uint16_t maxHeight) {
   if (width == 0 || height == 0) {
     width = rgnAttr->rect.p1.x - rgnAttr->rect.p0.x + 1;
     height = rgnAttr->rect.p1.y - rgnAttr->rect.p0.y + 1;
@@ -271,16 +293,18 @@ void setRegionPos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width, uint16_t
 } // namespace
 
 VideoPrivacyMask::VideoPrivacyMask(int channel, _stream *stream)
-    : channel_(channel), width_(stream ? stream->width : 0), height_(stream ? stream->height : 0), encGrp_(channel),
-      stream_(stream) {
+    : channel_(channel), width_(stream ? stream->width : 0),
+      height_(stream ? stream->height : 0), encGrp_(channel), stream_(stream) {
   if (!stream_) {
-    LOG_ERROR("VideoPrivacyMask: missing stream context for channel " << channel_);
+    LOG_ERROR("VideoPrivacyMask: missing stream context for channel "
+              << channel_);
     return;
   }
 
   region_ = IMP_OSD_CreateRgn(nullptr);
   if (region_ == INVHANDLE) {
-    LOG_ERROR("VideoPrivacyMask: failed to create region for channel " << channel_);
+    LOG_ERROR("VideoPrivacyMask: failed to create region for channel "
+              << channel_);
     return;
   }
 
@@ -301,7 +325,8 @@ VideoPrivacyMask::VideoPrivacyMask(int channel, _stream *stream)
   }
 
   ret = IMP_OSD_RegisterRgn(region_, encGrp_, nullptr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_RegisterRgn(" << region_ << ", " << encGrp_ << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_RegisterRgn(" << region_ << ", " << encGrp_
+                                                 << ")");
   if (ret != 0) {
     destroyRegion();
     return;
@@ -315,7 +340,8 @@ VideoPrivacyMask::VideoPrivacyMask(int channel, _stream *stream)
   grpAttr.fgAlhpa = 255;
   grpAttr.bgAlhpa = 0;
   ret = IMP_OSD_SetGrpRgnAttr(region_, encGrp_, &grpAttr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetGrpRgnAttr(" << region_ << ", " << encGrp_ << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetGrpRgnAttr(" << region_ << ", " << encGrp_
+                                                   << ")");
   if (ret != 0) {
     destroyRegion();
     return;
@@ -350,7 +376,9 @@ bool VideoPrivacyMask::setEnabled(bool enabled) {
     return true;
   }
   int ret = IMP_OSD_ShowRgn(region_, encGrp_, enabled ? 1 : 0);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(" << region_ << ", " << encGrp_ << ", " << (enabled ? 1 : 0) << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(" << region_ << ", " << encGrp_
+                                             << ", " << (enabled ? 1 : 0)
+                                             << ")");
   if (ret != 0) {
     return false;
   }
@@ -368,8 +396,8 @@ bool VideoPrivacyMask::initIndicatorLocked() {
     return false;
   }
 
-  const bool hasImage =
-      privacy.image_path && *privacy.image_path && privacy.image_width > 0 && privacy.image_height > 0;
+  const bool hasImage = privacy.image_path && *privacy.image_path &&
+                        privacy.image_width > 0 && privacy.image_height > 0;
   const bool hasText = privacy.text && *privacy.text;
   if (!hasImage && !hasText) {
     LOG_WARN("VideoPrivacyMask: privacy indicator enabled but no text or image"
@@ -380,7 +408,8 @@ bool VideoPrivacyMask::initIndicatorLocked() {
 
   indicatorRegion_ = IMP_OSD_CreateRgn(nullptr);
   if (indicatorRegion_ == INVHANDLE) {
-    LOG_ERROR("VideoPrivacyMask: failed to create indicator region for channel " << channel_);
+    LOG_ERROR("VideoPrivacyMask: failed to create indicator region for channel "
+              << channel_);
     return false;
   }
 
@@ -409,12 +438,13 @@ bool VideoPrivacyMask::initIndicatorLocked() {
   int posX = 0;
   int posY = 0;
   if (!parsePosition(privacy.position, posX, posY)) {
-    LOG_WARN("VideoPrivacyMask: invalid privacy indicator position '" << (privacy.position ? privacy.position : "")
-                                                                      << "', defaulting to center");
+    LOG_WARN("VideoPrivacyMask: invalid privacy indicator position '"
+             << (privacy.position ? privacy.position : "")
+             << "', defaulting to center");
   }
 
-  setRegionPos(&indicatorAttr_, posX, posY, indicatorWidth_, indicatorHeight_, static_cast<uint16_t>(width_),
-               static_cast<uint16_t>(height_));
+  setRegionPos(&indicatorAttr_, posX, posY, indicatorWidth_, indicatorHeight_,
+               static_cast<uint16_t>(width_), static_cast<uint16_t>(height_));
 
   int ret = IMP_OSD_SetRgnAttr(indicatorRegion_, &indicatorAttr_);
   LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetRgnAttr(" << indicatorRegion_ << ")");
@@ -424,7 +454,8 @@ bool VideoPrivacyMask::initIndicatorLocked() {
   }
 
   ret = IMP_OSD_RegisterRgn(indicatorRegion_, encGrp_, nullptr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_RegisterRgn(" << indicatorRegion_ << ", " << encGrp_ << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_RegisterRgn(" << indicatorRegion_ << ", "
+                                                 << encGrp_ << ")");
   if (ret != 0) {
     destroyIndicatorLocked();
     return false;
@@ -438,7 +469,8 @@ bool VideoPrivacyMask::initIndicatorLocked() {
   grpAttr.fgAlhpa = indicatorAlpha_;
   grpAttr.bgAlhpa = 0;
   ret = IMP_OSD_SetGrpRgnAttr(indicatorRegion_, encGrp_, &grpAttr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetGrpRgnAttr(" << indicatorRegion_ << ", " << encGrp_ << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetGrpRgnAttr(" << indicatorRegion_ << ", "
+                                                   << encGrp_ << ")");
   if (ret != 0) {
     destroyIndicatorLocked();
     return false;
@@ -489,7 +521,8 @@ bool VideoPrivacyMask::buildIndicatorFromText(const _osd_privacy &privacy) {
   sft.flags = SFT_DOWNWARD_Y;
   sft.xScale = fontSize;
   sft.yScale = fontSize;
-  int yOffset = static_cast<int>(std::round(static_cast<float>(sft.yScale) * 0.1f));
+  int yOffset =
+      static_cast<int>(std::round(static_cast<float>(sft.yScale) * 0.1f));
   sft.yOffset = std::max(1, yOffset);
   sft.font = sft_loadmem(fontData.data(), fontData.size());
   if (!sft.font) {
@@ -506,11 +539,13 @@ bool VideoPrivacyMask::buildIndicatorFromText(const _osd_privacy &privacy) {
   }
 
   computeTextSize(glyphs, sft, strokeSize, indicatorWidth_, indicatorHeight_);
-  drawTextBitmap(glyphs, sft, strokeSize, privacy.fill_color, privacy.stroke_color, indicatorPixels_, indicatorWidth_,
+  drawTextBitmap(glyphs, sft, strokeSize, privacy.fill_color,
+                 privacy.stroke_color, indicatorPixels_, indicatorWidth_,
                  indicatorHeight_);
 
   if (privacy.rotation != 0) {
-    rotateImage(indicatorPixels_, indicatorWidth_, indicatorHeight_, privacy.rotation);
+    rotateImage(indicatorPixels_, indicatorWidth_, indicatorHeight_,
+                privacy.rotation);
   }
 
   sft_freefont(sft.font);
@@ -518,21 +553,26 @@ bool VideoPrivacyMask::buildIndicatorFromText(const _osd_privacy &privacy) {
 }
 
 bool VideoPrivacyMask::buildIndicatorFromImage(const _osd_privacy &privacy) {
-  const size_t expected = static_cast<size_t>(privacy.image_width) * static_cast<size_t>(privacy.image_height) * 4;
+  const size_t expected = static_cast<size_t>(privacy.image_width) *
+                          static_cast<size_t>(privacy.image_height) * 4;
   if (expected == 0) {
-    LOG_ERROR("VideoPrivacyMask: invalid image dimensions for privacy indicator");
+    LOG_ERROR(
+        "VideoPrivacyMask: invalid image dimensions for privacy indicator");
     return false;
   }
 
   std::ifstream file(privacy.image_path, std::ios::binary);
   if (!file.is_open()) {
-    LOG_ERROR("VideoPrivacyMask: failed to open privacy image " << (privacy.image_path ? privacy.image_path : ""));
+    LOG_ERROR("VideoPrivacyMask: failed to open privacy image "
+              << (privacy.image_path ? privacy.image_path : ""));
     return false;
   }
 
   indicatorPixels_.assign(expected, 0);
-  if (!file.read(reinterpret_cast<char *>(indicatorPixels_.data()), static_cast<std::streamsize>(expected))) {
-    LOG_ERROR("VideoPrivacyMask: privacy image size mismatch for " << (privacy.image_path ? privacy.image_path : ""));
+  if (!file.read(reinterpret_cast<char *>(indicatorPixels_.data()),
+                 static_cast<std::streamsize>(expected))) {
+    LOG_ERROR("VideoPrivacyMask: privacy image size mismatch for "
+              << (privacy.image_path ? privacy.image_path : ""));
     indicatorPixels_.clear();
     return false;
   }
@@ -540,7 +580,8 @@ bool VideoPrivacyMask::buildIndicatorFromImage(const _osd_privacy &privacy) {
   indicatorWidth_ = static_cast<uint16_t>(privacy.image_width);
   indicatorHeight_ = static_cast<uint16_t>(privacy.image_height);
   if (privacy.rotation != 0) {
-    rotateImage(indicatorPixels_, indicatorWidth_, indicatorHeight_, privacy.rotation);
+    rotateImage(indicatorPixels_, indicatorWidth_, indicatorHeight_,
+                privacy.rotation);
   }
   return true;
 }
@@ -553,8 +594,9 @@ bool VideoPrivacyMask::showIndicatorLocked(bool enabled) {
     return true;
   }
   int ret = IMP_OSD_ShowRgn(indicatorRegion_, encGrp_, enabled ? 1 : 0);
-  LOG_DEBUG_OR_ERROR(ret,
-                     "IMP_OSD_ShowRgn(" << indicatorRegion_ << ", " << encGrp_ << ", " << (enabled ? 1 : 0) << ")");
+  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(" << indicatorRegion_ << ", "
+                                             << encGrp_ << ", "
+                                             << (enabled ? 1 : 0) << ")");
   if (ret != 0) {
     return false;
   }
@@ -603,13 +645,15 @@ void VideoPrivacyMask::destroyRegion() {
 
   if (visible_) {
     int ret = IMP_OSD_ShowRgn(region_, encGrp_, 0);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(" << region_ << ", " << encGrp_ << ", 0)");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_ShowRgn(" << region_ << ", " << encGrp_
+                                               << ", 0)");
     visible_ = false;
   }
 
   if (registered_) {
     int ret = IMP_OSD_UnRegisterRgn(region_, encGrp_);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(" << region_ << ", " << encGrp_ << ")");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_UnRegisterRgn(" << region_ << ", "
+                                                     << encGrp_ << ")");
     registered_ = false;
   }
 

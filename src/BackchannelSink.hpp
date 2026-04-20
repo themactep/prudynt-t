@@ -12,15 +12,22 @@
 
 class BackchannelSink : public MediaSink {
 public:
-  static BackchannelSink *createNew(UsageEnvironment &env, unsigned clientSessionId, IMPBackchannelFormat format);
+  static BackchannelSink *createNew(UsageEnvironment &env,
+                                    unsigned clientSessionId,
+                                    IMPBackchannelFormat format);
 
-  Boolean startPlaying(FramedSource &source, MediaSink::afterPlayingFunc *afterFunc, void *afterClientData);
+  Boolean startPlaying(FramedSource &source,
+                       MediaSink::afterPlayingFunc *afterFunc,
+                       void *afterClientData);
   void stopPlaying();
-  
-  bool isActive() const { return fIsActive; }
+
+  bool isActive() const {
+    return fIsActive;
+  }
 
 protected:
-  BackchannelSink(UsageEnvironment &env, unsigned clientSessionId, IMPBackchannelFormat format);
+  BackchannelSink(UsageEnvironment &env, unsigned clientSessionId,
+                  IMPBackchannelFormat format);
   virtual ~BackchannelSink();
 
   virtual Boolean continuePlaying();
@@ -33,9 +40,12 @@ private:
   void updateAdaptiveTimeout(const struct timeval &presentationTime);
   static uint64_t toMicroseconds(const struct timeval &tv);
 
-  static void afterGettingFrame(void *clientData, unsigned frameSize, unsigned numTruncatedBytes,
-                                struct timeval presentationTime, unsigned durationInMicroseconds);
-  void afterGettingFrame1(unsigned frameSize, unsigned numTruncatedBytes, struct timeval presentationTime);
+  static void afterGettingFrame(void *clientData, unsigned frameSize,
+                                unsigned numTruncatedBytes,
+                                struct timeval presentationTime,
+                                unsigned durationInMicroseconds);
+  void afterGettingFrame1(unsigned frameSize, unsigned numTruncatedBytes,
+                          struct timeval presentationTime);
 
   void sendBackchannelFrame(const uint8_t *payload, unsigned payloadSize);
   void sendBackchannelStopFrame();

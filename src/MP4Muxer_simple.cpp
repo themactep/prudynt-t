@@ -33,7 +33,8 @@ static void write_u24(std::vector<uint8_t> &out, uint32_t v) {
   out.push_back(static_cast<uint8_t>(v & 0xFF));
 }
 
-static void write_box(std::vector<uint8_t> &out, const char type[4], const std::vector<uint8_t> &payload) {
+static void write_box(std::vector<uint8_t> &out, const char type[4],
+                      const std::vector<uint8_t> &payload) {
   uint32_t size = 8u + static_cast<uint32_t>(payload.size());
   write_u32(out, size);
   out.insert(out.end(), type, type + 4);
@@ -67,7 +68,8 @@ public:
     video_.height = static_cast<uint32_t>(params.height);
     video_.codec_config = is_hevc_ ? params.hvcC : params.avcC;
     if (params.fps > 0) {
-      video_.default_duration_ticks = static_cast<uint32_t>(video_.timescale / params.fps);
+      video_.default_duration_ticks =
+          static_cast<uint32_t>(video_.timescale / params.fps);
     }
 
     if (!params.aacConfig.empty()) {
@@ -77,8 +79,9 @@ public:
       audio_.codec_config = params.aacConfig;
       audio_.channels = static_cast<uint16_t>(params.channels);
       audio_.default_duration_ticks = 1024; // AAC-LC frame size in samples
-      LOG_INFO("SimpleMP4Muxer: audio enabled sample_rate=" << audio_.timescale << "Hz channels=" << audio_.channels
-                                                            << " config_bytes=" << audio_.codec_config.size());
+      LOG_INFO("SimpleMP4Muxer: audio enabled sample_rate="
+               << audio_.timescale << "Hz channels=" << audio_.channels
+               << " config_bytes=" << audio_.codec_config.size());
     } else {
       LOG_INFO("SimpleMP4Muxer: audio disabled (no AAC config provided)");
     }
@@ -94,14 +97,16 @@ public:
     return out;
   }
 
-  std::vector<uint8_t> muxVideo(const uint8_t *data, size_t size, int64_t pts_ms, bool isKey) override {
+  std::vector<uint8_t> muxVideo(const uint8_t *data, size_t size,
+                                int64_t pts_ms, bool isKey) override {
     if (!video_.enabled || !data || size == 0) {
       return {};
     }
     return write_fragment(video_, next_seq_++, data, size, pts_ms, isKey, true);
   }
 
-  std::vector<uint8_t> muxAudio(const uint8_t *data, size_t size, int64_t pts_ms) override {
+  std::vector<uint8_t> muxAudio(const uint8_t *data, size_t size,
+                                int64_t pts_ms) override {
     if (!audio_.enabled) {
       if (!audio_warn_no_track_reported_) {
         LOG_WARN("SimpleMP4Muxer: muxAudio called but audio track is not "
@@ -119,13 +124,16 @@ public:
     }
 
     uint32_t seq = next_seq_;
-    auto fragment = write_fragment(audio_, next_seq_++, data, size, pts_ms, false, false);
+    auto fragment =
+        write_fragment(audio_, next_seq_++, data, size, pts_ms, false, false);
     audio_sample_count_++;
     if (audio_sample_count_ == 1) {
-      LOG_INFO("SimpleMP4Muxer: first audio sample accepted seq=" << seq << " pts_ms=" << pts_ms << " bytes=" << size);
+      LOG_INFO("SimpleMP4Muxer: first audio sample accepted seq="
+               << seq << " pts_ms=" << pts_ms << " bytes=" << size);
     } else if ((audio_sample_count_ % 50) == 0) {
-      LOG_DDEBUG("SimpleMP4Muxer(audio): sample #" << audio_sample_count_ << " seq=" << seq << " pts_ms=" << pts_ms
-                                                   << " bytes=" << size);
+      LOG_DDEBUG("SimpleMP4Muxer(audio): sample #"
+                 << audio_sample_count_ << " seq=" << seq
+                 << " pts_ms=" << pts_ms << " bytes=" << size);
     }
     return fragment;
   }
@@ -224,7 +232,8 @@ private:
     write_box(out, "trex", trex);
   }
 
-  void write_trak(std::vector<uint8_t> &out, const TrackState &t, bool is_video) {
+  void write_trak(std::vector<uint8_t> &out, const TrackState &t,
+                  bool is_video) {
     std::vector<uint8_t> trak;
 
     // tkhd
@@ -478,11 +487,15 @@ private:
     write_box(out, "trak", trak);
   }
 
-  std::vector<uint8_t> write_fragment(TrackState &t, uint32_t seq, const uint8_t *data, size_t size, int64_t pts_ms,
-                                      bool isKey, bool isVideo) {
+  std::vector<uint8_t> write_fragment(TrackState &t, uint32_t seq,
+                                      const uint8_t *data, size_t size,
+                                      int64_t pts_ms, bool isKey,
+                                      bool isVideo) {
     std::vector<uint8_t> out;
 
-    uint64_t pts = (pts_ms <= 0) ? 0 : static_cast<uint64_t>(pts_ms) * t.timescale / 1000ull;
+    uint64_t pts = (pts_ms <= 0)
+                       ? 0
+                       : static_cast<uint64_t>(pts_ms) * t.timescale / 1000ull;
     const uint64_t prev_pts = t.last_pts;
 
     uint32_t sample_duration_ticks = 0;
@@ -513,15 +526,19 @@ private:
 
     if (!isVideo) {
       if (pts_regressed && audio_pts_regress_warnings_ < 5) {
-        LOG_WARN("SimpleMP4Muxer(audio): non-monotonic PTS (prev=" << prev_pts << " new=" << pts << ")");
+        LOG_WARN("SimpleMP4Muxer(audio): non-monotonic PTS (prev="
+                 << prev_pts << " new=" << pts << ")");
         ++audio_pts_regress_warnings_;
       }
       if (duration_was_clamped && audio_duration_clamp_warnings_ < 5) {
-        LOG_WARN("SimpleMP4Muxer(audio): clamped sample duration to 0xFFFFFFFF");
+        LOG_WARN(
+            "SimpleMP4Muxer(audio): clamped sample duration to 0xFFFFFFFF");
         ++audio_duration_clamp_warnings_;
       }
-      if (used_default_duration_ticks && audio_duration_fallback_warnings_ < 5) {
-        LOG_INFO("SimpleMP4Muxer(audio): using default duration=" << sample_duration_ticks);
+      if (used_default_duration_ticks &&
+          audio_duration_fallback_warnings_ < 5) {
+        LOG_INFO("SimpleMP4Muxer(audio): using default duration="
+                 << sample_duration_ticks);
         ++audio_duration_fallback_warnings_;
       }
       if (forced_min_duration && audio_forced_duration_warnings_ < 5) {
@@ -575,7 +592,8 @@ private:
 
       write_u32(trun, sample_duration_ticks);
       write_u32(trun, static_cast<uint32_t>(size));
-      uint32_t flags = isVideo ? (isKey ? 0x02000000u : 0x01010000u) : 0x00000000u;
+      uint32_t flags =
+          isVideo ? (isKey ? 0x02000000u : 0x01010000u) : 0x00000000u;
       write_u32(trun, flags);
 
       const size_t trun_box_offset = traf.size();
@@ -596,10 +614,14 @@ private:
 
     // Patch data_offset in trun (if we recorded a valid position)
     if (data_offset_patch_pos && data_offset_patch_pos + 4 <= moof.size()) {
-      moof[data_offset_patch_pos + 0] = static_cast<uint8_t>((data_offset >> 24) & 0xFF);
-      moof[data_offset_patch_pos + 1] = static_cast<uint8_t>((data_offset >> 16) & 0xFF);
-      moof[data_offset_patch_pos + 2] = static_cast<uint8_t>((data_offset >> 8) & 0xFF);
-      moof[data_offset_patch_pos + 3] = static_cast<uint8_t>(data_offset & 0xFF);
+      moof[data_offset_patch_pos + 0] =
+          static_cast<uint8_t>((data_offset >> 24) & 0xFF);
+      moof[data_offset_patch_pos + 1] =
+          static_cast<uint8_t>((data_offset >> 16) & 0xFF);
+      moof[data_offset_patch_pos + 2] =
+          static_cast<uint8_t>((data_offset >> 8) & 0xFF);
+      moof[data_offset_patch_pos + 3] =
+          static_cast<uint8_t>(data_offset & 0xFF);
     }
 
     write_box(out, "moof", moof);

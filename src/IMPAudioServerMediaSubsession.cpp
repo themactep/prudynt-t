@@ -9,11 +9,13 @@
 #include "globals.hpp"
 #include "liveMedia.hh"
 
-IMPAudioServerMediaSubsession *IMPAudioServerMediaSubsession::createNew(UsageEnvironment &env, int audioChn) {
+IMPAudioServerMediaSubsession *
+IMPAudioServerMediaSubsession::createNew(UsageEnvironment &env, int audioChn) {
   return new IMPAudioServerMediaSubsession(env, audioChn);
 }
 
-IMPAudioServerMediaSubsession::IMPAudioServerMediaSubsession(UsageEnvironment &env, int audioChn)
+IMPAudioServerMediaSubsession::IMPAudioServerMediaSubsession(
+    UsageEnvironment &env, int audioChn)
     : OnDemandServerMediaSubsession(env, false), audioChn(audioChn) {
   LOG_INFO("IMPAudioServerMediaSubsession init");
 }
@@ -22,7 +24,9 @@ IMPAudioServerMediaSubsession::~IMPAudioServerMediaSubsession() {
 }
 
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
-FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
+FramedSource *
+IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
+                                                     unsigned &estBitrate) {
   std::shared_ptr<audio_stream> audioStream = global_audio[audioChn];
   IMPAudio *impAudio = nullptr;
   {
@@ -45,14 +49,17 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
 
   FramedSource *audioSourceReplica = replicator->createStreamReplica();
   if (audioSourceReplica) {
-    global_audio[audioChn]->rtsp_client_count.fetch_add(1, std::memory_order_relaxed);
+    global_audio[audioChn]->rtsp_client_count.fetch_add(
+        1, std::memory_order_relaxed);
     global_audio[audioChn]->hasDataCallback = true;
     global_audio[audioChn]->should_grab_frames.notify_one();
   }
   return audioSourceReplica;
 }
 #else
-FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
+FramedSource *
+IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
+                                                     unsigned &estBitrate) {
   std::shared_ptr<audio_stream> audioStream = global_audio[audioChn];
   IMPAudio *impAudio = nullptr;
   {
@@ -70,7 +77,8 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
   estBitrate = impAudio->bitrate;
   IMPDeviceSource<AudioFrame, audio_stream> *audioSource =
       IMPDeviceSource<AudioFrame, audio_stream>::createNew(
-          envir(), audioChn, global_audio[audioChn], "audio", false, clientSessionId);
+          envir(), audioChn, global_audio[audioChn], "audio", false,
+          clientSessionId);
 
   if (impAudio->format == IMPAudioFormat::PCM)
     return EndianSwap16::createNew(envir(), audioSource);
@@ -79,11 +87,13 @@ FramedSource *IMPAudioServerMediaSubsession::createNewStreamSource(unsigned clie
 }
 #endif
 
-void IMPAudioServerMediaSubsession::closeStreamSource(FramedSource *inputSource) {
+void IMPAudioServerMediaSubsession::closeStreamSource(
+    FramedSource *inputSource) {
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
   auto audioStream = global_audio[audioChn];
   if (inputSource && audioStream) {
-    int previous = audioStream->rtsp_client_count.fetch_sub(1, std::memory_order_relaxed);
+    int previous =
+        audioStream->rtsp_client_count.fetch_sub(1, std::memory_order_relaxed);
     if (previous <= 1) {
       audioStream->rtsp_client_count.store(0, std::memory_order_relaxed);
       audioStream->hasDataCallback = false;
@@ -93,8 +103,9 @@ void IMPAudioServerMediaSubsession::closeStreamSource(FramedSource *inputSource)
   OnDemandServerMediaSubsession::closeStreamSource(inputSource);
 }
 
-RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
-                                                         FramedSource *inputSource) {
+RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(
+    Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
+    FramedSource *inputSource) {
   (void)inputSource;
   IMPAudio *impAudio = nullptr;
   {
@@ -137,9 +148,9 @@ RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock
     break;
 #endif
 #if defined(USE_AAC) && USE_AAC
-  case IMPAudioFormat::AAC:
-  {
-    RTPSink *sink = AACSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
+  case IMPAudioFormat::AAC: {
+    RTPSink *sink = AACSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat,
+                                       rtpTimestampFrequency,
                                        /* numChannels */ outChnCnt);
     if (sink != nullptr) {
       sink->enableRTCPReports() = False;
@@ -149,11 +160,13 @@ RTPSink *IMPAudioServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock
 #endif
   }
 
-  LOG_DEBUG("createNewRTPSink: " << rtpPayloadFormatName << ", " << rtpTimestampFrequency);
+  LOG_DEBUG("createNewRTPSink: " << rtpPayloadFormatName << ", "
+                                 << rtpTimestampFrequency);
 
-  RTPSink *sink = SimpleRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
-                                           /* sdpMediaTypeString*/ "audio", rtpPayloadFormatName,
-                                           /* numChannels */ outChnCnt, allowMultipleFramesPerPacket);
+  RTPSink *sink = SimpleRTPSink::createNew(
+      envir(), rtpGroupsock, rtpPayloadFormat, rtpTimestampFrequency,
+      /* sdpMediaTypeString*/ "audio", rtpPayloadFormatName,
+      /* numChannels */ outChnCnt, allowMultipleFramesPerPacket);
   if (sink != nullptr) {
     sink->enableRTCPReports() = False;
   }

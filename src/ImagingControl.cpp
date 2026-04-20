@@ -110,7 +110,8 @@ static int apply_backlight(int value) {
   return 0;
 #else
   if (!hal::caps().has_isp_backlight_comp) {
-    LOG_DEBUG("ImagingControl: backlight compensation unsupported on this platform");
+    LOG_DEBUG(
+        "ImagingControl: backlight compensation unsupported on this platform");
     return 0;
   }
   LOG_DEBUG("ImagingControl: apply backlight=" << value);
@@ -162,7 +163,8 @@ static int apply_noise_reduction(int value) {
   return 0;
 #else
   if (!hal::caps().has_isp_sinter) {
-    LOG_DEBUG("ImagingControl: sinter/noise reduction unsupported on this platform");
+    LOG_DEBUG(
+        "ImagingControl: sinter/noise reduction unsupported on this platform");
     return 0;
   }
   LOG_DEBUG("ImagingControl: apply noise_reduction=" << value);
@@ -184,22 +186,31 @@ static int apply_temper(int value) {
 #endif
 }
 static const FieldBinding kFields[] = {
-    {"brightness", "image.brightness", 0, 255, 128, &_image::brightness, &apply_brightness, true},
-    {"contrast", "image.contrast", 0, 255, 128, &_image::contrast, &apply_contrast, true},
-    {"saturation", "image.saturation", 0, 255, 128, &_image::saturation, &apply_saturation, true},
-    {"sharpness", "image.sharpness", 0, 255, 128, &_image::sharpness, &apply_sharpness, true},
-    {"backlight", "image.backlight_compensation", kBacklightMin, kBacklightMax, kBacklightDefault,
-     &_image::backlight_compensation, &apply_backlight, hal::caps().has_isp_backlight_comp},
-    {"wide_dynamic_range", "image.drc_strength", kWideDynamicRangeMin, kWideDynamicRangeMax, kWideDynamicRangeDefault,
-     &_image::drc_strength, &apply_wide_dynamic_range, hal::caps().has_isp_drc},
-    {"tone", "image.highlight_depress", kToneMin, kToneMax, kToneDefault, &_image::highlight_depress, &apply_tone,
+    {"brightness", "image.brightness", 0, 255, 128, &_image::brightness,
+     &apply_brightness, true},
+    {"contrast", "image.contrast", 0, 255, 128, &_image::contrast,
+     &apply_contrast, true},
+    {"saturation", "image.saturation", 0, 255, 128, &_image::saturation,
+     &apply_saturation, true},
+    {"sharpness", "image.sharpness", 0, 255, 128, &_image::sharpness,
+     &apply_sharpness, true},
+    {"backlight", "image.backlight_compensation", kBacklightMin, kBacklightMax,
+     kBacklightDefault, &_image::backlight_compensation, &apply_backlight,
+     hal::caps().has_isp_backlight_comp},
+    {"wide_dynamic_range", "image.drc_strength", kWideDynamicRangeMin,
+     kWideDynamicRangeMax, kWideDynamicRangeDefault, &_image::drc_strength,
+     &apply_wide_dynamic_range, hal::caps().has_isp_drc},
+    {"tone", "image.highlight_depress", kToneMin, kToneMax, kToneDefault,
+     &_image::highlight_depress, &apply_tone,
      hal::caps().has_isp_highlight_depress},
-    {"defog", "image.defog_strength", kDefogMin, kDefogMax, kDefogDefault, &_image::defog_strength, &apply_defog,
-     hal::caps().has_isp_defog},
-    {"noise_reduction", "image.sinter_strength", kNoiseReductionMin, kNoiseReductionMax, kNoiseReductionDefault,
-     &_image::sinter_strength, &apply_noise_reduction, hal::caps().has_isp_sinter},
-    {"temper_strength", "image.temper_strength", kTemperStrengthMin, kTemperStrengthMax, kTemperStrengthDefault,
-     &_image::temper_strength, &apply_temper, hal::caps().has_isp_temper},
+    {"defog", "image.defog_strength", kDefogMin, kDefogMax, kDefogDefault,
+     &_image::defog_strength, &apply_defog, hal::caps().has_isp_defog},
+    {"noise_reduction", "image.sinter_strength", kNoiseReductionMin,
+     kNoiseReductionMax, kNoiseReductionDefault, &_image::sinter_strength,
+     &apply_noise_reduction, hal::caps().has_isp_sinter},
+    {"temper_strength", "image.temper_strength", kTemperStrengthMin,
+     kTemperStrengthMax, kTemperStrengthDefault, &_image::temper_strength,
+     &apply_temper, hal::caps().has_isp_temper},
 };
 
 struct ParsedAssignment {
@@ -257,7 +268,8 @@ bool write_state_snapshot() {
     image_state = cfg->image;
   }
 
-  auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+  auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::system_clock::now().time_since_epoch())
                  .count();
 
   std::ostringstream oss;
@@ -267,15 +279,18 @@ bool write_state_snapshot() {
     int value = image_state.*(binding.member);
     double normalized = 0.0;
     if (binding.max_value > binding.min_value) {
-      normalized =
-          static_cast<double>(value - binding.min_value) / static_cast<double>(binding.max_value - binding.min_value);
+      normalized = static_cast<double>(value - binding.min_value) /
+                   static_cast<double>(binding.max_value - binding.min_value);
     }
     if (!first)
       oss << ",\n";
     first = false;
-    oss << "    \"" << binding.name << "\": {\"value\": " << value << ", \"min\": " << binding.min_value
-        << ", \"max\": " << binding.max_value << ", \"default\": " << binding.default_value
-        << ", \"normalized\": " << normalized << ", \"supported\": " << (binding.supported ? "true" : "false") << "}";
+    oss << "    \"" << binding.name << "\": {\"value\": " << value
+        << ", \"min\": " << binding.min_value
+        << ", \"max\": " << binding.max_value
+        << ", \"default\": " << binding.default_value
+        << ", \"normalized\": " << normalized
+        << ", \"supported\": " << (binding.supported ? "true" : "false") << "}";
   }
   oss << "\n  }\n}\n";
 
@@ -319,8 +334,9 @@ std::optional<ParsedAssignment> parse_assignment(const std::string &token) {
 
   ParsedAssignment result;
   result.key = token.substr(0, pos);
-  std::transform(result.key.begin(), result.key.end(), result.key.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(
+      result.key.begin(), result.key.end(), result.key.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
   std::string raw_value = token.substr(pos + 1);
   bool percent = false;
@@ -346,14 +362,18 @@ std::optional<ParsedAssignment> parse_assignment(const std::string &token) {
   return result;
 }
 
-int to_raw_value(const FieldBinding &binding, const ParsedAssignment &assignment) {
+int to_raw_value(const FieldBinding &binding,
+                 const ParsedAssignment &assignment) {
   if (assignment.normalized) {
     double clamped = std::clamp(assignment.value, 0.0, 1.0);
     double span = static_cast<double>(binding.max_value - binding.min_value);
-    return clamp_to_range(binding, static_cast<int>(std::round(clamped * span)) + binding.min_value);
+    return clamp_to_range(binding,
+                          static_cast<int>(std::round(clamped * span)) +
+                              binding.min_value);
   }
 
-  return clamp_to_range(binding, static_cast<int>(std::round(assignment.value)));
+  return clamp_to_range(binding,
+                        static_cast<int>(std::round(assignment.value)));
 }
 
 bool apply_field(const FieldBinding &binding, int raw_value) {
@@ -361,11 +381,13 @@ bool apply_field(const FieldBinding &binding, int raw_value) {
     return false;
 
   if (!binding.supported) {
-    LOG_DEBUG("ImagingControl: ignoring unsupported field '" << binding.name << "'");
+    LOG_DEBUG("ImagingControl: ignoring unsupported field '" << binding.name
+                                                             << "'");
     return false;
   }
 
-  LOG_DEBUG("ImagingControl: applying field '" << binding.name << "' raw=" << raw_value);
+  LOG_DEBUG("ImagingControl: applying field '" << binding.name
+                                               << "' raw=" << raw_value);
   if (binding.apply_func) {
     int rc = binding.apply_func(raw_value);
     if (rc != 0) {
@@ -384,8 +406,10 @@ bool apply_field(const FieldBinding &binding, int raw_value) {
 
 std::string trim(std::string value) {
   auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
-  value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
-  value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+  value.erase(value.begin(),
+              std::find_if(value.begin(), value.end(), not_space));
+  value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(),
+              value.end());
   return value;
 }
 
@@ -399,8 +423,9 @@ void handle_line(const std::string &line) {
   std::istringstream iss(trimmed);
   std::string verb;
   iss >> verb;
-  std::transform(verb.begin(), verb.end(), verb.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(verb.begin(), verb.end(), verb.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
 
   if (verb != "set") {
     LOG_DEBUG("Ignoring unsupported imaging control verb: " << verb);
@@ -443,10 +468,12 @@ void handle_line(const std::string &line) {
 
 void run_fifo_loop() {
   LOG_INFO("ImagingControl FIFO loop starting");
-  while (!stop_requested.load() && !global_shutdown_requested.load(std::memory_order_relaxed)) {
+  while (!stop_requested.load() &&
+         !global_shutdown_requested.load(std::memory_order_relaxed)) {
     int fd = open(kFifoPath, O_RDONLY);
     if (fd < 0) {
-      LOG_DEBUG("ImagingControl: waiting for FIFO (open failed errno=" << errno << ")");
+      LOG_DEBUG("ImagingControl: waiting for FIFO (open failed errno=" << errno
+                                                                       << ")");
       std::this_thread::sleep_for(std::chrono::milliseconds(250));
       continue;
     }
@@ -457,7 +484,8 @@ void run_fifo_loop() {
     buffer.reserve(256);
     char chunk[256];
 
-    while (!stop_requested.load() && !global_shutdown_requested.load(std::memory_order_relaxed)) {
+    while (!stop_requested.load() &&
+           !global_shutdown_requested.load(std::memory_order_relaxed)) {
       ssize_t bytes = read(fd, chunk, sizeof(chunk));
       if (bytes <= 0)
         break;
