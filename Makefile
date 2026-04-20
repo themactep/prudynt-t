@@ -143,7 +143,8 @@ endif
 # Library Configuration
 # =====================
 # Check for libc type from CFLAGS, default to musl if not specified
-# We add libmuslshim only when using musl (default if no libc type specified)
+# We add libmuslshim (default) or libuclibcshim (when -DLIBC_UCLIBC is set) to
+# resolve ABI symbols the Ingenic libs expect from uClibc.
 
 ifneq ($(MAKECMDGOALS),clean)
 
@@ -177,7 +178,7 @@ ifneq (,$(or $(findstring -DPLATFORM_T40,$(CFLAGS)), $(findstring -DPLATFORM_T41
 	ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 		# GLIBC - no additional libraries needed
 	else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
-		# uClibc - no additional libraries needed
+		LIBS               += -Wl,-Bdynamic -l:libuclibcshim.so -Wl,-Bstatic
 	else
 		# Default to musl
 		LIBS               += -Wl,-Bdynamic -l:libmuslshim.so -Wl,-Bstatic
@@ -205,7 +206,9 @@ else
 	ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 		# GLIBC - no additional libraries needed
 	else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
-		# uClibc - no additional libraries needed
+		# uClibc - thingino's uclibc toolchain natively provides the symbols
+		# the Ingenic libs need; statically linking libuclibcshim.a here would
+		# duplicate libc's mmap/open64/__f{get,put}c_unlocked/etc.
 	else
 		# Default to musl - shim resolves uclibc ABI symbols in libimp.a/libalog.a/libsysutils.a
 		LIBS               += -l:libmuslshim.a
@@ -240,7 +243,7 @@ LIBS                    = -Wl,-Bdynamic \
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
 else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
-	# uClibc - no additional libraries needed
+LIBS                   := $(LIBS:-Wl,-Bdynamic=-Wl,-Bdynamic -l:libuclibcshim.so)
 else
 	# Default to musl
 LIBS                   := $(LIBS:-Wl,-Bdynamic=-Wl,-Bdynamic -l:libmuslshim.so)
@@ -272,7 +275,7 @@ LIBS                    = -limp \
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
 	# GLIBC - no additional libraries needed
 else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
-	# uClibc - no additional libraries needed
+LIBS                   += -l:libuclibcshim.so
 else
 LIBS                   += -l:libmuslshim.so
 endif

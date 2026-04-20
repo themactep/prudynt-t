@@ -64,17 +64,23 @@ rm -rf build
 mkdir -p build
 cd build
 
+CCACHE_LAUNCHER=()
+if command -v ccache &>/dev/null; then
+    CCACHE_LAUNCHER=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
+
 # Configure the libhelix-aac build with CMake
 echo "Configuring libhelix-aac library..."
 cmake \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_SYSTEM_NAME=Linux \
     -DCMAKE_SYSTEM_PROCESSOR=mipsle \
+    "${CCACHE_LAUNCHER[@]}" \
     -DCMAKE_C_COMPILER=${CC} \
     -DCMAKE_CXX_COMPILER=${CXX} \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_FLAGS="-Os" \
-    -DCMAKE_CXX_FLAGS="-Os" \
+    -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -Os" \
+    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -Os" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/install" \
     -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} \
     ../src/libhelix-aac/
