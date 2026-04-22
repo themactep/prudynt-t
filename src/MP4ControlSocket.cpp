@@ -252,6 +252,35 @@ bool validate_mount_point_path(fs::path mount_path, std::string &reason) {
   return validate_mount_entry(entry, reason);
 }
 
+bool validate_target_under_mount(const fs::path &path, const fs::path &mount_root,
+                                 std::string &reason) {
+  fs::path normalized_path = path;
+  if (!normalized_path.is_absolute()) {
+    normalized_path = fs::absolute(normalized_path);
+  }
+  normalized_path = normalized_path.lexically_normal();
+
+  fs::path normalized_mount = mount_root;
+  if (!normalized_mount.is_absolute()) {
+    normalized_mount = fs::absolute(normalized_mount);
+  }
+  normalized_mount = normalized_mount.lexically_normal();
+
+  if (!path_has_prefix(normalized_path, normalized_mount)) {
+    reason = "target escapes mount point '" + normalized_mount.string() + "'";
+    return false;
+  }
+
+  MountEntry entry = find_mount_for_path(normalized_path);
+  if (!entry.valid || entry.mountPoint != normalized_mount) {
+    reason = "target is not on mounted mount point '" + normalized_mount.string() +
+             "'";
+    return false;
+  }
+
+  return validate_mount_entry(entry, reason);
+}
+
 bool start_recording(const std::string &path, int target_channel);
 void stop_recording(int channel);
 
@@ -916,9 +945,9 @@ int default_recorder_channel() {
 
 std::string default_recorder_mount() {
   if (cfg) {
-    return default_string(cfg->recorder.mount, "/mnt/mmc");
+    return default_string(cfg->recorder.mount, "/mnt/mmcblk0p1");
   }
-  return "/mnt/mmc";
+  return "/mnt/mmcblk0p1";
 }
 
 std::string default_recorder_directory() {
@@ -986,6 +1015,31 @@ bool ensure_parent_directory(const fs::path &path) {
   return true;
 }
 
+bool ensure_writable_directory(const fs::path &dir, std::string &reason) {
+  std::error_code ec;
+  if (!fs::exists(dir, ec)) {
+    fs::create_directories(dir, ec);
+    if (ec) {
+      reason = "failed to create " + dir.string() + ": " + ec.message();
+      return false;
+    }
+  }
+
+  if (!fs::is_directory(dir, ec)) {
+    reason = ec ? ("cannot stat " + dir.string() + ": " + ec.message())
+                : (dir.string() + " is not a directory");
+    return false;
+  }
+
+  if (::access(dir.c_str(), W_OK | X_OK) != 0) {
+    reason =
+        "insufficient permissions on " + dir.string() + ": " + std::strerror(errno);
+    return false;
+  }
+
+  return true;
+}
+
 std::string
 format_segment_name(const std::string &templ,
                     std::chrono::system_clock::time_point reference =
@@ -1014,15 +1068,56 @@ build_loop_target_path(const RecordingLoopParams &params,
               << params.mount << "': " << reason);
     return {};
   }
-  fs::path root(params.mount);
+
+  fs::path mount_root(params.mount);
+  std::string mount_reason;
+  if (!ensure_writable_directory(mount_root, mount_reason)) {
+    LOG_ERROR("MP4ControlSocket: mount root '" << mount_root
+                                               << "' is not writable: "
+                                               << mount_reason);
+    return {};
+  }
+
+  fs::path root = mount_root;
   if (!params.directory.empty()) {
-    root /= params.directory;
+    fs::path preferred_root = (mount_root / params.directory).lexically_normal();
+    std::string path_reason;
+    if (!validate_target_under_mount(preferred_root, mount_root, path_reason)) {
+      LOG_ERROR("MP4ControlSocket: recorder directory '" << preferred_root
+                                                         << "' is invalid: "
+                                                         << path_reason);
+      return {};
+    }
+
+    std::string preferred_reason;
+    if (!ensure_writable_directory(preferred_root, preferred_reason)) {
+      LOG_ERROR("MP4ControlSocket: recorder directory '" << preferred_root
+                                                         << "' is not writable: "
+                                                         << preferred_reason);
+      return {};
+    }
+    root = preferred_root;
   }
   std::string name = format_segment_name(params.nameTemplate, reference);
   if (name.size() < 4 || name.substr(name.size() - 4) != ".mp4") {
     name += ".mp4";
   }
-  fs::path fullPath = root / name;
+  fs::path fullPath = (root / name).lexically_normal();
+  if (!path_has_prefix(fullPath, root)) {
+    LOG_ERROR("MP4ControlSocket: refusing target path '" << fullPath
+                                                         << "' outside root '"
+                                                         << root << "'");
+    return {};
+  }
+
+  std::string target_reason;
+  if (!validate_target_under_mount(fullPath, mount_root, target_reason)) {
+    LOG_ERROR("MP4ControlSocket: refusing target path '" << fullPath
+                                                         << "': "
+                                                         << target_reason);
+    return {};
+  }
+
   if (!ensure_parent_directory(fullPath)) {
     return {};
   }
@@ -1125,8 +1220,9 @@ void loop_worker(int channel, std::shared_ptr<LoopState> state) {
     auto now = std::chrono::system_clock::now();
     auto target = build_loop_target_path(state->params, now);
     if (target.empty()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(250));
-      continue;
+      LOG_ERROR("MP4ControlSocket: disabling loop recorder on channel "
+                << channel << " because target path is unavailable");
+      break;
     }
 
     if (!begin_segment(target, channel, segment_duration_s)) {
