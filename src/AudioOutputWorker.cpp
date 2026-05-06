@@ -16,7 +16,8 @@ void *AudioOutputWorker::thread_entry(void *arg) {
   return nullptr;
 }
 
-bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples, bool applyVolume, int volume, bool applyGain,
+bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples,
+                                   bool applyVolume, int volume, bool applyGain,
                                    int gain, bool applyMute, bool mute) {
   if (!global_audio_output || !global_audio_output->jobQueue) {
     LOG_ERROR("Audio output queue is not initialized");
@@ -42,8 +43,10 @@ bool AudioOutputWorker::enqueuePcm(std::vector<int16_t> &&samples, bool applyVol
   return true;
 }
 
-bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples, bool applyVolume, int volume, bool applyGain,
-                                           int gain, bool applyMute, bool mute) {
+bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples,
+                                           bool applyVolume, int volume,
+                                           bool applyGain, int gain,
+                                           bool applyMute, bool mute) {
   if (!global_audio_output || !global_audio_output->jobQueue) {
     LOG_ERROR("Audio output queue is not initialized");
     return false;
@@ -63,7 +66,8 @@ bool AudioOutputWorker::enqueuePcmBlocking(std::vector<int16_t> &&samples, bool 
   return true;
 }
 
-bool AudioOutputWorker::applyVolumeGain(bool applyVolume, int volume, bool applyGain, int gain) {
+bool AudioOutputWorker::applyVolumeGain(bool applyVolume, int volume,
+                                        bool applyGain, int gain) {
   if (!applyVolume && !applyGain) {
     return true;
   }
@@ -154,12 +158,14 @@ bool AudioOutputWorker::reconfigureRate(int newRateHz) {
   completion->get_future().wait();
 
   // Check if the hardware is now at the requested rate
-  int actual = global_audio_output->hardwareSampleRate.load(std::memory_order_acquire);
+  int actual =
+      global_audio_output->hardwareSampleRate.load(std::memory_order_acquire);
   return (actual == newRateHz);
 }
 
-bool AudioOutputWorker::waitForPlaybackCompletion(std::chrono::milliseconds waitDuration, bool flushAfterWait,
-                                                  std::chrono::milliseconds silencePadding) {
+bool AudioOutputWorker::waitForPlaybackCompletion(
+    std::chrono::milliseconds waitDuration, bool flushAfterWait,
+    std::chrono::milliseconds silencePadding) {
   if (!global_audio_output || !global_audio_output->jobQueue) {
     return false;
   }
@@ -189,7 +195,8 @@ void AudioOutputWorker::signalShutdown() {
     job.type = AudioPlaybackJobType::STOP;
     bool enqueued = global_audio_output->jobQueue->write(std::move(job));
     if (!enqueued) {
-      LOG_WARN("Audio output queue was full while enqueuing fast shutdown sentinel");
+      LOG_WARN(
+          "Audio output queue was full while enqueuing fast shutdown sentinel");
     }
     return;
   }
@@ -218,7 +225,8 @@ void AudioOutputWorker::run(StartHelper *sh) {
   global_audio_output->current_volume = cfg->audio.output_vol;
   global_audio_output->current_gain = cfg->audio.output_gain;
 
-  global_audio_output->imp_audio_output = std::make_unique<IMPAudioOutput>(0, 0);
+  global_audio_output->imp_audio_output =
+      std::make_unique<IMPAudioOutput>(0, 0);
   if (!global_audio_output->imp_audio_output->init()) {
     LOG_ERROR("Failed to initialize IMP audio output");
     global_audio_output->imp_audio_output.reset();
@@ -232,7 +240,8 @@ void AudioOutputWorker::run(StartHelper *sh) {
   // rate the CODEC is truly running at (may differ from config on T10/T20/T21).
   int hwRate = global_audio_output->imp_audio_output->getPlaybackSampleRate();
   if (hwRate > 0) {
-    global_audio_output->hardwareSampleRate.store(hwRate, std::memory_order_release);
+    global_audio_output->hardwareSampleRate.store(hwRate,
+                                                  std::memory_order_release);
     LOG_INFO("Audio output hardware sample rate: " << hwRate << " Hz");
   }
 
@@ -264,11 +273,15 @@ void AudioOutputWorker::run(StartHelper *sh) {
     }
     if (job.type == AudioPlaybackJobType::RECONFIGURE) {
       if (global_audio_output->imp_audio_output && job.sampleRate > 0) {
-        if (global_audio_output->imp_audio_output->reconfigure(job.sampleRate)) {
-          int newRate = global_audio_output->imp_audio_output->getPlaybackSampleRate();
-          global_audio_output->hardwareSampleRate.store(newRate, std::memory_order_release);
+        if (global_audio_output->imp_audio_output->reconfigure(
+                job.sampleRate)) {
+          int newRate =
+              global_audio_output->imp_audio_output->getPlaybackSampleRate();
+          global_audio_output->hardwareSampleRate.store(
+              newRate, std::memory_order_release);
         } else {
-          LOG_WARN("AudioOutputWorker: reconfigure to " << job.sampleRate << " Hz failed");
+          LOG_WARN("AudioOutputWorker: reconfigure to " << job.sampleRate
+                                                        << " Hz failed");
         }
       }
       if (job.completion) {
@@ -281,7 +294,8 @@ void AudioOutputWorker::run(StartHelper *sh) {
         std::this_thread::sleep_for(std::chrono::milliseconds(job.wait_ms));
       }
       if (job.silence_ms > 0 && global_audio_output->imp_audio_output) {
-        if (!global_audio_output->imp_audio_output->playSilence(job.silence_ms)) {
+        if (!global_audio_output->imp_audio_output->playSilence(
+                job.silence_ms)) {
           LOG_WARN("AudioOutputWorker: failed to inject tail silence");
         }
       }
@@ -314,8 +328,10 @@ void AudioOutputWorker::run(StartHelper *sh) {
     }
 
     if (!job.samples.empty()) {
-      if (!global_audio_output->imp_audio_output->playSamples(job.samples.data(), job.samples.size())) {
-        LOG_WARN("Failed to play PCM chunk (" << job.samples.size() << " samples)");
+      if (!global_audio_output->imp_audio_output->playSamples(
+              job.samples.data(), job.samples.size())) {
+        LOG_WARN("Failed to play PCM chunk (" << job.samples.size()
+                                              << " samples)");
       }
     }
   }

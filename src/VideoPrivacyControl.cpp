@@ -29,7 +29,8 @@ constexpr const char *kPrivacyStatePath = "/run/prudynt/privacy.active";
 void write_privacy_state_file() {
   int fd = ::open(kPrivacyStatePath, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (fd < 0) {
-    LOG_WARN("VideoPrivacyControl: failed to create state file " << kPrivacyStatePath);
+    LOG_WARN("VideoPrivacyControl: failed to create state file "
+             << kPrivacyStatePath);
     return;
   }
   const char *payload = "privacy=true\n";
@@ -43,11 +44,14 @@ void remove_privacy_state_file() {
 }
 
 std::string trim(const std::string &value) {
-  auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c); });
+  auto first =
+      std::find_if_not(value.begin(), value.end(),
+                       [](unsigned char c) { return std::isspace(c); });
   if (first == value.end()) {
     return {};
   }
-  auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c); });
+  auto last = std::find_if_not(value.rbegin(), value.rend(),
+                               [](unsigned char c) { return std::isspace(c); });
   return std::string(first, last.base());
 }
 
@@ -66,8 +70,9 @@ bool parseInt(const std::string &token, int &value) {
 
 bool parseBool(const std::string &token, bool &value) {
   std::string lower = token;
-  std::transform(lower.begin(), lower.end(), lower.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(
+      lower.begin(), lower.end(), lower.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (lower == "true" || lower == "on" || lower == "yes" || lower == "1") {
     value = true;
     return true;
@@ -86,12 +91,14 @@ bool parseBool(const std::string &token, bool &value) {
 
 void ensureFifo() {
   if (mkdir(kFifoDir, 0775) < 0 && errno != EEXIST) {
-    LOG_ERROR("VideoPrivacyControl: mkdir failed for " << kFifoDir << ": " << strerror(errno));
+    LOG_ERROR("VideoPrivacyControl: mkdir failed for " << kFifoDir << ": "
+                                                       << strerror(errno));
     return;
   }
   ::unlink(kFifoPath);
   if (mkfifo(kFifoPath, 0660) < 0) {
-    LOG_ERROR("VideoPrivacyControl: mkfifo failed for " << kFifoPath << ": " << strerror(errno));
+    LOG_ERROR("VideoPrivacyControl: mkfifo failed for " << kFifoPath << ": "
+                                                        << strerror(errno));
     return;
   }
 }
@@ -111,14 +118,16 @@ void applyPrivacyToAllChannels(bool enabled) {
       }
       if (mask && mask->isReady()) {
         if (!mask->setEnabled(true)) {
-          LOG_WARN("VideoPrivacyControl: failed to enable privacy on channel " << ch);
+          LOG_WARN("VideoPrivacyControl: failed to enable privacy on channel "
+                   << ch);
         }
       }
     }
     // Then set all flags
     for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
       if (global_video[ch]) {
-        global_video[ch]->privacy_requested.store(true, std::memory_order_release);
+        global_video[ch]->privacy_requested.store(true,
+                                                  std::memory_order_release);
       }
     }
     write_privacy_state_file();
@@ -127,7 +136,8 @@ void applyPrivacyToAllChannels(bool enabled) {
     // When disabling, clear flags first
     for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
       if (global_video[ch]) {
-        global_video[ch]->privacy_requested.store(false, std::memory_order_release);
+        global_video[ch]->privacy_requested.store(false,
+                                                  std::memory_order_release);
       }
     }
     // Then hide the masks
@@ -143,7 +153,8 @@ void applyPrivacyToAllChannels(bool enabled) {
       }
       if (mask && mask->isReady()) {
         if (!mask->setEnabled(false)) {
-          LOG_WARN("VideoPrivacyControl: failed to disable privacy on channel " << ch);
+          LOG_WARN("VideoPrivacyControl: failed to disable privacy on channel "
+                   << ch);
         }
       }
     }
@@ -161,8 +172,9 @@ void handleCommand(const std::string &line) {
   std::istringstream iss(trimmed);
   std::string verb;
   iss >> verb;
-  std::transform(verb.begin(), verb.end(), verb.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+  std::transform(verb.begin(), verb.end(), verb.begin(), [](unsigned char c) {
+    return static_cast<char>(std::toupper(c));
+  });
 
   if (verb != "PRIVACY") {
     LOG_DEBUG("VideoPrivacyControl: ignoring verb " << verb);
@@ -183,8 +195,9 @@ void handleCommand(const std::string &line) {
     } else {
       key = token.substr(0, eq);
       val = token.substr(eq + 1);
-      std::transform(key.begin(), key.end(), key.begin(),
-                     [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
     }
 
     if (key == "value" || key == "state" || key.empty()) {

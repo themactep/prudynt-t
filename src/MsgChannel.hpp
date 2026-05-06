@@ -21,7 +21,8 @@ public:
     msg_buffer.push_front(std::move(msg));
     if (msg_buffer.size() > buffer_size) {
       msg_buffer.pop_back();
-      write_cv.notify_all(); // wake wait_read() callers (e.g. RTSP SPS/PPS init)
+      write_cv
+          .notify_all(); // wake wait_read() callers (e.g. RTSP SPS/PPS init)
       return false;
     }
     write_cv.notify_all();

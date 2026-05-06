@@ -32,7 +32,8 @@ struct State {
   int day_count = 0;
   int gb_gain_record = 200; // sentinel high
   int gr_gain_record = 200; // sentinel high
-  int settle_remaining = 0; // samples left to capture minima after entering night
+  int settle_remaining =
+      0; // samples left to capture minima after entering night
 };
 
 struct Decision {
@@ -77,7 +78,8 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
   Decision d{};
 
   // Night path: EV high for N samples
-  // Only check if we're not in the settle window (where EV might be contaminated by IR)
+  // Only check if we're not in the settle window (where EV might be
+  // contaminated by IR)
   if (s.settle_remaining == 0 && sig.ev > p.ev_night_high) {
     if (++s.night_count >= p.night_count_threshold) {
       d.target = Mode::Night;
@@ -92,10 +94,12 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
   if (s.ircut_engaged && sig.ev < p.ev_day_low_primary) {
     // Treat zero/negative GB as unavailable on some platforms in NIGHT
     bool have_gb = (sig.gb_gain > 0);
-    bool gb_delta_ok = have_gb && (sig.gb_gain > s.gb_gain_record + p.gb_gain_delta);
+    bool gb_delta_ok =
+        have_gb && (sig.gb_gain > s.gb_gain_record + p.gb_gain_delta);
     if (have_gb) {
       if (gb_delta_ok) {
-        if (sig.ev < p.ev_day_low_secondary || sig.gb_gain > p.gb_gain_absolute) {
+        if (sig.ev < p.ev_day_low_secondary ||
+            sig.gb_gain > p.gb_gain_absolute) {
           if (++s.day_count >= p.day_count_threshold) {
             d.target = Mode::Day;
             d.reason = 3;
@@ -129,7 +133,8 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
 // ============================================================================
 // SIMPLE TOTAL GAIN ALGORITHM (NEW - CURRENTLY ACTIVE)
 // ============================================================================
-// This simplified algorithm uses only total_gain for reliable day/night detection
+// This simplified algorithm uses only total_gain for reliable day/night
+// detection
 //
 // Total Gain behavior:
 //   - Low gain values (< 300) = Bright conditions = Day mode
@@ -141,8 +146,9 @@ inline Decision decide(const Params &p, State &s, const Signals &sig) {
 struct SimpleParams {
   int total_gain_night_threshold = 3000; // Switch to night when gain > this
   int total_gain_day_threshold = 300;    // Switch to day when gain < this
-  int night_count_threshold = 6;         // Consecutive samples before switching to night
-  int day_count_threshold = 4;           // Consecutive samples before switching to day
+  int night_count_threshold =
+      6;                       // Consecutive samples before switching to night
+  int day_count_threshold = 4; // Consecutive samples before switching to day
 
   // EV-based thresholds for platforms without total_gain (T10, T20)
   int ev_night_threshold = 1500000; // Switch to night when EV > this (dark)
@@ -160,7 +166,8 @@ inline void simple_init(SimpleState &s) {
   s.is_night = false;
 }
 
-inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_gain, int ev) {
+inline Decision simple_decide(const SimpleParams &p, SimpleState &s,
+                              int total_gain, int ev) {
   Decision d{};
 
   // If total_gain is available, use it (T23, T31, C100)
@@ -187,8 +194,9 @@ inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_g
         }
       }
     }
-    // In between thresholds - decay counters slowly to tolerate brief AE oscillation.
-    // A hard reset would block detection if gain bounces through the zone during settling.
+    // In between thresholds - decay counters slowly to tolerate brief AE
+    // oscillation. A hard reset would block detection if gain bounces through
+    // the zone during settling.
     else {
       if (s.night_count > 0)
         --s.night_count;
@@ -220,7 +228,8 @@ inline Decision simple_decide(const SimpleParams &p, SimpleState &s, int total_g
         }
       }
     }
-    // In between thresholds - decay counters slowly to tolerate brief AE oscillation.
+    // In between thresholds - decay counters slowly to tolerate brief AE
+    // oscillation.
     else {
       if (s.night_count > 0)
         --s.night_count;

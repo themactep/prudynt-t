@@ -11,18 +11,21 @@
 #include <sys/socket.h>
 
 // Modify method to accept pointers for the NAL units
-IMPServerMediaSubsession *IMPServerMediaSubsession::createNew(UsageEnvironment &env,
-                                                              H264NALUnit *vps, // Change to pointer to make optional
-                                                              H264NALUnit sps, H264NALUnit pps, int encChn) {
+IMPServerMediaSubsession *IMPServerMediaSubsession::createNew(
+    UsageEnvironment &env,
+    H264NALUnit *vps, // Change to pointer to make optional
+    H264NALUnit sps, H264NALUnit pps, int encChn) {
   // Pass along the pointers; they may be nullptr
   return new IMPServerMediaSubsession(env, vps, sps, pps, encChn);
 }
 
 // Modify the constructor accordingly
-IMPServerMediaSubsession::IMPServerMediaSubsession(UsageEnvironment &env,
-                                                   H264NALUnit *vps, // Change to pointer to make optional
-                                                   H264NALUnit sps, H264NALUnit pps, int encChn)
-    : OnDemandServerMediaSubsession(env, true), vps(vps ? new H264NALUnit(*vps) : nullptr), // Copy if not nullptr
+IMPServerMediaSubsession::IMPServerMediaSubsession(
+    UsageEnvironment &env,
+    H264NALUnit *vps, // Change to pointer to make optional
+    H264NALUnit sps, H264NALUnit pps, int encChn)
+    : OnDemandServerMediaSubsession(env, true),
+      vps(vps ? new H264NALUnit(*vps) : nullptr), // Copy if not nullptr
       sps(sps), pps(pps), encChn(encChn) {
 }
 
@@ -31,11 +34,14 @@ IMPServerMediaSubsession::~IMPServerMediaSubsession() {
   delete vps; // Safe to delete nullptr if vps is not set
 }
 
-FramedSource *IMPServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned &estBitrate) {
+FramedSource *
+IMPServerMediaSubsession::createNewStreamSource(unsigned clientSessionId,
+                                                unsigned &estBitrate) {
   LOG_DEBUG("Create Stream Source. ");
   estBitrate = cfg->rtsp.est_bitrate; // The expected bitrate?
 
-  auto imp = IMPDeviceSource<H264NALUnit, video_stream>::createNew(envir(), encChn, global_video[encChn], "video");
+  auto imp = IMPDeviceSource<H264NALUnit, video_stream>::createNew(
+      envir(), encChn, global_video[encChn], "video");
   // Here we need to decide based on the format whether to use H264 or H265
   // framer
   if (vps) {
@@ -46,9 +52,11 @@ FramedSource *IMPServerMediaSubsession::createNewStreamSource(unsigned clientSes
 }
 
 // Modify RTP Sink creation to conditionally include VPS
-RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
-                                                    FramedSource *fs) {
-  increaseSendBufferTo(envir(), rtpGroupsock->socketNum(), cfg->rtsp.send_buffer_size);
+RTPSink *IMPServerMediaSubsession::createNewRTPSink(
+    Groupsock *rtpGroupsock, unsigned char rtpPayloadTypeIfDynamic,
+    FramedSource *fs) {
+  increaseSendBufferTo(envir(), rtpGroupsock->socketNum(),
+                       cfg->rtsp.send_buffer_size);
 
   // Set send timeout to detect and disconnect stalled RTSP clients
   // (inspired by go2rtc which uses a 5s write deadline on TCP sockets)
@@ -56,17 +64,20 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, uns
     struct timeval tv;
     tv.tv_sec = cfg->rtsp.send_timeout_s;
     tv.tv_usec = 0;
-    setsockopt(rtpGroupsock->socketNum(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    setsockopt(rtpGroupsock->socketNum(), SOL_SOCKET, SO_SNDTIMEO, &tv,
+               sizeof(tv));
   }
   // Use VPS only if it's available (non-nullptr, and we are in H265 mode)
   if (vps) {
-    return H265VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &vps->data[0],
-                                       vps->data.size(), // Now using pointer, check and dereference
-                                       &sps.data[0], sps.data.size(), &pps.data[0], pps.data.size());
+    return H265VideoRTPSink::createNew(
+        envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &vps->data[0],
+        vps->data.size(), // Now using pointer, check and dereference
+        &sps.data[0], sps.data.size(), &pps.data[0], pps.data.size());
   } else {
     // For H264 or other formats, VPS is not used
-    return H264VideoRTPSink::createNew(envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &sps.data[0], sps.data.size(),
-                                       &pps.data[0], pps.data.size());
+    return H264VideoRTPSink::createNew(
+        envir(), rtpGroupsock, rtpPayloadTypeIfDynamic, &sps.data[0],
+        sps.data.size(), &pps.data[0], pps.data.size());
   }
 
   // enabling this allows stream resolution changes
@@ -76,23 +87,27 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(Groupsock *rtpGroupsock, uns
 
 char const *IMPServerMediaSubsession::sdpLines(int addressFamily) {
   // Check if encoder codec config (SPS/PPS/VPS) has changed since last SDP.
-  // If so, update our copies and invalidate cached SDP so live555 regenerates it.
-  // This enables dynamic resolution/profile changes without RTSP server restart.
+  // If so, update our copies and invalidate cached SDP so live555 regenerates
+  // it. This enables dynamic resolution/profile changes without RTSP server
+  // restart.
   if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS && global_video[encChn]) {
     std::lock_guard<std::mutex> lock(global_video[encChn]->codec_config_mutex);
     bool changed = false;
 
-    if (global_video[encChn]->have_sps && global_video[encChn]->latest_sps != lastKnownSps) {
+    if (global_video[encChn]->have_sps &&
+        global_video[encChn]->latest_sps != lastKnownSps) {
       sps.data = global_video[encChn]->latest_sps;
       lastKnownSps = global_video[encChn]->latest_sps;
       changed = true;
     }
-    if (global_video[encChn]->have_pps && global_video[encChn]->latest_pps != lastKnownPps) {
+    if (global_video[encChn]->have_pps &&
+        global_video[encChn]->latest_pps != lastKnownPps) {
       pps.data = global_video[encChn]->latest_pps;
       lastKnownPps = global_video[encChn]->latest_pps;
       changed = true;
     }
-    if (vps && global_video[encChn]->have_vps && global_video[encChn]->latest_vps != lastKnownVps) {
+    if (vps && global_video[encChn]->have_vps &&
+        global_video[encChn]->latest_vps != lastKnownVps) {
       vps->data = global_video[encChn]->latest_vps;
       lastKnownVps = global_video[encChn]->latest_vps;
       changed = true;

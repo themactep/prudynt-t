@@ -8,15 +8,17 @@
 #define MODULE "PreTriggerBuffer"
 
 PreTriggerBuffer::PreTriggerBuffer()
-    : write_index_(0), capacity_(0), max_memory_bytes_(0), duration_us_(0), keyframe_only_(false), enabled_(false),
-      memory_usage_(0), peak_memory_usage_(0) {
+    : write_index_(0), capacity_(0), max_memory_bytes_(0), duration_us_(0),
+      keyframe_only_(false), enabled_(false), memory_usage_(0),
+      peak_memory_usage_(0) {
 }
 
 PreTriggerBuffer::~PreTriggerBuffer() {
   clear();
 }
 
-bool PreTriggerBuffer::init(int duration_seconds, int fps, int max_memory_mb, bool keyframe_only) {
+bool PreTriggerBuffer::init(int duration_seconds, int fps, int max_memory_mb,
+                            bool keyframe_only) {
   std::lock_guard<std::mutex> lock(buffer_mutex_);
 
   if (duration_seconds <= 0 || fps <= 0 || max_memory_mb <= 0) {
@@ -31,7 +33,8 @@ bool PreTriggerBuffer::init(int duration_seconds, int fps, int max_memory_mb, bo
   // This is just a ceiling - actual eviction is time-based
   capacity_ = duration_seconds * fps * 2;
   if (keyframe_only) {
-    capacity_ = std::max(1, (int)(capacity_ / 8)); // Assume ~1 keyframe per 8 frames
+    capacity_ =
+        std::max(1, (int)(capacity_ / 8)); // Assume ~1 keyframe per 8 frames
   }
 
   max_memory_bytes_ = max_memory_mb * 1024 * 1024;
@@ -44,14 +47,16 @@ bool PreTriggerBuffer::init(int duration_seconds, int fps, int max_memory_mb, bo
   memory_usage_.store(0);
   enabled_.store(true);
 
-  LOG_INFO("PreTriggerBuffer initialized: " << duration_seconds << "s duration, " << max_memory_mb
-                                            << "MB limit, max_capacity=" << capacity_
-                                            << ", keyframe_only=" << keyframe_only);
+  LOG_INFO("PreTriggerBuffer initialized: "
+           << duration_seconds << "s duration, " << max_memory_mb
+           << "MB limit, max_capacity=" << capacity_
+           << ", keyframe_only=" << keyframe_only);
 
   return true;
 }
 
-void PreTriggerBuffer::addFrame(const uint8_t *data, size_t size, int64_t timestamp_us, bool is_keyframe) {
+void PreTriggerBuffer::addFrame(const uint8_t *data, size_t size,
+                                int64_t timestamp_us, bool is_keyframe) {
   if (!enabled_.load() || !data || size == 0) {
     return;
   }
@@ -79,7 +84,8 @@ void PreTriggerBuffer::addFrame(const uint8_t *data, size_t size, int64_t timest
   // Track peak memory usage
   size_t current_usage = memory_usage_.load();
   size_t peak = peak_memory_usage_.load();
-  while (current_usage > peak && !peak_memory_usage_.compare_exchange_weak(peak, current_usage)) {
+  while (current_usage > peak &&
+         !peak_memory_usage_.compare_exchange_weak(peak, current_usage)) {
     // Retry if another thread updated peak_memory_usage_
   }
 
@@ -112,7 +118,9 @@ std::vector<PreTriggerFrame> PreTriggerBuffer::getFrames() {
 
   // Sort by timestamp to ensure correct order (safety check)
   std::sort(result.begin(), result.end(),
-            [](const PreTriggerFrame &a, const PreTriggerFrame &b) { return a.timestamp_us < b.timestamp_us; });
+            [](const PreTriggerFrame &a, const PreTriggerFrame &b) {
+              return a.timestamp_us < b.timestamp_us;
+            });
 
   return result;
 }
@@ -124,7 +132,8 @@ void PreTriggerBuffer::clearFrames() {
   frames_.clear();
   write_index_ = 0;
   memory_usage_.store(0);
-  // Keep enabled_, capacity_, and duration_us_ unchanged so buffer continues working
+  // Keep enabled_, capacity_, and duration_us_ unchanged so buffer continues
+  // working
 }
 
 void PreTriggerBuffer::clear() {
@@ -150,7 +159,8 @@ void PreTriggerBuffer::enforceMemoryLimit() {
     return;
   }
 
-  LOG_WARN("PreTriggerBuffer memory limit exceeded: " << current_usage << " bytes > " << max_memory_bytes_ << " bytes");
+  LOG_WARN("PreTriggerBuffer memory limit exceeded: "
+           << current_usage << " bytes > " << max_memory_bytes_ << " bytes");
 
   // Remove oldest frames until under limit
   size_t removed_count = 0;
@@ -195,7 +205,8 @@ void PreTriggerBuffer::reduceBufferSize() {
   }
 
   size_t new_capacity = capacity_ / 2;
-  LOG_WARN("PreTriggerBuffer reducing max capacity from " << capacity_ << " to " << new_capacity);
+  LOG_WARN("PreTriggerBuffer reducing max capacity from " << capacity_ << " to "
+                                                          << new_capacity);
   capacity_ = new_capacity;
 
   // Trim frames if we have more than new capacity
@@ -204,7 +215,8 @@ void PreTriggerBuffer::reduceBufferSize() {
     frames_.erase(frames_.begin());
   }
 
-  LOG_INFO("PreTriggerBuffer capacity reduced, current frames: " << frames_.size());
+  LOG_INFO(
+      "PreTriggerBuffer capacity reduced, current frames: " << frames_.size());
 }
 
 #endif // PREBUFFER_ENABLED

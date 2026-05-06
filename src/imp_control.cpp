@@ -16,7 +16,8 @@ extern "C" {
 
 /* ============================================================================
  * Video/ISP Controls - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 int imp_control_set_brightness(unsigned char val) {
   return hal::isp::set_brightness(val);
@@ -66,7 +67,8 @@ int imp_control_set_ae_it_max(int val) {
   return hal::isp::set_ae_it_max(static_cast<unsigned int>(val));
 }
 
-int imp_control_set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short) {
+int imp_control_set_ae_min(int min_it, int min_again, int min_it_short,
+                           int min_again_short) {
   return hal::isp::set_ae_min(min_it, min_again, min_it_short, min_again_short);
 }
 
@@ -98,8 +100,11 @@ int imp_control_set_flicker_mode(int mode) {
   return hal::isp::set_anti_flicker(mode);
 }
 
-int imp_control_set_white_balance(int mode, unsigned short rgain, unsigned short bgain) {
-  return hal::isp::set_wb(mode == 0 ? ISP_CORE_WB_MODE_AUTO : ISP_CORE_WB_MODE_MANUAL, rgain, bgain);
+int imp_control_set_white_balance(int mode, unsigned short rgain,
+                                  unsigned short bgain) {
+  return hal::isp::set_wb(mode == 0 ? ISP_CORE_WB_MODE_AUTO
+                                    : ISP_CORE_WB_MODE_MANUAL,
+                          rgain, bgain);
 }
 
 int imp_control_set_sensor_fps(int fps_num, int fps_den) {
@@ -155,7 +160,8 @@ int imp_control_get_ae_attributes(char *buffer, int size) {
 
 /* ============================================================================
  * Audio Input (AI) Controls - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 int imp_control_ai_set_hpf(int enable) {
   return hal::audio::set_ai_hpf(enable);
@@ -187,7 +193,8 @@ int imp_control_ai_set_alc(int level) {
 
 /* ============================================================================
  * Audio Output (AO) Controls - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 int imp_control_ao_set_hpf(int enable) {
   return hal::audio::set_ao_hpf(enable);
@@ -203,7 +210,8 @@ int imp_control_ao_set_gain(int gain) {
 
 /* ============================================================================
  * Encoding Controls - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 int imp_control_set_bitrate(int channel, int bitrate) {
   return hal::encoder::set_bitrate(channel, bitrate);
@@ -235,7 +243,8 @@ int imp_control_set_qp_ip_delta(int channel, int delta) {
 
 /* ============================================================================
  * OSD Controls - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 int imp_control_osd_show_region(int handle, int show) {
   return hal::osd::show_region(handle, show);
@@ -268,8 +277,10 @@ int imp_control_osd_get_region_attr(int handle, char *buffer, int size) {
   return ret;
 }
 
-int imp_control_osd_get_group_attr(int handle, int group, char *buffer, int size) {
-  if (handle < 0 || group < 0 || !buffer || size < (int)sizeof(IMPOSDGrpRgnAttr))
+int imp_control_osd_get_group_attr(int handle, int group, char *buffer,
+                                   int size) {
+  if (handle < 0 || group < 0 || !buffer ||
+      size < (int)sizeof(IMPOSDGrpRgnAttr))
     return -1;
   IMPOSDGrpRgnAttr attr{};
   int ret = hal::osd::get_group_attr(handle, group, attr);
@@ -281,7 +292,8 @@ int imp_control_osd_get_group_attr(int handle, int group, char *buffer, int size
 
 /* ============================================================================
  * System Information - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 const char *imp_control_get_device_id(void) {
   static char device_id[64] = {0};
@@ -312,7 +324,8 @@ const char *imp_control_get_device_id(void) {
 }
 
 const char *imp_control_get_model_family(void) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return "NEW_SDK";
 #else
   return "OLD_SDK";
@@ -361,7 +374,8 @@ const char *imp_control_get_cpu_info(void) {
 }
 
 const char *imp_control_get_channel_encoding_type(int channel) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   IMPEncoderChnAttr chnAttr;
 #else
   IMPEncoderCHNAttr chnAttr;
@@ -372,7 +386,8 @@ const char *imp_control_get_channel_encoding_type(int channel) {
   }
 
 /* For T31+, determine type from profile */
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   /* Check profile to determine codec type */
   if (chnAttr.encAttr.eProfile >= IMP_ENC_PROFILE_JPEG) {
     return "JPEG";
@@ -396,7 +411,8 @@ const char *imp_control_get_channel_encoding_type(int channel) {
 
 /* ============================================================================
  * Advanced/Specialized Controls - Implementation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 int imp_control_set_fisheye_status(int enable) {
 #if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)
@@ -409,7 +425,8 @@ int imp_control_set_fisheye_status(int enable) {
 }
 
 int imp_control_set_front_crop(int x, int y, int width, int height) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   IMPISPAutoZoom zoom{};
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   zoom.zoom_chx_en[0] = 1;
@@ -481,4 +498,5 @@ int imp_control_get_af_metrics(char *buffer, int size) {
  *
  * Unsupported functions return -1 with (void) casts to suppress warnings.
  *
- * ============================================================================ */
+ * ============================================================================
+ */

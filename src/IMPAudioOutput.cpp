@@ -30,15 +30,17 @@ auto toImpSampleRate(int sampleRate) {
   case 48000:
     return AUDIO_SAMPLE_RATE_48000;
   default:
-    LOG_WARN("Unsupported AO sample rate " << sampleRate << ", falling back to 16000Hz");
+    LOG_WARN("Unsupported AO sample rate " << sampleRate
+                                           << ", falling back to 16000Hz");
     return AUDIO_SAMPLE_RATE_16000;
   }
 }
 } // namespace
 
 IMPAudioOutput::IMPAudioOutput(int devId_, int channelId_)
-    : initialized(false), devId(devId_), channelId(channelId_), maxFrameBytes(0), currentVolume(0), currentGain(0),
-      currentMute(false), configuredSampleRate(0) {
+    : initialized(false), devId(devId_), channelId(channelId_),
+      maxFrameBytes(0), currentVolume(0), currentGain(0), currentMute(false),
+      configuredSampleRate(0) {
 }
 
 IMPAudioOutput::~IMPAudioOutput() {
@@ -138,8 +140,9 @@ bool IMPAudioOutput::configureHardwareAtRate(int sampleRate) {
 
   int actualRate = static_cast<int>(attr.samplerate);
   if (actualRate > 0 && actualRate != sampleRate) {
-    LOG_WARN("AO sample rate adjusted by hardware: requested " << sampleRate << " Hz, got " << actualRate
-                                                               << " Hz (shared CODEC clock?)");
+    LOG_WARN("AO sample rate adjusted by hardware: requested "
+             << sampleRate << " Hz, got " << actualRate
+             << " Hz (shared CODEC clock?)");
     int newNumPerFrm = std::max(actualRate / (1000 / kFrameDurationMs), 1);
     maxFrameBytes = newNumPerFrm * static_cast<int>(sizeof(int16_t));
   }
@@ -156,7 +159,9 @@ bool IMPAudioOutput::configureHardwareAtRate(int sampleRate) {
   }
 
   configuredSampleRate = (actualRate > 0) ? actualRate : sampleRate;
-  LOG_INFO("AO initialised: device=" << devId << " channel=" << channelId << " rate=" << configuredSampleRate << " Hz"
+  LOG_INFO("AO initialised: device=" << devId << " channel=" << channelId
+                                     << " rate=" << configuredSampleRate
+                                     << " Hz"
                                      << " maxFrameBytes=" << maxFrameBytes);
   return true;
 }
@@ -202,9 +207,12 @@ bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount) {
 
   while (remainingBytes > 0) {
     const size_t chunk =
-        (maxFrameBytes > 0) ? std::min(static_cast<size_t>(maxFrameBytes), remainingBytes) : remainingBytes;
+        (maxFrameBytes > 0)
+            ? std::min(static_cast<size_t>(maxFrameBytes), remainingBytes)
+            : remainingBytes;
     IMPAudioFrame frame{};
-    frame.virAddr = reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
+    frame.virAddr =
+        reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
     frame.len = static_cast<unsigned int>(chunk);
 
     if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0) {
@@ -225,7 +233,8 @@ bool IMPAudioOutput::flush() {
   }
 
   if (IMP_AO_FlushChnBuf(devId, channelId) != 0) {
-    LOG_WARN("IMP_AO_FlushChnBuf failed during flush request for channel " << channelId);
+    LOG_WARN("IMP_AO_FlushChnBuf failed during flush request for channel "
+             << channelId);
     return false;
   }
   return true;
@@ -256,7 +265,8 @@ bool IMPAudioOutput::playSilence(int durationMs) {
     return false;
   }
 
-  size_t samples = static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
+  size_t samples =
+      static_cast<size_t>(static_cast<int64_t>(rate) * durationMs / 1000);
   if (samples == 0) {
     samples = std::max(rate / 50, 1); // default to ~20ms of silence
   }

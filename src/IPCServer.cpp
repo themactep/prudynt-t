@@ -199,7 +199,8 @@ void IPCServer::http_loop() {
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(static_cast<uint16_t>(http_port_));
   if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-    LOG_ERROR("HTTP API: bind(" << http_port_ << ") failed: " << strerror(errno));
+    LOG_ERROR("HTTP API: bind(" << http_port_
+                                << ") failed: " << strerror(errno));
     ::close(fd);
     http_listen_fd_ = -1;
     http_running_.store(false);
@@ -291,7 +292,8 @@ int IPCServer::handle_http_client(int fd) {
   while (pos != std::string::npos && pos < hdr_end) {
     size_t next = req.find('\n', pos + 1);
     size_t line_start = (pos == std::string::npos) ? 0 : pos + 1;
-    std::string line = trim(req.substr(line_start, (next == std::string::npos ? hdr_end : next) - line_start));
+    std::string line = trim(req.substr(
+        line_start, (next == std::string::npos ? hdr_end : next) - line_start));
     pos = next;
     if (line.empty())
       continue;
@@ -316,11 +318,16 @@ int IPCServer::handle_http_client(int fd) {
     body.append(buf, buf + r);
   }
 
-  auto send_response = [&](int code, const std::string &ctype, const std::string &payload) {
+  auto send_response = [&](int code, const std::string &ctype,
+                           const std::string &payload) {
     char hdr[256];
-    int n = snprintf(hdr, sizeof(hdr),
-                     "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", code,
-                     (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")), ctype.c_str(), payload.size());
+    int n = snprintf(
+        hdr, sizeof(hdr),
+        "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: "
+        "%zu\r\nConnection: close\r\n\r\n",
+        code,
+        (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")),
+        ctype.c_str(), payload.size());
     write_full(fd, hdr, static_cast<size_t>(n));
     if (!payload.empty()) {
       write_full(fd, payload.data(), payload.size());
@@ -426,7 +433,8 @@ int IPCServer::handle_client(int fd) {
     std::vector<unsigned char> img;
     const int max_wait_ms = 250;
     int waited = 0;
-    while (!(get_snapshot_ch_local(ch, img) && !img.empty()) && waited < max_wait_ms) {
+    while (!(get_snapshot_ch_local(ch, img) && !img.empty()) &&
+           waited < max_wait_ms) {
       usleep(10 * 1000);
       waited += 10;
     }
@@ -512,8 +520,10 @@ int IPCServer::handle_client(int fd) {
 
     // Quantize w/h to multiples of 16 and cap to source size
     if (w > 0 && h > 0) {
-      auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width : cfg->stream1.width;
-      auto src_h = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.height : cfg->stream1.height;
+      auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width
+                                                     : cfg->stream1.width;
+      auto src_h = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.height
+                                                     : cfg->stream1.height;
       if (w > src_w)
         w = src_w;
       if (h > src_h)
@@ -538,7 +548,8 @@ int IPCServer::handle_client(int fd) {
     auto *stream_cfg = global_jpeg[ch]->stream;
     int orig_fps = stream_cfg->fps;
 
-    bool size_change = (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
+    bool size_change =
+        (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
     bool fps_change = (fps > 0 && fps != stream_cfg->fps);
 
     // Request reconfiguration and wake worker if something actually changes
@@ -618,19 +629,22 @@ int IPCServer::handle_client(int fd) {
       int live_ae_luma = cfg->daynight.live_ae_luma.load();
       int live_awb_ct = cfg->daynight.live_awb_color_temp.load();
       const char *mode_ptr = cfg->daynight.live_mode.load();
-      const char *mode = (mode_ptr && mode_ptr[0] != '\0') ? mode_ptr : "unknown";
+      const char *mode =
+          (mode_ptr && mode_ptr[0] != '\0') ? mode_ptr : "unknown";
       long now = static_cast<long>(time(NULL));
-      int n = snprintf(line, sizeof(line),
-                       "{\"ts\":%ld,\"time_now\":%ld,\"stats\":{\"stream0\":{\"fps\":%d,"
-                       "\"Bps\":%d},\"stream1\":{\"fps\":%d,\"Bps\":%d},"
-                       "\"stream2\":{\"fps\":%d,\"Bps\":%d}},"
-                       "\"ev\":%d,\"gb_gain\":%d,\"gr_gain\":%d,\"daynight_brightness\":%d,"
-                       "\"total_gain\":%d,\"ae_luma\":%d,\"awb_color_temp\":%d,"
-                       "\"total_gain_night_threshold\":%d,\"total_gain_day_threshold\":%d,"
-                       "\"daynight_mode\":\"%s\"}\n",
-                       now, now, fps0, bps0, fps1, bps1, fps2, bps2, live_ev, live_gb, live_gr, live_brightness,
-                       live_total_gain, live_ae_luma, live_awb_ct, cfg->daynight.total_gain_night_threshold,
-                       cfg->daynight.total_gain_day_threshold, mode);
+      int n = snprintf(
+          line, sizeof(line),
+          "{\"ts\":%ld,\"time_now\":%ld,\"stats\":{\"stream0\":{\"fps\":%d,"
+          "\"Bps\":%d},\"stream1\":{\"fps\":%d,\"Bps\":%d},"
+          "\"stream2\":{\"fps\":%d,\"Bps\":%d}},"
+          "\"ev\":%d,\"gb_gain\":%d,\"gr_gain\":%d,\"daynight_brightness\":%d,"
+          "\"total_gain\":%d,\"ae_luma\":%d,\"awb_color_temp\":%d,"
+          "\"total_gain_night_threshold\":%d,\"total_gain_day_threshold\":%d,"
+          "\"daynight_mode\":\"%s\"}\n",
+          now, now, fps0, bps0, fps1, bps1, fps2, bps2, live_ev, live_gb,
+          live_gr, live_brightness, live_total_gain, live_ae_luma, live_awb_ct,
+          cfg->daynight.total_gain_night_threshold,
+          cfg->daynight.total_gain_day_threshold, mode);
       ssize_t w = write(fd, line, n);
       if (w <= 0)
         break; // client closed
@@ -644,24 +658,36 @@ int IPCServer::handle_client(int fd) {
     // Stream stats
     char line[256];
     // HELP/TYPE for stream fps/bps
-    write(fd, "# HELP prudynt_stream_fps Stream frames per second (instant).\n",
-          strlen("# HELP prudynt_stream_fps Stream frames per second (instant).\n"));
-    write(fd, "# TYPE prudynt_stream_fps gauge\n", strlen("# TYPE prudynt_stream_fps gauge\n"));
-    snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"0\"} %d\n", cfg->stream0.stats.fps);
+    write(
+        fd, "# HELP prudynt_stream_fps Stream frames per second (instant).\n",
+        strlen(
+            "# HELP prudynt_stream_fps Stream frames per second (instant).\n"));
+    write(fd, "# TYPE prudynt_stream_fps gauge\n",
+          strlen("# TYPE prudynt_stream_fps gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"0\"} %d\n",
+             cfg->stream0.stats.fps);
     write(fd, line, strlen(line));
-    snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"1\"} %d\n", cfg->stream1.stats.fps);
+    snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"1\"} %d\n",
+             cfg->stream1.stats.fps);
     write(fd, line, strlen(line));
-    snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"2\"} %d\n", cfg->stream2.stats.fps);
+    snprintf(line, sizeof(line), "prudynt_stream_fps{stream=\"2\"} %d\n",
+             cfg->stream2.stats.fps);
     write(fd, line, strlen(line));
 
-    write(fd, "# HELP prudynt_stream_Bps Stream bytes per second (instant).\n",
-          strlen("# HELP prudynt_stream_Bps Stream bytes per second (instant).\n"));
-    write(fd, "# TYPE prudynt_stream_Bps gauge\n", strlen("# TYPE prudynt_stream_Bps gauge\n"));
-    snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"0\"} %u\n", (unsigned)cfg->stream0.stats.bps);
+    write(
+        fd, "# HELP prudynt_stream_Bps Stream bytes per second (instant).\n",
+        strlen(
+            "# HELP prudynt_stream_Bps Stream bytes per second (instant).\n"));
+    write(fd, "# TYPE prudynt_stream_Bps gauge\n",
+          strlen("# TYPE prudynt_stream_Bps gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"0\"} %u\n",
+             (unsigned)cfg->stream0.stats.bps);
     write(fd, line, strlen(line));
-    snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"1\"} %u\n", (unsigned)cfg->stream1.stats.bps);
+    snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"1\"} %u\n",
+             (unsigned)cfg->stream1.stats.bps);
     write(fd, line, strlen(line));
-    snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"2\"} %u\n", (unsigned)cfg->stream2.stats.bps);
+    snprintf(line, sizeof(line), "prudynt_stream_Bps{stream=\"2\"} %u\n",
+             (unsigned)cfg->stream2.stats.bps);
     write(fd, line, strlen(line));
 
     // Day/Night live
@@ -669,58 +695,80 @@ int IPCServer::handle_client(int fd) {
     int live_ev_val = cfg->daynight.live_ev.load();
     int live_gb_val = cfg->daynight.live_gb.load();
     int live_gr_val = cfg->daynight.live_gr.load();
-    write(fd, "# HELP prudynt_daynight_brightness_percent Day/Night brightness percent (0..100).\n",
-          strlen("# HELP prudynt_daynight_brightness_percent Day/Night brightness percent (0..100).\n"));
+    write(fd,
+          "# HELP prudynt_daynight_brightness_percent Day/Night brightness "
+          "percent (0..100).\n",
+          strlen("# HELP prudynt_daynight_brightness_percent Day/Night "
+                 "brightness percent (0..100).\n"));
     write(fd, "# TYPE prudynt_daynight_brightness_percent gauge\n",
           strlen("# TYPE prudynt_daynight_brightness_percent gauge\n"));
-    snprintf(line, sizeof(line), "prudynt_daynight_brightness_percent %d\n", live_brightness_percent);
+    snprintf(line, sizeof(line), "prudynt_daynight_brightness_percent %d\n",
+             live_brightness_percent);
     write(fd, line, strlen(line));
 
-    write(fd, "# HELP prudynt_daynight_ev ISP exposure value (platform units).\n",
-          strlen("# HELP prudynt_daynight_ev ISP exposure value (platform units).\n"));
-    write(fd, "# TYPE prudynt_daynight_ev gauge\n", strlen("# TYPE prudynt_daynight_ev gauge\n"));
+    write(fd,
+          "# HELP prudynt_daynight_ev ISP exposure value (platform units).\n",
+          strlen("# HELP prudynt_daynight_ev ISP exposure value (platform "
+                 "units).\n"));
+    write(fd, "# TYPE prudynt_daynight_ev gauge\n",
+          strlen("# TYPE prudynt_daynight_ev gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_ev %d\n", live_ev_val);
     write(fd, line, strlen(line));
 
     write(fd, "# HELP prudynt_daynight_gb AWB blue/green gain (b/g).\n",
           strlen("# HELP prudynt_daynight_gb AWB blue/green gain (b/g).\n"));
-    write(fd, "# TYPE prudynt_daynight_gb gauge\n", strlen("# TYPE prudynt_daynight_gb gauge\n"));
+    write(fd, "# TYPE prudynt_daynight_gb gauge\n",
+          strlen("# TYPE prudynt_daynight_gb gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_gb %d\n", live_gb_val);
     write(fd, line, strlen(line));
 
     write(fd, "# HELP prudynt_daynight_gr AWB red/green gain (r/g).\n",
           strlen("# HELP prudynt_daynight_gr AWB red/green gain (r/g).\n"));
-    write(fd, "# TYPE prudynt_daynight_gr gauge\n", strlen("# TYPE prudynt_daynight_gr gauge\n"));
+    write(fd, "# TYPE prudynt_daynight_gr gauge\n",
+          strlen("# TYPE prudynt_daynight_gr gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_gr %d\n", live_gr_val);
     write(fd, line, strlen(line));
 
-    write(fd, "# HELP prudynt_image_sinter_strength Current ISP sinter denoise strength.\n",
-          strlen("# HELP prudynt_image_sinter_strength Current ISP sinter denoise strength.\n"));
-    write(fd, "# TYPE prudynt_image_sinter_strength gauge\n", strlen("# TYPE prudynt_image_sinter_strength gauge\n"));
-    snprintf(line, sizeof(line), "prudynt_image_sinter_strength %d\n", cfg->image.sinter_strength);
+    write(fd,
+          "# HELP prudynt_image_sinter_strength Current ISP sinter denoise "
+          "strength.\n",
+          strlen("# HELP prudynt_image_sinter_strength Current ISP sinter "
+                 "denoise strength.\n"));
+    write(fd, "# TYPE prudynt_image_sinter_strength gauge\n",
+          strlen("# TYPE prudynt_image_sinter_strength gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_image_sinter_strength %d\n",
+             cfg->image.sinter_strength);
     write(fd, line, strlen(line));
 
-    write(fd, "# HELP prudynt_image_temper_strength Current ISP temper denoise strength.\n",
-          strlen("# HELP prudynt_image_temper_strength Current ISP temper denoise strength.\n"));
-    write(fd, "# TYPE prudynt_image_temper_strength gauge\n", strlen("# TYPE prudynt_image_temper_strength gauge\n"));
-    snprintf(line, sizeof(line), "prudynt_image_temper_strength %d\n", cfg->image.temper_strength);
+    write(fd,
+          "# HELP prudynt_image_temper_strength Current ISP temper denoise "
+          "strength.\n",
+          strlen("# HELP prudynt_image_temper_strength Current ISP temper "
+                 "denoise strength.\n"));
+    write(fd, "# TYPE prudynt_image_temper_strength gauge\n",
+          strlen("# TYPE prudynt_image_temper_strength gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_image_temper_strength %d\n",
+             cfg->image.temper_strength);
     write(fd, line, strlen(line));
 
     // Uptime seconds
     struct sysinfo sinfo{};
     if (sysinfo(&sinfo) == 0) {
-      snprintf(line, sizeof(line), "prudynt_uptime_seconds %lu\n", (unsigned long)sinfo.uptime);
+      snprintf(line, sizeof(line), "prudynt_uptime_seconds %lu\n",
+               (unsigned long)sinfo.uptime);
       write(fd, line, strlen(line));
     }
 
     // RTSP active client sessions
-    snprintf(line, sizeof(line), "prudynt_rtsp_clients %d\n", (int)global_rtsp_clients.load());
+    snprintf(line, sizeof(line), "prudynt_rtsp_clients %d\n",
+             (int)global_rtsp_clients.load());
     write(fd, line, strlen(line));
 
     // Build info as a const gauge with labels
     write(fd, "# HELP prudynt_build_info Build and commit info.\n",
           strlen("# HELP prudynt_build_info Build and commit info.\n"));
-    write(fd, "# TYPE prudynt_build_info gauge\n", strlen("# TYPE prudynt_build_info gauge\n"));
+    write(fd, "# TYPE prudynt_build_info gauge\n",
+          strlen("# TYPE prudynt_build_info gauge\n"));
     const char *platform =
 #if defined(PLATFORM_T31)
         "T31";
@@ -737,21 +785,31 @@ int IPCServer::handle_client(int fd) {
 #else
         "unknown";
 #endif
-    snprintf(line, sizeof(line), "prudynt_build_info{commit=\"%s\",platform=\"%s\"} 1\n", BUILD_COMMIT, platform);
+    snprintf(line, sizeof(line),
+             "prudynt_build_info{commit=\"%s\",platform=\"%s\"} 1\n",
+             BUILD_COMMIT, platform);
     write(fd, line, strlen(line));
 
     const char *mode_ptr = cfg->daynight.live_mode.load();
     const char *m = mode_ptr ? mode_ptr : "unknown";
     int is_day = (strcmp(m, "day") == 0);
     int is_night = (strcmp(m, "night") == 0);
-    write(fd, "# HELP prudynt_daynight_state Day/Night state as one-hot time series.\n",
-          strlen("# HELP prudynt_daynight_state Day/Night state as one-hot time series.\n"));
-    write(fd, "# TYPE prudynt_daynight_state gauge\n", strlen("# TYPE prudynt_daynight_state gauge\n"));
-    snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"day\"} %d\n", is_day);
+    write(fd,
+          "# HELP prudynt_daynight_state Day/Night state as one-hot time "
+          "series.\n",
+          strlen("# HELP prudynt_daynight_state Day/Night state as one-hot "
+                 "time series.\n"));
+    write(fd, "# TYPE prudynt_daynight_state gauge\n",
+          strlen("# TYPE prudynt_daynight_state gauge\n"));
+    snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"day\"} %d\n",
+             is_day);
     write(fd, line, strlen(line));
-    snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"night\"} %d\n", is_night);
+    snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"night\"} %d\n",
+             is_night);
     write(fd, line, strlen(line));
-    snprintf(line, sizeof(line), "prudynt_daynight_state{state=\"unknown\"} %d\n", (!is_day && !is_night));
+    snprintf(line, sizeof(line),
+             "prudynt_daynight_state{state=\"unknown\"} %d\n",
+             (!is_day && !is_night));
     write(fd, line, strlen(line));
 
     return 0;

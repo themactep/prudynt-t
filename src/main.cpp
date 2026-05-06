@@ -89,12 +89,14 @@ bool acquire_instance_lock() {
   std::error_code ec;
   fs::create_directories(kPrudyntRunDir, ec);
   if (ec) {
-    LOG_WARN("Failed to create run directory " << kPrudyntRunDir << ": " << ec.message());
+    LOG_WARN("Failed to create run directory " << kPrudyntRunDir << ": "
+                                               << ec.message());
   }
 
   instance_lock_fd = ::open(kPrudyntLockPath, O_RDWR | O_CREAT, 0644);
   if (instance_lock_fd < 0) {
-    LOG_ERROR("Unable to open instance lock file " << kPrudyntLockPath << ": " << strerror(errno));
+    LOG_ERROR("Unable to open instance lock file " << kPrudyntLockPath << ": "
+                                                   << strerror(errno));
     instance_lock_fd = -1;
     return false;
   }
@@ -106,10 +108,12 @@ bool acquire_instance_lock() {
       std::string pid_info;
       if (n > 0) {
         pid_info.assign(buf, buf + n);
-        pid_info.erase(std::remove(pid_info.begin(), pid_info.end(), '\n'), pid_info.end());
+        pid_info.erase(std::remove(pid_info.begin(), pid_info.end(), '\n'),
+                       pid_info.end());
       }
       if (!pid_info.empty()) {
-        LOG_ERROR("Another Prudynt instance appears to be running (pid " << pid_info << "). Exiting.");
+        LOG_ERROR("Another Prudynt instance appears to be running (pid "
+                  << pid_info << "). Exiting.");
       } else {
         LOG_ERROR("Another Prudynt instance appears to be running. Exiting.");
       }
@@ -125,10 +129,12 @@ bool acquire_instance_lock() {
     LOG_WARN("Failed to truncate instance lock file: " << strerror(errno));
   }
   char pid_buf[32];
-  int len = snprintf(pid_buf, sizeof(pid_buf), "%d\n", static_cast<int>(getpid()));
+  int len =
+      snprintf(pid_buf, sizeof(pid_buf), "%d\n", static_cast<int>(getpid()));
   if (len > 0) {
     if (::write(instance_lock_fd, pid_buf, len) < 0) {
-      LOG_WARN("Failed to write pid to instance lock file: " << strerror(errno));
+      LOG_WARN(
+          "Failed to write pid to instance lock file: " << strerror(errno));
     } else {
       ::fsync(instance_lock_fd);
     }
@@ -319,7 +325,8 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
     safe_write_hex(crash_fd, uc->uc_mcontext.arm_lr);
     safe_write(crash_fd, "\n");
 #else
-    safe_write(crash_fd, "(register dump not available for this architecture)\n");
+    safe_write(crash_fd,
+               "(register dump not available for this architecture)\n");
 #endif
   }
 
@@ -330,10 +337,12 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
   int frame_count = backtrace(backtrace_buffer, 64);
 
   // backtrace_symbols is not async-signal-safe, but we're crashing anyway
-  // and we need the information. We'll use backtrace_symbols_fd which writes directly.
+  // and we need the information. We'll use backtrace_symbols_fd which writes
+  // directly.
   backtrace_symbols_fd(backtrace_buffer, frame_count, crash_fd);
 
-  // Try to resolve symbols using dladdr (also not async-signal-safe, but informative)
+  // Try to resolve symbols using dladdr (also not async-signal-safe, but
+  // informative)
   safe_write(crash_fd, "\nDetailed backtrace:\n");
   for (int i = 0; i < frame_count; i++) {
     Dl_info dlinfo;
@@ -388,7 +397,8 @@ void *shutdown_signal_thread(void *arg) {
   sigset_t local_set = *static_cast<sigset_t *>(arg);
   int received_signal = 0;
   while (sigwait(&local_set, &received_signal) == 0) {
-    LOG_INFO("main: received signal " << received_signal << ", initiating shutdown");
+    LOG_INFO("main: received signal " << received_signal
+                                      << ", initiating shutdown");
     global_shutdown_requested.store(true, std::memory_order_relaxed);
     {
       std::lock_guard<std::mutex> lock(mutex_main);
@@ -408,12 +418,15 @@ void recover_stale_imp_state() {
   return;
 #else
   const char *force_recover = std::getenv("PRUDYNT_FORCE_RECOVER");
-  if (!force_recover || force_recover[0] == '\0' || strcmp(force_recover, "1") != 0) {
-    LOG_DEBUG("Startup recovery: disabled (set PRUDYNT_FORCE_RECOVER=1 to enable)");
+  if (!force_recover || force_recover[0] == '\0' ||
+      strcmp(force_recover, "1") != 0) {
+    LOG_DEBUG(
+        "Startup recovery: disabled (set PRUDYNT_FORCE_RECOVER=1 to enable)");
     return;
   }
 
-  LOG_WARN("Startup recovery: attempting to clean stale IMP state from previous crash");
+  LOG_WARN("Startup recovery: attempting to clean stale IMP state from "
+           "previous crash");
 
   for (int ch = 0; ch < 4; ++ch) {
     IMP_Encoder_StopRecvPic(ch);
@@ -473,7 +486,8 @@ bool timesync_wait() {
 
 void start_video(int encChn) {
   StartHelper sh{encChn};
-  int ret = pthread_create(&global_video[encChn]->thread, nullptr, VideoWorker::thread_entry, static_cast<void *>(&sh));
+  int ret = pthread_create(&global_video[encChn]->thread, nullptr,
+                           VideoWorker::thread_entry, static_cast<void *>(&sh));
   LOG_DEBUG_OR_ERROR(ret, "create video[" << encChn << "] thread");
 
   // wait for initialization done
@@ -488,7 +502,8 @@ int main(int argc, const char *argv[]) {
 
   LOG_INFO("PRUDYNT-T Video Daemon: " << FULL_VERSION_STRING);
   LOG_INFO("Starting Prudynt Video Server.");
-  LOG_INFO("Configuration bootstrap deferred until after early startup recovery");
+  LOG_INFO(
+      "Configuration bootstrap deferred until after early startup recovery");
 
   InstanceLockGuard instance_lock;
 
@@ -513,12 +528,14 @@ int main(int argc, const char *argv[]) {
     return 1;
   }
 
-  // Install crash signal handlers to clean up lock file and collect diagnostics on abnormal termination
+  // Install crash signal handlers to clean up lock file and collect diagnostics
+  // on abnormal termination
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
   sa.sa_sigaction = crash_signal_handler_extended;
   sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO | SA_RESETHAND; // Get detailed signal info, reset to default after first invocation
+  sa.sa_flags = SA_SIGINFO | SA_RESETHAND; // Get detailed signal info, reset to
+                                           // default after first invocation
 
   sigaction(SIGSEGV, &sa, nullptr); // Segmentation fault
   sigaction(SIGABRT, &sa, nullptr); // Abort signal
@@ -531,11 +548,13 @@ int main(int argc, const char *argv[]) {
   sigaddset(&shutdown_signal_set, SIGTERM);
   int sigmask_ret = pthread_sigmask(SIG_BLOCK, &shutdown_signal_set, nullptr);
   if (sigmask_ret != 0) {
-    LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned " << sigmask_ret);
+    LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned "
+              << sigmask_ret);
     return 1;
   }
 
-  if (pthread_create(&signal_thread, nullptr, shutdown_signal_thread, &shutdown_signal_set) != 0) {
+  if (pthread_create(&signal_thread, nullptr, shutdown_signal_thread,
+                     &shutdown_signal_set) != 0) {
     LOG_ERROR("Failed to create shutdown signal watcher thread");
     return 1;
   }
@@ -559,14 +578,18 @@ int main(int argc, const char *argv[]) {
   Logger::setLevel(cfg->general.loglevel);
 
 #if defined(WEBSOCKET_ENABLED)
-  LOG_INFO("WebSocket module compiled; runtime state: " << (cfg->websocket.enabled ? "enabled" : "disabled"));
+  LOG_INFO("WebSocket module compiled; runtime state: "
+           << (cfg->websocket.enabled ? "enabled" : "disabled"));
 #else
   LOG_INFO("WebSocket module not compiled into this build.");
 #endif
-  LOG_INFO("HTTP server is " << ((cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled))
-                                     ? "enabled"
-                                     : "disabled"));
-  LOG_INFO("Motion module is " << (cfg->motion.enabled ? "enabled" : "disabled"));
+  LOG_INFO("HTTP server is "
+           << ((cfg->http.enabled &&
+                (cfg->http.mjpeg_enabled || cfg->http.api_enabled))
+                   ? "enabled"
+                   : "disabled"));
+  LOG_INFO("Motion module is "
+           << (cfg->motion.enabled ? "enabled" : "disabled"));
 
   if (!timesync_wait()) {
     if (global_shutdown_requested.load(std::memory_order_relaxed)) {
@@ -585,10 +608,13 @@ int main(int argc, const char *argv[]) {
 
   bool mic_is_digital = cfg && cfg->audio.mic_is_digital;
   int audio_input_device_id = mic_is_digital ? 0 : 1;
-  const char *cpu_info = (cfg->sysinfo.cpu && cfg->sysinfo.cpu[0] != '\0') ? cfg->sysinfo.cpu : "unknown";
-  LOG_INFO("Audio input: selected AI device " << audio_input_device_id << " ("
-                                              << (mic_is_digital ? "digital" : "analog") << " mic, CPU " << cpu_info
-                                              << ")");
+  const char *cpu_info = (cfg->sysinfo.cpu && cfg->sysinfo.cpu[0] != '\0')
+                             ? cfg->sysinfo.cpu
+                             : "unknown";
+  LOG_INFO("Audio input: selected AI device "
+           << audio_input_device_id << " ("
+           << (mic_is_digital ? "digital" : "analog") << " mic, CPU "
+           << cpu_info << ")");
 
   // Start Unix domain socket control server for MP4 recording
   std::thread(MP4ControlSocket::run).detach();
@@ -602,7 +628,8 @@ int main(int argc, const char *argv[]) {
   global_jpeg[1] = std::make_shared<jpeg_stream>(3, &cfg->stream3);
 
   global_audio[0] = std::make_shared<audio_stream>(audio_input_device_id, 0, 0);
-  global_audio[0]->msgChannel = std::make_shared<MsgChannel<AudioFrame>>(cfg->audio.buffer_cap_frames);
+  global_audio[0]->msgChannel =
+      std::make_shared<MsgChannel<AudioFrame>>(cfg->audio.buffer_cap_frames);
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 
@@ -613,7 +640,8 @@ int main(int argc, const char *argv[]) {
 #endif
 
   if (cfg->http.enabled && (cfg->http.mjpeg_enabled || cfg->http.api_enabled)) {
-    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled, cfg->http.api_enabled, cfg->http.auth_required,
+    http_mjpeg.start(cfg->http.port, cfg->http.mjpeg_enabled,
+                     cfg->http.api_enabled, cfg->http.auth_required,
                      cfg->http.username, cfg->http.password);
     http_mjpeg_started = true;
   }
@@ -628,7 +656,9 @@ int main(int argc, const char *argv[]) {
     // IMP_AO_GetPubAttr will then return the actual running rate.
     if (cfg->audio.input_enabled && (global_restart_audio || startup)) {
       StartHelper sh{0};
-      int ret = pthread_create(&global_audio[0]->thread, nullptr, AudioWorker::thread_entry, static_cast<void *>(&sh));
+      int ret =
+          pthread_create(&global_audio[0]->thread, nullptr,
+                         AudioWorker::thread_entry, static_cast<void *>(&sh));
       LOG_DEBUG_OR_ERROR(ret, "create audio thread");
       // wait for initialization done
       sh.has_started.acquire();
@@ -636,8 +666,9 @@ int main(int argc, const char *argv[]) {
 
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
       StartHelper ao_sh{0};
-      int ret =
-          pthread_create(&audio_output_thread, nullptr, AudioOutputWorker::thread_entry, static_cast<void *>(&ao_sh));
+      int ret = pthread_create(&audio_output_thread, nullptr,
+                               AudioOutputWorker::thread_entry,
+                               static_cast<void *>(&ao_sh));
       LOG_DEBUG_OR_ERROR(ret, "create audio output thread");
       // Wait for AO hardware init to complete before starting video.
       // The IMP SDK shares internal state between AO and encoder
@@ -646,7 +677,8 @@ int main(int argc, const char *argv[]) {
     }
 
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
-      int ret = pthread_create(&backchannel_thread, nullptr, BackchannelWorker::thread_entry, NULL);
+      int ret = pthread_create(&backchannel_thread, nullptr,
+                               BackchannelWorker::thread_entry, NULL);
       LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
     }
 
@@ -663,17 +695,23 @@ int main(int argc, const char *argv[]) {
         }
       }
 
-      if (cfg->stream2.enabled && (cfg->stream2.jpeg_idle_fps > 0 || cfg->stream2.jpeg_refresh > 0)) {
+      if (cfg->stream2.enabled &&
+          (cfg->stream2.jpeg_idle_fps > 0 || cfg->stream2.jpeg_refresh > 0)) {
         StartHelper sh{2};
-        int ret = pthread_create(&global_jpeg[0]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
+        int ret =
+            pthread_create(&global_jpeg[0]->thread, nullptr,
+                           JPEGWorker::thread_entry, static_cast<void *>(&sh));
         LOG_DEBUG_OR_ERROR(ret, "create jpeg thread");
         // wait for initialization done
         sh.has_started.acquire();
       }
 
-      if (cfg->stream3.enabled && (cfg->stream3.jpeg_idle_fps > 0 || cfg->stream3.jpeg_refresh > 0)) {
+      if (cfg->stream3.enabled &&
+          (cfg->stream3.jpeg_idle_fps > 0 || cfg->stream3.jpeg_refresh > 0)) {
         StartHelper sh{3};
-        int ret = pthread_create(&global_jpeg[1]->thread, nullptr, JPEGWorker::thread_entry, static_cast<void *>(&sh));
+        int ret =
+            pthread_create(&global_jpeg[1]->thread, nullptr,
+                           JPEGWorker::thread_entry, static_cast<void *>(&sh));
         LOG_DEBUG_OR_ERROR(ret, "create jpeg thread 2");
         sh.has_started.acquire();
       }
@@ -688,8 +726,10 @@ int main(int argc, const char *argv[]) {
         LOG_DEBUG_OR_ERROR(ret, "create motion thread");
       }
 
-      if (startup && !daynight_thread_started && cfg->get<bool>("daynight.enabled")) {
-        int ret = pthread_create(&daynight_thread, nullptr, DayNightWorkerNS::thread_entry, nullptr);
+      if (startup && !daynight_thread_started &&
+          cfg->get<bool>("daynight.enabled")) {
+        int ret = pthread_create(&daynight_thread, nullptr,
+                                 DayNightWorkerNS::thread_entry, nullptr);
         LOG_DEBUG_OR_ERROR(ret, "create daynight thread");
         if (ret == 0) {
           daynight_thread_started = true;
@@ -712,11 +752,13 @@ int main(int argc, const char *argv[]) {
     global_restart_audio = false;
     global_restart_rtsp = false;
 
-    while (!global_restart_rtsp && !global_restart_video && !global_restart_audio &&
+    while (!global_restart_rtsp && !global_restart_video &&
+           !global_restart_audio &&
            !global_shutdown_requested.load(std::memory_order_relaxed))
       global_cv_worker_restart.wait(lck);
 
-    bool shutting_down = global_shutdown_requested.load(std::memory_order_relaxed);
+    bool shutting_down =
+        global_shutdown_requested.load(std::memory_order_relaxed);
     if (shutting_down) {
       global_restart_rtsp = true;
       global_restart_video = true;
@@ -743,7 +785,8 @@ int main(int argc, const char *argv[]) {
       LOG_DEBUG_OR_ERROR(ret, "join audio thread");
     }
 
-    if (global_audio_output && global_audio_output->running && global_restart_audio) {
+    if (global_audio_output && global_audio_output->running &&
+        global_restart_audio) {
       AudioOutputWorker::signalShutdown();
       int ret = pthread_join(audio_output_thread, NULL);
       LOG_DEBUG_OR_ERROR(ret, "join audio output thread");

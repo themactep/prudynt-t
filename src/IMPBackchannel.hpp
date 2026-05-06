@@ -38,20 +38,25 @@
 // X(EnumName, NameString, PayloadType, Frequency, MimeType)
 // https://www.rfc-editor.org/rfc/rfc3640.html
 #if defined(USE_AAC) && USE_AAC
-#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                                                                \
-  X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate, "audio/mpeg4-generic")                                    \
-  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                                                               \
-  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                                                               \
+#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
+  X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate,                   \
+    "audio/mpeg4-generic")                                                     \
+  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \
+  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                       \
   /* Add new formats here */
 #else
-#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                                                                \
-  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                                                               \
-  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                                                               \
+#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
+  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \
+  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                       \
   /* Add new formats here */
 #endif
 
-#define APPLY_ENUM(EnumName, NameString, PayloadType, Frequency, MimeType) EnumName,
-enum class IMPBackchannelFormat { UNKNOWN = -1, X_FOREACH_BACKCHANNEL_FORMAT(APPLY_ENUM) };
+#define APPLY_ENUM(EnumName, NameString, PayloadType, Frequency, MimeType)     \
+  EnumName,
+enum class IMPBackchannelFormat {
+  UNKNOWN = -1,
+  X_FOREACH_BACKCHANNEL_FORMAT(APPLY_ENUM)
+};
 #undef APPLY_ENUM
 
 class IMPBackchannel {
@@ -68,10 +73,10 @@ public:
   int ensureDecoderChannel(IMPBackchannelFormat format);
 
   static const char *getFormatName(IMPBackchannelFormat format) {
-#define RETURN_NAME(EnumName, NameString, PayloadType, Frequency, MimeType)                                            \
-  {                                                                                                                    \
-    if (IMPBackchannelFormat::EnumName == format)                                                                      \
-      return NameString;                                                                                               \
+#define RETURN_NAME(EnumName, NameString, PayloadType, Frequency, MimeType)    \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return NameString;                                                       \
   }
     X_FOREACH_BACKCHANNEL_FORMAT(RETURN_NAME)
 #undef RETURN_NAME
@@ -79,10 +84,11 @@ public:
   }
 
   static int getFormatPayloadType(IMPBackchannelFormat format) {
-#define RETURN_PAYLOADTYPE(EnumName, NameString, PayloadType, Frequency, MimeType)                                     \
-  {                                                                                                                    \
-    if (IMPBackchannelFormat::EnumName == format)                                                                      \
-      return PayloadType;                                                                                              \
+#define RETURN_PAYLOADTYPE(EnumName, NameString, PayloadType, Frequency,       \
+                           MimeType)                                           \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return PayloadType;                                                      \
   }
     X_FOREACH_BACKCHANNEL_FORMAT(RETURN_PAYLOADTYPE)
 #undef RETURN_PAYLOADTYPE
@@ -90,10 +96,11 @@ public:
   }
 
   static int getFormatFrequency(IMPBackchannelFormat format) {
-#define RETURN_FREQUENCY(EnumName, NameString, PayloadType, Frequency, MimeType)                                       \
-  {                                                                                                                    \
-    if (IMPBackchannelFormat::EnumName == format)                                                                      \
-      return Frequency;                                                                                                \
+#define RETURN_FREQUENCY(EnumName, NameString, PayloadType, Frequency,         \
+                         MimeType)                                             \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return Frequency;                                                        \
   }
     X_FOREACH_BACKCHANNEL_FORMAT(RETURN_FREQUENCY)
 #undef RETURN_FREQUENCY
@@ -101,10 +108,11 @@ public:
   }
 
   static const char *getFormatMimeType(IMPBackchannelFormat format) {
-#define RETURN_MIME_TYPE(EnumName, NameString, PayloadType, Frequency, MimeType)                                       \
-  {                                                                                                                    \
-    if (IMPBackchannelFormat::EnumName == format)                                                                      \
-      return MimeType;                                                                                                 \
+#define RETURN_MIME_TYPE(EnumName, NameString, PayloadType, Frequency,         \
+                         MimeType)                                             \
+  {                                                                            \
+    if (IMPBackchannelFormat::EnumName == format)                              \
+      return MimeType;                                                         \
   }
     X_FOREACH_BACKCHANNEL_FORMAT(RETURN_MIME_TYPE)
 #undef RETURN_MIME_TYPE

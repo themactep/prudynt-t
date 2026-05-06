@@ -3,12 +3,14 @@
 /* ============================================================================
  * Platform Detection
  * Supports: T10, T20, T21, T23, T30, T31, T40, T41, C100
- * ============================================================================ */
+ * ============================================================================
+ */
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_C100)
 #define PLATFORM_NEW_SDK /* T31+ use newer SDK API */
-#elif defined(PLATFORM_T30) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||              \
-    defined(PLATFORM_T10)
+#elif defined(PLATFORM_T30) || defined(PLATFORM_T20) ||                        \
+    defined(PLATFORM_T21) || defined(PLATFORM_T23) || defined(PLATFORM_T10)
 #define PLATFORM_OLD_SDK /* T10-T30 use older SDK API */
 #else
 #define PLATFORM_OLD_SDK /* Default to older API */
@@ -18,8 +20,8 @@
 
 // Define stub types for platforms missing IMP ISP attribute records
 // Must be before SDK headers are included
-#if defined(PLATFORM_T20) || defined(PLATFORM_T10) || defined(PLATFORM_T21) || defined(PLATFORM_T30) ||                \
-    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T10) || defined(PLATFORM_T21) || \
+    defined(PLATFORM_T30) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
 struct IMPISPAEAttr {};
 #endif
 
@@ -36,8 +38,9 @@ struct IMPISPEVAttr {};
 // Compatibility shims for SDK variants where these prototypes are absent.
 extern "C" {
 int IMP_OSD_SetPoolSize(int size);
-#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || defined(PLATFORM_T23) ||                \
-    defined(PLATFORM_T30) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20) || defined(PLATFORM_T21) || \
+    defined(PLATFORM_T23) || defined(PLATFORM_T30) || defined(PLATFORM_T31) || \
+    defined(PLATFORM_C100)
 int IMP_ISP_Tuning_GetAwbHist(IMPISPAWBHist *awb_hist);
 #endif
 }
@@ -47,7 +50,8 @@ struct _stream; // fwd decl
 namespace hal {
 
 // Normalize IMP type names across SDKs
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
 #define IMPEncoderCHNAttr IMPEncoderChnAttr
 #define IMPEncoderCHNStat IMPEncoderChnStat
 #define HAL_ENC_ATTR_WIDTH(a) ((a).encAttr.uWidth)
@@ -139,14 +143,18 @@ const DenoiseDefaults &denoise();
 } // namespace defaults
 
 // Safe no-op on platforms without user qtable
-void set_jpeg_quality_qtable(int encChn, int quality /*1..100*/, const char *cpu_hint);
+void set_jpeg_quality_qtable(int encChn, int quality /*1..100*/,
+                             const char *cpu_hint);
 
 // Buffer-share channel (T31/T40/T41/C100 families)
 // Apply optional RC overrides from stream{0,1} fields
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
-void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, IMPEncoderRcMode rcMode, const _stream &stream);
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
+void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, IMPEncoderRcMode rcMode,
+                        const _stream &stream);
 #else
-void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode, const _stream &stream);
+void apply_rc_overrides(IMPEncoderCHNAttr &chnAttr, int rcMode,
+                        const _stream &stream);
 #endif
 
 int maybe_enable_bufshare(int jpegEncGrp, int srcEncChn, bool allow_shared);
@@ -190,8 +198,10 @@ int set_ae_compensation(int val);
 int get_ae_compensation(int &out_val);
 int set_ae_it_max(unsigned int it_max);
 int get_ae_it_max(unsigned int &out_it_max);
-int set_ae_min(int min_it, int min_again, int min_it_short, int min_again_short);
-int get_ae_min(int &out_min_it, int &out_min_again, int &out_min_it_short, int &out_min_again_short);
+int set_ae_min(int min_it, int min_again, int min_it_short,
+               int min_again_short);
+int get_ae_min(int &out_min_it, int &out_min_again, int &out_min_it_short,
+               int &out_min_again_short);
 
 // Advanced image processing (may not be available on all platforms)
 int set_dpc_strength(unsigned char val);
@@ -218,7 +228,8 @@ int set_wb(int mode, unsigned short rgain, unsigned short bgain);
 // AWB zone weights (15x15 grid)
 int set_awb_weight(const unsigned char weight[15][15]);
 int get_awb_weight(unsigned char weight[15][15]);
-int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225], unsigned char zone_b[225]);
+int get_awb_zone(unsigned char zone_r[225], unsigned char zone_g[225],
+                 unsigned char zone_b[225]);
 
 // AE zone weights and ROI (15x15 grid)
 int set_ae_weight(const unsigned char weight[15][15]);
@@ -228,9 +239,10 @@ int get_ae_roi(unsigned char roi[15][15]);
 int get_ae_zone(unsigned int zone[15][15]);
 
 // AE histogram (5-bin normalized or 256-bin origin)
-int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh, unsigned char stat_nodev);
-int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5], unsigned char &stat_nodeh,
-                unsigned char &stat_nodev);
+int set_ae_hist(const unsigned char thresholds[4], unsigned char stat_nodeh,
+                unsigned char stat_nodev);
+int get_ae_hist(unsigned char thresholds[4], unsigned short bins[5],
+                unsigned char &stat_nodeh, unsigned char &stat_nodev);
 int get_ae_hist_origin(unsigned int bins[256]);
 
 // Sensor timing
@@ -255,7 +267,8 @@ int get_awb_color_temp(int &out_ct);
 int get_ev_attr(IMPISPEVAttr &out_attr);
 int get_ae_attr(IMPISPAEAttr &out_attr);
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
 int set_auto_zoom(const IMPISPAutoZoom &zoom);
 #endif
 
@@ -292,7 +305,8 @@ uint8_t *get_pack_data_start(const IMPEncoderStream &stream, int pack_index);
 // Get NAL unit data length
 uint32_t get_pack_data_length(const IMPEncoderStream &stream, int pack_index);
 
-// Split a pack into contiguous buffer slices (handles ring-buffer wrap on newer platforms)
+// Split a pack into contiguous buffer slices (handles ring-buffer wrap on newer
+// platforms)
 PackSlices get_pack_slices(const IMPEncoderStream &stream, int pack_index);
 
 // Get H.264 NAL type from stream pack
@@ -311,7 +325,8 @@ int set_qp_bounds(int channel, int min_qp, int max_qp);
 int set_qp_ip_delta(int channel, int delta);
 
 // Encoder initialization helpers
-void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format, int width, int height);
+void init_encoder_channel_attr(IMPEncoderCHNAttr &chnAttr, const char *format,
+                               int width, int height);
 int get_encoder_rc_mode_smart();
 int get_encoder_profile_high(const char *format);
 int get_encoder_type(const char *format);
@@ -319,7 +334,8 @@ bool supports_jpeg_quality_table();
 
 // Attribute compatibility helpers (fields missing on newer SDKs)
 inline bool supports_attr_bufsize() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return false;
 #else
   return true;
@@ -327,7 +343,8 @@ inline bool supports_attr_bufsize() {
 }
 
 inline uint32_t get_attr_bufsize(const IMPEncoderCHNAttr &chnAttr) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   (void)chnAttr;
   return 0;
 #else
@@ -336,7 +353,8 @@ inline uint32_t get_attr_bufsize(const IMPEncoderCHNAttr &chnAttr) {
 }
 
 inline void set_attr_bufsize(IMPEncoderCHNAttr &chnAttr, uint32_t value) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   (void)chnAttr;
   (void)value;
 #else
@@ -345,7 +363,8 @@ inline void set_attr_bufsize(IMPEncoderCHNAttr &chnAttr, uint32_t value) {
 }
 
 inline bool supports_attr_payload() {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return false;
 #else
   return true;
@@ -353,7 +372,8 @@ inline bool supports_attr_payload() {
 }
 
 inline int get_attr_payload(const IMPEncoderCHNAttr &chnAttr) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T31) || defined(PLATFORM_C100) ||                         \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   (void)chnAttr;
   return -1;
 #else
@@ -391,8 +411,10 @@ int set_region_pos(int handle, int x, int y);
 int set_region_alpha(int handle, int alpha);
 int get_region_attr(int handle, IMPOSDRgnAttr &out_attr);
 int get_group_attr(int handle, int group, IMPOSDGrpRgnAttr &out_attr);
-int set_region_attr(int handle, const char *params);  // placeholder for future parsing
-int set_region_cover(int handle, const char *params); // placeholder for future parsing
+int set_region_attr(int handle,
+                    const char *params); // placeholder for future parsing
+int set_region_cover(int handle,
+                     const char *params); // placeholder for future parsing
 
 } // namespace osd
 

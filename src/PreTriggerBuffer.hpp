@@ -20,10 +20,12 @@ public:
   ~PreTriggerBuffer();
 
   // Initialize buffer with capacity based on config
-  bool init(int duration_seconds, int fps, int max_memory_mb, bool keyframe_only);
+  bool init(int duration_seconds, int fps, int max_memory_mb,
+            bool keyframe_only);
 
   // Add frame to circular buffer
-  void addFrame(const uint8_t *data, size_t size, int64_t timestamp_us, bool is_keyframe);
+  void addFrame(const uint8_t *data, size_t size, int64_t timestamp_us,
+                bool is_keyframe);
 
   // Get all buffered frames for recording (oldest first)
   std::vector<PreTriggerFrame> getFrames();

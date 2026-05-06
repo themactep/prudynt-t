@@ -38,7 +38,8 @@ void t23_encoder_global_preclean_once() {
 #endif
 } // namespace
 
-IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, int fsChn, const char *name) {
+IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp,
+                                  int fsChn, const char *name) {
   IMPEncoder *encoder = new IMPEncoder(stream, encChn, encGrp, fsChn, name);
   if (!encoder) {
     return nullptr;
@@ -46,7 +47,8 @@ IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp, int f
 
   int ret = encoder->init();
   if (ret != 0) {
-    LOG_ERROR("Failed to initialize encoder channel " << encChn << " (grp " << encGrp << ") ret=" << ret);
+    LOG_ERROR("Failed to initialize encoder channel "
+              << encChn << " (grp " << encGrp << ") ret=" << ret);
     delete encoder;
     return nullptr;
   }
@@ -94,12 +96,15 @@ void IMPEncoder::initProfile() {
     encoderProfile = IMP_ENC_PROFILE_HEVC_MAIN;
   } else if (strcmp(stream->format, "JPEG") == 0) {
     encoderProfile = IMP_ENC_PROFILE_JPEG;
-    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP, stream->width, stream->height, 24, 1,
-                                0, 0, stream->jpeg_quality, 0);
+    IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP,
+                                stream->width, stream->height, 24, 1, 0, 0,
+                                stream->jpeg_quality, 0);
     // 1000 / stream->jpeg_refresh
-    LOG_DEBUG("STREAM PROFILE " << encChn << ", " << encGrp << ", " << stream->format << ", "
-                                << chnAttr.rcAttr.outFrmRate.frmRateNum << "fps, profile:" << stream->profile << ", "
-                                << stream->width << "x" << stream->height);
+    LOG_DEBUG("STREAM PROFILE "
+              << encChn << ", " << encGrp << ", " << stream->format << ", "
+              << chnAttr.rcAttr.outFrmRate.frmRateNum
+              << "fps, profile:" << stream->profile << ", " << stream->width
+              << "x" << stream->height);
     return;
   }
 
@@ -114,13 +119,15 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->mode, "CAPPED_QUALITY") == 0) {
     rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
   } else {
-    LOG_ERROR("unsupported stream->mode (" << stream->mode
-                                           << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and "
-                                              "CAPPED_QUALITY on T31");
+    LOG_ERROR("unsupported stream->mode ("
+              << stream->mode
+              << "). we only support FIXQP, CBR, VBR, CAPPED_VBR and "
+                 "CAPPED_QUALITY on T31");
   }
 
-  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width, stream->height, stream->fps, 1,
-                              stream->gop, 2, -1, stream->bitrate);
+  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width,
+                              stream->height, stream->fps, 1, stream->gop, 2,
+                              -1, stream->bitrate);
 
   switch (rcMode) {
   case IMP_ENC_RC_MODE_FIXQP:
@@ -195,7 +202,8 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->format, "H264") == 0) {
     chnAttr.encAttr.enType = PT_H264;
   } else if (strcmp(stream->format, "H265") == 0) {
-    chnAttr.encAttr.enType = static_cast<IMPPayloadType>(hal::encoder::get_encoder_type("H265"));
+    chnAttr.encAttr.enType =
+        static_cast<IMPPayloadType>(hal::encoder::get_encoder_type("H265"));
   }
 
   IMPEncoderRcMode rcMode = ENC_RC_MODE_SMART;
@@ -209,7 +217,9 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->mode, "SMART") == 0) {
     rcMode = ENC_RC_MODE_SMART;
   } else {
-    LOG_ERROR("unsupported stream->mode (" << stream->mode << "). we only support FIXQP, CBR, VBR and SMART");
+    LOG_ERROR("unsupported stream->mode ("
+              << stream->mode
+              << "). we only support FIXQP, CBR, VBR and SMART");
   }
 
 #if defined(PLATFORM_T23)
@@ -226,8 +236,10 @@ void IMPEncoder::initProfile() {
   // requested framerate when the profile is set to Baseline.
   // For this reason, Main or High are recommended.
 #if defined(PLATFORM_T23)
-  if (chnAttr.encAttr.enType == PT_H264 && (stream->profile < 0 || stream->profile > 1)) {
-    LOG_WARN("T23: forcing unsupported H264 profile " << stream->profile << " -> 1 (Main)");
+  if (chnAttr.encAttr.enType == PT_H264 &&
+      (stream->profile < 0 || stream->profile > 1)) {
+    LOG_WARN("T23: forcing unsupported H264 profile " << stream->profile
+                                                      << " -> 1 (Main)");
     chnAttr.encAttr.profile = 1;
   } else {
     chnAttr.encAttr.profile = stream->profile;
@@ -239,13 +251,15 @@ void IMPEncoder::initProfile() {
 
   // Handle video rotation: swap width/height if rotation is applied
   // NOTE: Only swap for H.264/H.265 video streams, NOT for JPEG
-  // JPEG is a snapshot format where rotation is already applied at FrameSource level
+  // JPEG is a snapshot format where rotation is already applied at FrameSource
+  // level
   int enc_width = stream->width;
   int enc_height = stream->height;
   if (stream->rotation != 0 && strcmp(stream->format, "JPEG") != 0) {
     std::swap(enc_width, enc_height);
-    LOG_DEBUG("Encoder dimensions swapped for rotation: " << enc_width << "x" << enc_height << " (original: "
-                                                          << stream->width << "x" << stream->height << ")");
+    LOG_DEBUG("Encoder dimensions swapped for rotation: "
+              << enc_width << "x" << enc_height << " (original: "
+              << stream->width << "x" << stream->height << ")");
   }
 
   chnAttr.encAttr.picWidth = enc_width;
@@ -328,7 +342,8 @@ void IMPEncoder::initProfile() {
   rcAttr->attrHSkip.maxHSkipType = IMP_Encoder_STYPE_N1X;
 #endif // PLATFORM_OLD_SDK
   LOG_DEBUG("STREAM PROFILE " << stream->rtsp_endpoint << ", "
-                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum << ", "
+                              << "fps:" << chnAttr.rcAttr.outFrmRate.frmRateNum
+                              << ", "
                               << "bps:" << stream->bitrate << ", "
                               << "gop:" << stream->gop << ", "
                               << "profile:" << stream->profile << ", " <<
@@ -345,17 +360,22 @@ int IMPEncoder::init() {
 
   initProfile();
 
-  if (!is_jpeg && hal::encoder::supports_attr_bufsize() && hal::encoder::get_attr_bufsize(chnAttr) == 0) {
-    uint32_t yuv_size = static_cast<uint32_t>(stream->width) * static_cast<uint32_t>(stream->height) * 3 / 2;
+  if (!is_jpeg && hal::encoder::supports_attr_bufsize() &&
+      hal::encoder::get_attr_bufsize(chnAttr) == 0) {
+    uint32_t yuv_size = static_cast<uint32_t>(stream->width) *
+                        static_cast<uint32_t>(stream->height) * 3 / 2;
     hal::encoder::set_attr_bufsize(chnAttr, align_up(yuv_size, 1024));
-    LOG_DEBUG("Encoder bufSize auto-set to " << hal::encoder::get_attr_bufsize(chnAttr));
+    LOG_DEBUG("Encoder bufSize auto-set to "
+              << hal::encoder::get_attr_bufsize(chnAttr));
   }
 
-  // On T31-family SoCs, JPEG channels (2/3) must share buffers with a video channel (0/1)
-  // Call bufshare BEFORE creating the JPEG channel. Use (jpegEncChn=encChn, shareChn=encGrp).
+  // On T31-family SoCs, JPEG channels (2/3) must share buffers with a video
+  // channel (0/1) Call bufshare BEFORE creating the JPEG channel. Use
+  // (jpegEncChn=encChn, shareChn=encGrp).
   if (is_jpeg && stream->allow_shared && hal::caps().has_bufshare) {
     ret = hal::maybe_enable_bufshare(encChn, encGrp, stream->allow_shared);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare(" << encChn << ", " << encGrp << ")");
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare("
+                                         << encChn << ", " << encGrp << ")");
   }
 
 #if defined(PLATFORM_T23)
@@ -414,7 +434,8 @@ int IMPEncoder::init() {
 
   ret = IMP_Encoder_RegisterChn(encGrp, encChn);
   if (ret != 0) {
-    LOG_ERROR("IMP_Encoder_RegisterChn(" << encGrp << ", " << encChn << ") failed ret=" << ret);
+    LOG_ERROR("IMP_Encoder_RegisterChn(" << encGrp << ", " << encChn
+                                         << ") failed ret=" << ret);
     return ret;
   }
   chn_registered = true;
@@ -426,7 +447,11 @@ int IMPEncoder::init() {
 
     if (!ownsGroupResources()) {
       if (stream->osd.enabled) {
-        LOG_ERROR("stream " << name << " cannot enable per-stream OSD while sharing encoder group " << encGrp);
+        LOG_ERROR(
+            "stream "
+            << name
+            << " cannot enable per-stream OSD while sharing encoder group "
+            << encGrp);
         return -1;
       }
       return ret;
@@ -484,7 +509,8 @@ int IMPEncoder::init() {
     }
     osd_to_enc_bound = true;
   } else {
-    hal::set_jpeg_quality_qtable(encChn, stream->jpeg_quality, cfg->sysinfo.cpu);
+    hal::set_jpeg_quality_qtable(encChn, stream->jpeg_quality,
+                                 cfg->sysinfo.cpu);
   }
 
   return ret;
@@ -533,13 +559,15 @@ int IMPEncoder::deinit() {
 
   if (chn_registered) {
     ret = IMP_Encoder_UnRegisterChn(encChn);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_UnRegisterChn(" << encChn << ")");
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                                "IMP_Encoder_UnRegisterChn(" << encChn << ")");
     chn_registered = false;
   }
 
   if (chn_created) {
     ret = IMP_Encoder_DestroyChn(encChn);
-    LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_Encoder_DestroyChn(" << encChn << ")");
+    LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                                "IMP_Encoder_DestroyChn(" << encChn << ")");
     chn_created = false;
   }
 

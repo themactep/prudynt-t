@@ -73,7 +73,8 @@ static int cmd_json(int argc, char **argv) {
 
   int fd = connect_sock();
   if (fd < 0) {
-    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno));
+    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH,
+            strerror(errno));
     return 2;
   }
 
@@ -123,13 +124,15 @@ static int cmd_mjpeg(int argc, char **argv) {
 
   int fd = connect_sock();
   if (fd < 0) {
-    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno));
+    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH,
+            strerror(errno));
     return 2;
   }
 
   char line[256];
   // Send server-side streaming request
-  int n = snprintf(line, sizeof(line), "MJPEG ch=%d f=%d boundary=%s", ch, fps, boundary);
+  int n = snprintf(line, sizeof(line), "MJPEG ch=%d f=%d boundary=%s", ch, fps,
+                   boundary);
   // Optionals
   if (q >= 1 && q <= 100)
     n += snprintf(line + n, sizeof(line) - n, " q=%d", q);
@@ -165,7 +168,8 @@ static int cmd_snapshot(int argc, char **argv) {
 
   int fd = connect_sock();
   if (fd < 0) {
-    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno));
+    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH,
+            strerror(errno));
     return 2;
   }
 
@@ -202,7 +206,8 @@ static int cmd_snapshot(int argc, char **argv) {
   std::vector<char> buf(8192);
   int remaining = len;
   while (remaining > 0) {
-    ssize_t r = read(fd, buf.data(), remaining > (int)buf.size() ? buf.size() : remaining);
+    ssize_t r = read(fd, buf.data(),
+                     remaining > (int)buf.size() ? buf.size() : remaining);
     if (r <= 0)
       break;
     write(STDOUT_FILENO, buf.data(), r);
@@ -215,7 +220,8 @@ static int cmd_snapshot(int argc, char **argv) {
 static int cmd_events() {
   int fd = connect_sock();
   if (fd < 0) {
-    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH, strerror(errno));
+    fprintf(stderr, "prudyntctl: connect %s failed: %s\n", SOCK_PATH,
+            strerror(errno));
     return 2;
   }
   const char *hello = "EVENTS\n";

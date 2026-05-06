@@ -5,12 +5,14 @@
 
 class AACSink : public MPEG4GenericRTPSink {
 public:
-  static AACSink *createNew(UsageEnvironment &env, Groupsock *RTPgs, u_int8_t rtpPayloadFormat,
-                            u_int32_t rtpTimestampFrequency, unsigned numChannels);
+  static AACSink *createNew(UsageEnvironment &env, Groupsock *RTPgs,
+                            u_int8_t rtpPayloadFormat,
+                            u_int32_t rtpTimestampFrequency,
+                            unsigned numChannels);
 
 protected:
-  AACSink(UsageEnvironment &env, Groupsock *RTPgs, u_int8_t rtpPayloadFormat, u_int32_t rtpTimestampFrequency,
-          unsigned numChannels);
+  AACSink(UsageEnvironment &env, Groupsock *RTPgs, u_int8_t rtpPayloadFormat,
+          u_int32_t rtpTimestampFrequency, unsigned numChannels);
   virtual ~AACSink();
 
 private:

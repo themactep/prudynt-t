@@ -21,7 +21,8 @@ static long get_total_ram_bytes() {
   return cached > 0 ? cached : 64 * 1024 * 1024;
 }
 
-IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor, int chnNr) {
+IMPFramesource *IMPFramesource::createNew(_stream *stream, _sensor *sensor,
+                                          int chnNr) {
   return new IMPFramesource(stream, sensor, chnNr);
 }
 
@@ -51,7 +52,8 @@ int IMPFramesource::init() {
   // Scale with fps for pipeline headroom, then cap to keep framesource
   // buffers within ~15% of total RAM (protects 64MB devices).
   int auto_buffers = std::max(2, (stream->fps + 9) / 10);
-  long frame_bytes = static_cast<long>(stream->width) * stream->height * 3 / 2; // NV12
+  long frame_bytes =
+      static_cast<long>(stream->width) * stream->height * 3 / 2; // NV12
   long ram_budget = get_total_ram_bytes() * 15 / 100;
   int mem_cap = static_cast<int>(ram_budget / frame_bytes);
   // Allow minimum of 1 buffer when memory-constrained (e.g. T31L 64MB devices
@@ -64,9 +66,11 @@ int IMPFramesource::init() {
   if (stream->buffers > 0) {
     chnAttr.nrVBs = stream->buffers;
   } else {
-    LOG_INFO("Channel " << chnNr << ": auto buffers=" << auto_buffers << " (fps=" << stream->fps
+    LOG_INFO("Channel " << chnNr << ": auto buffers=" << auto_buffers
+                        << " (fps=" << stream->fps
                         << ", frame=" << frame_bytes / 1024 << "KB"
-                        << ", RAM=" << get_total_ram_bytes() / 1024 / 1024 << "MB)");
+                        << ", RAM=" << get_total_ram_bytes() / 1024 / 1024
+                        << "MB)");
     chnAttr.nrVBs = auto_buffers;
   }
   chnAttr.type = FS_PHY_CHANNEL;
@@ -95,10 +99,14 @@ int IMPFramesource::init() {
 
   LOG_DEBUG("Channel " << chnNr << " configuration (post-attr):");
   LOG_DEBUG("  pic: " << chnAttr.picWidth << "x" << chnAttr.picHeight);
-  LOG_DEBUG("  crop.enable=" << chnAttr.crop.enable << " crop=" << chnAttr.crop.width << "x" << chnAttr.crop.height);
-  LOG_DEBUG("  scaler.enable=" << chnAttr.scaler.enable << " out=" << chnAttr.scaler.outwidth << "x"
+  LOG_DEBUG("  crop.enable=" << chnAttr.crop.enable
+                             << " crop=" << chnAttr.crop.width << "x"
+                             << chnAttr.crop.height);
+  LOG_DEBUG("  scaler.enable=" << chnAttr.scaler.enable
+                               << " out=" << chnAttr.scaler.outwidth << "x"
                                << chnAttr.scaler.outheight);
-  LOG_DEBUG("  fps=" << chnAttr.outFrmRateNum << "/" << chnAttr.outFrmRateDen << " nrVBs=" << chnAttr.nrVBs
+  LOG_DEBUG("  fps=" << chnAttr.outFrmRateNum << "/" << chnAttr.outFrmRateDen
+                     << " nrVBs=" << chnAttr.nrVBs
                      << " pixFmt=" << chnAttr.pixFmt);
 
 #if !defined(KERNEL_VERSION_4)
@@ -108,23 +116,26 @@ int IMPFramesource::init() {
   if (stream->rotation != 0) {
     // Validate 64-bit alignment requirement
     if (stream->width % 64 != 0 || stream->height % 64 != 0) {
-      LOG_ERROR("Rotation requires 64-bit aligned resolution. "
-                "Current: "
-                << stream->width << "x" << stream->height
-                << ". "
-                   "Please use multiples of 64 (e.g., 1920x1080, 1280x720, 640x480)");
+      LOG_ERROR(
+          "Rotation requires 64-bit aligned resolution. "
+          "Current: "
+          << stream->width << "x" << stream->height
+          << ". "
+             "Please use multiples of 64 (e.g., 1920x1080, 1280x720, 640x480)");
       return -1;
     }
 
     // Check for soft zoom conflict
     if (stream->scale_enabled) {
-      LOG_ERROR("Cannot enable rotation while soft zoom is active. Disable scale_enabled or set rotation to 0");
+      LOG_ERROR("Cannot enable rotation while soft zoom is active. Disable "
+                "scale_enabled or set rotation to 0");
       return -1;
     }
 
     // Warn about performance constraints
     if (stream->width > 1280 || stream->height > 704) {
-      LOG_WARN("Rotation above 1280x704 may impact performance. Recommended <=1280x704 @ <=15fps");
+      LOG_WARN("Rotation above 1280x704 may impact performance. Recommended "
+               "<=1280x704 @ <=15fps");
     }
 
     // Convert degree values to IMP rotation values
@@ -138,18 +149,25 @@ int IMPFramesource::init() {
       imp_rotation = 2;
     }
 
-    LOG_DEBUG("Setting video rotation " << stream->rotation << " degrees (IMP value " << imp_rotation << ")");
+    LOG_DEBUG("Setting video rotation "
+              << stream->rotation << " degrees (IMP value " << imp_rotation
+              << ")");
 
     typedef int (*pfn_fs_rotate)(int, int, int, int);
     void *handle = dlopen(nullptr, RTLD_LAZY);
     pfn_fs_rotate rotate_fn =
-        handle ? reinterpret_cast<pfn_fs_rotate>(dlsym(handle, "IMP_FrameSource_SetChnRotate")) : nullptr;
+        handle ? reinterpret_cast<pfn_fs_rotate>(
+                     dlsym(handle, "IMP_FrameSource_SetChnRotate"))
+               : nullptr;
     if (rotate_fn) {
       ret = rotate_fn(chnNr, imp_rotation, stream->height, stream->width);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate(" << chnNr << ", " << imp_rotation << ", " << stream->height
-                                                              << ", " << stream->width << ")");
+      LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate("
+                                  << chnNr << ", " << imp_rotation << ", "
+                                  << stream->height << ", " << stream->width
+                                  << ")");
     } else {
-      LOG_DEBUG("IMP_FrameSource_SetChnRotate not available; skipping rotation");
+      LOG_DEBUG(
+          "IMP_FrameSource_SetChnRotate not available; skipping rotation");
       ret = 0;
     }
   }
@@ -158,19 +176,23 @@ int IMPFramesource::init() {
 #endif
 
   ret = IMP_FrameSource_CreateChn(chnNr, &chnAttr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_CreateChn(" << chnNr << ", &chnAttr)");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_FrameSource_CreateChn(" << chnNr << ", &chnAttr)");
 
   ret = IMP_FrameSource_SetChnAttr(chnNr, &chnAttr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnAttr(" << chnNr << ", &chnAttr)");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_FrameSource_SetChnAttr(" << chnNr << ", &chnAttr)");
 
 #if !defined(NO_FIFO)
   IMPFSChnFifoAttr fifo;
   ret = IMP_FrameSource_GetChnFifoAttr(chnNr, &fifo);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_GetChnFifoAttr(" << chnNr << ", &fifo)");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_FrameSource_GetChnFifoAttr(" << chnNr << ", &fifo)");
 
   fifo.maxdepth = 0;
   ret = IMP_FrameSource_SetChnFifoAttr(chnNr, &fifo);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnFifoAttr(" << chnNr << ", &fifo)");
+  LOG_DEBUG_OR_ERROR(ret,
+                     "IMP_FrameSource_SetChnFifoAttr(" << chnNr << ", &fifo)");
 
   ret = IMP_FrameSource_SetFrameDepth(chnNr, 0);
   LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetFrameDepth(" << chnNr << ", 0)");
@@ -187,7 +209,8 @@ int IMPFramesource::enable() {
   int ret;
 
   ret = IMP_FrameSource_EnableChn(chnNr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_EnableChn(" << chnNr << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                              "IMP_FrameSource_EnableChn(" << chnNr << ")");
 
   return 0;
 }
@@ -196,7 +219,8 @@ int IMPFramesource::disable() {
   int ret;
 
   ret = IMP_FrameSource_DisableChn(chnNr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_DisableChn(" << chnNr << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                              "IMP_FrameSource_DisableChn(" << chnNr << ")");
 
   return 0;
 }
@@ -205,7 +229,8 @@ int IMPFramesource::destroy() {
   int ret;
 
   ret = IMP_FrameSource_DestroyChn(chnNr);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_FrameSource_DestroyChn(" << chnNr << ")");
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
+                              "IMP_FrameSource_DestroyChn(" << chnNr << ")");
 
   return 0;
 }

@@ -30,9 +30,11 @@ static int aac_openDecoder(void * /*pvoidDecoderAttr*/, void * /*pDecoder*/) {
 
   memset(&aacFrameInfo, 0, sizeof(_AACFrameInfo));
   aacFrameInfo.nChans = 1;
-  aacFrameInfo.sampRateCore = (cfg->audio.input_sample_rate > 0)
-                                  ? cfg->audio.input_sample_rate
-                                  : ((cfg->audio.output_sample_rate > 0) ? cfg->audio.output_sample_rate : 16000);
+  aacFrameInfo.sampRateCore =
+      (cfg->audio.input_sample_rate > 0)
+          ? cfg->audio.input_sample_rate
+          : ((cfg->audio.output_sample_rate > 0) ? cfg->audio.output_sample_rate
+                                                 : 16000);
   aacFrameInfo.profile = AAC_PROFILE_LC;
 
   int raw_ret = AACSetRawBlockParams(tl_aacDecoder, 0, &aacFrameInfo);
@@ -44,10 +46,12 @@ static int aac_openDecoder(void * /*pvoidDecoderAttr*/, void * /*pDecoder*/) {
   return 0;
 }
 
-static int aac_decodeFrm(void * /*pDecoder*/, unsigned char *inputBuffer, int inputLength, unsigned short *outputBuffer,
+static int aac_decodeFrm(void * /*pDecoder*/, unsigned char *inputBuffer,
+                         int inputLength, unsigned short *outputBuffer,
                          int *outputLengthPtr, int * /*ps32Chns*/) {
   if (!tl_aacDecoder) {
-    LOG_ERROR("AAC decoder instance is not initialized for this thread in decodeFrm");
+    LOG_ERROR(
+        "AAC decoder instance is not initialized for this thread in decodeFrm");
     *outputLengthPtr = 0;
     return -1;
   }
@@ -58,7 +62,8 @@ static int aac_decodeFrm(void * /*pDecoder*/, unsigned char *inputBuffer, int in
 
   // Parse MPEG4-GENERIC Header (RFC 3640)
   if (bytesLeft < 2) {
-    LOG_WARN("Input buffer too small for AU-headers-length (" << bytesLeft << " < 2)");
+    LOG_WARN("Input buffer too small for AU-headers-length (" << bytesLeft
+                                                              << " < 2)");
     *outputLengthPtr = 0;
     return 0;
   }
@@ -69,16 +74,17 @@ static int aac_decodeFrm(void * /*pDecoder*/, unsigned char *inputBuffer, int in
   int totalHeaderSizeBytes = 2 + auHeadersSizeBytes;
 
   if (bytesLeft < totalHeaderSizeBytes) {
-    LOG_WARN("Input buffer too small for full MPEG4-GENERIC header (" << bytesLeft << " < " << totalHeaderSizeBytes
-                                                                      << ")");
+    LOG_WARN("Input buffer too small for full MPEG4-GENERIC header ("
+             << bytesLeft << " < " << totalHeaderSizeBytes << ")");
     *outputLengthPtr = 0;
     return 0;
   }
 
   // Assuming only one AU-header follows the length field (common case)
   if (auHeadersSizeBytes < 2) {
-    LOG_ERROR("Expected at least one 2-byte AU-header, but AU-headers-length is only " << auHeadersLengthBits
-                                                                                       << " bits.");
+    LOG_ERROR(
+        "Expected at least one 2-byte AU-header, but AU-headers-length is only "
+        << auHeadersLengthBits << " bits.");
     *outputLengthPtr = 0;
     return -1;
   }
@@ -109,7 +115,9 @@ static int aac_decodeFrm(void * /*pDecoder*/, unsigned char *inputBuffer, int in
 
   if (ret < 0) {
     if (ret != ERR_AAC_INDATA_UNDERFLOW) {
-      LOG_ERROR("Thread-local AAC decode failed: " << ret << " (" << decodeBytesLeft << " bytes left unprocessed)");
+      LOG_ERROR("Thread-local AAC decode failed: "
+                << ret << " (" << decodeBytesLeft
+                << " bytes left unprocessed)");
     }
     *outputLengthPtr = 0;
     return (ret == ERR_AAC_INDATA_UNDERFLOW) ? 0 : -1;
@@ -172,7 +180,8 @@ int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
     if (aacDecoderHandle == -1) {
       IMPAudioDecDecoder aacDecoderCallbacks;
       aacDecoderCallbacks.type = PT_MAX;
-      snprintf(aacDecoderCallbacks.name, sizeof(aacDecoderCallbacks.name), "AAC");
+      snprintf(aacDecoderCallbacks.name, sizeof(aacDecoderCallbacks.name),
+               "AAC");
       aacDecoderCallbacks.openDecoder = aac_openDecoder;
       aacDecoderCallbacks.decodeFrm = aac_decodeFrm;
       aacDecoderCallbacks.getFrmInfo = NULL;
@@ -222,7 +231,8 @@ int IMPBackchannel::init() {
   ret = IMP_ADEC_CreateChn(adChn_pcma, &adec_attr);
   LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_CreateChn(PCMA, " << adChn_pcma << ")");
 #else
-  LOG_INFO("Backchannel decoder channels deferred until first incoming frame (T23)");
+  LOG_INFO(
+      "Backchannel decoder channels deferred until first incoming frame (T23)");
 #endif
 
 #if defined(USE_AAC) && USE_AAC
@@ -245,12 +255,14 @@ int IMPBackchannel::init() {
       LOG_DEBUG("Registered AAC decoder with handle: " << aacDecoderHandle);
     }
   } else {
-    LOG_DEBUG("AAC decoder already registered with handle: " << aacDecoderHandle);
+    LOG_DEBUG(
+        "AAC decoder already registered with handle: " << aacDecoderHandle);
   }
 
   if (aacDecoderHandle != -1) {
 #if defined(PLATFORM_T23)
-    LOG_DEBUG("AAC decoder registered; AAC ADEC channel will be created lazily on first use");
+    LOG_DEBUG("AAC decoder registered; AAC ADEC channel will be created lazily "
+              "on first use");
 #else
     // Use the handle returned by RegisterDecoder as the type for this channel
     adec_attr.type = (IMPAudioPalyloadType)aacDecoderHandle;
@@ -268,11 +280,11 @@ void IMPBackchannel::deinit() {
   LOG_DEBUG("IMPBackchannel::deinit()");
   int ret;
 
-#define DESTROY_ADEC(EnumName, NameString, PayloadType, Frequency, MimeType)                                           \
-  {                                                                                                                    \
-    int adChn = (int)IMPBackchannelFormat::EnumName;                                                                   \
-    ret = IMP_ADEC_DestroyChn(adChn);                                                                                  \
-    LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_DestroyChn(" << adChn << ")");                                                   \
+#define DESTROY_ADEC(EnumName, NameString, PayloadType, Frequency, MimeType)   \
+  {                                                                            \
+    int adChn = (int)IMPBackchannelFormat::EnumName;                           \
+    ret = IMP_ADEC_DestroyChn(adChn);                                          \
+    LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_DestroyChn(" << adChn << ")");           \
   }
   X_FOREACH_BACKCHANNEL_FORMAT(DESTROY_ADEC)
 #undef DESTROY_ADEC
@@ -280,7 +292,8 @@ void IMPBackchannel::deinit() {
 #if defined(USE_AAC) && USE_AAC
   if (aacDecoderHandle != -1) {
     ret = IMP_ADEC_UnRegisterDecoder(&aacDecoderHandle);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_UnRegisterDecoder(" << aacDecoderHandle << ")");
+    LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_UnRegisterDecoder(" << aacDecoderHandle
+                                                          << ")");
     aacDecoderHandle = -1;
   }
 #endif
