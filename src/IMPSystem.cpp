@@ -399,12 +399,20 @@ int IMPSystem::init() {
   ret = hal::isp::set_max_again(static_cast<unsigned char>(cfg->image.max_again));
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_max_again(" << cfg->image.max_again << ")");
 
-#if defined(PLATFORM_T23)
+#if defined(PLATFORM_T20) || defined(PLATFORM_T23)
+  // Legacy XBurst1 ISP SDKs can panic in optional tuning ioctls when RMEM is tight.
   const char *force_advanced_isp = std::getenv("PRUDYNT_FORCE_ADVANCED_ISP");
   bool apply_advanced_isp_tunings =
       (force_advanced_isp && force_advanced_isp[0] != '\0' && strcmp(force_advanced_isp, "1") == 0);
+  const char *advanced_isp_platform =
+#if defined(PLATFORM_T20)
+      "T20";
+#else
+      "T23";
+#endif
   if (!apply_advanced_isp_tunings) {
-    LOG_WARN("IMPSystem init: advanced ISP tunings disabled on T23 (set PRUDYNT_FORCE_ADVANCED_ISP=1 to enable)");
+    LOG_WARN("IMPSystem init: advanced ISP tunings disabled on " << advanced_isp_platform
+                                                                  << " (set PRUDYNT_FORCE_ADVANCED_ISP=1 to enable)");
   }
   if (apply_advanced_isp_tunings) {
     ret = hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->image.max_dgain));
@@ -429,7 +437,8 @@ int IMPSystem::init() {
     ret = hal::isp::set_drc_strength(static_cast<unsigned char>(cfg->image.drc_strength));
     LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_drc_strength(" << cfg->image.drc_strength << ")");
   } else {
-    LOG_WARN("IMPSystem init: skipping hal::isp::set_drc_strength on T23 (set PRUDYNT_FORCE_DRC=1 to enable)");
+    LOG_WARN("IMPSystem init: skipping hal::isp::set_drc_strength on " << advanced_isp_platform
+                                                                         << " (set PRUDYNT_FORCE_DRC=1 to enable)");
   }
 #else
   ret = hal::isp::set_max_dgain(static_cast<unsigned char>(cfg->image.max_dgain));
