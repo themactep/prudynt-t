@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 OPUS_REPO="https://github.com/xiph/opus"
 OPUS_DIR="${BUILD_DIR}/opus"
-OPUS_VER="82ac57d9f1aaf575800cf17373348e45b7ce6c0d"
+OPUS_VER="ddbe48383984d56acd9e1ab6a090c54ca6b735a6"
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
@@ -51,22 +51,31 @@ else
     echo "Pulling Opus master"
 fi
 
-# Create and navigate to build directory
+# Create a fresh CMake build directory to avoid stale cross-toolchain cache
+rm -rf build
 mkdir -p build
 cd build
+
+CCACHE_LAUNCHER=()
+if command -v ccache &>/dev/null; then
+    CCACHE_LAUNCHER=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
 
 # Configure the Opus build with CMake
 echo "Configuring Opus library..."
 cmake \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     -DCMAKE_SYSTEM_NAME=Linux \
     -DCMAKE_SYSTEM_PROCESSOR=mipsle \
+    "${CCACHE_LAUNCHER[@]}" \
     -DCMAKE_C_COMPILER=${CC} \
     -DCMAKE_CXX_COMPILER=${CXX} \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_FLAGS="-Os" \
-    -DCMAKE_CXX_FLAGS="-Os" \
+    -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS} -Os" \
+    -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -Os" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/install" \
     -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} \
+    -DOPUS_STACK_PROTECTOR=OFF \
     ..
 
 echo "Building Opus library..."

@@ -1,12 +1,110 @@
 #!/bin/bash
 set -e
+
+# Capture whether PRUDYNT_CROSS was explicitly set before applying the default
+_PRUDYNT_CROSS_EXPLICIT=${PRUDYNT_CROSS+set}
 : "${PRUDYNT_CROSS:=ccache mipsel-linux-}"
-:
+
 TOP=$(pwd)
-NFS_SHARE="/nfs/"
+NFS_SHARE="/nfs"
+
+TOOLCHAIN_RELEASE="toolchain-x86_64"
+
+# Libc selection: "musl" (default, uses ingenic-musl shim) or "uclibc" (uses ingenic-uclibc shim)
+LIBC_TYPE="uclibc"
+
+parse_libc_flag() {
+	for arg in "$@"; do
+		case "$arg" in
+			--libc-uclibc) LIBC_TYPE="uclibc" ;;
+			--libc-musl)   LIBC_TYPE="musl" ;;
+		esac
+	done
+}
+
+# Apply libc-specific compile flags. The thingino uClibc toolchain is built
+# with --disable-libssp, so SSP symbols (__stack_chk_*) are unavailable —
+# disable stack-protector globally for uclibc builds.
+LIBC_EXTRA_CFLAGS=""
+apply_libc_env() {
+	if [[ "$LIBC_TYPE" == "uclibc" ]]; then
+		LIBC_EXTRA_CFLAGS="-fno-stack-protector"
+		export CFLAGS="${CFLAGS:-} $LIBC_EXTRA_CFLAGS"
+		export CXXFLAGS="${CXXFLAGS:-} $LIBC_EXTRA_CFLAGS"
+		# CMake-based dep scripts append ${CMAKE_C_FLAGS}/${CMAKE_CXX_FLAGS}
+		# from the env (libwebsockets/opus/libhelix-aac convention).
+		export CMAKE_C_FLAGS="${CMAKE_C_FLAGS:-} $LIBC_EXTRA_CFLAGS"
+		export CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS:-} $LIBC_EXTRA_CFLAGS"
+	fi
+}
+
+# Map SOC to xburst generation
+get_xburst_generation() {
+	local soc="$1"
+	case "$soc" in
+		T10 | T20 | T21 | T23 | T30 | T31 | C100)
+			echo "xburst1"
+			;;
+		T40 | T41)
+			echo "xburst2"
+			;;
+		*)
+			echo "xburst1"  # Default to xburst1 for unknown SOCs
+			;;
+	esac
+}
+
+# Set toolchain variables based on SOC and selected libc
+set_toolchain_for_soc() {
+	local soc="$1"
+	local xburst=$(get_xburst_generation "$soc")
+
+	TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_${xburst}_${LIBC_TYPE}_gcc15-linux-mipsel.tar.gz"
+	TOOLCHAIN_URL="https://github.com/themactep/thingino-firmware/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
+	TOOLCHAIN_SDK="${TOP}/toolchain/${xburst}-${LIBC_TYPE}/mipsel-thingino-linux-${LIBC_TYPE}_sdk-buildroot"
+}
+
+# Initialize with default (xburst1) for non-SOC commands
+set_toolchain_for_soc "T31"
+
+ensure_toolchain() {
+	[[ -n "$_PRUDYNT_CROSS_EXPLICIT" ]] && return 0
+
+	if [[ ! -d "${TOOLCHAIN_SDK}/bin" ]]; then
+		echo "Thingino ${LIBC_TYPE} toolchain not found, downloading..."
+		local xburst_dir=$(dirname "${TOOLCHAIN_SDK}")
+		mkdir -p "${xburst_dir}"
+		if command -v wget &>/dev/null; then
+			wget -q --show-progress "${TOOLCHAIN_URL}" -O "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
+		else
+			curl -L --progress-bar "${TOOLCHAIN_URL}" -o "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
+		fi
+		echo "Extracting toolchain to ${xburst_dir}/ ..."
+		tar -xf "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}" -C "${xburst_dir}"
+		rm -f "${TOP}/toolchain/${TOOLCHAIN_ARCHIVE}"
+		if [[ -x "${TOOLCHAIN_SDK}/relocate-sdk.sh" ]]; then
+			echo "Relocating SDK..."
+			"${TOOLCHAIN_SDK}/relocate-sdk.sh"
+		fi
+		echo "Toolchain ready."
+	fi
+
+	if command -v ccache &>/dev/null; then
+		export PRUDYNT_CROSS="ccache ${TOOLCHAIN_SDK}/bin/mipsel-linux-"
+	else
+		export PRUDYNT_CROSS="${TOOLCHAIN_SDK}/bin/mipsel-linux-"
+	fi
+}
 
 prudynt() {
-	echo "Build prudynt"
+	local soc="$1"
+	shift  # Remove SOC from arguments
+
+	parse_libc_flag "$@"
+	set_toolchain_for_soc "$soc"
+	ensure_toolchain
+	apply_libc_env
+	echo "Build prudynt for $soc (libc: $LIBC_TYPE)"
 
 	cd $TOP
 	make clean
@@ -15,9 +113,20 @@ prudynt() {
 	echo "Rebuilding live555 with latest changes..."
 	cd 3rdparty/live
 	if [[ -f Makefile ]]; then
+		# Apply local live555 patches if present
+		if ls ../../res/live555/*.patch >/dev/null 2>&1; then
+			for p in ../../res/live555/*.patch; do
+				patch -p1 -N < "$p" || true
+			done
+		fi
+
+		LIVE555_PREFIX="${TOP}/3rdparty/install"
+		LIVE555_LIBDIR="${LIVE555_PREFIX}/lib"
 		make clean
-		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make -j$(nproc)
-		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make install
+		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+			make -j$(nproc) PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
+		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+			make install PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
 		echo "live555 rebuilt successfully"
 	else
 		echo "Warning: live555 Makefile not found, skipping live555 rebuild"
@@ -54,12 +163,18 @@ prudynt() {
 		STRIP_FLAG=""
 	fi
 
+	# libc selection define (Makefile keys on -DLIBC_UCLIBC to pick the uclibc shim)
+	LIBC_DEFINE=""
+	if [ "$LIBC_TYPE" = "uclibc" ]; then
+		LIBC_DEFINE="-DLIBC_UCLIBC"
+	fi
+
 	# Ensure locally built third-party pkg-configs are found
 	export PKG_CONFIG_PATH="$TOP/3rdparty/install/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 	/usr/bin/make -j$(nproc) \
 	ARCH= CROSS_COMPILE="${PRUDYNT_CROSS}" \
-	CFLAGS="-DPLATFORM_$1 $BIN_TYPE $OPTIMIZATION $DEBUG_FLAGS -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
+	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include \
 	-isystem ./3rdparty/install/include/liveMedia \
 	-isystem ./3rdparty/install/include/groupsock \
@@ -71,14 +186,22 @@ prudynt() {
 
 	if [ -d "$NFS_SHARE" ]; then
 		echo "DONE. COPYING BINARY TO $NFS_SHARE"
-		cp -vf bin/prudynt "$NFS_SHARE"
-		cp -vf res/prudynt.json "$NFS_SHARE"
+		SOC_LOWER=$(echo "$soc" | tr '[:upper:]' '[:lower:]')
+		cp -vf bin/prudynt "$NFS_SHARE/prudynt-$SOC_LOWER"
+		cp -vf res/prudynt.json "$NFS_SHARE/prudynt-$SOC_LOWER.json"
 	fi
 
 	exit 0
 }
 
 deps() {
+	local soc="$1"
+	shift  # Remove SOC from arguments
+
+	parse_libc_flag "$@"
+	set_toolchain_for_soc "$soc"
+	ensure_toolchain
+	apply_libc_env
 	# Parse flags for dependency builds
 	CLEAN_ALL=0
 	STATIC_BUILD=0
@@ -105,6 +228,35 @@ deps() {
 	fi
 	cd ../
 
+	echo "Build libhelix-mp3"
+	LIBHELIX_DIR="$TOP/3rdparty/libhelix-aac"
+	MP3_SRC="$LIBHELIX_DIR/src/libhelix-mp3"
+	INSTALL_DIR="$TOP/3rdparty/install"
+	ARDUINO_COMPAT="$TOP/res/arduino_compat"
+	_CC="${PRUDYNT_CROSS#ccache }gcc"
+	mkdir -p /tmp/libhelix-mp3-build
+	for src in "$MP3_SRC"/*.c; do
+		obj="/tmp/libhelix-mp3-build/$(basename "${src%.c}").o"
+		"$_CC" $LIBC_EXTRA_CFLAGS -Os -I"$MP3_SRC" -I"$ARDUINO_COMPAT" \
+			-DUSE_DEFAULT_STDLIB -DARDUINO -c "$src" -o "$obj"
+	done
+	"${PRUDYNT_CROSS#ccache }ar" rcs "$INSTALL_DIR/lib/libhelix-mp3.a" /tmp/libhelix-mp3-build/*.o
+	find "$MP3_SRC" -maxdepth 1 -name '*.h' -exec cp {} "$INSTALL_DIR/include/" \;
+	rm -rf /tmp/libhelix-mp3-build
+
+	echo "Build libflac-lite"
+	FLAC_SRC="$LIBHELIX_DIR/src/libflac"
+	mkdir -p /tmp/libflac-build
+	for src in "$FLAC_SRC"/*.c; do
+		obj="/tmp/libflac-build/$(basename "${src%.c}").o"
+		"$_CC" $LIBC_EXTRA_CFLAGS -Os -I"$FLAC_SRC" -I"$ARDUINO_COMPAT" \
+			-DUSE_DEFAULT_STDLIB -c "$src" -o "$obj"
+	done
+	"${PRUDYNT_CROSS#ccache }ar" rcs "$INSTALL_DIR/lib/libflac-lite.a" /tmp/libflac-build/*.o
+	cp -r "$FLAC_SRC/FLAC" "$INSTALL_DIR/include/"
+	find "$FLAC_SRC" -maxdepth 1 -name '*.h' -exec cp {} "$INSTALL_DIR/include/" \;
+	rm -rf /tmp/libflac-build
+
 	echo "Build libwebsockets"
 	cd 3rdparty
 	if [[ $STATIC_BUILD -eq 1 ]]; then
@@ -126,15 +278,18 @@ deps() {
 	echo "Build libschrift"
 	cd 3rdparty
 
+	LIBSCHRIFT_VER="24737d2922b23df4a5692014f5ba03da0c296112"
+
 	# Smart libschrift handling
 	if [[ ! -d libschrift ]]; then
 		echo "Cloning libschrift..."
-		git clone --depth=1 https://github.com/tomolt/libschrift/
+		git clone https://github.com/tomolt/libschrift/
 		cd libschrift
 	else
 		echo "libschrift directory exists, using existing version..."
 		cd libschrift
 	fi
+	git checkout "$LIBSCHRIFT_VER"
 	# Apply local libschrift patches if present
 	if ls ../../res/libschrift/*.patch >/dev/null 2>&1; then
 		for p in ../../res/libschrift/*.patch; do
@@ -144,12 +299,12 @@ deps() {
 	mkdir -p $TOP/3rdparty/install/lib
 	mkdir -p $TOP/3rdparty/install/include
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		${PRUDYNT_CROSS}gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -c -o schrift.o schrift.c
+		${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -std=c99 -pedantic -Wall -Wextra -Wconversion -c -o schrift.o schrift.c
 		${PRUDYNT_CROSS}ar rc libschrift.a schrift.o
 		${PRUDYNT_CROSS}ranlib libschrift.a
 		cp libschrift.a $TOP/3rdparty/install/lib/
 	else
-		${PRUDYNT_CROSS}gcc -std=c99 -pedantic -Wall -Wextra -Wconversion -fPIC -c -o schrift.o schrift.c
+		${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -std=c99 -pedantic -Wall -Wextra -Wconversion -fPIC -c -o schrift.o schrift.c
 		${PRUDYNT_CROSS}gcc -shared -o libschrift.so schrift.o
 		cp libschrift.so $TOP/3rdparty/install/lib/
 	fi
@@ -225,7 +380,7 @@ deps() {
 		done
 	fi
 
-	if [[ "$2" == "-static" || "$2" == "-hybrid" ]]; then
+	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
 		echo "STATIC LIVE555"
 		cp ../../res/live555-config.prudynt-static ./config.prudynt-static
 		./genMakefiles prudynt-static
@@ -237,73 +392,101 @@ deps() {
 		fix_ar_space
 	fi
 
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make -j$(nproc)
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" make install
+	LIVE555_PREFIX="${TOP}/3rdparty/install"
+	LIVE555_LIBDIR="${LIVE555_PREFIX}/lib"
+	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+		make PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
+	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
+		make install PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
 	cd ../../
 
 	echo "import libimp"
 	cd 3rdparty
 	if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-lib; fi
 	if [[ ! -d ingenic-lib ]]; then
-	git clone --depth=1 https://github.com/gtxaspec/ingenic-lib
+		git clone --depth=1 https://github.com/gtxaspec/ingenic-lib
+	fi
 
-	case "$1" in
+	INGENIC_LIB_SRC=""
+	case "$soc" in
 		T10|T20)
 			echo "use T20 libs"
-			cp ingenic-lib/T20/lib/3.12.0/uclibc/4.7.2/* $TOP/3rdparty/install/lib
+			INGENIC_LIB_SRC="ingenic-lib/T20/lib/3.12.0/uclibc/4.7.2"
 			;;
 		T21)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.0.33/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.0.33/uclibc/5.4.0"
 			;;
 		T23)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.1.0/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.1.0/uclibc/5.4.0"
 			;;
 		T30)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.0.5/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.0.5/uclibc/5.4.0"
 			;;
 		T31)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.1.6/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.1.6/uclibc/5.4.0"
 			;;
 		C100)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/2.1.0/uclibc/5.4.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/2.1.0/uclibc/5.4.0"
 			;;
 		T40)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.2.0/uclibc/7.2.0"
 			;;
 		T41)
-			echo "use $1 libs"
-			cp ingenic-lib/$1/lib/1.2.0/uclibc/7.2.0/* $TOP/3rdparty/install/lib
+			echo "use $soc libs"
+			INGENIC_LIB_SRC="ingenic-lib/$soc/lib/1.2.5/uclibc/7.2.0"
 			;;
 		*)
 			echo "Unsupported or unspecified SoC model."
 			;;
 	esac
+
+	if [[ -n "$INGENIC_LIB_SRC" ]]; then
+		cp -Pf "$INGENIC_LIB_SRC"/* "$TOP/3rdparty/install/lib/"
 	fi
 
 	cd ../
 
-	echo "import libmuslshim"
-	cd 3rdparty
-	if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-musl; fi
-	if [[ ! -d ingenic-musl ]]; then
-		git clone --depth=1 https://github.com/gtxaspec/ingenic-musl
-	fi
-	cd ingenic-musl
-	if [[ $STATIC_BUILD -eq 1 ]]; then
-		make CC="${PRUDYNT_CROSS}gcc" -j$(nproc) static
-		make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+	if [[ "$LIBC_TYPE" == "uclibc" ]]; then
+		echo "import libuclibcshim"
+		cd 3rdparty
+		if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-uclibc; fi
+		if [[ ! -d ingenic-uclibc ]]; then
+			git clone --depth=1 https://github.com/gtxaspec/ingenic-uclibc
+		fi
+		cd ingenic-uclibc
+		# ingenic-uclibc has no Makefile; single-source shim compiled directly.
+		${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -fPIC -shared -o libuclibcshim.so uclibc_shim.c
+		if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+			${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -fPIC -c uclibc_shim.c -o uclibc_shim.o
+			${PRUDYNT_CROSS#ccache }ar rcs libuclibcshim.a uclibc_shim.o
+		fi
+		cp libuclibcshim.* ../install/lib/
+		cd $TOP
 	else
-		make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+		echo "import libmuslshim"
+		cd 3rdparty
+		if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-musl; fi
+		if [[ ! -d ingenic-musl ]]; then
+			git clone --depth=1 https://github.com/gtxaspec/ingenic-musl
+		fi
+		cd ingenic-musl
+		if [[ $STATIC_BUILD -eq 1 ]]; then
+			make CC="${PRUDYNT_CROSS}gcc" -j$(nproc) static
+			make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+		else
+			make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+		fi
+		cp libmuslshim.* ../install/lib/
+		cd $TOP
 	fi
-	cp libmuslshim.* ../install/lib/
-	cd $TOP
 
+if false; then
 	echo "import libaudioshim"
 	cd 3rdparty
 
@@ -321,24 +504,72 @@ deps() {
 		cp libaudioshim.* ../install/lib/
 	fi
 	cd $TOP
+fi
+
+	echo "Build curl"
+	cd 3rdparty
+
+	CURL_VER="8.19.0"
+	CURL_TAR="curl-${CURL_VER}.tar.bz2"
+	CURL_URL="https://curl.se/download/${CURL_TAR}"
+
+	if [[ ! -d "curl-${CURL_VER}" ]]; then
+		echo "Downloading curl ${CURL_VER}..."
+		if command -v wget &>/dev/null; then
+			wget -q --show-progress "${CURL_URL}" -O "${CURL_TAR}"
+		else
+			curl -L --progress-bar "${CURL_URL}" -o "${CURL_TAR}"
+		fi
+		tar -xf "${CURL_TAR}"
+		rm -f "${CURL_TAR}"
+	fi
+
+	cd "curl-${CURL_VER}"
+	mkdir -p build-cross
+	cd build-cross
+
+	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+		CURL_ENABLE_SHARED="--disable-shared --enable-static"
+	else
+		CURL_ENABLE_SHARED="--enable-shared --disable-static"
+	fi
+
+	../configure \
+		--host=mipsel-linux \
+		CC="${PRUDYNT_CROSS}gcc" \
+		--prefix="$TOP/3rdparty/install" \
+		--without-ssl \
+		--without-libpsl \
+		--disable-dict --disable-file --disable-ftp \
+		--disable-gopher --disable-imap --disable-ldap \
+		--disable-pop3 --disable-rtsp --disable-smtp \
+		--disable-telnet --disable-tftp \
+		--disable-manual --disable-docs \
+		--without-zlib --without-brotli --without-zstd \
+		$CURL_ENABLE_SHARED \
+		--quiet
+	make -j$(nproc)
+	make install
+	cd $TOP
 
 	echo "Build faac"
 	cd 3rdparty
 
+	FAAC_VER="6858080dd1abf528d5a946066b9f71cc3d8e0b21"
+
 	# Smart faac handling
 	if [[ ! -d faac ]]; then
 		echo "Cloning faac..."
-		git clone --depth=1 https://github.com/knik0/faac.git
+		git clone https://github.com/knik0/faac.git
 		cd faac
-		sed -i 's/^#define MAX_CHANNELS 64/#define MAX_CHANNELS 2/' libfaac/coder.h
 	else
 		echo "faac directory exists, using existing version..."
 		cd faac
 	fi
-		# Ensure clean state and update, then apply local patches
 		git reset --hard HEAD 2>/dev/null || true
 		git clean -fd 2>/dev/null || true
-		git pull origin master 2>/dev/null || true
+		git fetch origin
+		git checkout "$FAAC_VER"
 		# Apply local FAAC patches (warnings/portability fixes)
 		if ls ../../res/faac/*.patch >/dev/null 2>&1; then
 			for p in ../../res/faac/*.patch; do
@@ -346,14 +577,49 @@ deps() {
 			done
 		fi
 
-	./bootstrap
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		CC="${PRUDYNT_CROSS}gcc" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install" --enable-static --disable-shared
+	# faac uses meson; create a cross-file for mipsel
+	# Fix meson.build for newer meson versions (change c_std=gnu99,c99 to c_std=gnu99)
+	sed -i "s/'c_std=gnu99,c99'/'c_std=gnu99'/g" meson.build
+	# Meson treats binary values as single executable paths — split ccache from
+	# the compiler using array syntax so "ccache <prefix>gcc" works.
+	_BARE_CROSS="${PRUDYNT_CROSS#ccache }"
+	if [[ "$PRUDYNT_CROSS" != "$_BARE_CROSS" ]]; then
+		_MESON_C="['ccache', '${_BARE_CROSS}gcc']"
+		_MESON_CPP="['ccache', '${_BARE_CROSS}g++']"
 	else
-		CC="${PRUDYNT_CROSS}gcc" ./configure --host mipsel-linux-gnu --prefix="$TOP/3rdparty/install" --disable-static --enable-shared
+		_MESON_C="'${_BARE_CROSS}gcc'"
+		_MESON_CPP="'${_BARE_CROSS}g++'"
 	fi
-	make -j$(nproc)
-	make install
+	cat > /tmp/faac-meson-cross.ini <<-CROSSFILE
+		[binaries]
+		c = ${_MESON_C}
+		cpp = ${_MESON_CPP}
+		ar = '${_BARE_CROSS}ar'
+		strip = '${_BARE_CROSS}strip'
+		pkg-config = 'pkg-config'
+
+		[host_machine]
+		system = 'linux'
+		cpu_family = 'mips'
+		cpu = 'mipsel'
+		endian = 'little'
+	CROSSFILE
+
+	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+		FAAC_DEFAULT_LIB=static
+	else
+		FAAC_DEFAULT_LIB=shared
+	fi
+
+	rm -rf builddir
+	CFLAGS="-ffast-math" meson setup builddir \
+		--cross-file /tmp/faac-meson-cross.ini \
+		--prefix="$TOP/3rdparty/install" \
+		--default-library="$FAAC_DEFAULT_LIB" \
+		-Dfloating-point=single \
+		-Dmax-channels=2
+	ninja -C builddir -j$(nproc)
+	ninja -C builddir install
 	cd ../../
 
 }
@@ -365,10 +631,12 @@ if [ $# -eq 0 ]; then
 	echo "       ./build.sh full <platform> [options]"
 	echo ""
 	echo "Platforms: T20, T21, T23, T30, T31, C100, T40, T41"
-	echo "Options:   -static | -hybrid | -debug"
-	echo "  -static:  Static linking (default for -debug)"
-	echo "  -hybrid:  Hybrid linking (some static, some dynamic)"
-	echo "  -debug:   Debug build (no optimization, debug symbols, debug logging)"
+	echo "Options:   -static | -hybrid | -debug | --libc-musl | --libc-uclibc"
+	echo "  -static:        Static linking (default for -debug)"
+	echo "  -hybrid:        Hybrid linking (some static, some dynamic)"
+	echo "  -debug:         Debug build (no optimization, debug symbols, debug logging)"
+	echo "  --libc-musl:    Use ingenic-musl shim (default)"
+	echo "  --libc-uclibc:  Use thingino uClibc toolchain + ingenic-uclibc shim"
 	exit 1
 elif [[ "$1" == "deps" ]]; then
 	deps "${@:2}"
