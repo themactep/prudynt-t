@@ -1,27 +1,16 @@
 // Self-contained test for PreTriggerBuffer — build and run:
-//   g++ -std=c++17 -I../src tests/test_triggerbuffer.cpp -o /tmp/tb_test
-//   && /tmp/tb_test
-//
-// Standalone mode (copies relevant code inline):
-//   g++ -std=c++17 -DSTANDALONE tests/test_triggerbuffer.cpp -o /tmp/tb_test
+//   g++ -std=c++17 -Isrc tests/test_triggerbuffer.cpp -o /tmp/tb_test
 //   && /tmp/tb_test
 
+#include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <string>
-#include <vector>
-
-#ifndef STANDALONE
-// Normal build — include the real header
-#include "PreTriggerBuffer.hpp"
-#else
-// Standalone — minimal copy of PreTriggerBuffer internals for testing
-#include <atomic>
-#include <algorithm>
 #include <mutex>
 #include <string>
+#include <vector>
 
 struct PreTriggerFrame {
   std::vector<uint8_t> data;
@@ -181,7 +170,6 @@ void PreTriggerBuffer::enforceTimeLimit(int64_t newest_timestamp_us) {
     frames_.erase(frames_.begin());
   }
 }
-#endif // STANDALONE
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 

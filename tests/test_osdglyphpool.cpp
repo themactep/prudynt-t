@@ -182,7 +182,6 @@ void test_render_sequence_stabilizes_after_max() {
 
   // Count reallocs in the repeat phase by resetting counter
   int reallocs_repeat = 0;
-  auto prev_size = r.pool_size_;
   for (int i = 0; i < 100; ++i) {
     int w = 10 + (i % 20);
     int h = 10 + ((i * 3) % 20);
