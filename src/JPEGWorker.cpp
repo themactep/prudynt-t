@@ -222,8 +222,11 @@ void JPEGWorker::run() {
             fps++;
             bps += total_size;
 
-            // Build in-memory JPEG snapshot buffer for HTTP/IPC consumers
-            if (total_size) {
+            // Build in-memory JPEG snapshot buffer for HTTP/IPC consumers.
+            // Capped at MAX_SNAPSHOT_BYTES; oversized JPEGs are dropped
+            // (previous valid snapshot is retained).
+            if (total_size &&
+                total_size <= jpeg_stream::MAX_SNAPSHOT_BYTES) {
               std::unique_lock buf_lock(mutex_main);
               auto &buf = global_jpeg[jpgChn]->snapshot_buf;
               buf.resize(total_size);

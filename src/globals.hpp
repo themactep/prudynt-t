@@ -140,7 +140,8 @@ struct jpeg_stream {
   binary_semaphore_compat is_activated{0};
 
   // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when
-  // updated
+  // updated.  Capped at MAX_SNAPSHOT_BYTES to prevent unbounded growth.
+  static constexpr size_t MAX_SNAPSHOT_BYTES = 512 * 1024; // 512KB
   std::vector<unsigned char> snapshot_buf;
   // Per-request JPEG quality override (1..100, -1 = none)
   std::atomic<int> quality_override{-1};
