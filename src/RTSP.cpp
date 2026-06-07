@@ -130,7 +130,6 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     BackchannelServerMediaSubsession *bcSub =                                  \
         BackchannelServerMediaSubsession::createNew(                           \
             *env, IMPBackchannelFormat::EnumName);                             \
-    bcSub->setRequireTag("www.onvif.org/ver20/backchannel");                   \
     sms->addSubsession(bcSub);                                                 \
     LOG_INFO("Backchannel ("                                                   \
              << NameString                                                     \
