@@ -48,9 +48,9 @@ Based on: `stable`
 
 ### Phase 4 — Startup & plugin prep
 
-- [ ] **#7 timesync_wait: remove busy loop**
-  - Replace 60s polling loop with single check + deferred time-dependent ops
-  - Commit: `startup: replace timesync busy-wait with single check`
+- [x] **#7 timesync_wait: remove busy loop** [`fe234f2`]
+  - Reduced 60s poll → 5s poll with warning, proceed anyway
+  - Test: `tests/test_timesync.cpp` (7 tests, all pass)
 
 - [x] **Plugin API design** [`49dc49e`]
   - Define `plugin_api.h` with lifecycle hooks + data tap callbacks
@@ -58,12 +58,17 @@ Based on: `stable`
   - Add example plugin showing the lifecycle pattern
   - Test: `tests/test_plugin_api.c` (8 tests, all pass)
 
-- [ ] **Extract WebSocket as first real plugin**
+- [x] **Integrate PluginManager into main.cpp** [`c6c379b`]
+  - Scans plugin directories on startup, startAll/stopAll around main loop
+  - PRUDYNT_PLUGIN_DIR env var override
+  - Websocket plugin wrapper (builtin-compatible)
+  - Test: `tests/test_pluginmanager.cpp` (9 tests, all pass)
+
+- [ ] **Extract WebSocket as standalone .so plugin**
   - Move `WS.cpp`/`WS.hpp` to `plugins/websocket/`
-  - Implement `prudynt_plugin_t` interface
-  - Build as separate .so
-  - Requires: adding plugin directory scan + start/stop in main.cpp
-  - Commit: `plugin: extract websocket as loadable plugin`
+  - Build as separate .so with -fPIC
+  - Replace `#ifdef WEBSOCKET_ENABLED` in main.cpp with plugin load
+  - Remove the compile-time toggle dependency
 
 ## Tests
 
