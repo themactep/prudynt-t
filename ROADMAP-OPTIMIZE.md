@@ -16,24 +16,20 @@ Based on: `stable`
 
 ### Phase 1 — Double-copy elimination
 
-- [x] **#1 PreTriggerBuffer: move-based drain API**
+- [x] **#1 PreTriggerBuffer: move-based drain API** [`8237b3d`]
   - Replace `getFrames()` (returns full copy under lock + sort) with `drainFrames()` (moves frames to output)
   - Update consumer in `MP4ControlSocket.cpp`
-  - Write test: `tests/test_triggerbuffer.cpp`
-  - Commit: `prebuffer: replace getFrames copy with move-based drainFrames`
+  - Test: `tests/test_triggerbuffer.cpp` (8 tests, all pass)
 
-- [ ] **#3 jpeg_stream::snapshot_buf: fixed cap + swap**
-  - Replace unbounded `std::vector<unsigned char>` with fixed-sized ring of 1 + `std::atomic<unsigned char*>` or capped vector with trim
-  - Write test: `tests/test_jpegsnapshot.cpp`
-  - Commit: `jpeg: cap snapshot_buf to prevent unbounded growth`
+- [x] **#3 jpeg_stream::snapshot_buf: fixed cap + swap** [`93e8b2b`]
+  - Added `MAX_SNAPSHOT_BYTES` (512KB) constant; oversized JPEGs are skipped, retaining previous valid snapshot
+  - Test: `tests/test_jpegsnapshot.cpp` (7 tests, all pass)
 
 ### Phase 2 — Allocator churn
 
-- [ ] **#4 MsgChannel: deque → fixed ring buffer**
-  - Replace `std::deque<T>` internals with a pre-allocated circular buffer (`T*` array + head/tail indices)
-  - Eliminates allocation on every `write()`/`read()`
-  - Write test: `tests/test_msgchannel.cpp`
-  - Commit: `msgchannel: replace deque with fixed ring buffer`
+- [x] **#4 MsgChannel: deque → fixed ring buffer** [`f8d65d3`]
+  - Pre-allocated vector + head/tail; zero allocations on write/read hot path
+  - Test: `tests/test_msgchannel.cpp` (11 tests, all pass)
 
 - [ ] **#2 OSD: pool glyph bitmap allocation**
   - Pre-allocate one `imageBuffer.pixels` at max glyph dimensions, reuse across all glyphs in a string
