@@ -729,6 +729,11 @@ void VideoWorker::run() {
                 prebuffer_sample_is_key = true;
               }
 
+              // Reserve estimated capacity to avoid repeated reallocation
+              if (prebuffer_sample.empty()) {
+                prebuffer_sample.reserve(stream.packCount * 512);
+              }
+
               // Append length-prefixed NAL unit (same format as MP4)
               size_t write_offset = prebuffer_sample.size();
               prebuffer_sample.resize(write_offset + 4 + payload_len);
