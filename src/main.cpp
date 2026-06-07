@@ -12,6 +12,7 @@
 #include "Logger.hpp"
 #include "MP4ControlSocket.hpp"
 #include "Motion.hpp"
+#include "PluginManager.hpp"
 #include "RTSP.hpp"
 #include "VideoPrivacyControl.hpp"
 #include "VideoWorker.hpp"
@@ -29,6 +30,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <condition_variable>
 #include <csignal>
 #include <cstdio>
@@ -651,6 +653,26 @@ int main(int argc, const char *argv[]) {
 
   ipc_server.start();
 
+  // ── Plugin subsystem ─────────────────────────────────────────────────
+  // Scan default paths and a configurable env override.
+  PluginManager plugin_mgr;
+  {
+    const char *env_dir = std::getenv("PRUDYNT_PLUGIN_DIR");
+    if (env_dir && env_dir[0]) {
+      plugin_mgr.loadDirectory(env_dir);
+    }
+    plugin_mgr.loadDirectory("/usr/lib/prudynt/plugins");
+    plugin_mgr.loadDirectory("/etc/prudynt/plugins");
+
+    int n = plugin_mgr.startAll();
+    if (n > 0) {
+      LOG_INFO("Started " << n << " plugin(s)");
+    } else {
+      LOG_DEBUG("No external plugins loaded");
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────
+
   while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
     global_restart = true;
     // Start audio INPUT first so that the CODEC clock is configured
@@ -862,6 +884,9 @@ int main(int argc, const char *argv[]) {
     int ret = pthread_join(daynight_thread, nullptr);
     LOG_DEBUG_OR_ERROR(ret, "join daynight thread");
   }
+
+  // Stop all plugins
+  plugin_mgr.stopAll();
 
 #if defined(WEBSOCKET_ENABLED)
   if (cfg->websocket.enabled) {

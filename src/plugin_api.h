@@ -11,8 +11,12 @@ extern "C" {
 /* API version — increment on breaking changes */
 #define PRUDYNT_PLUGIN_API_VERSION 1
 
-/* Opaque handle for the plugin's context (owned by the host) */
-typedef struct prudynt_ctx prudynt_ctx_t;
+/* Opaque context for the plugin (owned by the host).
+ * The struct is empty — only the host knows what goes inside.
+ * Plugins receive a pointer and pass it back to host service calls. */
+typedef struct prudynt_ctx {
+  int reserved;
+} prudynt_ctx_t;
 
 /* Logger severity levels */
 typedef enum {
