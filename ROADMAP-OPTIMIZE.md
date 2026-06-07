@@ -52,16 +52,17 @@ Based on: `stable`
   - Replace 60s polling loop with single check + deferred time-dependent ops
   - Commit: `startup: replace timesync busy-wait with single check`
 
-- [ ] **Plugin API design**
+- [x] **Plugin API design** [`49dc49e`]
   - Define `plugin_api.h` with lifecycle hooks + data tap callbacks
   - Create `PluginManager` class (dlopen/dlsym/dlclose)
-  - Add plugin directory scan on startup
-  - Commit: `plugin: add plugin API header and PluginManager`
+  - Add example plugin showing the lifecycle pattern
+  - Test: `tests/test_plugin_api.c` (8 tests, all pass)
 
-- [ ] **Extract WebSocket as first plugin**
+- [ ] **Extract WebSocket as first real plugin**
   - Move `WS.cpp`/`WS.hpp` to `plugins/websocket/`
   - Implement `prudynt_plugin_t` interface
   - Build as separate .so
+  - Requires: adding plugin directory scan + start/stop in main.cpp
   - Commit: `plugin: extract websocket as loadable plugin`
 
 ## Tests
