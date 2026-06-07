@@ -468,20 +468,24 @@ void recover_stale_imp_state() {
 } // namespace
 
 bool timesync_wait() {
-  // I don't really have a better way to do this than
-  // a no-earlier-than time. The most common sync failure
-  // is time() == 0
-  int timeout_s = 0;
-  while (time(NULL) < 1647489843) {
+  // Brief non-blocking sync check.  Time is rarely critical for most
+  // features (only MP4 file names and log timestamps depend on wall
+  // clock).  Instead of blocking 60s with a polling loop, we wait a
+  // short while, warn, and proceed.
+  constexpr int kMaxWaitSeconds = 5;
+  for (int i = 0; i < kMaxWaitSeconds; ++i) {
     if (global_shutdown_requested.load(std::memory_order_relaxed)) {
       return false;
     }
-    std::this_thread::sleep_for(seconds(1));
-    ++timeout_s;
-    if (timeout_s == 60)
-      return false;
+    if (time(nullptr) >= 1647489843) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
-  return true;
+  LOG_WARN("System clock not yet synchronised (time="
+           << time(nullptr)
+           << "). Proceeding anyway — file timestamps may be incorrect.");
+  return false;
 }
 
 void start_video(int encChn) {
@@ -597,9 +601,8 @@ int main(int argc, const char *argv[]) {
       join_signal_thread(false);
       return 0;
     }
-    LOG_ERROR("Time is not synchronized.");
-    join_signal_thread(true);
-    return 1;
+    // timesync_wait already logged a warning — proceed anyway.
+    LOG_INFO("Continuing startup with unsynchronized clock.");
   }
 
   if (!imp_system) {
