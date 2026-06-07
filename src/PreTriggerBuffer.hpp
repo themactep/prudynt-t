@@ -27,8 +27,14 @@ public:
   void addFrame(const uint8_t *data, size_t size, int64_t timestamp_us,
                 bool is_keyframe);
 
-  // Get all buffered frames for recording (oldest first)
+  // Get all buffered frames for recording (oldest first).
+  // Returns a copy — prefer drainFrames() to avoid O(n) data copy.
   std::vector<PreTriggerFrame> getFrames();
+
+  // Drain all buffered frames into |out| via move (zero-copy).
+  // Frames are delivered in chronological order (oldest first).
+  // After this call the internal buffer is empty.
+  void drainFrames(std::vector<PreTriggerFrame> &out);
 
   // Clear frame data only (keeps buffer enabled and ready for new frames)
   void clearFrames();

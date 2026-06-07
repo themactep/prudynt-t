@@ -692,7 +692,7 @@ bool start_recording(const std::string &path, int target_channel) {
 
   if (cfg->recorder.prebuffer_enabled && video->prebuffer &&
       video->prebuffer->isEnabled()) {
-    prebuffer_frames = video->prebuffer->getFrames();
+    video->prebuffer->drainFrames(prebuffer_frames);
     if (!prebuffer_frames.empty()) {
       // Find first keyframe - decoder needs to start with IDR
       for (size_t i = 0; i < prebuffer_frames.size(); ++i) {

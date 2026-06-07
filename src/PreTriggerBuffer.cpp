@@ -125,6 +125,28 @@ std::vector<PreTriggerFrame> PreTriggerBuffer::getFrames() {
   return result;
 }
 
+void PreTriggerBuffer::drainFrames(std::vector<PreTriggerFrame> &out) {
+  std::lock_guard<std::mutex> lock(buffer_mutex_);
+
+  if (!enabled_.load() || frames_.empty()) {
+    return;
+  }
+
+  // Move all frames to output.  frames_ is stored oldest-first so the
+  // output order is already correct — no sort needed.
+  out.reserve(frames_.size());
+  for (auto &f : frames_) {
+    out.push_back(std::move(f));
+  }
+  frames_.clear();
+
+  // Reset tracking
+  memory_usage_.store(0);
+  write_index_ = 0;
+
+  LOG_DEBUG("PreTriggerBuffer drained " << out.size() << " frames");
+}
+
 void PreTriggerBuffer::clearFrames() {
   std::lock_guard<std::mutex> lock(buffer_mutex_);
 
