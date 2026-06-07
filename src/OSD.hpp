@@ -69,6 +69,12 @@ private:
   int load_font();
   int libschrift_init();
   int renderGlyph(const char *characters);
+
+  // Pre-allocated pixel buffer reused across all glyph renders in a single
+  // renderGlyph() call.  Sized for the largest glyph in the font so we
+  // avoid malloc/free per character.
+  uint8_t *glyph_pool_pixels_{nullptr};
+  size_t glyph_pool_size_{0};
   void drawOutline(uint8_t *image, const Glyph &g, int x, int y,
                    int outlineSize, int WIDTH, int HEIGHT,
                    const uint8_t *strokeColor);

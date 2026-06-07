@@ -52,8 +52,17 @@ int OSD::renderGlyph(const char *characters) {
       if (sft_gmetrics(sft, glyph, &gmetrics) == 0) {
         imageBuffer.width = gmetrics.minWidth;
         imageBuffer.height = gmetrics.minHeight;
-        imageBuffer.pixels =
-            (uint8_t *)malloc(imageBuffer.width * imageBuffer.height);
+
+        // Use pre-allocated pool to avoid malloc/free per character.
+        // Grow pool if needed (lazy: happens at most once for the largest
+        // glyph).
+        size_t needed = (size_t)imageBuffer.width * imageBuffer.height;
+        if (needed > glyph_pool_size_) {
+          free(glyph_pool_pixels_);
+          glyph_pool_pixels_ = (uint8_t *)malloc(needed);
+          glyph_pool_size_ = needed;
+        }
+        imageBuffer.pixels = glyph_pool_pixels_;
 
         if (sft_render(sft, glyph, imageBuffer) == 0) {
           Glyph g;
@@ -76,7 +85,7 @@ int OSD::renderGlyph(const char *characters) {
 
           glyphs[*characters] = g;
         }
-        free(imageBuffer.pixels);
+        // No free — pool is reused across characters and freed in exit()
       }
     }
     ++characters;
@@ -1151,6 +1160,12 @@ int OSD::exit() {
     delete sft;
     sft = nullptr;
   }
+
+  // Free glyph render pool
+  free(glyph_pool_pixels_);
+  glyph_pool_pixels_ = nullptr;
+  glyph_pool_size_ = 0;
+
   text_rendering_available = false;
   return 0;
 }
