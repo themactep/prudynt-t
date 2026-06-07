@@ -38,13 +38,16 @@ Based on: `stable`
 
 ### Phase 3 — Advanced allocators
 
-- [ ] **#6 AudioFrame data pool**
-  - Pre-allocate fixed-size blocks for audio frame payloads, recycle via free-list
-  - Commit: `audio: pool-allocate audio frame data`
+- [x] **#5 SegmentedBuffer utility + prebuffer_sample reserve** [`c1035a3`]
+  - SegmentedBuffer: fixed-block chain (16KB blocks), zero-copy growth, lazy
+    linearization.  Ready for VideoWorker migration when needed.
+  - prebuffer_sample now reserves capacity like mp4_sample already did
+  - Test: `tests/test_segmented_buffer.cpp` (10 tests, all pass)
 
-- [ ] **#5 VideoWorker: segmented mp4_sample buffer**
-  - Replace `std::vector<uint8_t>` append for `mp4_sample` with fixed-block chain (e.g., 16KB blocks)
-  - Commit: `video: use segmented buffer for mp4 sample accumulation`
+- [ ] **Migrate VideoWorker mp4_sample to SegmentedBuffer**
+  - Replace `std::vector<uint8_t>` with `SegmentedBuffer` for `mp4_sample`
+    and `prebuffer_sample` accumulation
+  - Requires careful testing on target hardware
 
 ### Phase 4 — Startup & plugin prep
 
