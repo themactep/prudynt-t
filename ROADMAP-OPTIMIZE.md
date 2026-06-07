@@ -31,10 +31,10 @@ Based on: `stable`
   - Pre-allocated vector + head/tail; zero allocations on write/read hot path
   - Test: `tests/test_msgchannel.cpp` (11 tests, all pass)
 
-- [ ] **#2 OSD: pool glyph bitmap allocation**
+- [x] **#2 OSD: pool glyph bitmap allocation** [`14b3be0`]
   - Pre-allocate one `imageBuffer.pixels` at max glyph dimensions, reuse across all glyphs in a string
   - Eliminates malloc/free per character
-  - Commit: `osd: pool glyph render buffer across characters`
+  - Test: `tests/test_osdglyphpool.cpp` (7 tests, all pass)
 
 ### Phase 3 — Advanced allocators
 
