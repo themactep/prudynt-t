@@ -65,8 +65,43 @@ private:
 extern std::mutex
     mutex_main; // protects global_restart_rtsp and global_restart_video
 
+// Fixed-capacity inline buffer for AudioFrame — avoids heap allocation per
+// audio packet.  Covers all typical formats: G.711 (320B), Opus (~1KB),
+// AAC (~2KB).  Larger frames are silently truncated.
+struct alignas(8) AudioData {
+  static constexpr size_t kMaxBytes = 4096;
+  uint8_t buf[kMaxBytes];
+  size_t len = 0;
+
+  const uint8_t *data() const { return buf; }
+  uint8_t *data() { return buf; }
+  size_t size() const { return len; }
+  bool empty() const { return len == 0; }
+  void clear() { len = 0; }
+  // For insert compatibility: returns pointer to end of written data.
+  uint8_t *end() { return buf + len; }
+
+  // Append range [start, end) — used by AudioWorker.  |hint| is ignored
+  // (was std::vector::end() iterator in the old API).
+  void insert(uint8_t * /*hint*/, const uint8_t *start, const uint8_t *end) {
+    size_t count = static_cast<size_t>(end - start);
+    if (count == 0) return;
+    size_t avail = kMaxBytes - len;
+    if (count > avail) count = avail;
+    std::copy(start, start + count, buf + len);
+    len += count;
+  }
+
+  // Copy from raw pointer + size (used by audio tap readers)
+  void assign(const uint8_t *src, size_t count) {
+    if (count > kMaxBytes) count = kMaxBytes;
+    std::copy(src, src + count, buf);
+    len = count;
+  }
+};
+
 struct AudioFrame {
-  std::vector<uint8_t> data;
+  AudioData data;
   struct timeval time;
 };
 

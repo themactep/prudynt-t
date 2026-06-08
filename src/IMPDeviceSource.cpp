@@ -183,7 +183,7 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame() {
       videoLastPtsUs = pts_us;
     }
 
-    memcpy(fTo, &nal.data[0], fFrameSize);
+    memcpy(fTo, nal.data.data(), fFrameSize);
 
     if (fFrameSize > 0) {
       FramedSource::afterGetting(this);
