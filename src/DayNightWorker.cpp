@@ -277,11 +277,44 @@ static int read_awb(int &out_gr, int &out_gb) {
   return hal::isp::get_awb_weighted_gains(out_gr, out_gb);
 }
 
+// Build a shell fragment that exports GPIO pin numbers from /etc/thingino.json
+// so that the ircut/irled helper scripts can find their pins.  Returns empty
+// string if no thingino.json or jct is available.
+static std::string gpio_env_prefix() {
+  const char *kThinginoJson = "/etc/thingino.json";
+  const char *kJctBin = "/usr/bin/jct";
+  if (access(kThinginoJson, R_OK) != 0 || access(kJctBin, X_OK) != 0) {
+    return "";
+  }
+
+  // Build a shell snippet that reads GPIO pins and exports them.
+  // We use the same variable names that res/ircut and res/irled expect.
+  std::string prefix;
+  prefix += "GPIO_IRCUT=\"$(" + std::string(kJctBin) + " " + kThinginoJson
+            + " get gpio.ircut 2>/dev/null)\"; ";
+  prefix += "export gpio_ircut_1=\"$(echo \"$GPIO_IRCUT\" | cut -d' ' -f1)\"; ";
+  prefix += "export gpio_ircut_2=\"$(echo \"$GPIO_IRCUT\" | cut -d' ' -f2)\"; ";
+  prefix += "export gpio_ir850=\"$(" + std::string(kJctBin) + " " + kThinginoJson
+            + " get gpio.ir850 2>/dev/null)\"; ";
+  prefix += "export gpio_ir940=\"$(" + std::string(kJctBin) + " " + kThinginoJson
+            + " get gpio.ir940 2>/dev/null)\"; ";
+  prefix += "export gpio_white=\"$(" + std::string(kJctBin) + " " + kThinginoJson
+            + " get gpio.white 2>/dev/null)\"; ";
+
+  // For ircut, the old single-pin format is gpio_ircut (space-separated two
+  // pins).  The new format uses gpio_ircut_1 / gpio_ircut_2.  Export both.
+  prefix += "export gpio_ircut=\"$GPIO_IRCUT\"; ";
+  return prefix;
+}
+
 static void apply_mode(DayNightAlgo::Mode m) {
   const char *script_cfg = cfg->get<const char *>("daynight.script_path");
   const char *script = (script_cfg && std::strlen(script_cfg) > 0)
                            ? script_cfg
                            : "/sbin/daynight";
+
+  // Build GPIO environment prefix once (caches result via static)
+  static const std::string s_gpio_prefix = gpio_env_prefix();
 
   if (m == DayNightAlgo::Mode::Day) {
     // Switch to day bin if configured and enabled
@@ -313,7 +346,7 @@ static void apply_mode(DayNightAlgo::Mode m) {
         cfg->image.running_mode = static_cast<int>(hal::isp::RunningMode::Day);
       }
     }
-    std::string cmd = std::string(script) + " day";
+    std::string cmd = s_gpio_prefix + std::string(script) + " day";
     (void)std::system(cmd.c_str());
   } else if (m == DayNightAlgo::Mode::Night) {
     // Switch to night bin if configured and enabled
@@ -342,7 +375,7 @@ static void apply_mode(DayNightAlgo::Mode m) {
             static_cast<int>(hal::isp::RunningMode::Night);
       }
     }
-    std::string cmd = std::string(script) + " night";
+    std::string cmd = s_gpio_prefix + std::string(script) + " night";
     (void)std::system(cmd.c_str());
   }
 }
