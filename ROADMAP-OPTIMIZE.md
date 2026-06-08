@@ -45,6 +45,14 @@ Based on: `stable`
   - Cross-compile: T23, 0 errors. Desktop tests: all 9 pass.
   - Test: `tests/test_segmented_buffer.cpp` (10 tests, all pass)
 
+- [x] **#6 AudioFrame: inline data buffer** [`415a7d3`]
+  - Replace `std::vector<uint8_t>` in `AudioFrame::data` with `AudioData`,
+    a fixed 4096-byte inline buffer — eliminates ~50-100 heap allocs/sec
+  - Same API surface: .data(), .size(), .empty(), insert(), assign()
+  - Covers all formats: G.711 (320B), Opus (~1KB), AAC (~2KB)
+  - Cross-compile: T23, 0 errors
+  - Test: `tests/test_audiodata.cpp` (11 tests, all pass)
+
 ### Phase 4 — Startup & plugin prep
 
 - [x] **#7 timesync_wait: remove busy loop** [`fe234f2`]
