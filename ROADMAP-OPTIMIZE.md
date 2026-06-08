@@ -38,16 +38,12 @@ Based on: `stable`
 
 ### Phase 3 — Advanced allocators
 
-- [x] **#5 SegmentedBuffer utility + prebuffer_sample reserve** [`c1035a3`]
-  - SegmentedBuffer: fixed-block chain (16KB blocks), zero-copy growth, lazy
-    linearization.  Ready for VideoWorker migration when needed.
-  - prebuffer_sample now reserves capacity like mp4_sample already did
-  - Test: `tests/test_segmented_buffer.cpp` (10 tests, all pass)
-
-- [ ] **Migrate VideoWorker mp4_sample to SegmentedBuffer**
+- [x] **#5 VideoWorker: migrate to SegmentedBuffer** [`ab2be1b`]
   - Replace `std::vector<uint8_t>` with `SegmentedBuffer` for `mp4_sample`
-    and `prebuffer_sample` accumulation
-  - Requires careful testing on target hardware
+    and `prebuffer_sample` — eliminates reallocation during frame accumulation
+  - `PendingFrame::data` also migrated
+  - Cross-compile: T23, 0 errors. Desktop tests: all 9 pass.
+  - Test: `tests/test_segmented_buffer.cpp` (10 tests, all pass)
 
 ### Phase 4 — Startup & plugin prep
 
