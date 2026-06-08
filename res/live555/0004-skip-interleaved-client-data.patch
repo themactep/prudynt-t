@@ -1,0 +1,70 @@
+diff --git a/liveMedia/RTSPServer.cpp b/liveMedia/RTSPServer.cpp
+index 6eeb83a..eef3037 100644
+--- a/liveMedia/RTSPServer.cpp
++++ b/liveMedia/RTSPServer.cpp
+@@ -483,9 +483,12 @@ static void lookForHeader(char const* headerName, char const* source, unsigned s
+ }
+ 
+ void RTSPServer::RTSPClientConnection::handleCmd_bad() {
+-  // Don't do anything with "fCurrentCSeq", because it might be nonsense
++  // Include the current CSeq if we have one so the client doesn't lose sync.
++  // Without CSeq the client interprets the response as CSeq 0 and logs
++  // "CSeq N expected, 0 received".
+   snprintf((char*)fResponseBuffer, sizeof fResponseBuffer,
+-	   "RTSP/1.0 400 Bad Request\r\n%sAllow: %s\r\n\r\n",
++	   "RTSP/1.0 400 Bad Request\r\nCSeq: %s\r\n%sAllow: %s\r\n\r\n",
++	   fCurrentCSeq ? fCurrentCSeq : "0",
+ 	   dateHeader(), fOurRTSPServer.allowedCommandNames());
+ }
+ 
+@@ -660,7 +663,7 @@ void RTSPServer::RTSPClientConnection::handleHTTPCmd_StreamingGET(char const* /*
+ void RTSPServer::RTSPClientConnection::resetRequestBuffer() {
+   ClientConnection::resetRequestBuffer();
+   
+-  fLastCRLF = &fRequestBuffer[-3]; // hack: Ensures that we don't think we have end-of-msg if the data starts with <CR><LF>
++  fLastCRLF = NULL;
+   fBase64RemainderCount = 0;
+ }
+ 
+@@ -765,13 +768,12 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
+       fBase64RemainderCount = newBase64RemainderCount;
+     }
+     
+-    unsigned char* tmpPtr = fLastCRLF + 2;
++    unsigned char* tmpPtr = fLastCRLF == NULL ? fRequestBuffer : fLastCRLF + 2;
+     if (fBase64RemainderCount == 0) { // no more Base-64 bytes remain to be read/decoded
+       // Look for the end of the message: <CR><LF><CR><LF>
+-      if (tmpPtr < fRequestBuffer) tmpPtr = fRequestBuffer;
+       while (tmpPtr < &ptr[newBytesRead-1]) {
+ 	if (*tmpPtr == '\r' && *(tmpPtr+1) == '\n') {
+-	  if (tmpPtr - fLastCRLF == 2) { // This is it:
++	  if (fLastCRLF != NULL && tmpPtr - fLastCRLF == 2) { // This is it:
+ 	    endOfMsg = True;
+ 	    break;
+ 	  }
+@@ -929,6 +931,25 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
+ 	handleCmd_notSupported();
+       }
+     } else {
++      // ----------------------------------------------------------------
++      // Check for interleaved RTCP data from the client (starts with '$').
++      // In TCP interleaved mode the client sends RTCP receiver reports
++      // framed as: $ <1-byte channel> <2-byte big-endian length> <data>.
++      // Silently skip these without sending a response to avoid CSeq desync.
++      // ----------------------------------------------------------------
++      if (fRequestBuffer[0] == '$' && fRequestBytesAlreadySeen >= 4) {
++        unsigned frameSize = 4 + ((fRequestBuffer[2] << 8) | fRequestBuffer[3]);
++        if (frameSize <= fRequestBytesAlreadySeen) {
++          numBytesRemaining = fRequestBytesAlreadySeen - frameSize;
++          if (numBytesRemaining > 0) {
++            memmove(fRequestBuffer, &fRequestBuffer[frameSize], numBytesRemaining);
++          }
++          resetRequestBuffer();
++          if (numBytesRemaining > 0) { newBytesRead = numBytesRemaining; continue; }
++          break;
++        }
++      }
++      // ----------------------------------------------------------------
+ #ifdef DEBUG
+       fprintf(stderr, "parseRTSPRequestString() failed; checking now for HTTP commands (for RTSP-over-HTTP tunneling)...\n");
+ #endif
