@@ -1,0 +1,166 @@
+diff --git a/liveMedia/OnDemandServerMediaSubsession.cpp b/liveMedia/OnDemandServerMediaSubsession.cpp
+index 5dd8fdc..5cf123b 100644
+--- a/liveMedia/OnDemandServerMediaSubsession.cpp
++++ b/liveMedia/OnDemandServerMediaSubsession.cpp
+@@ -248,14 +248,16 @@ void OnDemandServerMediaSubsession::startStream(unsigned clientSessionId,
+   Destinations* destinations
+     = (Destinations*)(fDestinationsHashTable->Lookup((char const*)clientSessionId));
+   if (streamState != NULL) {
+-    streamState->startPlaying(destinations, clientSessionId,
+-			      rtcpRRHandler, rtcpRRHandlerClientData,
+-			      serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+     RTPSink* rtpSink = streamState->rtpSink(); // alias
+     if (rtpSink != NULL) {
++      // Capture RTP-Info values before packets can race ahead in startPlaying().
+       rtpSeqNum = rtpSink->currentSeqNo();
+       rtpTimestamp = rtpSink->presetNextTimestamp();
+     }
++
++    streamState->startPlaying(destinations, clientSessionId,
++			      rtcpRRHandler, rtcpRRHandlerClientData,
++			      serverRequestAlternativeByteHandler, serverRequestAlternativeByteHandlerClientData);
+   }
+ }
+ 
+diff --git a/liveMedia/RTPSink.cpp b/liveMedia/RTPSink.cpp
+index a52d05a..c5f9594 100644
+--- a/liveMedia/RTPSink.cpp
++++ b/liveMedia/RTPSink.cpp
+@@ -133,17 +133,39 @@ char const* RTPSink::auxSDPLine() {
+ }
+ 
+ u_int32_t RTPSink::presetNextTimestamp() {
+-  struct timeval timeNow;
+-  gettimeofday(&timeNow, NULL);
++  // PRUDYNT-T PATCH: For fresh sinks, force a clean session-local start.
++  // For mid-stream joins, advertise the current running timestamp.
++  if (fPacketCount > 0) {
++    return fCurrentTimestamp;
++  }
++
++  // If warmup data touched RTP state before PLAY, discard that stale state so
++  // RTP-Info starts from a predictable origin.
++  if (fCurrentTimestamp != 0
++      || fMostRecentPresentationTime.tv_sec != 0
++      || fMostRecentPresentationTime.tv_usec != 0) {
++    fCurrentTimestamp = 0;
++    resetPresentationTimes();
++  }
++
++  u_int32_t initialOffset = 0;
++  if (strcmp(sdpMediaType(), "audio") == 0) {
++    if (strcmp(rtpPayloadFormatName(), "AAC-hbr") == 0
++        || strcmp(rtpPayloadFormatName(), "MPEG4-GENERIC") == 0) {
++      // AAC-LC advances 1024 samples per packet.
++      initialOffset = 1024;
++    } else if (strcmp(rtpPayloadFormatName(), "OPUS") == 0) {
++      // 20 ms Opus packets advance the RTP clock by 960.
++      initialOffset = 960;
++    }
++  }
+ 
+-  u_int32_t tsNow = convertToRTPTimestamp(timeNow);
+   if (!groupsockBeingUsed().hasMultipleDestinations()) {
+-    // Don't adjust the timestamp stream if we already have another destination ongoing
+-    fTimestampBase = tsNow;
++    fTimestampBase += initialOffset;
+     fNextTimestampHasBeenPreset = True;
+   }
+ 
+-  return tsNow;
++  return fTimestampBase;
+ }
+ 
+ void RTPSink::getTotalBitrate(unsigned& outNumBytes, double& outElapsedTime) {
+@@ -191,8 +213,10 @@ RTPSink::RTPSink(UsageEnvironment& env,
+   fSeqNo = (u_int16_t)our_random();
+   fSSRC = our_random32();
+ 
+-  // PRUDYNT-T PATCH: Use shared timestamp base for A-V sync
+-  // Check for environment variable to use shared timestamp base
++  // PRUDYNT-T PATCH:
++  // Keep RTP timestamp base deterministic by default so startup RTP-Info
++  // never lands near 32-bit wrap boundaries (which confuses some clients).
++  // Allow explicit override via environment for diagnostics.
+   fprintf(stderr, "LIVE555_TIMESTAMP_4_DEBUG: Checking environment variable PRUDYNT_SHARED_TIMESTAMP_BASE\n");
+   char const* sharedTimestampBase = getenv("PRUDYNT_SHARED_TIMESTAMP_BASE");
+   fprintf(stderr, "LIVE555_TIMESTAMP_4_DEBUG: Environment variable value: %s\n", sharedTimestampBase ? sharedTimestampBase : "NULL");
+@@ -200,8 +224,8 @@ RTPSink::RTPSink(UsageEnvironment& env,
+     fTimestampBase = (u_int32_t)strtoul(sharedTimestampBase, NULL, 10);
+     fprintf(stderr, "LIVE555_TIMESTAMP_4_BASE: Using shared timestamp base: %u (0x%08x)\n", fTimestampBase, fTimestampBase);
+   } else {
+-    fTimestampBase = our_random32();
+-    fprintf(stderr, "LIVE555_TIMESTAMP_4_BASE: Using random timestamp base: %u (0x%08x)\n", fTimestampBase, fTimestampBase);
++    fTimestampBase = 0;
++    fprintf(stderr, "LIVE555_TIMESTAMP_4_BASE: Using deterministic timestamp base: %u (0x%08x)\n", fTimestampBase, fTimestampBase);
+   }
+ 
+   fTransmissionStatsDB = new RTPTransmissionStatsDB(*this);
+diff --git a/liveMedia/RTSPServer.cpp b/liveMedia/RTSPServer.cpp
+index 6eeb83a..0681752 100644
+--- a/liveMedia/RTSPServer.cpp
++++ b/liveMedia/RTSPServer.cpp
+@@ -660,7 +660,7 @@ void RTSPServer::RTSPClientConnection::handleHTTPCmd_StreamingGET(char const* /*
+ void RTSPServer::RTSPClientConnection::resetRequestBuffer() {
+   ClientConnection::resetRequestBuffer();
+   
+-  fLastCRLF = &fRequestBuffer[-3]; // hack: Ensures that we don't think we have end-of-msg if the data starts with <CR><LF>
++  fLastCRLF = NULL;
+   fBase64RemainderCount = 0;
+ }
+ 
+@@ -765,13 +765,12 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
+       fBase64RemainderCount = newBase64RemainderCount;
+     }
+     
+-    unsigned char* tmpPtr = fLastCRLF + 2;
++    unsigned char* tmpPtr = fLastCRLF == NULL ? fRequestBuffer : fLastCRLF + 2;
+     if (fBase64RemainderCount == 0) { // no more Base-64 bytes remain to be read/decoded
+       // Look for the end of the message: <CR><LF><CR><LF>
+-      if (tmpPtr < fRequestBuffer) tmpPtr = fRequestBuffer;
+       while (tmpPtr < &ptr[newBytesRead-1]) {
+ 	if (*tmpPtr == '\r' && *(tmpPtr+1) == '\n') {
+-	  if (tmpPtr - fLastCRLF == 2) { // This is it:
++	  if (fLastCRLF != NULL && tmpPtr - fLastCRLF == 2) { // This is it:
+ 	    endOfMsg = True;
+ 	    break;
+ 	  }
+@@ -786,6 +785,38 @@ void RTSPServer::RTSPClientConnection::handleRequestBytes(int newBytesRead) {
+     
+     if (!endOfMsg) break; // subsequent reads will be needed to complete the request
+     
++    // ----------------------------------------------------------------
++    // Skip interleaved RTCP data from the client (starts with '$').
++    // In TCP interleaved mode the client may send RTCP receiver reports
++    // framed as: $ <1-byte channel> <2-byte big-endian length> <data>.
++    // These must not be interpreted as RTSP requests because the
++    // resulting "400 Bad Request" response lacks a CSeq header and
++    // desynchronises the client's CSeq sequence.
++    // ----------------------------------------------------------------
++    if (fRequestBuffer[0] == '$') {
++      unsigned frameSize;
++      if (fRequestBytesAlreadySeen >= 4) {
++        frameSize = 4 + ((fRequestBuffer[2] << 8) | fRequestBuffer[3]);
++      } else {
++        frameSize = fRequestBytesAlreadySeen;
++      }
++      if (frameSize > 0 && frameSize <= fRequestBytesAlreadySeen) {
++        numBytesRemaining = fRequestBytesAlreadySeen - frameSize;
++        if (numBytesRemaining > 0) {
++          memmove(fRequestBuffer, &fRequestBuffer[frameSize], numBytesRemaining);
++        }
++        resetRequestBuffer();
++        if (numBytesRemaining > 0) {
++          newBytesRead = numBytesRemaining;
++          continue;
++        }
++        break;
++      } else if (frameSize > fRequestBytesAlreadySeen) {
++        break;
++      }
++    }
++    // ----------------------------------------------------------------
++    
+     // Parse the request string into command name and 'CSeq', then handle the command:
+     fRequestBuffer[fRequestBytesAlreadySeen] = '\0';
+     char cmdName[RTSP_PARAM_STRING_MAX];
