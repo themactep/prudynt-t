@@ -17,6 +17,12 @@ ifeq ($(findstring -O,$(CFLAGS)),)
 override CFLAGS        += $(DEFAULT_OPTFLAG)
 endif
 override CFLAGS        += -DNO_OPENSSL=1
+# Static-link JCT to avoid ABI mismatch when the target system has a
+# different version of libjct.so.  Our Config.cpp accesses JsonValue
+# internals directly (value.number is 'double'), so the struct layout
+# must match exactly.
+JCT_LIB_STATIC_LINE    = -l:libjct.a
+JCT_LIB_DYNAMIC_LINE   = -l:libjct.a
 
 CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
 LDFLAGS                += -lrt -lpthread
@@ -168,7 +174,7 @@ LIBS                    = -Wl,--start-group \
                           $(MP3_LIB_STATIC_LINE) \
                           $(FLAC_LIB_STATIC_LINE) \
                           -l:libcurl.a \
-                          -ljct \
+                          $(JCT_LIB_STATIC_LINE) \
                           -latomic
 
 ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
@@ -201,7 +207,7 @@ LIBS                    = -Wl,-Bdynamic \
                           $(AAC_LIB_HYBRID_LINE) \
                           $(MP3_LIB_HYBRID_LINE) \
                           $(FLAC_LIB_HYBRID_LINE) \
-                          -ljct \
+                          $(JCT_LIB_STATIC_LINE) \
                           -lcurl \
                           -latomic
 
@@ -233,7 +239,7 @@ LIBS                    = -limp \
                           $(AAC_LIB_DYNAMIC_LINE) \
                           $(MP3_LIB_DYNAMIC_LINE) \
                           $(FLAC_LIB_DYNAMIC_LINE) \
-                          -ljct \
+                          $(JCT_LIB_STATIC_LINE) \
                           -latomic \
                           -lcurl
 
