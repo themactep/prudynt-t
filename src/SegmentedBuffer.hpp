@@ -32,12 +32,12 @@ public:
 
   // Return pointer to contiguous data.  If the data spans multiple blocks
   // this triggers a one-time linearization into a cache buffer.
-  const uint8_t *data() {
+  const uint8_t *data() const {
     if (total_size_ == 0) return nullptr;
     if (blocks_.size() <= 1) return blocks_[0].data();
     // Multi-block: linearize on first access
     if (linearized_.empty()) {
-      copy_out(linearized_);
+      const_cast<SegmentedBuffer *>(this)->copy_out(linearized_);
     }
     return linearized_.data();
   }
@@ -106,7 +106,7 @@ private:
   };
 
   std::vector<Block> blocks_;
-  std::vector<uint8_t> linearized_; // lazily populated for multi-block access
+  mutable std::vector<uint8_t> linearized_; // lazily populated for multi-block access
   size_t write_offset_ = 0;
   size_t total_size_ = 0;
 

@@ -9,6 +9,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "PreTriggerBuffer.hpp"
+#include "SegmentedBuffer.hpp"
 #include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
@@ -42,7 +43,7 @@ void VideoWorker::run() {
   unsigned long long ms = 0;
   bool run_for_jpeg = false;
   auto video_state = global_video[encChn];
-  std::vector<uint8_t> mp4_sample;
+  SegmentedBuffer mp4_sample;
   bool mp4_sample_is_key = false;
   int64_t mp4_sample_ts_us = -1;
   int64_t mp4_sample_ts_base_us = -1;
@@ -51,14 +52,14 @@ void VideoWorker::run() {
 
 #ifdef PREBUFFER_ENABLED
   // Prebuffer frame accumulation (similar to mp4_sample)
-  std::vector<uint8_t> prebuffer_sample;
+  SegmentedBuffer prebuffer_sample;
   bool prebuffer_sample_is_key = false;
   int64_t prebuffer_sample_ts_us = -1;
 #endif
 
   // Queue for frames that arrive during prebuffer flush
   struct PendingFrame {
-    std::vector<uint8_t> data;
+    SegmentedBuffer data;
     int64_t timestamp_us;
     bool is_keyframe;
   };
@@ -480,15 +481,14 @@ void VideoWorker::run() {
             if (!src || len == 0) {
               return;
             }
-            size_t write_offset = mp4_sample.size();
-            mp4_sample.resize(write_offset + 4 + len);
-            uint8_t *dst = mp4_sample.data() + write_offset;
+            uint8_t header[4];
             uint32_t be_len = static_cast<uint32_t>(len);
-            dst[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
-            dst[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
-            dst[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
-            dst[3] = static_cast<uint8_t>(be_len & 0xFF);
-            std::memcpy(dst + 4, src, len);
+            header[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
+            header[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
+            header[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
+            header[3] = static_cast<uint8_t>(be_len & 0xFF);
+            mp4_sample.append(header, 4);
+            mp4_sample.append(src, len);
           };
 
           auto append_length_prefixed_nal_vec =
@@ -561,10 +561,6 @@ void VideoWorker::run() {
               if (mp4_sample_ts_base_us == -1) {
                 mp4_sample_ts_base_us = pack_ts_us;
               }
-            }
-
-            if (mp4_sample.empty()) {
-              mp4_sample.reserve(stream.packCount * 512);
             }
 
             bool waiting_for_idr_flag =
@@ -729,21 +725,17 @@ void VideoWorker::run() {
                 prebuffer_sample_is_key = true;
               }
 
-              // Reserve estimated capacity to avoid repeated reallocation
-              if (prebuffer_sample.empty()) {
-                prebuffer_sample.reserve(stream.packCount * 512);
-              }
-
               // Append length-prefixed NAL unit (same format as MP4)
-              size_t write_offset = prebuffer_sample.size();
-              prebuffer_sample.resize(write_offset + 4 + payload_len);
-              uint8_t *dst = prebuffer_sample.data() + write_offset;
-              uint32_t be_len = static_cast<uint32_t>(payload_len);
-              dst[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
-              dst[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
-              dst[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
-              dst[3] = static_cast<uint8_t>(be_len & 0xFF);
-              std::memcpy(dst + 4, start + 4, payload_len);
+              {
+                uint8_t hdr[4];
+                uint32_t be_len = static_cast<uint32_t>(payload_len);
+                hdr[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
+                hdr[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
+                hdr[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
+                hdr[3] = static_cast<uint8_t>(be_len & 0xFF);
+                prebuffer_sample.append(hdr, 4);
+              }
+              prebuffer_sample.append(start + 4, payload_len);
 
               // Flush on frame end
               if (stream.pack[i].frameEnd) {
