@@ -36,12 +36,6 @@ int IMPFramesource::init() {
 
   ret = IMP_FrameSource_GetChnAttr(chnNr, &chnAttr);
 
-  if ((sensor->width != stream->width) || (sensor->height != stream->height)) {
-    scale = 1;
-  } else {
-    scale = 0;
-  }
-
   // Set required base attributes
   chnAttr.picWidth = stream->width;
   chnAttr.picHeight = stream->height;
@@ -81,21 +75,16 @@ int IMPFramesource::init() {
   chnAttr.crop.width = sensor->width;
   chnAttr.crop.height = sensor->height;
 
-  chnAttr.scaler.enable = scale;
-  if (stream->rotation != 0) {
-    chnAttr.scaler.outwidth = stream->height;
-    chnAttr.scaler.outheight = stream->width;
-    chnAttr.picWidth = stream->height;
-    chnAttr.picHeight = stream->width;
-    // Breaks OSD
-    // chnAttr.picWidth = stream->width;
-    // chnAttr.picHeight = stream->height;
+  if ((sensor->width != stream->width) || (sensor->height != stream->height)) {
+    scale = 1;
   } else {
-    chnAttr.scaler.outwidth = stream->width;
-    chnAttr.scaler.outheight = stream->height;
-    chnAttr.picWidth = stream->width;
-    chnAttr.picHeight = stream->height;
+    scale = 0;
   }
+  chnAttr.scaler.enable = scale;
+  chnAttr.scaler.outwidth = stream->width;
+  chnAttr.scaler.outheight = stream->height;
+  chnAttr.picWidth = stream->width;
+  chnAttr.picHeight = stream->height;
 
   LOG_DEBUG("Channel " << chnNr << " configuration (post-attr):");
   LOG_DEBUG("  pic: " << chnAttr.picWidth << "x" << chnAttr.picHeight);
@@ -115,28 +104,28 @@ int IMPFramesource::init() {
   // Handle video rotation (0, 90, 270 degrees)
   if (stream->rotation != 0) {
     // Validate 64-bit alignment requirement
-    if (stream->width % 64 != 0 || stream->height % 64 != 0) {
-      LOG_ERROR(
-          "Rotation requires 64-bit aligned resolution. "
-          "Current: "
-          << stream->width << "x" << stream->height
-          << ". "
-             "Please use multiples of 64 (e.g., 1920x1080, 1280x720, 640x480)");
-      return -1;
-    }
+    // if (stream->width % 64 != 0 || stream->height % 64 != 0) {
+    //   LOG_ERROR(
+    //       "Rotation requires 64-bit aligned resolution. "
+    //       "Current: "
+    //       << stream->width << "x" << stream->height
+    //       << ". "
+    //          "Please use multiples of 64 (e.g., 1920x1080, 1280x720, 640x480)");
+    //   return -1;
+    // }
 
     // Check for soft zoom conflict
-    if (stream->scale_enabled) {
-      LOG_ERROR("Cannot enable rotation while soft zoom is active. Disable "
-                "scale_enabled or set rotation to 0");
-      return -1;
-    }
+    // if (stream->scale_enabled) {
+    //   LOG_ERROR("Cannot enable rotation while soft zoom is active. Disable "
+    //             "scale_enabled or set rotation to 0");
+    //   return -1;
+    // }
 
     // Warn about performance constraints
-    if (stream->width > 1280 || stream->height > 704) {
-      LOG_WARN("Rotation above 1280x704 may impact performance. Recommended "
-               "<=1280x704 @ <=15fps");
-    }
+    // if (stream->width > 1280 || stream->height > 704) {
+    //   LOG_WARN("Rotation above 1280x704 may impact performance. Recommended "
+    //            "<=1280x704 @ <=15fps");
+    // }
 
     // Convert degree values to IMP rotation values
     // 0 degrees = 0 (no rotation)
@@ -160,18 +149,19 @@ int IMPFramesource::init() {
                      dlsym(handle, "IMP_FrameSource_SetChnRotate"))
                : nullptr;
     if (rotate_fn) {
-      ret = rotate_fn(chnNr, imp_rotation, stream->height, stream->width);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_FrameSource_SetChnRotate("
-                                  << chnNr << ", " << imp_rotation << ", "
-                                  << stream->height << ", " << stream->width
-                                  << ")");
+      ret = rotate_fn(chnNr, imp_rotation, stream->width, stream->height);
+      if (ret != 0) {
+        LOG_ERROR("IMP_FrameSource_SetChnRotate failed ret=" << ret
+                  << ". Falling back to no rotation.");
+        chnAttr.scaler.enable = scale;
+      } else {
+        LOG_DEBUG("IMP_FrameSource_SetChnRotate OK");
+      }
     } else {
-      LOG_DEBUG(
-          "IMP_FrameSource_SetChnRotate not available; skipping rotation");
+      LOG_DEBUG("IMP_FrameSource_SetChnRotate not available; skipping rotation");
       ret = 0;
     }
   }
-
 #endif
 #endif
 

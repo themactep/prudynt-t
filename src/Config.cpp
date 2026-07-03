@@ -1368,17 +1368,21 @@ void CFG::load() {
   if (stream2.jpeg_channel == 0) {
     stream2.width = stream0.width;
     stream2.height = stream0.height;
+    stream2.rotation = stream0.rotation;
   } else {
     stream2.width = stream1.width;
     stream2.height = stream1.height;
+    stream2.rotation = stream1.rotation;
   }
 
   if (stream3.jpeg_channel == 0) {
     stream3.width = stream0.width;
     stream3.height = stream0.height;
+    stream3.rotation = stream0.rotation;
   } else {
     stream3.width = stream1.width;
     stream3.height = stream1.height;
+    stream3.rotation = stream1.rotation;
   }
 
   apply_motion_sensor_defaults(*this);

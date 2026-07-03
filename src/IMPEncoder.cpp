@@ -88,6 +88,12 @@ void IMPEncoder::initProfile() {
   memset(&chnAttr, 0, sizeof(IMPEncoderCHNAttr));
   rcAttr = &chnAttr.rcAttr;
 
+  int eff_width = stream->width;
+  int eff_height = stream->height;
+  if (stream->rotation != 0) {
+    std::swap(eff_width, eff_height);
+  }
+
 #ifdef PLATFORM_NEW_SDK
   IMPEncoderRcMode rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
   IMPEncoderProfile encoderProfile = IMP_ENC_PROFILE_AVC_HIGH;
@@ -97,7 +103,7 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->format, "JPEG") == 0) {
     encoderProfile = IMP_ENC_PROFILE_JPEG;
     IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP,
-                                stream->width, stream->height, 24, 1, 0, 0,
+                                eff_width, eff_height, 24, 1, 0, 0,
                                 stream->jpeg_quality, 0);
     // 1000 / stream->jpeg_refresh
     LOG_DEBUG("STREAM PROFILE "
@@ -125,8 +131,8 @@ void IMPEncoder::initProfile() {
                  "CAPPED_QUALITY on T31");
   }
 
-  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, stream->width,
-                              stream->height, stream->fps, 1, stream->gop, 2,
+  IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, rcMode, eff_width,
+                              eff_height, stream->fps, 1, stream->gop, 2,
                               -1, stream->bitrate);
 
   switch (rcMode) {
@@ -196,8 +202,8 @@ void IMPEncoder::initProfile() {
     encAttr->enType = PT_JPEG;
     encAttr->bufSize = 0;
     encAttr->profile = 2;
-    encAttr->picWidth = stream->width;
-    encAttr->picHeight = stream->height;
+    encAttr->picWidth = eff_width;
+    encAttr->picHeight = eff_height;
     return;
   } else if (strcmp(stream->format, "H264") == 0) {
     chnAttr.encAttr.enType = PT_H264;
@@ -249,21 +255,13 @@ void IMPEncoder::initProfile() {
 #endif
   chnAttr.encAttr.bufSize = 0;
 
-  // Handle video rotation: swap width/height if rotation is applied
-  // NOTE: Only swap for H.264/H.265 video streams, NOT for JPEG
-  // JPEG is a snapshot format where rotation is already applied at FrameSource
-  // level
-  int enc_width = stream->width;
-  int enc_height = stream->height;
-  if (stream->rotation != 0 && strcmp(stream->format, "JPEG") != 0) {
-    std::swap(enc_width, enc_height);
+  chnAttr.encAttr.picWidth = eff_width;
+  chnAttr.encAttr.picHeight = eff_height;
+  if (stream->rotation != 0) {
     LOG_DEBUG("Encoder dimensions swapped for rotation: "
-              << enc_width << "x" << enc_height << " (original: "
+              << eff_width << "x" << eff_height << " (original: "
               << stream->width << "x" << stream->height << ")");
   }
-
-  chnAttr.encAttr.picWidth = enc_width;
-  chnAttr.encAttr.picHeight = enc_height;
   chnAttr.rcAttr.outFrmRate.frmRateNum = stream->fps;
   chnAttr.rcAttr.outFrmRate.frmRateDen = 1;
   rcAttr->maxGop = stream->max_gop;
