@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include "SEIWriter.hpp"
 #include <unistd.h>
 #include <vector>
 
@@ -333,6 +334,23 @@ int IPCServer::handle_http_client(int fd) {
       write_full(fd, payload.data(), payload.size());
     }
   };
+
+  if (method == "GET" && path == "/api/v1/osd-sei") {
+    std::string sei_json;
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS && sei_json.empty(); ++ch) {
+      auto vs = global_video[ch];
+      if (vs && vs->imp_encoder && vs->imp_encoder->osd) {
+        sei_json = vs->imp_encoder->osd->getSEIJson();
+      }
+    }
+    if (sei_json.empty()) {
+      send_response(200, "application/json", "{}");
+    } else {
+      send_response(200, "application/json", sei_json);
+    }
+    ::close(fd);
+    return 0;
+  }
 
   if (method != "POST" || path != "/api/v1/config") {
     send_response(404, "text/plain", "not found\n");

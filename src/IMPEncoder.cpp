@@ -90,9 +90,6 @@ void IMPEncoder::initProfile() {
 
   int eff_width = stream->width;
   int eff_height = stream->height;
-  if (stream->rotation != 0) {
-    std::swap(eff_width, eff_height);
-  }
 
 #ifdef PLATFORM_NEW_SDK
   IMPEncoderRcMode rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
@@ -257,11 +254,6 @@ void IMPEncoder::initProfile() {
 
   chnAttr.encAttr.picWidth = eff_width;
   chnAttr.encAttr.picHeight = eff_height;
-  if (stream->rotation != 0) {
-    LOG_DEBUG("Encoder dimensions swapped for rotation: "
-              << eff_width << "x" << eff_height << " (original: "
-              << stream->width << "x" << stream->height << ")");
-  }
   chnAttr.rcAttr.outFrmRate.frmRateNum = stream->fps;
   chnAttr.rcAttr.outFrmRate.frmRateDen = 1;
   rcAttr->maxGop = stream->max_gop;
@@ -444,7 +436,9 @@ int IMPEncoder::init() {
     osd_cell = {DEV_ID_OSD, encGrp, 0};
 
     if (!ownsGroupResources()) {
-      if (stream->osd.enabled) {
+      bool osd_is_metadata_pre = stream->osd.enabled && stream->osd.mode &&
+                                 strcmp(stream->osd.mode, "metadata") == 0;
+      if (stream->osd.enabled && !osd_is_metadata_pre) {
         LOG_ERROR(
             "stream "
             << name
@@ -472,7 +466,14 @@ int IMPEncoder::init() {
       }
     };
 
-    if (stream->osd.enabled) {
+    bool osd_is_metadata = stream->osd.enabled && stream->osd.mode &&
+                           strcmp(stream->osd.mode, "metadata") == 0;
+
+    if (osd_is_metadata) {
+      LOG_INFO("stream " << name << ": OSD mode=metadata, "
+               << "binding FS→ENC directly (no IPU OSD)");
+      osd = OSD::createNew(stream->osd, encGrp, encChn, name);
+    } else if (stream->osd.enabled) {
       osd = OSD::createNew(stream->osd, encGrp, encChn, name);
     } else {
       ret = IMP_OSD_CreateGroup(encGrp);
@@ -491,21 +492,30 @@ int IMPEncoder::init() {
       osd_started_manual = true;
     }
 
-    ret = IMP_System_Bind(&fs, &osd_cell);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &osd_cell)");
-    if (ret != 0) {
-      cleanup_manual_osd();
-      return ret;
-    }
-    fs_to_osd_bound = true;
+    if (osd_is_metadata) {
+      ret = IMP_System_Bind(&fs, &enc);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &enc)");
+      if (ret != 0) {
+        return ret;
+      }
+      fs_to_enc_bound = true;
+    } else {
+      ret = IMP_System_Bind(&fs, &osd_cell);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &osd_cell)");
+      if (ret != 0) {
+        cleanup_manual_osd();
+        return ret;
+      }
+      fs_to_osd_bound = true;
 
-    ret = IMP_System_Bind(&osd_cell, &enc);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&osd_cell, &enc)");
-    if (ret != 0) {
-      cleanup_manual_osd();
-      return ret;
+      ret = IMP_System_Bind(&osd_cell, &enc);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&osd_cell, &enc)");
+      if (ret != 0) {
+        cleanup_manual_osd();
+        return ret;
+      }
+      osd_to_enc_bound = true;
     }
-    osd_to_enc_bound = true;
   } else {
     hal::set_jpeg_quality_qtable(encChn, stream->jpeg_quality,
                                  cfg->sysinfo.cpu);
@@ -520,6 +530,11 @@ int IMPEncoder::deinit() {
   int ret = 0;
 
   if (!is_jpeg_stream && ownsGroupResources()) {
+    if (fs_to_enc_bound) {
+      ret = IMP_System_UnBind(&fs, &enc);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &enc)");
+      fs_to_enc_bound = false;
+    }
     if (osd) {
       if (fs_to_osd_bound) {
         ret = IMP_System_UnBind(&fs, &osd_cell);

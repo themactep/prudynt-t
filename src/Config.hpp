@@ -253,6 +253,7 @@ struct _osd {
   bool uptime_enabled;
   bool logo_enabled;
   bool brightness_enabled;
+  const char *mode;
   const char *font_path;
   const char *time_format;
   const char *uptime_format;

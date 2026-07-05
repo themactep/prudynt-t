@@ -7,10 +7,12 @@
 #include "schrift.h"
 #include <arpa/inet.h>
 #include <array>
+#include <cstring>
 #include <ifaddrs.h>
 
 #include <imp/imp_osd.h>
 #include <memory>
+#include <mutex>
 #include <netinet/in.h>
 #include <string>
 #include <sys/sysinfo.h>
@@ -50,6 +52,15 @@ public:
   void updateDisplayEverySecond();
   static void *thread_entry(void *arg);
 
+  /// Return current OSD state as JSON for SEI metadata embedding.
+  /// Returns empty string if no elements are enabled.
+  std::string getSEIJson();
+
+  /// True when OSD mode is "metadata" (SEI-based, no IPU hardware).
+  bool isSEIMode() const {
+    return osd.mode && strcmp(osd.mode, "metadata") == 0;
+  }
+
   void rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height,
                        int angle, bool del);
   static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
@@ -59,7 +70,6 @@ public:
                               const int pos);
   int startup_delay_ticks{0};
   bool is_started = false;
-  IMPRgnHandle primer_region{0};
 
 private:
   // libschrift
@@ -151,8 +161,6 @@ private:
 
   uint16_t stream_width;
   uint16_t stream_height;
-  uint16_t visual_width{0};
-  uint16_t visual_height{0};
   int stream_rotation{0};
 
   time_t current;
@@ -164,6 +172,10 @@ private:
   char fps[4];
   char bps[8];
   uint8_t flag{0};
+
+  std::string formattedUsertext_;
+  bool ipuInitialized_{false};
+  mutable std::mutex stateMutex_;
 };
 
 #endif

@@ -281,6 +281,8 @@ int OSD::libschrift_init() {
 void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
                    const char *position, int angle, unsigned int fill_color,
                    unsigned int stroke_color) {
+  if (!ipuInitialized_)
+    return;
   if (!text_rendering_available || !sft || !osdItem || !text) {
     return;
   }
@@ -324,24 +326,7 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
   if (item_width % 2 != 0)
     ++item_width;
 
-  // For rotated streams, resolve negative positions in VISUAL space,
-  // then map directly to pre-rotation canvas. Y values are clamped to
-  // the pre-rotation height (T31 IPU limit).
   int region_x = posX, region_y = posY;
-  if (stream_rotation == 90 || stream_rotation == 270) {
-    // Resolve negatives in VISUAL space using original encoder dimensions
-    if (posX < 0)
-      region_x = std::max((int)visual_width - (int)item_width + posX, 0);
-    else if (posX == 0)
-      region_x = std::max(((int)visual_width - (int)item_width) / 2, 0);
-    if (posY < 0)
-      region_y = std::max((int)visual_height - (int)item_height + posY, 0);
-    else if (posY == 0)
-      region_y = std::max(((int)visual_height - (int)item_height) / 2, 0);
-    // Clamp Y to usable pre-rotation area (T31 IPU limit: +27px margin)
-    if (region_y + (int)item_height > (int)stream_height + 27)
-      region_y = stream_height - item_height + 27;
-  }
 
   int item_size = item_width * item_height * 4;
   free(osdItem->data);
@@ -356,10 +341,8 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
     rotateBGRAImage(osdItem->data, item_width, item_height, angle, true);
   }
 
-  // Clamp to pre-rotation canvas (with T31 IPU margin for rotated streams)
+  // Clamp to canvas
   int max_y = stream_height - item_height;
-  if (stream_rotation == 90 || stream_rotation == 270)
-    max_y = stream_height - item_height + 27;
   if (region_x > stream_width - item_width)
     region_x = stream_width - item_width;
   if (region_y > max_y)
@@ -859,51 +842,27 @@ void OSD::init() {
   stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
   stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
 
-  // Detect stream rotation.
+  // Detect stream rotation for SEI metadata only (encoder always landscape).
   if (strcmp(parent, "stream0") == 0)
     stream_rotation = cfg->stream0.rotation;
   else if (strcmp(parent, "stream1") == 0)
     stream_rotation = cfg->stream1.rotation;
 
-  // Save visual dimensions, then swap for pre-rotation canvas.
-  // The IPU on T31 limits OSD_REG_PIC to Y < pre-rotation height,
-  // so we use the landscape canvas (2048x1536) for positioning.
-  visual_width = stream_width;
-  visual_height = stream_height;
-  if (stream_rotation == 90 || stream_rotation == 270)
-    std::swap(stream_width, stream_height);
-
   LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: "
             << stream_width << "x" << stream_height
             << " rotation=" << stream_rotation);
 
-  ret = IMP_OSD_CreateGroup(osdGrp);
-  LOG_DEBUG("IMP_OSD_CreateGroup(" << osdGrp << ") ret=" << ret);
+  // Detect metadata mode: skip IPU OSD hardware, only keep text rendering.
+  bool osd_is_metadata = osd.mode && strcmp(osd.mode, "metadata") == 0;
+  if (osd_is_metadata) {
+    LOG_INFO("OSD: metadata mode — skipping IPU OSD, "
+             << "keeping text rendering for SEI");
+  }
 
-  // For rotated streams, the T31 IPU requires a visible full-frame
-  // region at encoder dimensions to initialise its blending pipeline.
-  if (stream_rotation == 90 || stream_rotation == 270) {
-    IMPRgnHandle primer_rgn = IMP_OSD_CreateRgn(nullptr);
-    IMP_OSD_RegisterRgn(primer_rgn, osdGrp, nullptr);
-    IMPOSDRgnAttr primer_attr;
-    memset(&primer_attr, 0, sizeof(primer_attr));
-    primer_attr.type = OSD_REG_COVER;
-    primer_attr.fmt = PIX_FMT_BGRA;
-    primer_attr.rect.p0.x = 0;
-    primer_attr.rect.p0.y = 0;
-    primer_attr.rect.p1.x = stream_width - 1;
-    primer_attr.rect.p1.y = stream_height - 1;
-    primer_attr.data.coverData.color = 0;
-    IMP_OSD_SetRgnAttr(primer_rgn, &primer_attr);
-    IMPOSDGrpRgnAttr primer_grp;
-    memset(&primer_grp, 0, sizeof(primer_grp));
-    primer_grp.show = 1;
-    primer_grp.layer = 0;
-    primer_grp.gAlphaEn = 1;
-    primer_grp.fgAlhpa = 0;
-    primer_grp.bgAlhpa = 0;
-    IMP_OSD_SetGrpRgnAttr(primer_rgn, osdGrp, &primer_grp);
-    primer_region = primer_rgn;
+  if (!osd_is_metadata) {
+    ret = IMP_OSD_CreateGroup(osdGrp);
+    LOG_DEBUG("IMP_OSD_CreateGroup(" << osdGrp << ") ret=" << ret);
+    ipuInitialized_ = true;
   }
 
   if (osd.font_size == OSD_AUTO_VALUE) {
@@ -915,6 +874,12 @@ void OSD::init() {
   if (libschrift_init() != 0) {
     LOG_ERROR("libschrift init failed; text OSD regions will be disabled");
   }
+
+  // Resolve hostname / IP for usertext (needed in both overlay and SEI modes).
+  getIp(ip);
+  gethostname(hostname, 64);
+
+  if (!osd_is_metadata) {
 
   if (osd.time_enabled && text_rendering_available) {
     /* OSD Time */
@@ -959,9 +924,6 @@ void OSD::init() {
   }
 
   if (osd.usertext_enabled && text_rendering_available) {
-    getIp(ip);
-    gethostname(hostname, 64);
-
     /* OSD Usertext */
 
     osdUser.data = nullptr;
@@ -1117,17 +1079,13 @@ void OSD::init() {
         }
       }
 
-      // Resolve negatives in visual space, clamp to usable pre-rotation area
+      // Resolve negatives
       int lx = logoPosX, ly = logoPosY;
-      if (lx < 0) lx = std::max((int)visual_width - (int)logo_width + lx, 0);
-      else if (lx == 0) lx = std::max(((int)visual_width - (int)logo_width) / 2, 0);
-      if (ly < 0) ly = std::max((int)visual_height - (int)logo_height + ly, 0);
-      else if (ly == 0) ly = std::max(((int)visual_height - (int)logo_height) / 2, 0);
-      // T31 IPU limit for rotated: rect.p1.y < stream_height + 28
-      int max_ly = stream_height - logo_height;
-      if (stream_rotation == 90 || stream_rotation == 270)
-        max_ly = stream_height - logo_height + 27;
-      if (ly > max_ly) ly = max_ly;
+      if (lx < 0) lx = std::max((int)stream_width - (int)logo_width + lx, 0);
+      else if (lx == 0) lx = std::max(((int)stream_width - (int)logo_width) / 2, 0);
+      if (ly < 0) ly = std::max((int)stream_height - (int)logo_height + ly, 0);
+      else if (ly == 0) ly = std::max(((int)stream_height - (int)logo_height) / 2, 0);
+      if (ly > stream_height - logo_height) ly = stream_height - logo_height;
       if (lx > stream_width - logo_width) lx = stream_width - logo_width;
       if (lx < 0) lx = 0;
       if (ly < 0) ly = 0;
@@ -1160,11 +1118,20 @@ void OSD::init() {
     }
   }
 
+  } // !osd_is_metadata
+
   if (osd.start_delay_ms)
     startup_delay_ticks = (int)(osd.start_delay_ms * 1000) / THREAD_SLEEP_US;
+  else if (osd_is_metadata)
+    is_started = true;
 }
 
 int OSD::start() {
+  if (!ipuInitialized_) {
+    is_started = true;
+    return 0;
+  }
+
   int ret;
 
   ret = IMP_OSD_Start(osdGrp);
@@ -1176,44 +1143,41 @@ int OSD::start() {
 }
 
 int OSD::exit() {
-  int ret;
+  int ret = 0;
 
-  ret = IMP_OSD_Stop(osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Stop(" << osdGrp << ")");
+  if (ipuInitialized_) {
+    ret = IMP_OSD_Stop(osdGrp);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Stop(" << osdGrp << ")");
 
-  auto shutdownRegion = [&](OSDItem &item, const char *label, bool created) {
-    if (!created)
-      return;
-    int rc = IMP_OSD_ShowRgn(item.imp_rgn, osdGrp, 0);
-    LOG_DEBUG_OR_ERROR(rc,
-                       "IMP_OSD_ShowRgn(" << label << ", " << osdGrp << ", 0)");
-    rc = IMP_OSD_UnRegisterRgn(item.imp_rgn, osdGrp);
-    LOG_DEBUG_OR_ERROR(rc, "IMP_OSD_UnRegisterRgn(" << label << ", " << osdGrp
-                                                    << ")");
-    IMP_OSD_DestroyRgn(item.imp_rgn);
-    LOG_DEBUG("IMP_OSD_DestroyRgn(" << label << ")");
-  };
+    auto shutdownRegion = [&](OSDItem &item, const char *label, bool created) {
+      if (!created)
+        return;
+      int rc = IMP_OSD_ShowRgn(item.imp_rgn, osdGrp, 0);
+      LOG_DEBUG_OR_ERROR(rc,
+                         "IMP_OSD_ShowRgn(" << label << ", " << osdGrp << ", 0)");
+      rc = IMP_OSD_UnRegisterRgn(item.imp_rgn, osdGrp);
+      LOG_DEBUG_OR_ERROR(rc, "IMP_OSD_UnRegisterRgn(" << label << ", " << osdGrp
+                                                      << ")");
+      IMP_OSD_DestroyRgn(item.imp_rgn);
+      LOG_DEBUG("IMP_OSD_DestroyRgn(" << label << ")");
+    };
 
-  shutdownRegion(osdTime, "osdTime.imp_rgn", time_region_created);
-  shutdownRegion(osdUser, "osdUser.imp_rgn", user_region_created);
-  shutdownRegion(osdUptm, "osdUptm.imp_rgn", uptime_region_created);
-  shutdownRegion(osdLogo, "osdLogo.imp_rgn", logo_region_created);
-  shutdownRegion(osdBrightness, "osdBrightness.imp_rgn",
-                 brightness_region_created);
+    shutdownRegion(osdTime, "osdTime.imp_rgn", time_region_created);
+    shutdownRegion(osdUser, "osdUser.imp_rgn", user_region_created);
+    shutdownRegion(osdUptm, "osdUptm.imp_rgn", uptime_region_created);
+    shutdownRegion(osdLogo, "osdLogo.imp_rgn", logo_region_created);
+    shutdownRegion(osdBrightness, "osdBrightness.imp_rgn",
+                   brightness_region_created);
 
-  ret = IMP_OSD_DestroyGroup(osdGrp);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_DestroyGroup(" << osdGrp << ")");
+    ret = IMP_OSD_DestroyGroup(osdGrp);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_DestroyGroup(" << osdGrp << ")");
 
-  // cleanup osd image data
-  free(osdTime.data);
-  free(osdUser.data);
-  free(osdUptm.data);
-  free(osdLogo.data);
-  free(osdBrightness.data);
-  if (primer_region) {
-    IMP_OSD_UnRegisterRgn(primer_region, osdGrp);
-    IMP_OSD_DestroyRgn(primer_region);
-    primer_region = 0;
+    // cleanup osd image data
+    free(osdTime.data);
+    free(osdUser.data);
+    free(osdUptm.data);
+    free(osdLogo.data);
+    free(osdBrightness.data);
   }
 
   if (sft) {
@@ -1290,6 +1254,8 @@ void OSD::updateDisplayEverySecond() {
                  osd.usertext_rotation, osd.usertext_fill_color,
                  osd.usertext_stroke_color);
 
+        formattedUsertext_ = usertext;
+
         usertext.clear();
 
         flag ^= OSD_FLAG_USER;
@@ -1320,6 +1286,88 @@ void OSD::updateDisplayEverySecond() {
       }
     }
   }
+}
+
+std::string OSD::getSEIJson() {
+  std::lock_guard<std::mutex> lock(stateMutex_);
+
+  std::string json = "{\"v\":1,";
+  {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "\"sw\":%u,\"sh\":%u,\"rotation\":%d,",
+             stream_width, stream_height, stream_rotation);
+    json += buf;
+  }
+  json += "\"elements\":[";
+  bool first = true;
+
+  auto addElement = [&](const char *type, const char *text,
+                        const char *posStr, unsigned int fill_color,
+                        unsigned int stroke_color) {
+    if (!text || !text[0])
+      return;
+
+    uint16_t w = 0, h = 0;
+    calculateTextSize(text, w, h, osd.stroke_size);
+
+    // Parse x,y from position string
+    int x = 0, y = 0;
+    if (posStr && *posStr) {
+      const char *comma = strchr(posStr, ',');
+      if (comma) {
+        char xb[16] = {0}, yb[16] = {0};
+        size_t xl = (size_t)(comma - posStr);
+        size_t yl = strlen(comma + 1);
+        if (xl > 0 && xl < sizeof(xb)) {
+          memcpy(xb, posStr, xl);
+          xb[xl] = '\0';
+          x = atoi(xb);
+        }
+        if (yl > 0 && yl < sizeof(yb)) {
+          memcpy(yb, comma + 1, yl);
+          yb[yl] = '\0';
+          y = atoi(yb);
+        }
+      }
+    }
+
+    if (!first)
+      json += ",";
+    first = false;
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "{\"t\":\"%s\",\"text\":\"%s\",\"x\":%d,\"y\":%d,"
+             "\"w\":%u,\"h\":%u,\"fs\":%d,"
+             "\"color\":\"#%06X%02X\",\"stroke\":\"#%06X%02X\"}",
+             type, text, x, y, w, h, osd.font_size,
+             fill_color & 0x00FFFFFF, (fill_color >> 24) & 0xFF,
+             stroke_color & 0x00FFFFFF, (stroke_color >> 24) & 0xFF);
+    json += buf;
+  };
+
+  if (osd.time_enabled && text_rendering_available)
+    addElement("time", timeFormatted, osd.time_position,
+               osd.time_fill_color, osd.time_stroke_color);
+
+  if (osd.usertext_enabled && text_rendering_available &&
+      !formattedUsertext_.empty())
+    addElement("usertext", formattedUsertext_.c_str(),
+               osd.usertext_position, osd.usertext_fill_color,
+               osd.usertext_stroke_color);
+
+  if (osd.uptime_enabled && text_rendering_available)
+    addElement("uptime", uptimeFormatted, osd.uptime_position,
+               osd.uptime_fill_color, osd.uptime_stroke_color);
+
+  if (osd.brightness_enabled && text_rendering_available &&
+      !lastBrightnessText.empty())
+    addElement("brightness", lastBrightnessText.c_str(),
+               osd.brightness_position, osd.brightness_fill_color,
+               osd.brightness_stroke_color);
+
+  json += "]}";
+  return json;
 }
 
 void *OSD::thread_entry(void *arg) {

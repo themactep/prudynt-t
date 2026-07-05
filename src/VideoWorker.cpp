@@ -9,6 +9,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "PreTriggerBuffer.hpp"
+#include "SEIWriter.hpp"
 #include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
@@ -346,6 +347,21 @@ void VideoWorker::run() {
           nominal_frame_step_us = 1000;
         }
 
+        // SEI metadata state (OSD mode=metadata)
+        bool osd_sei_active = false;
+        if (video_state && video_state->imp_encoder &&
+            video_state->imp_encoder->osd) {
+          osd_sei_active = video_state->imp_encoder->osd->isSEIMode();
+        }
+        bool sei_pending_for_frame = false;
+        bool sei_inserted_for_frame = false;
+        bool stream_is_h265_for_sei = false;
+        if (video_state && video_state->stream &&
+            video_state->stream->format) {
+          stream_is_h265_for_sei =
+              (strcmp(video_state->stream->format, "H265") == 0);
+        }
+
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
@@ -385,6 +401,10 @@ void VideoWorker::run() {
           uint8_t *end = start + length;
           bool frame_start = (i == 0) || stream.pack[i - 1].frameEnd;
           if (frame_start) {
+            // Reset SEI state per frame
+            sei_pending_for_frame = false;
+            sei_inserted_for_frame = false;
+
             uint32_t frame_end_idx = i;
             while (frame_end_idx + 1 < stream.packCount &&
                    !stream.pack[frame_end_idx].frameEnd) {
@@ -431,6 +451,35 @@ void VideoWorker::run() {
 
             ts_current_frame_us = frame_ts_us;
             ts_have_current_frame = true;
+
+            // Peek ahead to detect if this frame is an IDR (for SEI insertion)
+            if (osd_sei_active) {
+              for (uint32_t j = i; j <= frame_end_idx; ++j) {
+                uint32_t peek_len = 0;
+                auto peek_slices = hal::encoder::get_pack_slices(stream, j);
+                const uint8_t *peek_ptr =
+                    peek_slices.second_len > 0
+                        ? nullptr  // wrap case, skip (unlikely in first few packs)
+                        : peek_slices.first_ptr;
+                peek_len = peek_slices.first_len;
+                if (peek_ptr && peek_len >= 5) {
+                  uint32_t peek_nal_type = 0;
+                  if (stream_is_h265_for_sei && peek_len >= 6) {
+                    peek_nal_type = (peek_ptr[4] >> 1) & 0x3F;
+                    if (peek_nal_type >= 16 && peek_nal_type <= 21) {
+                      sei_pending_for_frame = true;
+                      break;
+                    }
+                  } else {
+                    peek_nal_type = peek_ptr[4] & 0x1F;
+                    if (peek_nal_type == 5) {
+                      sei_pending_for_frame = true;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
           }
 
           int64_t pack_ts_us = stream.pack[i].timestamp;
@@ -631,6 +680,33 @@ void VideoWorker::run() {
             if (global_video[encChn]->idr == false) {
               if (nal_is_sps || nal_is_pps || nal_is_idr || nal_is_hevc_idr) {
                 global_video[encChn]->idr = true;
+              }
+            }
+
+            // SEI metadata insertion: inject SEI NAL before first IDR slice
+            if (sei_pending_for_frame && !sei_inserted_for_frame &&
+                (nal_is_idr || nal_is_hevc_idr)) {
+              sei_inserted_for_frame = true;
+              auto *osd_ptr = video_state->imp_encoder->osd;
+              if (osd_ptr) {
+                std::string sei_json = osd_ptr->getSEIJson();
+                if (!sei_json.empty()) {
+                  std::vector<uint8_t> sei_nal =
+                      SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
+                  if (!sei_nal.empty()) {
+                    H264NALUnit sei_unit;
+                    sei_unit.data = std::move(sei_nal);
+                    sei_unit.frame_id = nalu.frame_id;
+                    sei_unit.imp_ts = nalu.imp_ts;
+                    sei_unit.time = nalu.time;
+                    sei_unit.is_frame_start = false;
+                    sei_unit.is_frame_end = false;
+                    sei_unit.is_keyframe = true;
+                    sei_unit.packet_index = 0;
+                    sei_unit.packet_count = 1;
+                    global_video[encChn]->msgChannel->write(sei_unit);
+                  }
+                }
               }
             }
 

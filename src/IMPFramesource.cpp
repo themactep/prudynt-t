@@ -101,8 +101,8 @@ int IMPFramesource::init() {
 #if !defined(KERNEL_VERSION_4)
 #if defined(PLATFORM_T31) && !defined(PLATFORM_C100)
 
-  // Handle video rotation (0, 90, 270 degrees)
-  if (stream->rotation != 0) {
+  // Rotation handled client-side via SEI metadata — skip IMP rotation.
+  if (false && stream->rotation != 0) {
     // Validate 64-bit alignment requirement
     // if (stream->width % 64 != 0 || stream->height % 64 != 0) {
     //   LOG_ERROR(

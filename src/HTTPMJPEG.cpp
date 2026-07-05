@@ -404,6 +404,26 @@ void HTTPMJPEG::handle_client(int cfd) {
     write_full(cfd, hdr, strlen(hdr));
   };
 
+  // Handle SEI OSD metadata endpoint (no auth required — read-only, non-sensitive)
+  if (api_enabled_ && path == "/api/v1/osd-sei") {
+    if (method != "GET") {
+      send_response(405, "text/plain", "method not allowed\n");
+      ::close(cfd);
+      return;
+    }
+    std::string sei_json;
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS && sei_json.empty(); ++ch) {
+      auto vs = global_video[ch];
+      if (vs && vs->imp_encoder && vs->imp_encoder->osd) {
+        sei_json = vs->imp_encoder->osd->getSEIJson();
+      }
+    }
+    send_response(200, "application/json",
+                  sei_json.empty() ? "{}" : sei_json);
+    ::close(cfd);
+    return;
+  }
+
   // Check authentication if required
   if (auth_required_ && !check_auth(req, username_, password_)) {
     send_auth_required();

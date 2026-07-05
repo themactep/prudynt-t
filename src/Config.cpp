@@ -489,6 +489,10 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
        validateCharDummy},
       {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120",
        validateCharNotEmpty},
+      {"stream0.osd.mode", stream0.osd.mode, "overlay",
+       [](const char *v) {
+         return strcmp(v, "overlay") == 0 || strcmp(v, "metadata") == 0;
+       }},
       {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED",
        validateCharNotEmpty},
       {"stream0.mode", stream0.mode, encDefaults.stream0_mode,
@@ -530,6 +534,10 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
        validateCharDummy},
       {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120",
        validateCharNotEmpty},
+      {"stream1.osd.mode", stream1.osd.mode, "overlay",
+       [](const char *v) {
+         return strcmp(v, "overlay") == 0 || strcmp(v, "metadata") == 0;
+       }},
       {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED",
        validateCharNotEmpty},
       {"stream1.mode", stream1.mode, encDefaults.stream1_mode,
