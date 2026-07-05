@@ -318,48 +318,71 @@ void OSD::set_text(OSDItem *osdItem, IMPOSDRgnAttr *irgnAttr, const char *text,
   uint16_t item_width = 0;
   uint16_t item_height = 0;
 
-  if (calculateTextSize(text, item_width, item_height, stroke_width) != 0) {
+  if (calculateTextSize(text, item_width, item_height, stroke_width) != 0)
     return;
-  }
 
   if (item_width % 2 != 0)
     ++item_width;
 
-  int item_size = item_width * item_height * 4;
+  // For rotated streams, resolve negative positions in VISUAL space,
+  // then map directly to pre-rotation canvas. Y values are clamped to
+  // the pre-rotation height (T31 IPU limit).
+  int region_x = posX, region_y = posY;
+  if (stream_rotation == 90 || stream_rotation == 270) {
+    // Resolve negatives in VISUAL space using original encoder dimensions
+    if (posX < 0)
+      region_x = std::max((int)visual_width - (int)item_width + posX, 0);
+    else if (posX == 0)
+      region_x = std::max(((int)visual_width - (int)item_width) / 2, 0);
+    if (posY < 0)
+      region_y = std::max((int)visual_height - (int)item_height + posY, 0);
+    else if (posY == 0)
+      region_y = std::max(((int)visual_height - (int)item_height) / 2, 0);
+    // Clamp Y to usable pre-rotation area (T31 IPU limit: +27px margin)
+    if (region_y + (int)item_height > (int)stream_height + 27)
+      region_y = stream_height - item_height + 27;
+  }
 
+  int item_size = item_width * item_height * 4;
   free(osdItem->data);
   osdItem->data = (uint8_t *)malloc(item_size);
   memset(osdItem->data, 0, item_size);
 
   if (drawText(osdItem->data, text, item_width, item_height, stroke_width,
-               fill_color, stroke_color) != 0) {
+               fill_color, stroke_color) != 0)
     return;
-  }
 
   if (angle) {
     rotateBGRAImage(osdItem->data, item_width, item_height, angle, true);
   }
 
+  // Clamp to pre-rotation canvas (with T31 IPU margin for rotated streams)
+  int max_y = stream_height - item_height;
+  if (stream_rotation == 90 || stream_rotation == 270)
+    max_y = stream_height - item_height + 27;
+  if (region_x > stream_width - item_width)
+    region_x = stream_width - item_width;
+  if (region_y > max_y)
+    region_y = max_y;
+  if (region_x < 0) region_x = 0;
+  if (region_y < 0) region_y = 0;
+
   if (item_width != osdItem->width || item_height != osdItem->height) {
-    if (irgnAttr == nullptr) {
+    if (irgnAttr == nullptr)
       IMP_OSD_GetRgnAttr(osdItem->imp_rgn, &osdItem->rgnAttr);
-    }
-
-    set_pos(&osdItem->rgnAttr, posX, posY, item_width, item_height,
-            stream_width, stream_height);
-
+    osdItem->rgnAttr.rect.p0.x = region_x;
+    osdItem->rgnAttr.rect.p0.y = region_y;
+    osdItem->rgnAttr.rect.p1.x = region_x + item_width - 1;
+    osdItem->rgnAttr.rect.p1.y = region_y + item_height - 1;
     osdItem->rgnAttr.data.picData.pData = osdItem->data;
     osdItem->rgnAttrData = &osdItem->rgnAttr.data;
-
     osdItem->width = item_width;
     osdItem->height = item_height;
-
     IMP_OSD_SetRgnAttr(osdItem->imp_rgn, &osdItem->rgnAttr);
   } else {
     osdItem->rgnAttrData->picData.pData = osdItem->data;
     IMP_OSD_UpdateRgnAttrData(osdItem->imp_rgn, osdItem->rgnAttrData);
   }
-
   return;
 }
 
@@ -836,16 +859,55 @@ void OSD::init() {
   stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
   stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
 
+  // Detect stream rotation.
+  if (strcmp(parent, "stream0") == 0)
+    stream_rotation = cfg->stream0.rotation;
+  else if (strcmp(parent, "stream1") == 0)
+    stream_rotation = cfg->stream1.rotation;
+
+  // Save visual dimensions, then swap for pre-rotation canvas.
+  // The IPU on T31 limits OSD_REG_PIC to Y < pre-rotation height,
+  // so we use the landscape canvas (2048x1536) for positioning.
+  visual_width = stream_width;
+  visual_height = stream_height;
+  if (stream_rotation == 90 || stream_rotation == 270)
+    std::swap(stream_width, stream_height);
+
   LOG_DEBUG("IMP_Encoder_GetChnAttr read. Stream resolution: "
-            << stream_width << "x" << stream_height);
+            << stream_width << "x" << stream_height
+            << " rotation=" << stream_rotation);
 
   ret = IMP_OSD_CreateGroup(osdGrp);
+  LOG_DEBUG("IMP_OSD_CreateGroup(" << osdGrp << ") ret=" << ret);
 
-  int fontSize = autoFontSize(HAL_ENC_ATTR_WIDTH(channelAttributes));
-  // int autoOffset = round((float)(HAL_ENC_ATTR_WIDTH(channelAttributes) *
-  // 0.004)); // Currently unused
+  // For rotated streams, the T31 IPU requires a visible full-frame
+  // region at encoder dimensions to initialise its blending pipeline.
+  if (stream_rotation == 90 || stream_rotation == 270) {
+    IMPRgnHandle primer_rgn = IMP_OSD_CreateRgn(nullptr);
+    IMP_OSD_RegisterRgn(primer_rgn, osdGrp, nullptr);
+    IMPOSDRgnAttr primer_attr;
+    memset(&primer_attr, 0, sizeof(primer_attr));
+    primer_attr.type = OSD_REG_COVER;
+    primer_attr.fmt = PIX_FMT_BGRA;
+    primer_attr.rect.p0.x = 0;
+    primer_attr.rect.p0.y = 0;
+    primer_attr.rect.p1.x = stream_width - 1;
+    primer_attr.rect.p1.y = stream_height - 1;
+    primer_attr.data.coverData.color = 0;
+    IMP_OSD_SetRgnAttr(primer_rgn, &primer_attr);
+    IMPOSDGrpRgnAttr primer_grp;
+    memset(&primer_grp, 0, sizeof(primer_grp));
+    primer_grp.show = 1;
+    primer_grp.layer = 0;
+    primer_grp.gAlphaEn = 1;
+    primer_grp.fgAlhpa = 0;
+    primer_grp.bgAlhpa = 0;
+    IMP_OSD_SetGrpRgnAttr(primer_rgn, osdGrp, &primer_grp);
+    primer_region = primer_rgn;
+  }
 
   if (osd.font_size == OSD_AUTO_VALUE) {
+    int fontSize = autoFontSize(HAL_ENC_ATTR_WIDTH(channelAttributes));
     // use cfg->set to set noSave, so auto values will not written to config
     cfg->set<int>(getConfigPath("font_size"), fontSize, true);
   }
@@ -875,6 +937,12 @@ void OSD::init() {
       initialTimeText = timeFormatted;
     }
 
+    LOG_DEBUG("OSD::init TIME fmt='" << osd.time_format
+              << "' text='" << initialTimeText
+              << "' pos='" << osd.time_position
+              << "' rot=" << osd.time_rotation
+              << " font=" << osd.font_size
+              << " stroke=" << (int)osd.stroke_size);
     set_text(&osdTime, &osdTime.rgnAttr, initialTimeText, osd.time_position,
              osd.time_rotation, osd.time_fill_color, osd.time_stroke_color);
     IMP_OSD_SetRgnAttr(osdTime.imp_rgn, &osdTime.rgnAttr);
@@ -975,7 +1043,6 @@ void OSD::init() {
   }
 
   if (osd.uptime_enabled && text_rendering_available) {
-    /* OSD Uptime */
 
     osdUptm.data = nullptr;
     osdUptm.imp_rgn = IMP_OSD_CreateRgn(nullptr);
@@ -1010,8 +1077,6 @@ void OSD::init() {
   }
 
   if (osd.logo_enabled) {
-    /* OSD Logo */
-
     size_t imageSize = 0;
     auto imageData = loadBGRAImage(osd.logo_path, imageSize);
     const size_t expectedImageSize = static_cast<size_t>(osd.logo_width) *
@@ -1035,50 +1100,53 @@ void OSD::init() {
       osdLogo.rgnAttr.fmt = PIX_FMT_BGRA;
       osdLogo.rgnAttr.data.picData.pData = imageData;
 
-      // Logo rotation
+      // Logo rotation: compose user rotation with zone-based stream compensation.
       uint16_t logo_width = osd.logo_width;
       uint16_t logo_height = osd.logo_height;
-      if (osd.logo_rotation) {
-        uint8_t *logoPixels =
-            static_cast<uint8_t *>(osdLogo.rgnAttr.data.picData.pData);
-        rotateBGRAImage(logoPixels, logo_width, logo_height, osd.logo_rotation,
-                        false);
-        osdLogo.rgnAttr.data.picData.pData = logoPixels;
-      }
 
       // Parse logo_position string "x,y"
       int logoPosX = 0, logoPosY = 0;
       if (osd.logo_position && *osd.logo_position) {
         const char *comma = strchr(osd.logo_position, ',');
         if (comma) {
-          char xb[16] = {0};
-          char yb[16] = {0};
+          char xb[16] = {0}, yb[16] = {0};
           size_t xl = (size_t)(comma - osd.logo_position);
           size_t yl = strlen(comma + 1);
-          if (xl > 0 && xl < sizeof(xb)) {
-            memcpy(xb, osd.logo_position, xl);
-            xb[xl] = '\0';
-            logoPosX = atoi(xb);
-          } else {
-            LOG_ERROR("Invalid logo_position X: "
-                      << (osd.logo_position ? osd.logo_position : ""));
-          }
-          if (yl > 0 && yl < sizeof(yb)) {
-            memcpy(yb, comma + 1, yl);
-            yb[yl] = '\0';
-            logoPosY = atoi(yb);
-          } else {
-            LOG_ERROR("Invalid logo_position Y: "
-                      << (osd.logo_position ? osd.logo_position : ""));
-          }
-        } else {
-          LOG_ERROR("Invalid logo_position format (expected x,y): "
-                    << osd.logo_position);
+          if (xl > 0 && xl < sizeof(xb)) { memcpy(xb, osd.logo_position, xl); xb[xl] = 0; logoPosX = atoi(xb); }
+          if (yl > 0 && yl < sizeof(yb)) { memcpy(yb, comma + 1, yl); yb[yl] = 0; logoPosY = atoi(yb); }
         }
       }
 
-      set_pos(&osdLogo.rgnAttr, logoPosX, logoPosY, logo_width, logo_height,
-              stream_width, stream_height);
+      // Resolve negatives in visual space, clamp to usable pre-rotation area
+      int lx = logoPosX, ly = logoPosY;
+      if (lx < 0) lx = std::max((int)visual_width - (int)logo_width + lx, 0);
+      else if (lx == 0) lx = std::max(((int)visual_width - (int)logo_width) / 2, 0);
+      if (ly < 0) ly = std::max((int)visual_height - (int)logo_height + ly, 0);
+      else if (ly == 0) ly = std::max(((int)visual_height - (int)logo_height) / 2, 0);
+      // T31 IPU limit for rotated: rect.p1.y < stream_height + 28
+      int max_ly = stream_height - logo_height;
+      if (stream_rotation == 90 || stream_rotation == 270)
+        max_ly = stream_height - logo_height + 27;
+      if (ly > max_ly) ly = max_ly;
+      if (lx > stream_width - logo_width) lx = stream_width - logo_width;
+      if (lx < 0) lx = 0;
+      if (ly < 0) ly = 0;
+
+      int logo_angle = osd.logo_rotation;
+      if (logo_angle) {
+        uint8_t *logoPixels = static_cast<uint8_t *>(osdLogo.rgnAttr.data.picData.pData);
+        rotateBGRAImage(logoPixels, logo_width, logo_height, logo_angle, false);
+        osdLogo.rgnAttr.data.picData.pData = logoPixels;
+      }
+
+      LOG_DEBUG("OSD::init LOGO pos='" << osd.logo_position
+                << "' dims=" << logo_width << "x" << logo_height
+                << " rect=(" << lx << "," << ly << ")");
+
+      osdLogo.rgnAttr.rect.p0.x = lx;
+      osdLogo.rgnAttr.rect.p0.y = ly;
+      osdLogo.rgnAttr.rect.p1.x = lx + logo_width - 1;
+      osdLogo.rgnAttr.rect.p1.y = ly + logo_height - 1;
 
       IMP_OSD_SetRgnAttr(osdLogo.imp_rgn, &osdLogo.rgnAttr);
 
@@ -1142,6 +1210,11 @@ int OSD::exit() {
   free(osdUptm.data);
   free(osdLogo.data);
   free(osdBrightness.data);
+  if (primer_region) {
+    IMP_OSD_UnRegisterRgn(primer_region, osdGrp);
+    IMP_OSD_DestroyRgn(primer_region);
+    primer_region = 0;
+  }
 
   if (sft) {
     if (sft->font) {

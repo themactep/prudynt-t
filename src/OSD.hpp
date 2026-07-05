@@ -59,6 +59,7 @@ public:
                               const int pos);
   int startup_delay_ticks{0};
   bool is_started = false;
+  IMPRgnHandle primer_region{0};
 
 private:
   // libschrift
@@ -150,6 +151,9 @@ private:
 
   uint16_t stream_width;
   uint16_t stream_height;
+  uint16_t visual_width{0};
+  uint16_t visual_height{0};
+  int stream_rotation{0};
 
   time_t current;
   struct tm *ltime;

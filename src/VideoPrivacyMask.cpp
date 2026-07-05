@@ -293,8 +293,12 @@ void setRegionPos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
 } // namespace
 
 VideoPrivacyMask::VideoPrivacyMask(int channel, _stream *stream)
-    : channel_(channel), width_(stream ? stream->width : 0),
-      height_(stream ? stream->height : 0), encGrp_(channel), stream_(stream) {
+    : channel_(channel),
+      width_(stream ? ((stream->rotation == 90 || stream->rotation == 270)
+                        ? stream->height : stream->width) : 0),
+      height_(stream ? ((stream->rotation == 90 || stream->rotation == 270)
+                         ? stream->width : stream->height) : 0),
+      encGrp_(channel), stream_(stream) {
   if (!stream_) {
     LOG_ERROR("VideoPrivacyMask: missing stream context for channel "
               << channel_);
