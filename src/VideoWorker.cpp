@@ -641,6 +641,25 @@ void VideoWorker::run() {
               mp4_inserted_codec_config = true;
             }
 
+            // SEI metadata: prepend SEI NAL before first slice NAL of
+            // each IDR frame so OSD metadata is saved into MP4 recordings.
+            if (mp4_sample.empty() && sei_pending_for_frame &&
+                video_state && video_state->imp_encoder &&
+                video_state->imp_encoder->osd) {
+              std::string sei_json =
+                  video_state->imp_encoder->osd->getSEIJson();
+              if (!sei_json.empty()) {
+                std::vector<uint8_t> sei_nal =
+                    SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
+                if (sei_nal.size() > 4) {
+                  // Strip 4-byte Annex B start code and convert
+                  // to length-prefixed format for MP4
+                  append_length_prefixed_nal(sei_nal.data() + 4,
+                                             sei_nal.size() - 4);
+                }
+              }
+            }
+
             append_length_prefixed_nal(start + 4, payload_len);
 
             if (nal_is_idr || nal_is_hevc_idr) {
@@ -798,6 +817,35 @@ void VideoWorker::run() {
               // Set timestamp from first NAL unit of frame
               if (prebuffer_sample_ts_us == -1) {
                 prebuffer_sample_ts_us = stream.pack[i].timestamp;
+              }
+
+              // SEI metadata for prebuffer: prepend SEI NAL before first
+              // slice NAL of each IDR frame so OSD metadata reaches MP4
+              // recordings via the pre-trigger buffer.
+              if (prebuffer_sample.empty() && sei_pending_for_frame &&
+                  video_state && video_state->imp_encoder &&
+                  video_state->imp_encoder->osd) {
+                std::string sei_json =
+                    video_state->imp_encoder->osd->getSEIJson();
+                if (!sei_json.empty()) {
+                  std::vector<uint8_t> sei_nal =
+                      SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
+                  if (sei_nal.size() > 4) {
+                    // Strip 4-byte Annex B start code and convert
+                    // to length-prefixed format for MP4
+                    size_t woff = prebuffer_sample.size();
+                    prebuffer_sample.resize(woff + 4 + sei_nal.size() - 4);
+                    uint8_t *d = prebuffer_sample.data() + woff;
+                    uint32_t be_len =
+                        static_cast<uint32_t>(sei_nal.size() - 4);
+                    d[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
+                    d[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
+                    d[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
+                    d[3] = static_cast<uint8_t>(be_len & 0xFF);
+                    std::memcpy(d + 4, sei_nal.data() + 4,
+                                sei_nal.size() - 4);
+                  }
+                }
               }
 
               // Mark as keyframe if any NAL is IDR
