@@ -56,12 +56,6 @@ template <typename T> struct ConfigItem {
 struct _osd_privacy { // has to be before _osd
   bool enabled;
 };
-struct _regions { // has to be before _osd
-  int time;
-  int user;
-  int uptime;
-  int brightness;
-};
 struct _stream_stats { // has to be before _osd
   uint32_t bps;
   uint8_t fps;
@@ -202,21 +196,7 @@ struct _motion {
   std::array<roi, 52> rois;
 };
 struct _osd {
-  const char *time_position;
-  const char *usertext_position;
-  const char *uptime_position;
-  const char *brightness_position;
   bool enabled;
-  bool time_enabled;
-  bool usertext_enabled;
-  bool uptime_enabled;
-  bool brightness_enabled;
-  const char *font_path;
-  const char *time_format;
-  const char *uptime_format;
-  const char *usertext_format;
-  const char *brightness_format;
-  _regions regions;
   _stream_stats stats;
   std::atomic<int> thread_signal;
   struct {

@@ -269,31 +269,13 @@ static const char *const stream2_keys[] = {"jpeg_enabled", "jpeg_path",
 
 /* OSD */
 enum {
-  PNT_OSD_TIME_POSITION = 1,
-  PNT_OSD_USERTEXT_POSITION,
-  PNT_OSD_UPTIME_POSITION,
-
-  PNT_OSD_ENABLED,
-  PNT_OSD_TIME_ENABLED,
-  PNT_OSD_USERTEXT_ENABLED,
-  PNT_OSD_UPTIME_ENABLED,
-
-  PNT_OSD_TIME_FORMAT,
-  PNT_OSD_UPTIME_FORMAT,
-  PNT_OSD_USERTEXT_FORMAT,
+  PNT_OSD_ENABLED = 1,
+  PNT_OSD_ELEMENTS,
 };
 
 static const char *const osd_keys[] = {
-    "time_position",
-    "usertext_position",
-    "uptime_position",
     "enabled",
-    "time_enabled",
-    "usertext_enabled",
-    "uptime_enabled",
-    "time_format",
-    "uptime_format",
-    "usertext_format",
+    "elements",
 };
 
 /* MOTION */
@@ -1373,33 +1355,15 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
 
     u_ctx->flag |= PNT_FLAG_SEPARATOR;
 
-    // position strings (x,y)
-    if (ctx->path_match >= PNT_OSD_TIME_POSITION &&
-        ctx->path_match <= PNT_OSD_UPTIME_POSITION) {
-      if (reason == LEJPCB_VAL_STR_END) {
-        cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
-      }
-      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-    }
-    // bool
-    else if (ctx->path_match >= PNT_OSD_ENABLED &&
-             ctx->path_match <= PNT_OSD_UPTIME_ENABLED) {
-      if (reason == LEJPCB_VAL_TRUE) {
+    if (ctx->path_match == PNT_OSD_ENABLED) {
+      if (reason == LEJPCB_VAL_TRUE)
         cfg->set<bool>(u_ctx->path, true);
-      } else if (reason == LEJPCB_VAL_FALSE) {
+      else if (reason == LEJPCB_VAL_FALSE)
         cfg->set<bool>(u_ctx->path, false);
-      }
       add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
-    }
-    // format strings
-    else if (ctx->path_match >= PNT_OSD_TIME_FORMAT &&
-             ctx->path_match <= PNT_OSD_USERTEXT_FORMAT) {
-      if (reason == LEJPCB_VAL_STR_END) {
-        cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
-      }
-      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
     } else {
-      u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+      // elements — pass through as raw JSON
+      add_json_str(u_ctx->message, "{}");
     }
   } else if (reason == LEJPCB_OBJECT_END) {
     u_ctx->flag |= PNT_FLAG_SEPARATOR;

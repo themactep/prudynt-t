@@ -408,108 +408,41 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
                 bool &wrote) {
   const char *root = idx == 0 ? "stream0.osd" : "stream1.osd";
 
-  auto add_int = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number.integer);
-      add_key(sect, s2, key);
-      add_num(sect, cfg->get<int>(path));
-      wrote = true;
-    }
-  };
-  auto add_boolk = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_BOOL)
-        cfg->set<bool>(path, v->value.boolean != 0);
-      add_key(sect, s2, key);
-      add_bool(sect, cfg->get<bool>(path));
-      wrote = true;
-    }
-  };
-  auto add_strs = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_STRING && v->value.string)
-        cfg->set<const char *>(path, strdup(v->value.string));
-      add_key(sect, s2, key);
-      add_str(sect, cfg->get<const char *>(path));
-      wrote = true;
-    }
-  };
+  // enabled
+  if (JsonValue *v = obj_get(obj, "enabled")) {
+    if (v->type == JSON_BOOL)
+      cfg->set<bool>(std::string(root) + ".enabled", v->value.boolean != 0);
+    add_key(sect, s2, "enabled");
+    add_bool(sect, cfg->get<bool>(std::string(root) + ".enabled"));
+    wrote = true;
+  }
 
-  auto update_text_block = [&](JsonValue *node, const std::string &name,
-                               bool include_format) {
-    if (!node || node->type != JSON_OBJECT)
-      return;
-    const std::string base = std::string(root) + "." + name + ".";
-    if (JsonValue *enabled = obj_get(node, "enabled")) {
-      if (enabled->type == JSON_BOOL)
-        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
-    }
-    if (include_format) {
-      if (JsonValue *format = obj_get(node, "format")) {
-        if (format->type == JSON_STRING && format->value.string)
-          cfg->set<const char *>(base + "format", strdup(format->value.string));
+  // elements — pass through as raw JSON object (stored in config file, not struct)
+  if (JsonValue *elems = obj_get(obj, "elements")) {
+    add_key(sect, s2, "elements");
+    char *js = json_to_string(elems, 0);
+    sect += js ? js : "{}";
+    free(js);
+    wrote = true;
+  }
+
+  // privacy
+  if (JsonValue *node = obj_get(obj, "privacy");
+      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    const std::string base = std::string(root) + ".privacy.";
+    if (node->type == JSON_OBJECT) {
+      if (JsonValue *en = obj_get(node, "enabled")) {
+        if (en->type == JSON_BOOL)
+          cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
     }
-    if (JsonValue *position = obj_get(node, "position")) {
-      if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position",
-                               strdup(position->value.string));
-    }
-  };
-
-  auto emit_text_block = [&](const std::string &name, bool include_format) {
-    add_key(sect, s2, name.c_str(), "{");
-    bool s_txt = false;
-    const std::string base = std::string(root) + "." + name + ".";
-    add_key(sect, s_txt, "enabled");
+    add_key(sect, s2, "privacy", "{");
+    bool sp = false;
+    add_key(sect, sp, "enabled");
     add_bool(sect, cfg->get<bool>(base + "enabled"));
-    if (include_format) {
-      add_key(sect, s_txt, "format");
-      add_str(sect, cfg->get<const char *>(base + "format"));
-    }
-    add_key(sect, s_txt, "position");
-    add_str(sect, cfg->get<const char *>(base + "position"));
     sect += "}";
-  };
-
-  auto handle_text_block = [&](const char *name, bool include_format) {
-    if (JsonValue *node = obj_get(obj, name);
-        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-      if (node->type == JSON_OBJECT)
-        update_text_block(node, name, include_format);
-      emit_text_block(name, include_format);
-      wrote = true;
-    }
-  };
-
-  auto handle_privacy_block = [&]() {
-    if (JsonValue *node = obj_get(obj, "privacy");
-        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-      const std::string base = std::string(root) + ".privacy.";
-      if (node->type == JSON_OBJECT) {
-        if (JsonValue *enabled = obj_get(node, "enabled")) {
-          if (enabled->type == JSON_BOOL)
-            cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
-        }
-      }
-      add_key(sect, s2, "privacy", "{");
-      bool s_priv = false;
-      add_key(sect, s_priv, "enabled");
-      add_bool(sect, cfg->get<bool>(base + "enabled"));
-      sect += "}";
-      wrote = true;
-    }
-  };
-
-  add_boolk("enabled", std::string(root) + ".enabled");
-  add_strs("font_path", std::string(root) + ".font_path");
-
-  handle_text_block("time", true);
-  handle_text_block("uptime", true);
-  handle_text_block("usertext", true);
-  handle_text_block("brightness", true);
-  handle_privacy_block();
+    wrote = true;
+  }
 }
 
 void handle_audio(JsonValue *obj, std::string &out, bool &sep) {

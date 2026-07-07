@@ -8,12 +8,21 @@
 #include <cstring>
 #include <ifaddrs.h>
 
+#include <map>
 #include <memory>
 #include <mutex>
 #include <netinet/in.h>
 #include <string>
 #include <sys/sysinfo.h>
 #include <vector>
+
+struct OSDElement {
+  std::string name;
+  std::string type;      // "timestamp", "hostname", "uptime", "gain", "text"
+  std::string format;
+  std::string position;
+  std::string text;      // current rendered text (populated each second)
+};
 
 class OSD {
 public:
@@ -29,17 +38,16 @@ public:
   void updateDisplayEverySecond();
   static void *thread_entry(void *arg);
 
-  /// Return current OSD state as JSON for SEI metadata embedding.
   std::string getSEIJson();
-
-  /// Return current OSD state as a plaintext string (UTF-8, newline-separated)
-  /// suitable for T.140 text streaming.
   std::string getPlaintextInfo();
 
   int startup_delay_ticks{0};
   bool is_started = false;
 
 private:
+  void loadElements();
+  void updateElementText();
+
   _osd &osd;
   int last_updated_second;
 
@@ -55,7 +63,6 @@ private:
   public:
     BrightnessMeter();
     BrightnessSample measure();
-
   private:
     struct IspStats {
       int integrationTime{-1};
@@ -67,13 +74,11 @@ private:
       int currentBrightness{-1};
       std::string mode;
     };
-
     bool readIspStats(IspStats &stats);
     float computeFromStats(const IspStats &stats, std::string &mode) const;
     float fallbackTimeBased(std::string &mode) const;
     void updateHistory(float value);
     float historyAverage() const;
-
     static constexpr size_t historySize = 10;
     std::array<float, historySize> history;
     size_t historyIndex;
@@ -82,18 +87,16 @@ private:
   } brightnessMeter;
 
   std::string buildBrightnessText(const BrightnessSample &sample);
-  void updateBrightnessText();
   std::string lastBrightnessText;
+  void updateBrightnessText();
 
   IMPEncoderCHNAttr channelAttributes;
-
   int osdGrp{};
   int encChn{};
   const char *parent;
 
   char hostname[64];
   char ip[INET_ADDRSTRLEN]{};
-
   uint16_t stream_width;
   uint16_t stream_height;
   int stream_rotation{0};
@@ -101,11 +104,9 @@ private:
   time_t current;
   struct tm *ltime;
 
-  char timeFormatted[32];
-  char uptimeFormatted[32];
+  std::vector<OSDElement> elements_;
   uint8_t flag{0};
 
-  std::string formattedUsertext_;
   mutable std::mutex stateMutex_;
 };
 
