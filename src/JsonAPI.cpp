@@ -985,9 +985,6 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   }
 
   // Percentage thresholds (simple algorithm)
-  add_int("switch_below_percent", "daynight.switch_below_percent");
-  add_int("switch_above_percent", "daynight.switch_above_percent");
-  add_int("tolerance_percent", "daynight.tolerance_percent");
 
   // Total gain thresholds (simple algorithm)
   add_int("total_gain_night_threshold", "daynight.total_gain_night_threshold");
@@ -995,17 +992,8 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
 
   // Algorithm parameters
   add_int("sample_interval_ms", "daynight.sample_interval_ms");
-  add_int("night_count_threshold", "daynight.night_count_threshold");
-  add_int("day_count_threshold", "daynight.day_count_threshold");
 
   // Expert/advanced parameters (legacy algorithm)
-  add_int("ev_night_high", "daynight.ev_night_high");
-  add_int("ev_day_low_primary", "daynight.ev_day_low_primary");
-  add_int("ev_day_low_secondary", "daynight.ev_day_low_secondary");
-  add_int("gb_gain_delta", "daynight.gb_gain_delta");
-  add_int("gb_gain_absolute", "daynight.gb_gain_absolute");
-  add_int("settle_samples_for_gb_record",
-          "daynight.settle_samples_for_gb_record");
 
   // Manual mode override
   if (JsonValue *v = obj_get(obj, "force_mode")) {

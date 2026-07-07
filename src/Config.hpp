@@ -110,10 +110,6 @@ struct _daynight_schedule {
 struct _daynight {
   // User-configurable knobs
   bool enabled{true};
-  int switch_below_percent{15};
-  int switch_above_percent{80};
-  int tolerance_percent{50};
-
   // Hardware control toggles
   _daynight_controls controls;
 
@@ -122,24 +118,13 @@ struct _daynight {
 
   const char *loglevel{nullptr};
 
-  // Optional expert overrides
+  // Expert overrides
   int sample_interval_ms{1000};
-  int ev_night_high{1900000};
-  int ev_day_low_primary{479832};
-  int ev_day_low_secondary{361880};
-  int gb_gain_delta{15};
-  int gb_gain_absolute{145};
-  int night_count_threshold{6};
-  int day_count_threshold{4};
-  int settle_samples_for_gb_record{20};
   int total_gain_night_threshold{3000};
   int total_gain_day_threshold{300};
   const char *script_path{nullptr};
 
   // IQ bin file paths for day/night modes
-  const char *day_bin_path{nullptr};
-  const char *night_bin_path{nullptr};
-
   // Manual mode override (set by user via JSON API)
   std::atomic<const char *> force_mode{nullptr};
 
