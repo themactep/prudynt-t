@@ -119,7 +119,7 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
   }
 
   // Add OSD subtitle (T.140 text) track when OSD is enabled
-  if (stream.osd.enabled &&
+  if (cfg->osd.enabled &&
       global_video[chnNr] && global_video[chnNr]->imp_encoder &&
       global_video[chnNr]->imp_encoder->osd) {
     IMPTextServerMediaSubsession *textSub =

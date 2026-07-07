@@ -313,17 +313,13 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
-      {"stream0.osd.enabled", stream0.osd.enabled, true, validateBool},
+      {"osd.enabled", osd.enabled, true, validateBool},
 
-      {"stream0.osd.privacy.enabled", stream0.osd.privacy.enabled, true,
+      {"osd.privacy.enabled", osd.privacy.enabled, true,
        validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
-      {"stream1.osd.enabled", stream1.osd.enabled, true, validateBool},
-
-      {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true,
-       validateBool},
       {"stream2.enabled", stream2.enabled, true, validateBool},
       {"stream3.enabled", stream3.enabled, false, validateBool},
 #if defined(WEBSOCKET_ENABLED)

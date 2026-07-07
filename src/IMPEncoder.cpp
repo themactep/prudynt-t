@@ -439,10 +439,10 @@ int IMPEncoder::init() {
       return ret;
     }
 
-    if (stream->osd.enabled) {
+    if (cfg->osd.enabled) {
       LOG_INFO("stream " << name
                << ": binding FS→ENC directly, OSD via SEI + subtitle");
-      osd = OSD::createNew(stream->osd, encGrp, encChn, name);
+      osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
     }
 
     ret = IMP_System_Bind(&fs, &enc);

@@ -92,8 +92,9 @@ enum {
 };
 
 static const char *const root_keys[] = {
-    "general", "rtsp",    "sensor", "image", "audio", "stream0",
-    "stream1", "stream2", "motion", "info",  "action"};
+    "general", "rtsp",    "sensor", "image", "audio",
+    "osd",     "stream0", "stream1", "stream2", "motion",
+    "info",    "action"};
 
 /* GENERAL */
 enum {
@@ -248,8 +249,7 @@ static const char *const stream_keys[] = {
     "format",        "mode",          "gop",
     "max_gop",       "fps",           "buffers",
     "width",         "height",        "bitrate",
-    "rotation",      "profile",       "stats",
-    "osd"};
+    "rotation",      "profile",       "stats"};
 
 /* STREAM2 (JPEG) */
 enum {
@@ -1253,15 +1253,6 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
         break;
       };
     }
-  } else if (reason == LECPCB_PAIR_NAME && ctx->path_match == PNT_STREAM_OSD) {
-    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
-                 stream_keys[ctx->path_match - 1], "{");
-
-    // remove separator for sub section
-    u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-
-    lejp_parser_push(ctx, u_ctx, osd_keys, LWS_ARRAY_SIZE(osd_keys),
-                     osd_callback);
   } else if (reason == LEJPCB_OBJECT_END) {
     u_ctx->message.append("}");
     lejp_parser_pop(ctx);

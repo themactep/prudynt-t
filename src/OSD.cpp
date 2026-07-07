@@ -231,7 +231,7 @@ void OSD::updateBrightnessText() {
 void OSD::loadElements() {
   elements_.clear();
 
-  std::string path = std::string(parent) + ".osd.elements";
+  std::string path = "osd.elements";
   JsonValue *cfgJson = cfg->jsonConfig;
   if (!cfgJson) return;
 
@@ -323,6 +323,7 @@ void OSD::init() {
   stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
   stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
 
+  // stream rotation from whichever stream we're attached to
   if (strcmp(parent, "stream0") == 0)
     stream_rotation = cfg->stream0.rotation;
   else if (strcmp(parent, "stream1") == 0)

@@ -406,7 +406,7 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
 void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
                 bool &wrote) {
-  const char *root = idx == 0 ? "stream0.osd" : "stream1.osd";
+  const char *root = "osd";
 
   // enabled
   if (JsonValue *v = obj_get(obj, "enabled")) {

@@ -891,14 +891,14 @@ void VideoWorker::run() {
            * osd will be removed and redesigned in future
            */
           global_video[encChn]->stream->stats.bps = bps;
-          global_video[encChn]->stream->osd.stats.bps = bps;
+          cfg->osd.stats.bps = bps;
           global_video[encChn]->stream->stats.fps = fps;
-          global_video[encChn]->stream->osd.stats.fps = fps;
+          cfg->osd.stats.fps = fps;
 
           fps = 0;
           bps = 0;
           gettimeofday(&global_video[encChn]->stream->stats.ts, NULL);
-          global_video[encChn]->stream->osd.stats.ts =
+          cfg->osd.stats.ts =
               global_video[encChn]->stream->stats.ts;
           /*
           IMPEncoderCHNStat encChnStats;
@@ -935,8 +935,8 @@ void VideoWorker::run() {
 
       global_video[encChn]->stream->stats.bps = 0;
       global_video[encChn]->stream->stats.fps = 0;
-      global_video[encChn]->stream->osd.stats.bps = 0;
-      global_video[encChn]->stream->osd.stats.fps = 0;
+      cfg->osd.stats.bps = 0;
+      cfg->osd.stats.fps = 0;
 
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_video[encChn]->active = false;

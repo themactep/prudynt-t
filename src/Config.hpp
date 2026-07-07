@@ -280,7 +280,6 @@ struct _stream {
   int jpeg_channel;
   int jpeg_idle_fps;
   const char *jpeg_path;
-  _osd osd;
   _stream_stats stats;
   bool audio_enabled;
   bool video_enabled;
@@ -327,6 +326,7 @@ public:
   _rtsp rtsp{};
   _sensor sensor{};
   _image image{};
+  _osd osd{};
   _stream stream0{};
   _stream stream1{};
   _stream stream2{};

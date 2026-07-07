@@ -712,7 +712,7 @@ int main(int argc, const char *argv[]) {
         sh.has_started.acquire();
       }
 
-      if (cfg->stream0.osd.enabled || cfg->stream1.osd.enabled) {
+      if (cfg->osd.enabled) {
         int ret = pthread_create(&osd_thread, nullptr, OSD::thread_entry, NULL);
         LOG_DEBUG_OR_ERROR(ret, "create osd thread");
       }
