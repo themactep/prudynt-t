@@ -19,7 +19,7 @@
     "spk_enabled": true,
     "spk_gain": 20,
     "spk_sample_rate": 16000,
-    "spk_vol": 60,
+    "spk_vol": 80,
     "tap_enabled": true,
     "tap_path": "/run/prudynt/audio_mic.pcm"
   },
@@ -95,13 +95,15 @@
     "script_path": "/usr/sbin/motion",
     "send2email": false,
     "send2ftp": false,
+    "send2gotify": false,
     "send2mqtt": false,
     "send2ntfy": false,
     "send2storage": false,
     "send2telegram": false,
     "send2webhook": false,
     "sensitivity": 1,
-    "skip_frame_count": 5
+    "skip_frame_count": 5,
+    "video_length": 10
   },
   "recorder": {
     "autostart": false,
@@ -152,8 +154,8 @@
     "osd": {
       "brightness": {
         "enabled": false,
-        "format": "%b%%(%a%%) %m",
-        "position": "10,70"
+        "format": "%b",
+        "position": "10,-10"
       },
       "enabled": true,
       "privacy": {
@@ -180,6 +182,7 @@
     "qp_init": -1,
     "qp_max": -1,
     "qp_min": -1,
+    "rotation": 0,
     "rtsp_endpoint": "ch0",
     "rtsp_info": "stream0",
     "width": 0
@@ -201,7 +204,7 @@
     "osd": {
       "brightness": {
         "enabled": false,
-        "format": "%b%%(%a%%) %m",
+        "format": "%b",
         "position": "5,-5"
       },
       "enabled": true,
@@ -229,6 +232,7 @@
     "qp_init": -1,
     "qp_max": -1,
     "qp_min": -1,
+    "rotation": 0,
     "rtsp_endpoint": "ch1",
     "rtsp_info": "stream1",
     "width": 640
