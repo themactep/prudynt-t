@@ -40,9 +40,11 @@ static int getIp(char *addressBuffer) {
   getifaddrs(&ifAddrStruct);
   for (auto *ifa = ifAddrStruct; ifa; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
-      inet_ntop(AF_INET,
-                &((struct sockaddr_in *)ifa->ifa_addr)->sin_addr,
-                addressBuffer, INET_ADDRSTRLEN);
+      struct sockaddr_in *sin = (struct sockaddr_in *)ifa->ifa_addr;
+      // skip loopback
+      if (sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK))
+        continue;
+      inet_ntop(AF_INET, &sin->sin_addr, addressBuffer, INET_ADDRSTRLEN);
     }
   }
   if (ifAddrStruct)
@@ -279,7 +281,6 @@ void OSD::updateElementText() {
       el.text = buf;
     } else if (el.type == "gain") {
       el.text = lastBrightnessText;
-      if (el.text == "--") el.text = "";
     } else if (el.type == "text") {
       // static text, already set by loadElements from format field
     }
