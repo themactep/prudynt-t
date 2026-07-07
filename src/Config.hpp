@@ -55,24 +55,11 @@ template <typename T> struct ConfigItem {
 
 struct _osd_privacy { // has to be before _osd
   bool enabled;
-  const char *text;
-  const char *position;
-  int rotation;
-  int font_size;
-  int stroke_size;
-  unsigned int fill_color;
-  unsigned int stroke_color;
-  const char *image_path;
-  int image_width;
-  int image_height;
-  int layer;
-  int opacity;
 };
 struct _regions { // has to be before _osd
   int time;
   int user;
   int uptime;
-  int logo;
   int brightness;
 };
 struct _stream_stats { // has to be before _osd
@@ -169,7 +156,6 @@ struct _daynight {
 };
 struct _general {
   const char *loglevel;
-  int osd_pool_size;
   int imp_polling_timeout_ms;
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
@@ -231,48 +217,26 @@ struct _motion {
   std::array<roi, 52> rois;
 };
 struct _osd {
-  int font_size;
-  int stroke_size;
-  int logo_height;
-  int logo_width;
   const char *time_position;
-  int time_rotation;
   const char *usertext_position;
-  int usertext_rotation;
   const char *uptime_position;
-  int uptime_rotation;
-  const char *logo_position;
   const char *brightness_position;
-  int logo_transparency;
-  int logo_rotation;
-  int brightness_rotation;
-  int start_delay_ms;
   bool enabled;
   bool time_enabled;
   bool usertext_enabled;
   bool uptime_enabled;
-  bool logo_enabled;
   bool brightness_enabled;
-  const char *mode;
   const char *font_path;
   const char *time_format;
   const char *uptime_format;
   const char *usertext_format;
   const char *brightness_format;
-  const char *logo_path;
-  // Individual color settings for each text element
-  unsigned int time_fill_color;
-  unsigned int time_stroke_color;
-  unsigned int uptime_fill_color;
-  unsigned int uptime_stroke_color;
-  unsigned int usertext_fill_color;
-  unsigned int usertext_stroke_color;
-  unsigned int brightness_fill_color;
-  unsigned int brightness_stroke_color;
   _regions regions;
   _stream_stats stats;
   std::atomic<int> thread_signal;
-  _osd_privacy privacy;
+  struct {
+    bool enabled;
+  } privacy;
 };
 struct _recorder {
   bool enabled;
@@ -331,10 +295,7 @@ struct _stream {
   int profile;
   int bitrate;
   int rotation;
-  int scale_width;
-  int scale_height;
   bool enabled;
-  bool scale_enabled;
   bool power_saving;
   bool allow_shared;
   const char *mode;

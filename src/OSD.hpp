@@ -1,42 +1,19 @@
 #ifndef OSD_hpp
 #define OSD_hpp
 
-// #include <map>
 #include "Config.hpp"
 #include "imp_hal.hpp"
-#include "schrift.h"
 #include <arpa/inet.h>
 #include <array>
 #include <cstring>
 #include <ifaddrs.h>
 
-#include <imp/imp_osd.h>
 #include <memory>
 #include <mutex>
 #include <netinet/in.h>
 #include <string>
 #include <sys/sysinfo.h>
-#include <unordered_map>
 #include <vector>
-
-struct OSDItem {
-  IMPRgnHandle imp_rgn;
-  uint8_t *data;
-  uint16_t width;
-  uint16_t height;
-  IMPOSDRgnAttr rgnAttr;
-  IMPOSDRgnAttrData *rgnAttrData;
-};
-
-struct Glyph {
-  int width;
-  int height;
-  std::vector<uint8_t> bitmap;
-  int advance;
-  int xmin;
-  int ymin;
-  SFT_Glyph glyph;
-};
 
 class OSD {
 public:
@@ -53,60 +30,19 @@ public:
   static void *thread_entry(void *arg);
 
   /// Return current OSD state as JSON for SEI metadata embedding.
-  /// Returns empty string if no elements are enabled.
   std::string getSEIJson();
 
-  /// True when OSD mode is "metadata" (SEI-based, no IPU hardware).
-  bool isSEIMode() const {
-    return osd.mode && strcmp(osd.mode, "metadata") == 0;
-  }
+  /// Return current OSD state as a plaintext string (UTF-8, newline-separated)
+  /// suitable for T.140 text streaming.
+  std::string getPlaintextInfo();
 
-  void rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height,
-                       int angle, bool del);
-  static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
-                      uint16_t height, const uint16_t max_width,
-                      const uint16_t max_height);
-  static uint16_t get_abs_pos(const uint16_t max, const uint16_t size,
-                              const int pos);
   int startup_delay_ticks{0};
   bool is_started = false;
 
 private:
-  // libschrift
-  // std::vector<uint8_t> fontData;
-  std::unordered_map<char, Glyph> glyphs;
-  SFT *sft{nullptr};
-  bool text_rendering_available{false};
-  int load_font();
-  int libschrift_init();
-  int renderGlyph(const char *characters);
-  void drawOutline(uint8_t *image, const Glyph &g, int x, int y,
-                   int outlineSize, int WIDTH, int HEIGHT,
-                   const uint8_t *strokeColor);
-  int calculateTextSize(const char *text, uint16_t &width, uint16_t &height,
-                        int outlineSize);
-  int drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT,
-               int outlineSize, unsigned int fill_color,
-               unsigned int stroke_color);
-
   _osd &osd;
   int last_updated_second;
 
-  OSDItem osdTime{};
-  OSDItem osdUser{};
-  OSDItem osdUptm{};
-  OSDItem osdLogo{};
-  OSDItem osdBrightness{};
-  bool time_region_created{false};
-  bool user_region_created{false};
-  bool uptime_region_created{false};
-  bool logo_region_created{false};
-  bool brightness_region_created{false};
-
-  void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text,
-                const char *position, int angle, unsigned int fill_color,
-                unsigned int stroke_color);
-  std::string getConfigPath(const char *itemName);
   struct BrightnessSample {
     float current{-1.0f};
     float average{-1.0f};
@@ -151,7 +87,6 @@ private:
 
   IMPEncoderCHNAttr channelAttributes;
 
-  bool initialized{0};
   int osdGrp{};
   int encChn{};
   const char *parent;
@@ -165,16 +100,12 @@ private:
 
   time_t current;
   struct tm *ltime;
-  struct timeval tm;
 
   char timeFormatted[32];
   char uptimeFormatted[32];
-  char fps[4];
-  char bps[8];
   uint8_t flag{0};
 
   std::string formattedUsertext_;
-  bool ipuInitialized_{false};
   mutable std::mutex stateMutex_;
 };
 

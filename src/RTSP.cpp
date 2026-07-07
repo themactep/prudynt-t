@@ -67,8 +67,8 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
   ServerMediaSession *sms = ServerMediaSession::createNew(
       *env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
 
-  // Add video subsession if enabled
-  if (stream.video_enabled) {
+  // Add video subsession (always on for stream0/stream1)
+  {
     H264NALUnit sps;
     H264NALUnit pps;
     H264NALUnit *vps = nullptr;
@@ -116,6 +116,17 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
         IMPAudioServerMediaSubsession::createNew(*env, 0);
     sms->addSubsession(audioSub);
     LOG_INFO("Audio stream " << chnNr << " added to session");
+  }
+
+  // Add OSD subtitle (T.140 text) track when OSD is enabled
+  if (stream.osd.enabled &&
+      global_video[chnNr] && global_video[chnNr]->imp_encoder &&
+      global_video[chnNr]->imp_encoder->osd) {
+    IMPTextServerMediaSubsession *textSub =
+        IMPTextServerMediaSubsession::createNew(
+            *env, global_video[chnNr]->imp_encoder->osd);
+    sms->addSubsession(textSub);
+    LOG_INFO("OSD subtitle (T.140) track added to stream " << chnNr);
   }
 
   // ONVIF backchannel: add backchannel subsessions to the primary stream (ch0)

@@ -161,7 +161,6 @@ LIBS                    = -Wl,--start-group \
                           -l:libBasicUsageEnvironment.a \
                           -l:libUsageEnvironment.a \
                           $(WEBSOCKET_LIB_STATIC_LINE) \
-                          -l:libschrift.a \
                           $(OPUS_LIB_STATIC_LINE) \
                           $(FAAC_LIB_STATIC_LINE) \
                           $(AAC_LIB_STATIC_LINE) \
@@ -195,7 +194,6 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libBasicUsageEnvironment.a \
                           -l:libUsageEnvironment.a \
                           -Wl,-Bdynamic \
-                          -lschrift \
                           $(OPUS_LIB_HYBRID_LINE) \
                           $(FAAC_LIB_HYBRID_LINE) \
                           $(AAC_LIB_HYBRID_LINE) \
@@ -227,7 +225,6 @@ LIBS                    = -limp \
                           -lUsageEnvironment \
                           -lBasicUsageEnvironment \
                           $(WEBSOCKET_LIB_DYNAMIC_LINE) \
-                          -lschrift \
                           $(OPUS_LIB_DYNAMIC_LINE) \
                           $(FAAC_LIB_DYNAMIC_LINE) \
                           $(AAC_LIB_DYNAMIC_LINE) \

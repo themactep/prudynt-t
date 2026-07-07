@@ -10,7 +10,6 @@
 #include "Logger.hpp"
 #include "PreTriggerBuffer.hpp"
 #include "SEIWriter.hpp"
-#include "VideoPrivacyMask.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
@@ -347,11 +346,11 @@ void VideoWorker::run() {
           nominal_frame_step_us = 1000;
         }
 
-        // SEI metadata state (OSD mode=metadata)
+        // SEI metadata active whenever OSD is enabled
         bool osd_sei_active = false;
         if (video_state && video_state->imp_encoder &&
             video_state->imp_encoder->osd) {
-          osd_sei_active = video_state->imp_encoder->osd->isSEIMode();
+          osd_sei_active = true;
         }
         bool sei_pending_for_frame = false;
         bool sei_inserted_for_frame = false;
@@ -1000,23 +999,6 @@ void *VideoWorker::thread_entry(void *arg) {
   global_video[encChn]->imp_framesource->enable();
   global_video[encChn]->run_for_jpeg = false;
 
-  std::shared_ptr<VideoPrivacyMask> privacy_mask;
-  {
-    std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
-    global_video[encChn]->privacy_mask.reset();
-    global_video[encChn]->privacy_mask = std::make_shared<VideoPrivacyMask>(
-        encChn, global_video[encChn]->stream);
-    privacy_mask = global_video[encChn]->privacy_mask;
-  }
-
-  if (privacy_mask) {
-    bool desired =
-        global_video[encChn]->privacy_requested.load(std::memory_order_relaxed);
-    if (desired) {
-      privacy_mask->setEnabled(true);
-    }
-  }
-
   // inform main that initialization is complete
   sh->has_started.release();
 
@@ -1064,10 +1046,6 @@ void *VideoWorker::thread_entry(void *arg) {
 
 #if defined(PLATFORM_T23)
   if (global_shutdown_requested.load(std::memory_order_relaxed)) {
-    {
-      std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
-      global_video[encChn]->privacy_mask.reset();
-    }
     LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
     return 0;
   }
@@ -1086,10 +1064,6 @@ void *VideoWorker::thread_entry(void *arg) {
     }
   }
 
-  {
-    std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
-    global_video[encChn]->privacy_mask.reset();
-  }
 
 #ifdef PREBUFFER_ENABLED
   // Cleanup prebuffer

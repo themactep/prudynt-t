@@ -433,89 +433,24 @@ int IMPEncoder::init() {
   if (!is_jpeg) {
     fs = {DEV_ID_FS, fsChn, 0};
     enc = {DEV_ID_ENC, encGrp, 0};
-    osd_cell = {DEV_ID_OSD, encGrp, 0};
-
     if (!ownsGroupResources()) {
-      bool osd_is_metadata_pre = stream->osd.enabled && stream->osd.mode &&
-                                 strcmp(stream->osd.mode, "metadata") == 0;
-      if (stream->osd.enabled && !osd_is_metadata_pre) {
-        LOG_ERROR(
-            "stream "
-            << name
-            << " cannot enable per-stream OSD while sharing encoder group "
-            << encGrp);
-        return -1;
-      }
+      // OSD is fully soft (SEI + subtitle) — no IPU hardware needed,
+      // so per-stream OSD works even with shared encoder groups.
       return ret;
     }
 
-    auto cleanup_manual_osd = [&]() {
-      if (!osd_group_manual)
-        return;
-      if (osd_started_manual) {
-        int stop_ret = IMP_OSD_Stop(encGrp);
-        LOG_DEBUG_OR_ERROR(stop_ret, "IMP_OSD_Stop(" << encGrp << ")");
-        if (stop_ret == 0) {
-          osd_started_manual = false;
-        }
-      }
-      int destroy_ret = IMP_OSD_DestroyGroup(encGrp);
-      LOG_DEBUG_OR_ERROR(destroy_ret, "IMP_OSD_DestroyGroup(" << encGrp << ")");
-      if (destroy_ret == 0) {
-        osd_group_manual = false;
-      }
-    };
-
-    bool osd_is_metadata = stream->osd.enabled && stream->osd.mode &&
-                           strcmp(stream->osd.mode, "metadata") == 0;
-
-    if (osd_is_metadata) {
-      LOG_INFO("stream " << name << ": OSD mode=metadata, "
-               << "binding FS→ENC directly (no IPU OSD)");
+    if (stream->osd.enabled) {
+      LOG_INFO("stream " << name
+               << ": binding FS→ENC directly, OSD via SEI + subtitle");
       osd = OSD::createNew(stream->osd, encGrp, encChn, name);
-    } else if (stream->osd.enabled) {
-      osd = OSD::createNew(stream->osd, encGrp, encChn, name);
-    } else {
-      ret = IMP_OSD_CreateGroup(encGrp);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_CreateGroup(" << encGrp << ")");
-      if (ret != 0) {
-        return ret;
-      }
-      osd_group_manual = true;
-
-      ret = IMP_OSD_Start(encGrp);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_Start(" << encGrp << ")");
-      if (ret != 0) {
-        cleanup_manual_osd();
-        return ret;
-      }
-      osd_started_manual = true;
     }
 
-    if (osd_is_metadata) {
-      ret = IMP_System_Bind(&fs, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &enc)");
-      if (ret != 0) {
-        return ret;
-      }
-      fs_to_enc_bound = true;
-    } else {
-      ret = IMP_System_Bind(&fs, &osd_cell);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &osd_cell)");
-      if (ret != 0) {
-        cleanup_manual_osd();
-        return ret;
-      }
-      fs_to_osd_bound = true;
-
-      ret = IMP_System_Bind(&osd_cell, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&osd_cell, &enc)");
-      if (ret != 0) {
-        cleanup_manual_osd();
-        return ret;
-      }
-      osd_to_enc_bound = true;
+    ret = IMP_System_Bind(&fs, &enc);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &enc)");
+    if (ret != 0) {
+      return ret;
     }
+    fs_to_enc_bound = true;
   } else {
     hal::set_jpeg_quality_qtable(encChn, stream->jpeg_quality,
                                  cfg->sysinfo.cpu);
@@ -536,32 +471,9 @@ int IMPEncoder::deinit() {
       fs_to_enc_bound = false;
     }
     if (osd) {
-      if (fs_to_osd_bound) {
-        ret = IMP_System_UnBind(&fs, &osd_cell);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &osd_cell)");
-        fs_to_osd_bound = false;
-      }
-
-      if (osd_to_enc_bound) {
-        ret = IMP_System_UnBind(&osd_cell, &enc);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&osd_cell, &enc)");
-        osd_to_enc_bound = false;
-      }
-
       osd->exit();
       delete osd;
       osd = nullptr;
-    } else {
-      if (osd_to_enc_bound) {
-        ret = IMP_System_UnBind(&osd_cell, &enc);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&osd_cell, &enc)");
-        osd_to_enc_bound = false;
-      }
-      if (fs_to_osd_bound) {
-        ret = IMP_System_UnBind(&fs, &osd_cell);
-        LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &osd_cell)");
-        fs_to_osd_bound = false;
-      }
     }
   }
 
@@ -596,21 +508,6 @@ int IMPEncoder::destroy() {
     LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_DestroyGroup(" << encGrp << ")");
     if (ret == 0) {
       group_created = false;
-    }
-  }
-
-  if (!is_jpeg_stream && osd_group_manual) {
-    if (osd_started_manual) {
-      int stop_ret = IMP_OSD_Stop(encGrp);
-      LOG_DEBUG_OR_ERROR(stop_ret, "IMP_OSD_Stop(" << encGrp << ")");
-      if (stop_ret == 0) {
-        osd_started_manual = false;
-      }
-    }
-    int destroy_ret = IMP_OSD_DestroyGroup(encGrp);
-    LOG_DEBUG_OR_ERROR(destroy_ret, "IMP_OSD_DestroyGroup(" << encGrp << ")");
-    if (destroy_ret == 0) {
-      osd_group_manual = false;
     }
   }
 

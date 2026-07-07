@@ -6,6 +6,7 @@
 #include "IMPDeviceSource.hpp"
 #include "IMPEncoder.hpp"
 #include "IMPServerMediaSubsession.hpp"
+#include "IMPTextServerMediaSubsession.hpp"
 #include "Logger.hpp"
 #include "liveMedia.hh"
 

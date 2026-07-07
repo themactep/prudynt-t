@@ -95,7 +95,6 @@ struct BackchannelFrame {
   bool isShutdownSentinel{false};
 };
 
-class VideoPrivacyMask;
 
 struct VideoTapEntry {
   uint64_t id{0};
@@ -246,8 +245,6 @@ struct video_stream {
   bool have_pps;
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
-  std::mutex privacy_mutex;
-  std::shared_ptr<VideoPrivacyMask> privacy_mask;
   std::atomic<bool> privacy_requested{false};
 
 #ifdef PREBUFFER_ENABLED
