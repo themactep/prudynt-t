@@ -417,12 +417,28 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     wrote = true;
   }
 
-  // elements — pass through as raw JSON object (stored in config file, not struct)
+  // elements — stored in JSON config file directly, not in struct
   if (JsonValue *elems = obj_get(obj, "elements")) {
     add_key(sect, s2, "elements");
-    char *js = json_to_string(elems, 0);
-    sect += js ? js : "{}";
-    free(js);
+    if (elems->type == JSON_NULL) {
+      // query mode: read from config file
+      JsonValue *cfgElems = get_nested_item(cfg->jsonConfig, "osd.elements");
+      char *js = json_to_string(cfgElems ? cfgElems : elems, 0);
+      sect += js ? js : "{}";
+      free(js);
+    } else {
+      // write mode: persist directly to config file so save_config preserves it
+      char *js = json_to_string(elems, 0);
+      if (js && cfg->jsonConfig) {
+        set_nested_item(cfg->jsonConfig, "osd.elements", js);
+        free(js);
+        // immediately flush to disk so updateConfig()'s re-read picks it up
+        save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+      }
+      js = json_to_string(elems, 0);
+      sect += js ? js : "{}";
+      free(js);
+    }
     wrote = true;
   }
 
@@ -1503,6 +1519,9 @@ bool process_json(const std::string &in, std::string &out) {
       handle_stream(v, 2, out, sep);
     } else if (!strcmp(k, "image") && v && v->type == JSON_OBJECT) {
       handle_image(v, out, sep);
+    } else if (!strcmp(k, "osd") && v && v->type == JSON_OBJECT) {
+      bool dummy_wrote = false;
+      handle_osd(v, 0, out, sep, dummy_wrote);
     } else if (!strcmp(k, "general") && v && v->type == JSON_OBJECT) {
       handle_general(v, out, sep);
     } else if (!strcmp(k, "rtsp") && v && v->type == JSON_OBJECT) {

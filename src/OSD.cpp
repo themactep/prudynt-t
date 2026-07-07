@@ -50,15 +50,6 @@ static int getIp(char *addressBuffer) {
   return 0;
 }
 
-static void replace(std::string &str, const std::string &oldToken,
-                    const std::string &newToken) {
-  size_t pos = 0;
-  while ((pos = str.find(oldToken, pos)) != std::string::npos) {
-    str.replace(pos, oldToken.length(), newToken);
-    pos += newToken.length();
-  }
-}
-
 // ── BrightnessMeter ──────────────────────────────────────────────────
 
 OSD::BrightnessMeter::BrightnessMeter()
@@ -277,9 +268,9 @@ void OSD::updateElementText() {
       strftime(buf, sizeof(buf), el.format.c_str(), ltime);
       el.text = buf;
     } else if (el.type == "hostname") {
-      el.text = el.format;
-      replace(el.text, "%hostname", hostname);
-      replace(el.text, "%ipaddress", ip);
+      el.text = hostname;
+    } else if (el.type == "ipaddress") {
+      el.text = ip;
     } else if (el.type == "uptime") {
       if (uptime == 0) uptime = getSystemUptime();
       unsigned long d = uptime / 86400;
@@ -291,20 +282,7 @@ void OSD::updateElementText() {
       el.text = lastBrightnessText;
       if (el.text == "--") el.text = "";
     } else if (el.type == "text") {
-      // static text, already set by loadElements
-    }
-    // also handle %fps and %bps in hostname-like elements
-    if (el.type == "hostname" || el.type == "text") {
-      if (el.text.find("%fps") != std::string::npos) {
-        char fb[4];
-        snprintf(fb, sizeof(fb), "%3d", osd.stats.fps);
-        replace(el.text, "%fps", fb);
-      }
-      if (el.text.find("%bps") != std::string::npos) {
-        char bb[8];
-        snprintf(bb, sizeof(bb), "%5d", osd.stats.bps);
-        replace(el.text, "%bps", bb);
-      }
+      // static text, already set by loadElements from format field
     }
   }
 }
