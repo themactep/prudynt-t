@@ -427,15 +427,18 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
       sect += js ? js : "{}";
       free(js);
     } else {
-      // write mode: persist directly to config file so save_config preserves it
-      char *js = json_to_string(elems, 0);
-      if (js && cfg->jsonConfig) {
-        set_nested_item(cfg->jsonConfig, "osd.elements", js);
-        free(js);
-        // immediately flush to disk so updateConfig()'s re-read picks it up
-        save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+      // write mode: persist as proper JSON object, not a string
+      del_nested_item(cfg->jsonConfig, "osd.elements");
+      JsonValue *osd = get_nested_item(cfg->jsonConfig, "osd");
+      if (osd && osd->type == JSON_OBJECT) {
+        JsonValue *cloned = clone_json_value(elems);
+        if (cloned)
+          add_to_object(osd, "elements", cloned);
       }
-      js = json_to_string(elems, 0);
+      // immediately flush to disk so updateConfig()'s re-read picks it up
+      save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+
+      char *js = json_to_string(elems, 0);
       sect += js ? js : "{}";
       free(js);
     }
