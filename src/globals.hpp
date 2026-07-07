@@ -308,6 +308,7 @@ extern bool global_restart_video;
 extern bool global_restart_audio;
 
 extern bool global_osd_thread_signal;
+extern bool global_reload_osd;
 extern bool global_main_thread_signal;
 extern bool global_motion_thread_signal;
 extern std::atomic<char> global_rtsp_thread_signal;

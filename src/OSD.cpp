@@ -254,7 +254,6 @@ void OSD::loadElements() {
       elements_.push_back(std::move(el));
   }
 
-  LOG_INFO("OSD: loaded " << elements_.size() << " elements for " << parent);
 }
 
 // ── text generation per element ──────────────────────────────────────
@@ -314,7 +313,7 @@ void OSD::init() {
   gethostname(hostname, 64);
   loadElements();
 
-  LOG_INFO("OSD: " << elements_.size() << " elements, SEI + subtitle only");
+  LOG_INFO("OSD: " << elements_.size() << " elements loaded, SEI + subtitle only");
 
   last_updated_second = -1;
   is_started = true;
@@ -331,7 +330,14 @@ int OSD::exit() {
 
 // ── periodic update ──────────────────────────────────────────────────
 
+extern bool global_reload_osd;
+
 void OSD::updateDisplayEverySecond() {
+  if (global_reload_osd) {
+    global_reload_osd = false;
+    loadElements();
+  }
+
   current = time(nullptr);
   ltime = localtime(&current);
 

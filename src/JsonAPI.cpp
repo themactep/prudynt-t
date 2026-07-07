@@ -437,6 +437,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
       }
       // immediately flush to disk so updateConfig()'s re-read picks it up
       save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+      global_reload_osd = true;
 
       char *js = json_to_string(elems, 0);
       sect += js ? js : "{}";
