@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <time.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -82,25 +83,35 @@ struct Session {
 
     bool    codecConfigSent  = false; // SPS/PPS prepended for this session
 
-    // Session-start anchor (gettimeofday at PLAY) for relative RTP timestamps
+    // Audio uses wall-clock start (separate because audio NALs lack imp_ts)
     struct timeval startAnchor{0, 0};
+
+    // Track last-sent SPS/PPS fingerprint to detect reconfiguration
+    // (e.g. after day/night switch when fps changes and encoder re-emits
+    // new codec config).
+    uint32_t spsHash = 0;
+    uint32_t ppsHash = 0;
+    bool     spsChanged = false;  // set when we detect new SPS, cleared after prepend
+
+    // Frame counter for RTP timestamp generation.  We count frames at the
+    // declared framerate instead of using encoder imp_ts (which resets during
+    // MJPEG reinit and causes 600ms backward jumps).
+    uint32_t videoFrameCount = 0;
 
     time_t lastActivity = 0;
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }
 
-    // Partial/EAGAIN send buffer — bytes that couldn't be written in one
-    // send() call.  Retried every drain cycle until fully sent.
-    struct SendPending {
-        uint8_t buf[1504];
-        size_t total;
-        size_t sent;
-    };
-    std::unique_ptr<SendPending> sendPending;
+    // Multi-packet send queue.  Non-blocking sends — queued when EAGAIN.
+    // Queue is never capped (memory is the only limit) so NALs are never dropped.
+    std::deque<std::vector<uint8_t>> sendQueue;
+    size_t sendQueueBytes = 0;
 
-    // Deferred RTSP response (EAGAIN fallback).  Retried before drain.
-    uint8_t pendingResp[1504];
+    // Deferred RTSP response (EAGAIN/partial send fallback).  Retried before
+    // drain.  Must be large enough for DESCRIBE responses with SDP bodies.
+    uint8_t pendingResp[RTSP_BUF_SIZE];
     size_t pendingRespLen = 0;
+    size_t pendingRespOff = 0;  // bytes already sent from pendingResp
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -263,6 +274,8 @@ void RtspServer::eventLoop() {
                 if (!s) continue;
 
                 if (fds[i].revents & (POLLERR | POLLHUP)) {
+                    LOG_INFO("POLLERR/POLLHUP on client fd=" << fds[i].fd
+                             << " events=" << fds[i].revents);
                     closeClient(s->sessionsIndex);
                     continue;
                 }
@@ -279,54 +292,47 @@ void RtspServer::eventLoop() {
 
             // Retry any deferred RTSP response before RTP drains.
             if (s->pendingRespLen > 0) {
-                ssize_t n = send(s->fd, s->pendingResp, s->pendingRespLen,
-                                MSG_DONTWAIT | MSG_NOSIGNAL);
-                if (n == static_cast<ssize_t>(s->pendingRespLen)) {
-                    s->pendingRespLen = 0;
-                } else if (n < 0 && errno != EAGAIN) {
+                ssize_t n = send(s->fd,
+                                 s->pendingResp + s->pendingRespOff,
+                                 s->pendingRespLen - s->pendingRespOff,
+                                 MSG_NOSIGNAL);
+                if (n > 0) {
+                    s->pendingRespOff += static_cast<size_t>(n);
+                    if (s->pendingRespOff >= s->pendingRespLen) {
+                        s->pendingRespLen = 0;
+                        s->pendingRespOff = 0;
+                    }
+                } else if (n < 0 && (errno == EPIPE || errno == ECONNRESET)) {
                     closeClient(s->sessionsIndex);
                     continue;
                 }
+                // EAGAIN — will retry next cycle (non-blocking poll loop)
             }
 
-            // Retry any partially-sent buffer before draining new data.
-            // This handles partial writes and EAGAIN at the byte level,
-            // avoiding TCP stream corruption.
-            if (s->sendPending) {
+            // Drain send queue first — send as many queued packets as socket accepts.
+            while (!s->sendQueue.empty()) {
                 ssize_t n = send(s->fd,
-                                 s->sendPending->buf + s->sendPending->sent,
-                                 s->sendPending->total - s->sendPending->sent,
+                                 s->sendQueue.front().data(),
+                                 s->sendQueue.front().size(),
                                  MSG_DONTWAIT | MSG_NOSIGNAL);
-                if (n > 0)
-                    s->sendPending->sent += static_cast<size_t>(n);
-                if (s->sendPending->sent >= s->sendPending->total) {
-                    s->sendPending.reset(); // fully sent
-                } else if (n < 0 && errno != EAGAIN) {
+                if (n > 0 && static_cast<size_t>(n) >= s->sendQueue.front().size()) {
+                    s->sendQueueBytes -= s->sendQueue.front().size();
+                    s->sendQueue.pop_front();
+                } else if (n > 0) {
+                    s->sendQueue.front().erase(
+                        s->sendQueue.front().begin(),
+                        s->sendQueue.front().begin() + static_cast<ptrdiff_t>(n));
+                    break; // socket full for now
+                } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
                     closeClient(s->sessionsIndex);
-                    continue;
-                }
-                // If still pending, don't read new data this cycle
-                if (s->sendPending) {
-                    // Taps keep accumulating — drain orphans so the
-                    // encoder doesn't block while we wait for the socket
-                    if (s->videoChn >= 0 && s->videoChn < NUM_VIDEO_CHANNELS &&
-                        global_video[s->videoChn] &&
-                        global_video[s->videoChn]->msgChannel) {
-                        H264NALUnit dummy;
-                        while (global_video[s->videoChn]->msgChannel->read(&dummy)) {}
-                    }
-                    if (global_audio[0] && global_audio[0]->msgChannel) {
-                        AudioFrame dummy;
-                        while (global_audio[0]->msgChannel->read(&dummy)) {}
-                    }
-                    continue; // skip drain, retry again next cycle
+                    continue; // socket broken
+                } else {
+                    break; // EAGAIN — socket full
                 }
             }
 
             // Drain video tap — up to 30 NALs per cycle.  On backpressure
-            // the NAL is dropped (destructive MsgChannel::read).  With
-            // byte-level SendPending no frame data is lost, so no IDR
-            // request is needed — the pending bytes will be retried.
+            // the NAL is dropped (destructive MsgChannel::read).
             if (s->videoTap) {
                 H264NALUnit nal;
                 int drained = 0;
@@ -342,8 +348,7 @@ void RtspServer::eventLoop() {
                 }
             }
 
-            // Drain audio tap — skip if video hit backpressure (don't let
-            // audio consume all the buffer room video needs to recover)
+            // Drain audio tap — skip if video hit backpressure
             if (!backpressure && s->audioTap) {
                 AudioFrame af;
                 int drained = 0;
@@ -357,7 +362,7 @@ void RtspServer::eventLoop() {
                     LOG_DEBUG("audio drain " << drained << " frames");
             }
 
-            // Drain orphaned main channels
+            // Drain orphaned main channels (always — keep encoder flowing)
             if (s->videoChn >= 0 && s->videoChn < NUM_VIDEO_CHANNELS &&
                 global_video[s->videoChn] &&
                 global_video[s->videoChn]->msgChannel) {
@@ -441,6 +446,8 @@ void RtspServer::acceptClient() {
     s->audioRtp = RtpState{};
     s->videoRtp.ssrc = static_cast<uint32_t>(rand());
     s->audioRtp.ssrc = static_cast<uint32_t>(rand());
+    s->pendingRespLen = 0;
+    s->pendingRespOff = 0;
 
     LOG_INFO("Client connected: " << inet_ntoa(addr.sin_addr) << ":"
             << ntohs(addr.sin_port));
@@ -452,7 +459,9 @@ void RtspServer::closeClient(int idx) {
     if (idx < 0 || idx >= static_cast<int>(sessions_.size())) return;
     auto &s = sessions_[idx];
     if (!s) return;
-    LOG_INFO("Closing client session " << s->sessionId);
+    LOG_INFO("Closing client session " << s->sessionId
+             << " fd=" << s->fd
+             << " playing=" << s->playing);
 
     // Decrement active player counts
     if (s->playing) {
@@ -496,8 +505,10 @@ void RtspServer::closeClient(int idx) {
     }
     s->sessionsIndex = -1;
     s->playing = false;
-    s->sendPending.reset();
+    s->sendQueue.clear();
+    s->sendQueueBytes = 0;
     s->pendingRespLen = 0;
+    s->pendingRespOff = 0;
 }
 
 void RtspServer::cleanupAllSessions() {
@@ -837,6 +848,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         }
 
         s->codecConfigSent = false;
+        s->videoFrameCount = 0;
         if (s->videoChn < NUM_VIDEO_CHANNELS)
             activePlayers_[s->videoChn]++;
     }
@@ -857,7 +869,6 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
     }
 
     s->playing = true;
-    s->sendPending.reset();
 
     LOG_INFO("PLAY started: ch=" << s->videoChn
              << " hasAudio=" << s->hasAudio
@@ -899,7 +910,7 @@ void RtspServer::handleTeardown(int idx, int cseq, const char *headers) {
 // ── Response sending ───────────────────────────────────────────────────────
 
 void RtspServer::sendResponse(Session &s, Status status, int cseq,
-                              const char *extraHeaders, const char *body) {
+                               const char *extraHeaders, const char *body) {
     char buf[RTSP_BUF_SIZE];
     int len;
 
@@ -926,29 +937,45 @@ void RtspServer::sendResponse(Session &s, Status status, int cseq,
     }
 
     ssize_t sent = send(s.fd, buf, static_cast<size_t>(len), MSG_DONTWAIT | MSG_NOSIGNAL);
-    if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    if (sent >= 0) {
+        // Partial send — buffer the remainder for retry
+        size_t written = static_cast<size_t>(sent);
+        if (written < static_cast<size_t>(len)) {
+            size_t remain = static_cast<size_t>(len) - written;
+            size_t copy = remain;
+            if (copy > sizeof(s.pendingResp)) copy = sizeof(s.pendingResp);
+            memcpy(s.pendingResp, buf + written, copy);
+            s.pendingRespLen = copy;
+            s.pendingRespOff = 0;
+        }
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        // Full send failed — buffer entire response for retry
         LOG_WARN("sendResponse EAGAIN — deferring");
         size_t copy = static_cast<size_t>(len);
         if (copy > sizeof(s.pendingResp)) copy = sizeof(s.pendingResp);
         memcpy(s.pendingResp, buf, copy);
         s.pendingRespLen = copy;
+        s.pendingRespOff = 0;
     }
+    // Other errors: silently drop (client will timeout and reconnect)
 }
 
 // ── RTP sending (video) ────────────────────────────────────────────────────
 
 bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     if (s.fd < 0) return false;
-    if (nal.data.size() <= 4) return false;
+    if (nal.data.empty()) return false;
 
-    // Strip 4-byte Annex B start code (00 00 00 01 or 00 00 01)
+    // Strip start code if present.  Regular encoder NALs have no start code
+    // (VideoWorker strips them), but injected SEI NALs include 4-byte start
+    // codes.  Only strip if we see an exact match.
     const uint8_t *raw = nal.data.data();
     size_t rawLen = nal.data.size();
     size_t offset = 0;
-    // Find start code length (3 or 4 bytes)
-    if (rawLen >= 4 && raw[0] == 0 && raw[1] == 0 &&
-        ((raw[2] == 1) || (raw[2] == 0 && raw[3] == 1))) {
-        offset = (raw[2] == 1) ? 3 : 4;
+    if (rawLen >= 4 && raw[0] == 0 && raw[1] == 0 && raw[2] == 0 && raw[3] == 1) {
+        offset = 4;
+    } else if (rawLen >= 3 && raw[0] == 0 && raw[1] == 0 && raw[2] == 1) {
+        offset = 3;
     }
     if (offset >= rawLen) return false;
 
@@ -956,18 +983,22 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     size_t nalLen = rawLen - offset;
     if (nalLen == 0) return false;
 
-    // ── Timestamp ── relative to session-start anchor ───────────────
+    uint8_t nalType = nalData[0] & 0x1F;
+
+    // ── Timestamp ── frame counter at declared framerate ──────────────
+    // Use a frame counter instead of encoder imp_ts (which resets during
+    // MJPEG encoder reinit, causing 600ms backward jumps).
     if (nal.is_frame_start) {
-        // Anchor on first video frame's capture time if not already set
-        if (s.startAnchor.tv_sec == 0 && s.startAnchor.tv_usec == 0) {
-            s.startAnchor = nal.time;
+        // Get declared framerate for this channel
+        int fps = 30; // default
+        for (auto &ve : videoStreams_) {
+            if (ve.chn == s.videoChn) {
+                fps = ve.config.fps > 0 ? ve.config.fps : 30;
+                break;
+            }
         }
-        int64_t dtUs = (static_cast<int64_t>(nal.time.tv_sec) -
-                        static_cast<int64_t>(s.startAnchor.tv_sec)) * 1000000LL
-                     + (static_cast<int64_t>(nal.time.tv_usec) -
-                        static_cast<int64_t>(s.startAnchor.tv_usec));
-        if (dtUs < 0) dtUs = 0;
-        s.videoRtp.timestamp = static_cast<uint32_t>(dtUs * 9LL / 100LL);
+        s.videoRtp.timestamp = static_cast<uint32_t>(s.videoFrameCount) * (90000u / fps);
+        s.videoFrameCount++;
     }
 
     // ── Determine codec from the registered stream ───────────────────
@@ -984,43 +1015,40 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     uint8_t chan  = s.videoInterleavedRtp;
     auto output = [&, this, clientIdx, chan](const uint8_t *pkt, size_t len) -> bool {
         auto *sen = sessions_[clientIdx].get();
-        if (!sen || sen->fd < 0 || sen->sendPending) return false;
+        if (!sen || sen->fd < 0) return false;
+
         if (!sen->tcpInterleaved) {
-            ssize_t s = send(sen->fd, pkt, len, MSG_DONTWAIT | MSG_NOSIGNAL);
-            if (s == static_cast<ssize_t>(len)) return true;
-            if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) s = 0;
-            if (s >= 0 && static_cast<size_t>(s) < len) {
-                auto ps = std::make_unique<Session::SendPending>();
-                ps->total = len - static_cast<size_t>(s);
-                ps->sent  = 0;
-                memcpy(ps->buf, pkt + s, ps->total);
-                sen->sendPending = std::move(ps);
-            }
-            return false;
+            // UDP: non-blocking is OK (lossy transport)
+            ssize_t n = send(sen->fd, pkt, len, MSG_DONTWAIT | MSG_NOSIGNAL);
+            return static_cast<size_t>(n) == len;
         }
-        // TCP interleaved: build contiguous $header + RTP payload
-        size_t total = len + 4;
+
+        // TCP interleaved: non-blocking send with queue.
+        // Packets that can't be sent immediately are queued for retry.
+        // The drain loop retries queued packets every poll cycle.
         uint8_t buf[1504];
+        size_t total = len + 4;
         buf[0] = '$';
         buf[1] = chan;
         buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
         buf[3] = static_cast<uint8_t>(len & 0xFF);
         memcpy(buf + 4, pkt, len);
-        ssize_t s = send(sen->fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (s == static_cast<ssize_t>(total)) return true;
-        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) s = 0;
-        if (s >= 0 && static_cast<size_t>(s) < total) {
-            auto ps = std::make_unique<Session::SendPending>();
-            ps->total = total - static_cast<size_t>(s);
-            ps->sent  = 0;
-            memcpy(ps->buf, buf + s, ps->total);
-            sen->sendPending = std::move(ps);
-        }
+
+        ssize_t n = send(sen->fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (static_cast<size_t>(n) == total) return true;
+
+        // Partial or EAGAIN: enqueue for retry
+        size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
+        size_t remain = total - sent;
+        std::vector<uint8_t> pktBuf(remain);
+        memcpy(pktBuf.data(), buf + sent, remain);
+        sen->sendQueue.push_back(std::move(pktBuf));
+        sen->sendQueueBytes += remain;
         return false;
     };
 
     // ── Prepend SPS/PPS before first non-config NAL ───────────────────
-    if (!s.codecConfigSent && s.videoChn >= 0 &&
+    if (s.videoChn >= 0 &&
         s.videoChn < NUM_VIDEO_CHANNELS && global_video[s.videoChn]) {
         auto &vs = global_video[s.videoChn];
         std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
@@ -1037,13 +1065,42 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
             }
         }
 
+        // Detect SPS/PPS changes (e.g. after day/night reconfig) and
+        // re-send config so the client decoder stays in sync.
+        auto simpleHash = [](const uint8_t *d, size_t n) -> uint32_t {
+            // FNV-1a 32-bit
+            uint32_t h = 0x811C9DC5u;
+            for (size_t i = 0; i < n; i++) {
+                h ^= d[i];
+                h *= 0x01000193u;
+            }
+            return h;
+        };
+        uint32_t curSpsHash = vs->have_sps ? simpleHash(vs->latest_sps.data(), vs->latest_sps.size()) : 0;
+        uint32_t curPpsHash = vs->have_pps ? simpleHash(vs->latest_pps.data(), vs->latest_pps.size()) : 0;
+
+        // Inline SPS/PPS: update our tracking so we know config changed.
+        if (isSps || isPps || isVps) {
+            if (curSpsHash != s.spsHash || curPpsHash != s.ppsHash) {
+                s.spsChanged = true;
+            }
+            s.spsHash = curSpsHash;
+            s.ppsHash = curPpsHash;
+            s.codecConfigSent = true;
+        }
+
+        bool configChanged = (!s.codecConfigSent) || s.spsChanged;
+
         LOG_DDEBUG("ch" << s.videoChn << " codecConfig: have_sps=" << vs->have_sps
                  << " have_pps=" << vs->have_pps
                  << " sps_size=" << vs->latest_sps.size()
-                 << " pps_size=" << vs->latest_pps.size());
+                 << " pps_size=" << vs->latest_pps.size()
+                 << " configSent=" << s.codecConfigSent
+                 << " configChanged=" << configChanged);
 
-        if (!isSps && !isPps && !isVps && vs->have_sps && vs->have_pps) {
-            LOG_INFO("ch" << s.videoChn << " prepending SPS/PPS to first frame");
+        if (!isSps && !isPps && !isVps && vs->have_sps && vs->have_pps && configChanged) {
+            LOG_INFO("ch" << s.videoChn << " prepending SPS/PPS to frame"
+                     << (s.spsChanged ? " (re-config detected)" : ""));
             if (isH265) {
                 if (vs->have_vps && !vs->latest_vps.empty()) {
                     if (!packetizeH265(vs->latest_vps.data(), vs->latest_vps.size(),
@@ -1065,8 +1122,10 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                     return false;
             }
             s.codecConfigSent = true;
+            s.spsChanged = false;
         } else if (isSps || isPps || isVps) {
-            s.codecConfigSent = true;
+            // inline path already updated hashes above
+            (void)0;
         }
     }
 
@@ -1141,22 +1200,14 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
     uint8_t chan  = s.audioInterleavedRtp;
     auto output = [&, this, clientIdx, chan](const uint8_t *pkt, size_t len) -> bool {
         auto *sen = sessions_[clientIdx].get();
-        if (!sen || sen->fd < 0 || sen->sendPending) return false;
+        if (!sen || sen->fd < 0) return false;
         if (!sen->tcpInterleaved) {
-            ssize_t s = send(sen->fd, pkt, len, MSG_DONTWAIT | MSG_NOSIGNAL);
-            if (s == static_cast<ssize_t>(len)) return true;
-            if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) s = 0;
-            if (s >= 0 && static_cast<size_t>(s) < len) {
-                auto ps = std::make_unique<Session::SendPending>();
-                ps->total = len - static_cast<size_t>(s);
-                ps->sent  = 0;
-                memcpy(ps->buf, pkt + s, ps->total);
-                sen->sendPending = std::move(ps);
-            }
-            return false;
+            ssize_t n = send(sen->fd, pkt, len, MSG_DONTWAIT | MSG_NOSIGNAL);
+            return static_cast<size_t>(n) == len;
         }
-        size_t total = len + 4;
+        // TCP interleaved: non-blocking send with queue.
         uint8_t buf[1504];
+        size_t total = len + 4;
         buf[0] = '$';
         buf[1] = chan;
         buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
@@ -1164,14 +1215,13 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         memcpy(buf + 4, pkt, len);
         ssize_t s = send(sen->fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
         if (s == static_cast<ssize_t>(total)) return true;
-        if (s < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) s = 0;
-        if (s >= 0 && static_cast<size_t>(s) < total) {
-            auto ps = std::make_unique<Session::SendPending>();
-            ps->total = total - static_cast<size_t>(s);
-            ps->sent  = 0;
-            memcpy(ps->buf, buf + s, ps->total);
-            sen->sendPending = std::move(ps);
-        }
+        // Partial or EAGAIN: enqueue for retry
+        size_t sent = (s > 0) ? static_cast<size_t>(s) : 0;
+        size_t remain = total - sent;
+        std::vector<uint8_t> pktBuf(remain);
+        memcpy(pktBuf.data(), buf + sent, remain);
+        sen->sendQueue.push_back(std::move(pktBuf));
+        sen->sendQueueBytes += remain;
         return false;
     };
 

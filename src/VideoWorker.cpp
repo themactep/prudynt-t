@@ -108,6 +108,8 @@ void VideoWorker::run() {
   };
 #endif
 
+  NaluPool naluPool(32);
+
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
     mp4_sample_ts_base_us = -1;
@@ -673,27 +675,12 @@ void VideoWorker::run() {
           }
 
           if (global_video[encChn]->hasDataCallback) {
-            H264NALUnit nalu;
-
-            nalu.imp_ts = rtsp_ts_us;
-            gettimeofday(&nalu.time, nullptr);
-
-            // We use start+4 because the encoder inserts 4-byte MPEG
-            // 'startcodes' at the beginning of each NAL. Live555 complains.
-            nalu.data.insert(nalu.data.end(), start + 4, end);
-
             // Add frame boundary metadata for complete frame detection
             static uint32_t frame_counter = 0;
             if (frame_start) {
               frame_counter++; // New frame starting
             }
-            nalu.frame_id = frame_counter;
-            nalu.packet_index = i;
-            nalu.packet_count = stream.packCount;
-            nalu.is_frame_start = frame_start;
-            nalu.is_frame_end = stream.pack[i].frameEnd;
-            nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr || nal_is_vps ||
-                                nal_is_sps || nal_is_pps);
+            uint32_t current_frame_id = frame_counter;
 
             if (global_video[encChn]->idr == false) {
               if (nal_is_sps || nal_is_pps || nal_is_idr || nal_is_hevc_idr) {
@@ -714,9 +701,9 @@ void VideoWorker::run() {
                   if (!sei_nal.empty()) {
                     H264NALUnit sei_unit;
                     sei_unit.data = std::move(sei_nal);
-                    sei_unit.frame_id = nalu.frame_id;
-                    sei_unit.imp_ts = nalu.imp_ts;
-                    sei_unit.time = nalu.time;
+                    sei_unit.frame_id = current_frame_id;
+                    sei_unit.imp_ts = rtsp_ts_us;
+                    gettimeofday(&sei_unit.time, nullptr);
                     sei_unit.is_frame_start = false;
                     sei_unit.is_frame_end = false;
                     sei_unit.is_keyframe = true;
@@ -729,12 +716,30 @@ void VideoWorker::run() {
             }
 
             if (global_video[encChn]->idr == true) {
+              // Borrow pooled buffer, fill once, copy to channel + taps
+              size_t payload_len_hint = static_cast<size_t>(end - start);
+              auto nalu_buf = naluPool.borrow(payload_len_hint);
+              nalu_buf.insert(nalu_buf.end(), start + 4, end);
+
+              // Capture wall-clock time now so taps inherit it after move
+              struct timeval nal_time;
+              gettimeofday(&nal_time, nullptr);
+
               bool delivered = false;
-              // Use non-blocking write() to avoid stalling encoder on slow
-              // clients (go2rtc-inspired: drop oldest frame rather than block
-              // producer)
+
               try {
-                delivered = global_video[encChn]->msgChannel->write(nalu);
+                H264NALUnit nalu;
+                nalu.data = nalu_buf; // copy: channel stores its own copy
+                nalu.imp_ts = rtsp_ts_us;
+                nalu.time = nal_time;
+                nalu.frame_id = current_frame_id;
+                nalu.packet_index = i;
+                nalu.packet_count = stream.packCount;
+                nalu.is_frame_start = frame_start;
+                nalu.is_frame_end = stream.pack[i].frameEnd;
+                nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                    nal_is_vps || nal_is_sps || nal_is_pps);
+                delivered = global_video[encChn]->msgChannel->write(std::move(nalu));
                 if (delivered) {
                   std::unique_lock<std::mutex> lock_stream{
                       global_video[encChn]->onDataCallbackLock};
@@ -744,7 +749,6 @@ void VideoWorker::run() {
                   LOG_DDEBUG("video channel:"
                              << encChn
                              << " msgChannel full, dropped oldest NAL");
-                  // Still notify so consumer processes queued data
                   std::unique_lock<std::mutex> lock_stream{
                       global_video[encChn]->onDataCallbackLock};
                   if (global_video[encChn]->onDataCallback)
@@ -752,12 +756,13 @@ void VideoWorker::run() {
                 }
               } catch (const std::exception &e) {
                 LOG_ERROR("video channel:"
-                          << encChn << ", frame_id:" << nalu.frame_id
-                          << ", packet:" << nalu.packet_index << "/"
-                          << nalu.packet_count
+                          << encChn << ", frame_id:" << current_frame_id
+                          << ", packet:" << i << "/"
+                          << stream.packCount
                           << " - Failed to queue: " << e.what());
                 delivered = false;
               }
+
               std::vector<VideoTapEntry> taps_copy;
               {
                 std::lock_guard<std::mutex> tap_lock(
@@ -767,13 +772,30 @@ void VideoWorker::run() {
               if (!taps_copy.empty()) {
                 for (auto &tap : taps_copy) {
                   if (auto queue = tap.queue.lock()) {
-                    queue->write(nalu);
+                    // Reuse same pooled buffer — copy for each tap consumer
+                    H264NALUnit tap_nalu;
+                    tap_nalu.data = nalu_buf;
+                    tap_nalu.imp_ts = rtsp_ts_us;
+                    tap_nalu.time = nal_time;
+                    tap_nalu.frame_id = current_frame_id;
+                    tap_nalu.packet_index = i;
+                    tap_nalu.packet_count = stream.packCount;
+                    tap_nalu.is_frame_start = frame_start;
+                    tap_nalu.is_frame_end = stream.pack[i].frameEnd;
+                    tap_nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                            nal_is_vps || nal_is_sps ||
+                                            nal_is_pps);
+                    queue->write(std::move(tap_nalu));
                     if (tap.notify) {
                       tap.notify();
                     }
                   }
                 }
               }
+
+              // Return pooled buffer after all consumers have copied it
+              naluPool.returnBuf(std::move(nalu_buf));
+
               if (!delivered) {
                 static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
                 static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
