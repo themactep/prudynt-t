@@ -536,6 +536,14 @@ int IPCServer::handle_client(int fd) {
       return 0;
     }
 
+    // Limit concurrent MJPEG connections – close silently so the
+    // CGI pipeline (prudyntctl → uhttpd → browser) tears down cleanly
+    int current = active_mjpeg_clients_.fetch_add(1);
+    if (current >= kMaxMjpegClients) {
+      active_mjpeg_clients_.fetch_sub(1);
+      return 0;
+    }
+
     // Quantize w/h to multiples of 16 and cap to source size
     if (w > 0 && h > 0) {
       auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width
@@ -622,6 +630,8 @@ int IPCServer::handle_client(int fd) {
       global_jpeg[ch]->request();
       // Pace output
       int usec = 1000000 / (fps > 0 ? fps : orig_fps);
+
+      active_mjpeg_clients_.fetch_sub(1);
       usleep(usec);
     }
 

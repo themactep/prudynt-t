@@ -156,10 +156,6 @@ LIBS                    = -Wl,--start-group \
                           -l:libalog.a \
                           -l:libsysutils.a \
                           -Wl,--end-group \
-                          -l:libliveMedia.a \
-                          -l:libgroupsock.a \
-                          -l:libBasicUsageEnvironment.a \
-                          -l:libUsageEnvironment.a \
                           $(WEBSOCKET_LIB_STATIC_LINE) \
                           $(OPUS_LIB_STATIC_LINE) \
                           $(FAAC_LIB_STATIC_LINE) \
@@ -188,11 +184,6 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libsysutils.so \
                           -l:libaudioProcess.so \
                           $(WEBSOCKET_LIB_HYBRID_LINE) \
-                          -Wl,-Bstatic \
-                          -l:libliveMedia.a \
-                          -l:libgroupsock.a \
-                          -l:libBasicUsageEnvironment.a \
-                          -l:libUsageEnvironment.a \
                           -Wl,-Bdynamic \
                           $(OPUS_LIB_HYBRID_LINE) \
                           $(FAAC_LIB_HYBRID_LINE) \
@@ -220,10 +211,6 @@ LIBS                    = -limp \
                           -lalog \
                           -laudioProcess \
                           -lsysutils \
-                          -lliveMedia \
-                          -lgroupsock \
-                          -lUsageEnvironment \
-                          -lBasicUsageEnvironment \
                           $(WEBSOCKET_LIB_DYNAMIC_LINE) \
                           $(OPUS_LIB_DYNAMIC_LINE) \
                           $(FAAC_LIB_DYNAMIC_LINE) \
@@ -309,6 +296,7 @@ LIBIMP_INC_DIR          = ./include/$(LIBIMP_PLATFORM)/$(LIBIMP_SDK_VERSION)/$(L
 # Directory Structure
 # ===================
 SRC_DIR                 = ./src
+SIMPLE_RTSP_DIR          = $(SRC_DIR)/simple-rtsp
 OBJ_DIR                 = ./obj
 BIN_DIR                 = ./bin
 
@@ -316,11 +304,26 @@ BIN_DIR                 = ./bin
 # =======================
 PRUDYNTCTL_SOURCE       = $(SRC_DIR)/prudyntctl.cpp
 MAIN_SOURCES_CPP        = $(filter-out $(PRUDYNTCTL_SOURCE),$(wildcard $(SRC_DIR)/*.cpp))
+
+# Exclude legacy live555-dependent sources (replaced by simple-rtsp)
+# Note: RTSP.cpp is KEPT — it was rewritten as the simple-rtsp integration layer
+LEGACY_RTSP_SOURCES     = $(SRC_DIR)/IMPServerMediaSubsession.cpp \
+                          $(SRC_DIR)/IMPAudioServerMediaSubsession.cpp \
+                          $(SRC_DIR)/IMPTextServerMediaSubsession.cpp \
+                          $(SRC_DIR)/IMPDeviceSource.cpp \
+                          $(SRC_DIR)/OSDTextFramedSource.cpp \
+                          $(SRC_DIR)/BackchannelServerMediaSubsession.cpp \
+                          $(SRC_DIR)/BackchannelSink.cpp \
+                          $(SRC_DIR)/BackchannelStreamState.cpp \
+                          $(SRC_DIR)/AACSink.cpp
+MAIN_SOURCES_CPP        := $(filter-out $(LEGACY_RTSP_SOURCES),$(MAIN_SOURCES_CPP))
+SIMPLE_RTSP_SOURCES     = $(wildcard $(SIMPLE_RTSP_DIR)/*.cpp)
 SOURCES_C               = $(wildcard $(SRC_DIR)/*.c)
 
-SOURCES                 = $(MAIN_SOURCES_CPP) $(SOURCES_C)
+SOURCES                 = $(MAIN_SOURCES_CPP) $(SIMPLE_RTSP_SOURCES) $(SOURCES_C)
 
 OBJECTS                 = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(MAIN_SOURCES_CPP)) \
+                          $(patsubst $(SIMPLE_RTSP_DIR)/%.cpp,$(OBJ_DIR)/simple-rtsp/%.o,$(SIMPLE_RTSP_SOURCES)) \
                           $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SOURCES_C))
 
 PRUDYNTCTL_OBJECTS      = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(PRUDYNTCTL_SOURCE))
@@ -373,6 +376,19 @@ $(CXXFLAGS_FILE): FORCE
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(VERSION_FILE) $(CXXFLAGS_FILE)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) \
+		-I$(SRC_DIR) \
+		-I$(LIBIMP_INC_DIR) \
+		-I$(LIBIMP_INC_DIR)/imp \
+		-I$(LIBIMP_INC_DIR)/sysutils \
+		-isystem $(THIRDPARTY_INC_DIR) \
+		-c $< -o $@
+
+# Simple-RTSP subdirectory objects
+# --------------------------------
+$(OBJ_DIR)/simple-rtsp/%.o: $(SIMPLE_RTSP_DIR)/%.cpp $(VERSION_FILE) $(CXXFLAGS_FILE)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) \
+		-I$(SRC_DIR) \
 		-I$(LIBIMP_INC_DIR) \
 		-I$(LIBIMP_INC_DIR)/imp \
 		-I$(LIBIMP_INC_DIR)/sysutils \

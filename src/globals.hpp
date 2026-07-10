@@ -11,7 +11,9 @@
 #ifdef PREBUFFER_ENABLED
 #include "PreTriggerBuffer.hpp"
 #endif
-#include "liveMedia.hh"
+
+// Forward-declare live555 types (used only by legacy RTSP audio path)
+class StreamReplicator;
 
 #include <algorithm>
 #include <array>

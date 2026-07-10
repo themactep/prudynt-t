@@ -31,6 +31,11 @@ private:
   int http_port_{0};
   bool http_enabled_{false};
   int http_listen_fd_{-1};
+
+  // Limit concurrent MJPEG connections to avoid exhausting threads and
+  // file descriptors on memory-constrained devices
+  std::atomic<int> active_mjpeg_clients_{0};
+  static constexpr int kMaxMjpegClients = 8;
 };
 
 #endif // IPC_SERVER_HPP

@@ -1,0 +1,124 @@
+#include "SdpGenerator.hpp"
+#include <cstdio>
+#include <cstring>
+
+namespace simple_rtsp {
+
+// Helper: hex-encode a byte array (lowercase, for profile-level-id)
+static std::string hexEncode(const uint8_t *data, size_t len) {
+    std::string out;
+    out.reserve(len * 2);
+    for (size_t i = 0; i < len; ++i) {
+        char buf[3];
+        snprintf(buf, sizeof(buf), "%02x", data[i]);
+        out += buf;
+    }
+    return out;
+}
+
+std::string generateSdp(const VideoStreamConfig &video,
+                        const AudioStreamConfig *audio,
+                        const char *serverIp) {
+    char buf[SDP_BUF_SIZE];
+    int off = 0;
+
+    // ── Session description ─────────────────────────────────────────────
+    off += snprintf(buf + off, sizeof(buf) - off,
+        "v=0\r\n"
+        "o=- %d 1 IN IP4 %s\r\n"
+        "s=%s\r\n"
+        "t=0 0\r\n"
+        "a=control:*\r\n",
+        rand(), serverIp,
+        "Thingino Prudynt");
+
+    // ── Video media ────────────────────────────────────────────────────
+    bool isH265 = (video.codec == "H265");
+    const char *rtpFmt = isH265 ? "H265" : "H264";
+    int pt = video.payloadType;
+
+    off += snprintf(buf + off, sizeof(buf) - off,
+        "m=video 0 RTP/AVP %d\r\n"
+        "a=control:track1\r\n"
+        "a=rtpmap:%d %s/%d\r\n"
+        "a=framerate:%d\r\n",
+        pt,
+        pt, rtpFmt, video.clockRate,
+        video.fps);
+
+    if (video.haveCodecConfig && !video.sps.empty()) {
+        if (isH265) {
+            // H.265: sprop-vps, sprop-sps, sprop-pps
+            if (!video.vps.empty()) {
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=sprop-vps=%s\r\n",
+                    base64Encode(video.vps.data(), video.vps.size()).c_str());
+            }
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "a=sprop-sps=%s\r\n",
+                base64Encode(video.sps.data(), video.sps.size()).c_str());
+        } else {
+            // H.264: fmtp with packetization-mode=1 (required for FU-A)
+            std::string profileLevelId;
+            if (video.sps.size() >= 3) {
+                profileLevelId = hexEncode(video.sps.data(), 3);
+            } else {
+                profileLevelId = "42001f";
+            }
+            std::string sprop = base64Encode(video.sps.data(), video.sps.size());
+            if (!video.pps.empty()) {
+                sprop += ",";
+                sprop += base64Encode(video.pps.data(), video.pps.size());
+            }
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "a=fmtp:%d packetization-mode=1;profile-level-id=%s;"
+                "sprop-parameter-sets=%s\r\n",
+                pt, profileLevelId.c_str(), sprop.c_str());
+        }
+        // PPS for H.265
+        if (isH265 && !video.pps.empty()) {
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "a=sprop-pps=%s\r\n",
+                base64Encode(video.pps.data(), video.pps.size()).c_str());
+        }
+    }
+
+    // ── Audio media ────────────────────────────────────────────────────
+    if (audio) {
+        const char *encName = "mpeg4-generic";
+        int audioClk = audio->sampleRate;
+        int audioCh = audio->channels;
+
+        if (audio->codec == "OPUS") {
+            encName = "OPUS";
+            audioClk = 48000;
+            audioCh = 2; // Opus SDP always advertises stereo
+        } else if (audio->codec == "PCMU") {
+            encName = "PCMU";
+            audioClk = 8000;
+        } else if (audio->codec == "PCMA") {
+            encName = "PCMA";
+            audioClk = 8000;
+        } else if (audio->codec == "L16") {
+            encName = "L16";
+        }
+
+        off += snprintf(buf + off, sizeof(buf) - off,
+            "m=audio 0 RTP/AVP %d\r\n"
+            "a=control:track2\r\n"
+            "a=rtpmap:%d %s/%d/%d\r\n",
+            audio->payloadType,
+            audio->payloadType, encName, audioClk, audioCh);
+
+        if (audio->codec == "AAC") {
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
+                "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
+                audio->payloadType);
+        }
+    }
+
+    return std::string(buf);
+}
+
+} // namespace simple_rtsp

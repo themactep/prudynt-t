@@ -952,11 +952,16 @@ void VideoWorker::run() {
       bool bootstrap_requested_inner =
           global_video[encChn]->bootstrap_requested.load(
               std::memory_order_relaxed);
+      bool video_clients =
+          global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
       while (global_video[encChn]->onDataCallback == nullptr &&
+             !video_clients &&
              !global_restart_video && !global_video[encChn]->run_for_jpeg &&
              !bootstrap_requested_inner && !global_force_video_active &&
              !prebuffer_active_inner) {
         global_video[encChn]->should_grab_frames.wait(lock_stream);
+        video_clients =
+            global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
         bootstrap_requested_inner =
             global_video[encChn]->bootstrap_requested.load(
                 std::memory_order_relaxed);

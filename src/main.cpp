@@ -546,6 +546,8 @@ int main(int argc, const char *argv[]) {
   sigemptyset(&shutdown_signal_set);
   sigaddset(&shutdown_signal_set, SIGINT);
   sigaddset(&shutdown_signal_set, SIGTERM);
+  sigaddset(&shutdown_signal_set, SIGHUP);
+  sigaddset(&shutdown_signal_set, SIGPIPE);
   int sigmask_ret = pthread_sigmask(SIG_BLOCK, &shutdown_signal_set, nullptr);
   if (sigmask_ret != 0) {
     LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned "
