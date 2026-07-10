@@ -1025,7 +1025,8 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
 
         // TCP interleaved: non-blocking send with queue.
         // Packets that can't be sent immediately are queued for retry.
-        // The drain loop retries queued packets every poll cycle.
+        // Always returns true — the drain loop retries queued packets.
+        // Only returns false if client is disconnected.
         uint8_t buf[1504];
         size_t total = len + 4;
         buf[0] = '$';
@@ -1040,11 +1041,19 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         // Partial or EAGAIN: enqueue for retry
         size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
         size_t remain = total - sent;
+        if (sen->sendQueueBytes + remain > 1024 * 1024) { // 1MB cap
+            // Queue full — client too slow, disconnect it
+            closeClient(sen->sessionsIndex);
+            return false;
+        }
         std::vector<uint8_t> pktBuf(remain);
         memcpy(pktBuf.data(), buf + sent, remain);
         sen->sendQueue.push_back(std::move(pktBuf));
         sen->sendQueueBytes += remain;
-        return false;
+
+        // Return true — drain loop will retry this packet.  Returning false
+        // would stop the entire video drain and drop all remaining NALs.
+        return true;
     };
 
     // ── Prepend SPS/PPS before first non-config NAL ───────────────────

@@ -587,8 +587,13 @@ int IPCServer::handle_client(int fd) {
       global_jpeg[ch]->req_fps = fps;
     }
 
-    bool needs_reconfig = size_change || fps_change;
-    if (needs_reconfig) {
+    // Only trigger encoder reconfig on SIZE changes.  FPS changes are handled
+    // by the JPEG worker without deinit/init (it just adjusts polling rate).
+    // Reconfiguring the JPEG encoder (deinit/init) steals ISP frames from the
+    // H.264 encoder and causes decode errors on the RTSP stream.
+    // We still set reconfig=true for fps changes so the worker picks up the
+    // new fps value, but the worker only reinit on size changes.
+    if (size_change) {
       global_jpeg[ch]->reconfig = true;
       global_jpeg[ch]->request();
 
@@ -598,6 +603,11 @@ int IPCServer::handle_client(int fd) {
         usleep(10 * 1000);
         wait_ms -= 10;
       }
+    } else if (fps_change) {
+      // Set reconfig flag so worker picks up the fps change, but don't wait
+      // for reinit since there's no size change
+      global_jpeg[ch]->reconfig = true;
+      global_jpeg[ch]->request();
     } else {
       global_jpeg[ch]->request();
     }
