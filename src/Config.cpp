@@ -184,10 +184,6 @@ bool validateInt255(const int &v) {
   return v >= 0 && v <= 255;
 }
 
-bool validateInt360(const int &v) {
-  return v >= 0 && v <= 360;
-}
-
 bool validateInt15360(const int &v) {
   return v >= -15360 && v <= 15360;
 }
@@ -267,23 +263,6 @@ unsigned int hexColorToUint(const char *str) {
   return (a << 24) | (r << 16) | (g << 8) | b;
 }
 
-// Validation function for OSD color fields that accepts both integer and hex
-// string formats
-bool validateOSDColor(const unsigned int &v) {
-  // For unsigned int values, any value is valid (same as validateUint)
-  return true;
-}
-
-// Validation function for OSD color fields when parsing from JSON string
-bool validateOSDColorString(const char *str) {
-  if (!str) {
-    return false;
-  }
-
-  // Check if it's a valid hexadecimal color format
-  return isValidHexColor(str);
-}
-
 bool validateSampleRate(const int &v) {
   std::set<int> allowed_rates = {8000, 16000, 24000, 44100, 48000};
   return allowed_rates.count(v) == 1;
@@ -307,8 +286,6 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"audio.mic_agc_enabled", audio.input_agc_enabled, false, validateBool},
 #endif
       {"daynight.enabled", daynight.enabled, true, validateBool},
-      {"daynight.controls.binswitch", daynight.controls.binswitch, true,
-       validateBool},
       {"daynight.controls.color", daynight.controls.color, true, validateBool},
       {"daynight.controls.ircut", daynight.controls.ircut, true, validateBool},
       {"daynight.controls.ir850", daynight.controls.ir850, true, validateBool},
@@ -334,39 +311,15 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"rtsp.auth_required", rtsp.auth_required, true, validateBool},
       {"rtsp.audio_only_enabled", rtsp.audio_only_enabled, true, validateBool},
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
-      {"stream0.video_enabled", stream0.video_enabled, true, validateBool},
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
-      {"stream0.osd.brightness.enabled", stream0.osd.brightness_enabled, false,
-       validateBool},
-      {"stream0.osd.enabled", stream0.osd.enabled, true, validateBool},
-      {"stream0.osd.logo.enabled", stream0.osd.logo_enabled, true,
-       validateBool},
-      {"stream0.osd.privacy.enabled", stream0.osd.privacy.enabled, true,
-       validateBool},
-      {"stream0.osd.time.enabled", stream0.osd.time_enabled, true,
-       validateBool},
-      {"stream0.osd.uptime.enabled", stream0.osd.uptime_enabled, true,
-       validateBool},
-      {"stream0.osd.usertext.enabled", stream0.osd.usertext_enabled, true,
+      {"osd.enabled", osd.enabled, true, validateBool},
+
+      {"osd.privacy.enabled", osd.privacy.enabled, true,
        validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
-      {"stream1.video_enabled", stream1.video_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
-      {"stream1.osd.brightness.enabled", stream1.osd.brightness_enabled, false,
-       validateBool},
-      {"stream1.osd.enabled", stream1.osd.enabled, true, validateBool},
-      {"stream1.osd.logo.enabled", stream1.osd.logo_enabled, true,
-       validateBool},
-      {"stream1.osd.privacy.enabled", stream1.osd.privacy.enabled, true,
-       validateBool},
-      {"stream1.osd.time.enabled", stream1.osd.time_enabled, true,
-       validateBool},
-      {"stream1.osd.uptime.enabled", stream1.osd.uptime_enabled, true,
-       validateBool},
-      {"stream1.osd.usertext.enabled", stream1.osd.usertext_enabled, true,
-       validateBool},
       {"stream2.enabled", stream2.enabled, true, validateBool},
       {"stream3.enabled", stream3.enabled, false, validateBool},
 #if defined(WEBSOCKET_ENABLED)
@@ -422,9 +375,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"daynight.script_path", daynight.script_path, "/sbin/daynight",
        validateCharNotEmpty},
       {"daynight.loglevel", daynight.loglevel, "", validateLogLevelString},
-      {"daynight.day_bin_path", daynight.day_bin_path, "", validateCharDummy},
-      {"daynight.night_bin_path", daynight.night_bin_path, "",
-       validateCharDummy},
       {"daynight.schedule.start_at", daynight.schedule.start_at, "",
        validateCharDummy},
       {"daynight.schedule.stop_at", daynight.schedule.stop_at, "",
@@ -463,34 +413,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
        [](const char *v) {
          return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0;
        }},
-      {"stream0.osd.font_path", stream0.osd.font_path,
-       "/usr/share/fonts/default.ttf", validateCharNotEmpty},
-      {"stream0.osd.logo.path", stream0.osd.logo_path,
-       "/usr/share/images/thingino_logo_210x64.bgra", validateCharNotEmpty},
-      {"stream0.osd.time.format", stream0.osd.time_format, "%F %T",
-       validateCharNotEmpty},
-      {"stream0.osd.uptime.format", stream0.osd.uptime_format,
-       "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
-      {"stream0.osd.usertext.format", stream0.osd.usertext_format, "%hostname",
-       validateCharNotEmpty},
-      {"stream0.osd.time.position", stream0.osd.time_position, "10,10",
-       validateCharNotEmpty},
-      {"stream0.osd.uptime.position", stream0.osd.uptime_position, "1600,5",
-       validateCharNotEmpty},
-      {"stream0.osd.usertext.position", stream0.osd.usertext_position, "900,5",
-       validateCharNotEmpty},
-      {"stream0.osd.logo.position", stream0.osd.logo_position, "1800,1030",
-       validateCharNotEmpty},
-      {"stream0.osd.brightness.format", stream0.osd.brightness_format,
-       "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
-      {"stream0.osd.brightness.position", stream0.osd.brightness_position,
-       "10,70", validateCharNotEmpty},
-      {"stream0.osd.privacy.image_path", stream0.osd.privacy.image_path, "",
-       validateCharDummy},
-      {"stream0.osd.privacy.position", stream0.osd.privacy.position, "0,-120",
-       validateCharNotEmpty},
-      {"stream0.osd.privacy.text", stream0.osd.privacy.text, "PRIVACY ENABLED",
-       validateCharNotEmpty},
       {"stream0.mode", stream0.mode, encDefaults.stream0_mode,
        [](const char *v) {
          std::set<std::string> a = {"CBR",   "VBR",        "SMART",
@@ -504,34 +426,6 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
        [](const char *v) {
          return strcmp(v, "H264") == 0 || strcmp(v, "H265") == 0;
        }},
-      {"stream1.osd.font_path", stream1.osd.font_path,
-       "/usr/share/fonts/default.ttf", validateCharNotEmpty},
-      {"stream1.osd.logo.path", stream1.osd.logo_path,
-       "/usr/share/images/thingino_logo_100x30.bgra", validateCharNotEmpty},
-      {"stream1.osd.time.format", stream1.osd.time_format, "%F %T",
-       validateCharNotEmpty},
-      {"stream1.osd.uptime.format", stream1.osd.uptime_format,
-       "Up: %02lud %02lu:%02lu", validateCharNotEmpty},
-      {"stream1.osd.usertext.format", stream1.osd.usertext_format, "%hostname",
-       validateCharNotEmpty},
-      {"stream1.osd.time.position", stream1.osd.time_position, "10,10",
-       validateCharNotEmpty},
-      {"stream1.osd.uptime.position", stream1.osd.uptime_position, "500,5",
-       validateCharNotEmpty},
-      {"stream1.osd.usertext.position", stream1.osd.usertext_position, "250,5",
-       validateCharNotEmpty},
-      {"stream1.osd.logo.position", stream1.osd.logo_position, "530,320",
-       validateCharNotEmpty},
-      {"stream1.osd.brightness.format", stream1.osd.brightness_format,
-       "Gain: %b%% Avg: %a%% %m", validateCharNotEmpty},
-      {"stream1.osd.brightness.position", stream1.osd.brightness_position,
-       "10,70", validateCharNotEmpty},
-      {"stream1.osd.privacy.image_path", stream1.osd.privacy.image_path, "",
-       validateCharDummy},
-      {"stream1.osd.privacy.position", stream1.osd.privacy.position, "0,-120",
-       validateCharNotEmpty},
-      {"stream1.osd.privacy.text", stream1.osd.privacy.text, "PRIVACY ENABLED",
-       validateCharNotEmpty},
       {"stream1.mode", stream1.mode, encDefaults.stream1_mode,
        [](const char *v) {
          std::set<std::string> a = {"CBR",   "VBR",        "SMART",
@@ -588,12 +482,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 10 && v <= 1000; }},
       {"audio.buffer_cap_frames", audio.buffer_cap_frames, 400,
        [](const int &v) { return v >= 10 && v <= 1000; }},
-      {"daynight.switch_below_percent", daynight.switch_below_percent, 15,
-       [](const int &v) { return v >= 0 && v <= 100; }},
-      {"daynight.switch_above_percent", daynight.switch_above_percent, 80,
-       [](const int &v) { return v >= 0 && v <= 100; }},
-      {"daynight.tolerance_percent", daynight.tolerance_percent, 50,
-       [](const int &v) { return v >= 0 && v <= 100; }},
       {"daynight.total_gain_night_threshold",
        daynight.total_gain_night_threshold, 3000,
        [](const int &v) { return v >= 0; }},
@@ -603,27 +491,9 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 100 && v <= 60000; }},
       {"general.imp_polling_timeout", general.imp_polling_timeout_ms, 500,
        [](const int &v) { return v >= 1 && v <= 5000; }},
-      {"general.osd_pool_size", general.osd_pool_size, -1,
-       [](const int &v) { return (v == -1) || (v >= 0 && v <= 65535); }},
+
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
       /* Expert overrides preserved for backward compatibility */
-      {"daynight.ev_night_high", daynight.ev_night_high, 1900000,
-       [](const int &v) { return v >= 0; }},
-      {"daynight.ev_day_low_primary", daynight.ev_day_low_primary, 479832,
-       [](const int &v) { return v >= 0; }},
-      {"daynight.ev_day_low_secondary", daynight.ev_day_low_secondary, 361880,
-       [](const int &v) { return v >= 0; }},
-      {"daynight.gb_gain_delta", daynight.gb_gain_delta, 15,
-       [](const int &v) { return v >= 0 && v <= 1000; }},
-      {"daynight.gb_gain_absolute", daynight.gb_gain_absolute, 145,
-       [](const int &v) { return v >= 0 && v <= 1000; }},
-      {"daynight.night_count_threshold", daynight.night_count_threshold, 6,
-       [](const int &v) { return v >= 1 && v <= 100; }},
-      {"daynight.day_count_threshold", daynight.day_count_threshold, 4,
-       [](const int &v) { return v >= 1 && v <= 100; }},
-      {"daynight.settle_samples_for_gb_record",
-       daynight.settle_samples_for_gb_record, 20,
-       [](const int &v) { return v >= 0 && v <= 200; }},
       {"http.port", http.port, 8080, validateInt65535},
       {"image.anti_flicker", image.anti_flicker, 2, validateInt2},
       {"image.backlight_compensation", image.backlight_compensation, 0,
@@ -741,39 +611,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       // TODO: set default height to the maximum supported by the SoC via HAL
       {"stream0.height", stream0.height, 0, validateIntGe0},
       {"stream0.max_gop", stream0.max_gop, 60, validateIntGe0},
-      {"stream0.osd.font_size", stream0.osd.font_size, OSD_AUTO_VALUE,
-       validateIntGe0},
-      {"stream0.osd.stroke_size", stream0.osd.stroke_size, 1, validateIntGe0},
-      {"stream0.osd.logo.height", stream0.osd.logo_height, 30, validateIntGe0},
-      {"stream0.osd.logo.rotation", stream0.osd.logo_rotation, 0,
-       validateInt360},
-      {"stream0.osd.logo.transparency", stream0.osd.logo_transparency, 255,
-       validateInt255},
-      {"stream0.osd.logo.width", stream0.osd.logo_width, 100, validateIntGe0},
-      {"stream0.osd.start_delay", stream0.osd.start_delay_ms, 0,
-       [](const int &v) { return v >= 0 && v <= 5000; }},
-      {"stream0.osd.time.rotation", stream0.osd.time_rotation, 0,
-       validateInt360},
-      {"stream0.osd.uptime.rotation", stream0.osd.uptime_rotation, 0,
-       validateInt360},
-      {"stream0.osd.usertext.rotation", stream0.osd.usertext_rotation, 0,
-       validateInt360},
-      {"stream0.osd.brightness.rotation", stream0.osd.brightness_rotation, 0,
-       validateInt360},
-      {"stream0.osd.privacy.font_size", stream0.osd.privacy.font_size,
-       OSD_AUTO_VALUE, validateIntGe0},
-      {"stream0.osd.privacy.stroke_size", stream0.osd.privacy.stroke_size, 2,
-       validateIntGe0},
-      {"stream0.osd.privacy.rotation", stream0.osd.privacy.rotation, 0,
-       validateInt360},
-      {"stream0.osd.privacy.image_width", stream0.osd.privacy.image_width, 0,
-       validateIntGe0},
-      {"stream0.osd.privacy.image_height", stream0.osd.privacy.image_height, 0,
-       validateIntGe0},
-      {"stream0.osd.privacy.layer", stream0.osd.privacy.layer, 16,
-       [](const int &v) { return v >= 0 && v <= 16; }},
-      {"stream0.osd.privacy.opacity", stream0.osd.privacy.opacity, 255,
-       validateInt255},
       {"stream0.rotation", stream0.rotation, 0, validateRotation},
       // TODO: set default width to the maximum supported by the SoC via HAL
       {"stream0.width", stream0.width, 0, validateIntGe0},
@@ -802,43 +639,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       // TODO: set default height to the maximum supported by the SoC via HAL
       {"stream1.height", stream1.height, 0, validateIntGe0},
       {"stream1.max_gop", stream1.max_gop, 60, validateIntGe0},
-      {"stream1.osd.font_size", stream1.osd.font_size, OSD_AUTO_VALUE,
-       validateIntGe0},
-      {"stream1.osd.stroke_size", stream1.osd.stroke_size, 1, validateIntGe0},
-      {"stream1.osd.logo.height", stream1.osd.logo_height, 30, validateIntGe0},
-      {"stream1.osd.logo.rotation", stream1.osd.logo_rotation, 0,
-       validateInt360},
-      {"stream1.osd.logo.transparency", stream1.osd.logo_transparency, 255,
-       validateInt255},
-      {"stream1.osd.logo.width", stream1.osd.logo_width, 100, validateIntGe0},
-      {"stream1.osd.start_delay", stream1.osd.start_delay_ms, 0,
-       [](const int &v) { return v >= 0 && v <= 5000; }},
-      {"stream1.osd.time.rotation", stream1.osd.time_rotation, 0,
-       validateInt360},
-      {"stream1.osd.uptime.rotation", stream1.osd.uptime_rotation, 0,
-       validateInt360},
-      {"stream1.osd.usertext.rotation", stream1.osd.usertext_rotation, 0,
-       validateInt360},
-      {"stream1.osd.brightness.rotation", stream1.osd.brightness_rotation, 0,
-       validateInt360},
-      {"stream1.osd.privacy.font_size", stream1.osd.privacy.font_size,
-       OSD_AUTO_VALUE, validateIntGe0},
-      {"stream1.osd.privacy.stroke_size", stream1.osd.privacy.stroke_size, 2,
-       validateIntGe0},
-      {"stream1.osd.privacy.rotation", stream1.osd.privacy.rotation, 0,
-       validateInt360},
-      // TODO: set default image_height to the maximum supported by the SoC via
-      // HAL
-      {"stream1.osd.privacy.image_height", stream1.osd.privacy.image_height, 0,
-       validateIntGe0},
-      // TODO: set default image_width to the maximum supported by the SoC via
-      // HAL
-      {"stream1.osd.privacy.image_width", stream1.osd.privacy.image_width, 0,
-       validateIntGe0},
-      {"stream1.osd.privacy.layer", stream1.osd.privacy.layer, 16,
-       [](const int &v) { return v >= 0 && v <= 16; }},
-      {"stream1.osd.privacy.opacity", stream1.osd.privacy.opacity, 255,
-       validateInt255},
       {"stream1.rotation", stream1.rotation, 0, validateRotation},
       // TODO: set default width to the maximum supported by the SoC via HAL
       {"stream1.width", stream1.width, 0, validateIntGe0},
@@ -872,48 +672,6 @@ std::vector<ConfigItem<unsigned int>> CFG::getUintItems() {
       {"sensor.i2c_address", sensor.i2c_address, 0x37,
        [](const unsigned int &v) { return v <= 0x7F; }, false,
        "/proc/jz/sensor/i2c_addr"},
-      // Individual color settings for stream0 text elements
-      {"stream0.osd.brightness.fill_color", stream0.osd.brightness_fill_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.brightness.stroke_color",
-       stream0.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream0.osd.privacy.fill_color", stream0.osd.privacy.fill_color,
-       0xFFFF4C4C, validateOSDColor},
-      {"stream0.osd.privacy.stroke_color", stream0.osd.privacy.stroke_color,
-       0xFF000000, validateOSDColor},
-      {"stream0.osd.time.fill_color", stream0.osd.time_fill_color, 0xFFFFFFFF,
-       validateOSDColor},
-      {"stream0.osd.time.stroke_color", stream0.osd.time_stroke_color,
-       0xFF000000, validateOSDColor},
-      {"stream0.osd.uptime.fill_color", stream0.osd.uptime_fill_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.uptime.stroke_color", stream0.osd.uptime_stroke_color,
-       0xFF000000, validateOSDColor},
-      {"stream0.osd.usertext.fill_color", stream0.osd.usertext_fill_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream0.osd.usertext.stroke_color", stream0.osd.usertext_stroke_color,
-       0xFF000000, validateOSDColor},
-      // Individual color settings for stream1 text elements
-      {"stream1.osd.brightness.fill_color", stream1.osd.brightness_fill_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.brightness.stroke_color",
-       stream1.osd.brightness_stroke_color, 0xFF000000, validateOSDColor},
-      {"stream1.osd.privacy.fill_color", stream1.osd.privacy.fill_color,
-       0xFFFF4C4C, validateOSDColor},
-      {"stream1.osd.privacy.stroke_color", stream1.osd.privacy.stroke_color,
-       0xFF000000, validateOSDColor},
-      {"stream1.osd.time.fill_color", stream1.osd.time_fill_color, 0xFFFFFFFF,
-       validateOSDColor},
-      {"stream1.osd.time.stroke_color", stream1.osd.time_stroke_color,
-       0xFF000000, validateOSDColor},
-      {"stream1.osd.uptime.fill_color", stream1.osd.uptime_fill_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.uptime.stroke_color", stream1.osd.uptime_stroke_color,
-       0xFF000000, validateOSDColor},
-      {"stream1.osd.usertext.fill_color", stream1.osd.usertext_fill_color,
-       0xFFFFFFFF, validateOSDColor},
-      {"stream1.osd.usertext.stroke_color", stream1.osd.usertext_stroke_color,
-       0xFF000000, validateOSDColor},
   };
 };
 
@@ -1368,17 +1126,21 @@ void CFG::load() {
   if (stream2.jpeg_channel == 0) {
     stream2.width = stream0.width;
     stream2.height = stream0.height;
+    stream2.rotation = stream0.rotation;
   } else {
     stream2.width = stream1.width;
     stream2.height = stream1.height;
+    stream2.rotation = stream1.rotation;
   }
 
   if (stream3.jpeg_channel == 0) {
     stream3.width = stream0.width;
     stream3.height = stream0.height;
+    stream3.rotation = stream0.rotation;
   } else {
     stream3.width = stream1.width;
     stream3.height = stream1.height;
+    stream3.rotation = stream1.rotation;
   }
 
   apply_motion_sensor_defaults(*this);

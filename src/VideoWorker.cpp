@@ -9,7 +9,7 @@
 #include "IMPFramesource.hpp"
 #include "Logger.hpp"
 #include "PreTriggerBuffer.hpp"
-#include "VideoPrivacyMask.hpp"
+#include "SEIWriter.hpp"
 #include "WorkerUtils.hpp"
 #include "globals.hpp"
 
@@ -107,6 +107,8 @@ void VideoWorker::run() {
     reset_prebuffer_sample();
   };
 #endif
+
+  NaluPool naluPool(32);
 
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
@@ -346,6 +348,21 @@ void VideoWorker::run() {
           nominal_frame_step_us = 1000;
         }
 
+        // SEI metadata active whenever OSD is enabled
+        bool osd_sei_active = false;
+        if (video_state && video_state->imp_encoder &&
+            video_state->imp_encoder->osd) {
+          osd_sei_active = true;
+        }
+        bool sei_pending_for_frame = false;
+        bool sei_inserted_for_frame = false;
+        bool stream_is_h265_for_sei = false;
+        if (video_state && video_state->stream &&
+            video_state->stream->format) {
+          stream_is_h265_for_sei =
+              (strcmp(video_state->stream->format, "H265") == 0);
+        }
+
         for (uint32_t i = 0; i < stream.packCount; ++i) {
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
@@ -385,6 +402,10 @@ void VideoWorker::run() {
           uint8_t *end = start + length;
           bool frame_start = (i == 0) || stream.pack[i - 1].frameEnd;
           if (frame_start) {
+            // Reset SEI state per frame
+            sei_pending_for_frame = false;
+            sei_inserted_for_frame = false;
+
             uint32_t frame_end_idx = i;
             while (frame_end_idx + 1 < stream.packCount &&
                    !stream.pack[frame_end_idx].frameEnd) {
@@ -431,6 +452,35 @@ void VideoWorker::run() {
 
             ts_current_frame_us = frame_ts_us;
             ts_have_current_frame = true;
+
+            // Peek ahead to detect if this frame is an IDR (for SEI insertion)
+            if (osd_sei_active) {
+              for (uint32_t j = i; j <= frame_end_idx; ++j) {
+                uint32_t peek_len = 0;
+                auto peek_slices = hal::encoder::get_pack_slices(stream, j);
+                const uint8_t *peek_ptr =
+                    peek_slices.second_len > 0
+                        ? nullptr  // wrap case, skip (unlikely in first few packs)
+                        : peek_slices.first_ptr;
+                peek_len = peek_slices.first_len;
+                if (peek_ptr && peek_len >= 5) {
+                  uint32_t peek_nal_type = 0;
+                  if (stream_is_h265_for_sei && peek_len >= 6) {
+                    peek_nal_type = (peek_ptr[4] >> 1) & 0x3F;
+                    if (peek_nal_type >= 16 && peek_nal_type <= 21) {
+                      sei_pending_for_frame = true;
+                      break;
+                    }
+                  } else {
+                    peek_nal_type = peek_ptr[4] & 0x1F;
+                    if (peek_nal_type == 5) {
+                      sei_pending_for_frame = true;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
           }
 
           int64_t pack_ts_us = stream.pack[i].timestamp;
@@ -592,6 +642,25 @@ void VideoWorker::run() {
               mp4_inserted_codec_config = true;
             }
 
+            // SEI metadata: prepend SEI NAL before first slice NAL of
+            // each IDR frame so OSD metadata is saved into MP4 recordings.
+            if (mp4_sample.empty() && sei_pending_for_frame &&
+                video_state && video_state->imp_encoder &&
+                video_state->imp_encoder->osd) {
+              std::string sei_json =
+                  video_state->imp_encoder->osd->getSEIJson();
+              if (!sei_json.empty()) {
+                std::vector<uint8_t> sei_nal =
+                    SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
+                if (sei_nal.size() > 4) {
+                  // Strip 4-byte Annex B start code and convert
+                  // to length-prefixed format for MP4
+                  append_length_prefixed_nal(sei_nal.data() + 4,
+                                             sei_nal.size() - 4);
+                }
+              }
+            }
+
             append_length_prefixed_nal(start + 4, payload_len);
 
             if (nal_is_idr || nal_is_hevc_idr) {
@@ -606,27 +675,12 @@ void VideoWorker::run() {
           }
 
           if (global_video[encChn]->hasDataCallback) {
-            H264NALUnit nalu;
-
-            nalu.imp_ts = rtsp_ts_us;
-            gettimeofday(&nalu.time, nullptr);
-
-            // We use start+4 because the encoder inserts 4-byte MPEG
-            // 'startcodes' at the beginning of each NAL. Live555 complains.
-            nalu.data.insert(nalu.data.end(), start + 4, end);
-
             // Add frame boundary metadata for complete frame detection
             static uint32_t frame_counter = 0;
             if (frame_start) {
               frame_counter++; // New frame starting
             }
-            nalu.frame_id = frame_counter;
-            nalu.packet_index = i;
-            nalu.packet_count = stream.packCount;
-            nalu.is_frame_start = frame_start;
-            nalu.is_frame_end = stream.pack[i].frameEnd;
-            nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr || nal_is_vps ||
-                                nal_is_sps || nal_is_pps);
+            uint32_t current_frame_id = frame_counter;
 
             if (global_video[encChn]->idr == false) {
               if (nal_is_sps || nal_is_pps || nal_is_idr || nal_is_hevc_idr) {
@@ -634,13 +688,58 @@ void VideoWorker::run() {
               }
             }
 
+            // SEI metadata insertion: inject SEI NAL before first IDR slice
+            if (sei_pending_for_frame && !sei_inserted_for_frame &&
+                (nal_is_idr || nal_is_hevc_idr)) {
+              sei_inserted_for_frame = true;
+              auto *osd_ptr = video_state->imp_encoder->osd;
+              if (osd_ptr) {
+                std::string sei_json = osd_ptr->getSEIJson();
+                if (!sei_json.empty()) {
+                  std::vector<uint8_t> sei_nal =
+                      SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
+                  if (!sei_nal.empty()) {
+                    H264NALUnit sei_unit;
+                    sei_unit.data = std::move(sei_nal);
+                    sei_unit.frame_id = current_frame_id;
+                    sei_unit.imp_ts = rtsp_ts_us;
+                    gettimeofday(&sei_unit.time, nullptr);
+                    sei_unit.is_frame_start = false;
+                    sei_unit.is_frame_end = false;
+                    sei_unit.is_keyframe = true;
+                    sei_unit.packet_index = 0;
+                    sei_unit.packet_count = 1;
+                    global_video[encChn]->msgChannel->write(sei_unit);
+                  }
+                }
+              }
+            }
+
             if (global_video[encChn]->idr == true) {
+              // Borrow pooled buffer, fill once, copy to channel + taps
+              size_t payload_len_hint = static_cast<size_t>(end - start);
+              auto nalu_buf = naluPool.borrow(payload_len_hint);
+              nalu_buf.insert(nalu_buf.end(), start + 4, end);
+
+              // Capture wall-clock time now so taps inherit it after move
+              struct timeval nal_time;
+              gettimeofday(&nal_time, nullptr);
+
               bool delivered = false;
-              // Use non-blocking write() to avoid stalling encoder on slow
-              // clients (go2rtc-inspired: drop oldest frame rather than block
-              // producer)
+
               try {
-                delivered = global_video[encChn]->msgChannel->write(nalu);
+                H264NALUnit nalu;
+                nalu.data = nalu_buf; // copy: channel stores its own copy
+                nalu.imp_ts = rtsp_ts_us;
+                nalu.time = nal_time;
+                nalu.frame_id = current_frame_id;
+                nalu.packet_index = i;
+                nalu.packet_count = stream.packCount;
+                nalu.is_frame_start = frame_start;
+                nalu.is_frame_end = stream.pack[i].frameEnd;
+                nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                    nal_is_vps || nal_is_sps || nal_is_pps);
+                delivered = global_video[encChn]->msgChannel->write(std::move(nalu));
                 if (delivered) {
                   std::unique_lock<std::mutex> lock_stream{
                       global_video[encChn]->onDataCallbackLock};
@@ -650,7 +749,6 @@ void VideoWorker::run() {
                   LOG_DDEBUG("video channel:"
                              << encChn
                              << " msgChannel full, dropped oldest NAL");
-                  // Still notify so consumer processes queued data
                   std::unique_lock<std::mutex> lock_stream{
                       global_video[encChn]->onDataCallbackLock};
                   if (global_video[encChn]->onDataCallback)
@@ -658,12 +756,13 @@ void VideoWorker::run() {
                 }
               } catch (const std::exception &e) {
                 LOG_ERROR("video channel:"
-                          << encChn << ", frame_id:" << nalu.frame_id
-                          << ", packet:" << nalu.packet_index << "/"
-                          << nalu.packet_count
+                          << encChn << ", frame_id:" << current_frame_id
+                          << ", packet:" << i << "/"
+                          << stream.packCount
                           << " - Failed to queue: " << e.what());
                 delivered = false;
               }
+
               std::vector<VideoTapEntry> taps_copy;
               {
                 std::lock_guard<std::mutex> tap_lock(
@@ -673,13 +772,30 @@ void VideoWorker::run() {
               if (!taps_copy.empty()) {
                 for (auto &tap : taps_copy) {
                   if (auto queue = tap.queue.lock()) {
-                    queue->write(nalu);
+                    // Reuse same pooled buffer — copy for each tap consumer
+                    H264NALUnit tap_nalu;
+                    tap_nalu.data = nalu_buf;
+                    tap_nalu.imp_ts = rtsp_ts_us;
+                    tap_nalu.time = nal_time;
+                    tap_nalu.frame_id = current_frame_id;
+                    tap_nalu.packet_index = i;
+                    tap_nalu.packet_count = stream.packCount;
+                    tap_nalu.is_frame_start = frame_start;
+                    tap_nalu.is_frame_end = stream.pack[i].frameEnd;
+                    tap_nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                            nal_is_vps || nal_is_sps ||
+                                            nal_is_pps);
+                    queue->write(std::move(tap_nalu));
                     if (tap.notify) {
                       tap.notify();
                     }
                   }
                 }
               }
+
+              // Return pooled buffer after all consumers have copied it
+              naluPool.returnBuf(std::move(nalu_buf));
+
               if (!delivered) {
                 static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
                 static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
@@ -722,6 +838,35 @@ void VideoWorker::run() {
               // Set timestamp from first NAL unit of frame
               if (prebuffer_sample_ts_us == -1) {
                 prebuffer_sample_ts_us = stream.pack[i].timestamp;
+              }
+
+              // SEI metadata for prebuffer: prepend SEI NAL before first
+              // slice NAL of each IDR frame so OSD metadata reaches MP4
+              // recordings via the pre-trigger buffer.
+              if (prebuffer_sample.empty() && sei_pending_for_frame &&
+                  video_state && video_state->imp_encoder &&
+                  video_state->imp_encoder->osd) {
+                std::string sei_json =
+                    video_state->imp_encoder->osd->getSEIJson();
+                if (!sei_json.empty()) {
+                  std::vector<uint8_t> sei_nal =
+                      SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
+                  if (sei_nal.size() > 4) {
+                    // Strip 4-byte Annex B start code and convert
+                    // to length-prefixed format for MP4
+                    size_t woff = prebuffer_sample.size();
+                    prebuffer_sample.resize(woff + 4 + sei_nal.size() - 4);
+                    uint8_t *d = prebuffer_sample.data() + woff;
+                    uint32_t be_len =
+                        static_cast<uint32_t>(sei_nal.size() - 4);
+                    d[0] = static_cast<uint8_t>((be_len >> 24) & 0xFF);
+                    d[1] = static_cast<uint8_t>((be_len >> 16) & 0xFF);
+                    d[2] = static_cast<uint8_t>((be_len >> 8) & 0xFF);
+                    d[3] = static_cast<uint8_t>(be_len & 0xFF);
+                    std::memcpy(d + 4, sei_nal.data() + 4,
+                                sei_nal.size() - 4);
+                  }
+                }
               }
 
               // Mark as keyframe if any NAL is IDR
@@ -768,14 +913,14 @@ void VideoWorker::run() {
            * osd will be removed and redesigned in future
            */
           global_video[encChn]->stream->stats.bps = bps;
-          global_video[encChn]->stream->osd.stats.bps = bps;
+          cfg->osd.stats.bps = bps;
           global_video[encChn]->stream->stats.fps = fps;
-          global_video[encChn]->stream->osd.stats.fps = fps;
+          cfg->osd.stats.fps = fps;
 
           fps = 0;
           bps = 0;
           gettimeofday(&global_video[encChn]->stream->stats.ts, NULL);
-          global_video[encChn]->stream->osd.stats.ts =
+          cfg->osd.stats.ts =
               global_video[encChn]->stream->stats.ts;
           /*
           IMPEncoderCHNStat encChnStats;
@@ -812,8 +957,8 @@ void VideoWorker::run() {
 
       global_video[encChn]->stream->stats.bps = 0;
       global_video[encChn]->stream->stats.fps = 0;
-      global_video[encChn]->stream->osd.stats.bps = 0;
-      global_video[encChn]->stream->osd.stats.fps = 0;
+      cfg->osd.stats.bps = 0;
+      cfg->osd.stats.fps = 0;
 
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_video[encChn]->active = false;
@@ -829,11 +974,16 @@ void VideoWorker::run() {
       bool bootstrap_requested_inner =
           global_video[encChn]->bootstrap_requested.load(
               std::memory_order_relaxed);
+      bool video_clients =
+          global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
       while (global_video[encChn]->onDataCallback == nullptr &&
+             !video_clients &&
              !global_restart_video && !global_video[encChn]->run_for_jpeg &&
              !bootstrap_requested_inner && !global_force_video_active &&
              !prebuffer_active_inner) {
         global_video[encChn]->should_grab_frames.wait(lock_stream);
+        video_clients =
+            global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
         bootstrap_requested_inner =
             global_video[encChn]->bootstrap_requested.load(
                 std::memory_order_relaxed);
@@ -875,23 +1025,6 @@ void *VideoWorker::thread_entry(void *arg) {
 
   global_video[encChn]->imp_framesource->enable();
   global_video[encChn]->run_for_jpeg = false;
-
-  std::shared_ptr<VideoPrivacyMask> privacy_mask;
-  {
-    std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
-    global_video[encChn]->privacy_mask.reset();
-    global_video[encChn]->privacy_mask = std::make_shared<VideoPrivacyMask>(
-        encChn, global_video[encChn]->stream);
-    privacy_mask = global_video[encChn]->privacy_mask;
-  }
-
-  if (privacy_mask) {
-    bool desired =
-        global_video[encChn]->privacy_requested.load(std::memory_order_relaxed);
-    if (desired) {
-      privacy_mask->setEnabled(true);
-    }
-  }
 
   // inform main that initialization is complete
   sh->has_started.release();
@@ -940,10 +1073,6 @@ void *VideoWorker::thread_entry(void *arg) {
 
 #if defined(PLATFORM_T23)
   if (global_shutdown_requested.load(std::memory_order_relaxed)) {
-    {
-      std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
-      global_video[encChn]->privacy_mask.reset();
-    }
     LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
     return 0;
   }
@@ -962,10 +1091,6 @@ void *VideoWorker::thread_entry(void *arg) {
     }
   }
 
-  {
-    std::lock_guard<std::mutex> lock(global_video[encChn]->privacy_mutex);
-    global_video[encChn]->privacy_mask.reset();
-  }
 
 #ifdef PREBUFFER_ENABLED
   // Cleanup prebuffer

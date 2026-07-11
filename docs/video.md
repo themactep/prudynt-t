@@ -71,3 +71,9 @@ printf 'PRIVACY ch=0 value=off\n' > /run/prudynt/video_ctrl
 Internally the privacy state uses a hardware OSD cover layer, so frame cadence
 and timestamps remain monotonic and decoders see legal access units (bitrates
 typically collapse to a few hundred bits/s while muted).
+
+RTSP Streaming
+--------------
+
+See [rtsp.md](rtsp.md) for details on the RTSP server architecture,
+timestamp handling, and MJPEG preview interaction.

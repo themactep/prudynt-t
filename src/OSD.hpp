@@ -1,39 +1,27 @@
 #ifndef OSD_hpp
 #define OSD_hpp
 
-// #include <map>
 #include "Config.hpp"
 #include "imp_hal.hpp"
-#include "schrift.h"
 #include <arpa/inet.h>
 #include <array>
+#include <cstring>
 #include <ifaddrs.h>
 
-#include <imp/imp_osd.h>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <netinet/in.h>
 #include <string>
 #include <sys/sysinfo.h>
-#include <unordered_map>
 #include <vector>
 
-struct OSDItem {
-  IMPRgnHandle imp_rgn;
-  uint8_t *data;
-  uint16_t width;
-  uint16_t height;
-  IMPOSDRgnAttr rgnAttr;
-  IMPOSDRgnAttrData *rgnAttrData;
-};
-
-struct Glyph {
-  int width;
-  int height;
-  std::vector<uint8_t> bitmap;
-  int advance;
-  int xmin;
-  int ymin;
-  SFT_Glyph glyph;
+struct OSDElement {
+  std::string name;
+  std::string type;      // "timestamp", "hostname", "uptime", "gain", "text"
+  std::string format;
+  std::string position;
+  std::string text;      // current rendered text (populated each second)
 };
 
 class OSD {
@@ -50,52 +38,19 @@ public:
   void updateDisplayEverySecond();
   static void *thread_entry(void *arg);
 
-  void rotateBGRAImage(uint8_t *&inputImage, uint16_t &width, uint16_t &height,
-                       int angle, bool del);
-  static void set_pos(IMPOSDRgnAttr *rgnAttr, int x, int y, uint16_t width,
-                      uint16_t height, const uint16_t max_width,
-                      const uint16_t max_height);
-  static uint16_t get_abs_pos(const uint16_t max, const uint16_t size,
-                              const int pos);
+  std::string getSEIJson();
+  std::string getPlaintextInfo();
+
   int startup_delay_ticks{0};
   bool is_started = false;
 
 private:
-  // libschrift
-  // std::vector<uint8_t> fontData;
-  std::unordered_map<char, Glyph> glyphs;
-  SFT *sft{nullptr};
-  bool text_rendering_available{false};
-  int load_font();
-  int libschrift_init();
-  int renderGlyph(const char *characters);
-  void drawOutline(uint8_t *image, const Glyph &g, int x, int y,
-                   int outlineSize, int WIDTH, int HEIGHT,
-                   const uint8_t *strokeColor);
-  int calculateTextSize(const char *text, uint16_t &width, uint16_t &height,
-                        int outlineSize);
-  int drawText(uint8_t *image, const char *text, int WIDTH, int HEIGHT,
-               int outlineSize, unsigned int fill_color,
-               unsigned int stroke_color);
+  void loadElements();
+  void updateElementText();
 
   _osd &osd;
   int last_updated_second;
 
-  OSDItem osdTime{};
-  OSDItem osdUser{};
-  OSDItem osdUptm{};
-  OSDItem osdLogo{};
-  OSDItem osdBrightness{};
-  bool time_region_created{false};
-  bool user_region_created{false};
-  bool uptime_region_created{false};
-  bool logo_region_created{false};
-  bool brightness_region_created{false};
-
-  void set_text(OSDItem *osdItem, IMPOSDRgnAttr *rgnAttr, const char *text,
-                const char *position, int angle, unsigned int fill_color,
-                unsigned int stroke_color);
-  std::string getConfigPath(const char *itemName);
   struct BrightnessSample {
     float current{-1.0f};
     float average{-1.0f};
@@ -108,7 +63,6 @@ private:
   public:
     BrightnessMeter();
     BrightnessSample measure();
-
   private:
     struct IspStats {
       int integrationTime{-1};
@@ -120,13 +74,11 @@ private:
       int currentBrightness{-1};
       std::string mode;
     };
-
     bool readIspStats(IspStats &stats);
     float computeFromStats(const IspStats &stats, std::string &mode) const;
     float fallbackTimeBased(std::string &mode) const;
     void updateHistory(float value);
     float historyAverage() const;
-
     static constexpr size_t historySize = 10;
     std::array<float, historySize> history;
     size_t historyIndex;
@@ -135,31 +87,27 @@ private:
   } brightnessMeter;
 
   std::string buildBrightnessText(const BrightnessSample &sample);
-  void updateBrightnessText();
   std::string lastBrightnessText;
+  void updateBrightnessText();
 
   IMPEncoderCHNAttr channelAttributes;
-
-  bool initialized{0};
   int osdGrp{};
   int encChn{};
   const char *parent;
 
   char hostname[64];
   char ip[INET_ADDRSTRLEN]{};
-
   uint16_t stream_width;
   uint16_t stream_height;
+  int stream_rotation{0};
 
   time_t current;
   struct tm *ltime;
-  struct timeval tm;
 
-  char timeFormatted[32];
-  char uptimeFormatted[32];
-  char fps[4];
-  char bps[8];
+  std::vector<OSDElement> elements_;
   uint8_t flag{0};
+
+  mutable std::mutex stateMutex_;
 };
 
 #endif

@@ -119,14 +119,14 @@ static inline int percent_from_ev(const Profile &pr, int ev) {
   return clampi(pct, 0, 100);
 }
 
-static inline int brightness_percent_from_ev(const Profile &pr,
-                                             const DayNightAlgo::Params &params,
-                                             int ev) {
+static inline int brightness_percent_from_ev(const Profile &pr, int ev) {
   if (ev < 0)
     return -1;
 
-  long long dark_ev = params.ev_night_high;
-  long long bright_ev = params.ev_day_low_primary;
+  // Hardcoded defaults — the simple total-gain algorithm is the active
+  // day/night detector; this is only for display.
+  long long dark_ev = 1900000;
+  long long bright_ev = 479832;
 
   if (dark_ev > bright_ev) {
     // Map EV to 0-100% with extended range to avoid always hitting 100%
@@ -284,20 +284,6 @@ static void apply_mode(DayNightAlgo::Mode m) {
                            : "/sbin/daynight";
 
   if (m == DayNightAlgo::Mode::Day) {
-    // Switch to day bin if configured and enabled
-    if (cfg->daynight.controls.binswitch) {
-      const char *day_bin = cfg->get<const char *>("daynight.day_bin_path");
-      if (day_bin && day_bin[0] != '\0') {
-        int bin_ret = hal::isp::switch_bin(day_bin);
-        if (bin_ret != 0 && daynight_should_log(Logger::WARN)) {
-          LOG_WARN("Failed to switch to day bin '" << day_bin
-                                                   << "': " << bin_ret);
-        } else if (bin_ret == 0 && daynight_should_log(Logger::INFO)) {
-          LOG_INFO("Switched to day IQ bin: " << day_bin);
-        }
-      }
-    }
-
     // Switch ISP running mode only if color control is enabled
     if (cfg->daynight.controls.color) {
       int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
@@ -316,20 +302,6 @@ static void apply_mode(DayNightAlgo::Mode m) {
     std::string cmd = std::string(script) + " day";
     (void)std::system(cmd.c_str());
   } else if (m == DayNightAlgo::Mode::Night) {
-    // Switch to night bin if configured and enabled
-    if (cfg->daynight.controls.binswitch) {
-      const char *night_bin = cfg->get<const char *>("daynight.night_bin_path");
-      if (night_bin && night_bin[0] != '\0') {
-        int bin_ret = hal::isp::switch_bin(night_bin);
-        if (bin_ret != 0 && daynight_should_log(Logger::WARN)) {
-          LOG_WARN("Failed to switch to night bin '" << night_bin
-                                                     << "': " << bin_ret);
-        } else if (bin_ret == 0 && daynight_should_log(Logger::INFO)) {
-          LOG_INFO("Switched to night IQ bin: " << night_bin);
-        }
-      }
-    }
-
     // Switch ISP running mode only if color control is enabled
     if (cfg->daynight.controls.color) {
       int ret = hal::isp::set_running_mode(hal::isp::RunningMode::Night);
@@ -347,34 +319,6 @@ static void apply_mode(DayNightAlgo::Mode m) {
   }
 }
 
-/* LEGACY - not used by simple algorithm
-static DayNightAlgo::Mode configured_running_mode() {
-  if (!cfg)
-    return DayNightAlgo::Mode::Unknown;
-
-  int configured = cfg->image.running_mode;
-  if (configured == static_cast<int>(hal::isp::RunningMode::Day))
-    return DayNightAlgo::Mode::Day;
-  if (configured == static_cast<int>(hal::isp::RunningMode::Night))
-    return DayNightAlgo::Mode::Night;
-  return DayNightAlgo::Mode::Unknown;
-}
-
-static DayNightAlgo::Mode infer_initial_mode(const DayNightAlgo::Params &params,
-                                             const DayNightAlgo::Signals &sig) {
-  if (sig.ev >= 0) {
-    if (sig.ev > params.ev_night_high)
-      return DayNightAlgo::Mode::Night;
-    if (sig.ev < params.ev_day_low_primary)
-      return DayNightAlgo::Mode::Day;
-  }
-  DayNightAlgo::Mode cfg_mode = configured_running_mode();
-  if (cfg_mode != DayNightAlgo::Mode::Unknown)
-    return cfg_mode;
-  return DayNightAlgo::Mode::Day;
-}
-*/
-
 void *thread_entry(void *arg) {
   (void)arg;
   refresh_daynight_log_level();
@@ -384,245 +328,33 @@ void *thread_entry(void *arg) {
   }
 
   // ============================================================================
-  // LEGACY ALGORITHM - NOT CURRENTLY USED
-  // ============================================================================
-  // The original algorithm below is disabled because:
-  // 1. GB/GR gains are always 0 on T23 platforms (ISP limitation)
-  // 2. EV thresholds are miscalibrated (expects 42k-2.2M range, actual is
-  // 1k-30k)
-  // 3. Brightness percentage calculation is broken due to wrong EV ranges
-  //
-  // This code is preserved for reference but not executed.
-  // ============================================================================
-  /*
-  DayNightAlgo::Params params{};
-  DayNightAlgo::State state{};
-  DayNightAlgo::init(state);
-
-  // Skip automatic switching for N iterations after forced mode
-  int skip_auto_switch_iterations = 0;
-
-  // Anti-flapping: prevent rapid mode changes
-  int anti_flap_cooldown = 0;
-  const int anti_flap_iterations = 30; // ~30 seconds minimum between automatic
-  switches
-
-  // SoC profile mapping
-  Profile pr = get_profile();
-
-  // Load config thresholds. Prefer explicit EV thresholds if configured;
-  // otherwise use percent mapping.
-  int ev_night_high_cfg = cfg->get<int>("daynight.ev_night_high");
-  int ev_day_low_primary_cfg = cfg->get<int>("daynight.ev_day_low_primary");
-  int ev_day_low_secondary_cfg = cfg->get<int>("daynight.ev_day_low_secondary");
-
-  int below_pct = cfg->get<int>("daynight.switch_below_percent");
-  int above_pct = cfg->get<int>("daynight.switch_above_percent");
-  int tol_pct = cfg->get<int>("daynight.tolerance_percent");
-
-  if (ev_night_high_cfg > 0 && ev_day_low_primary_cfg > 0) {
-    params.ev_night_high = ev_night_high_cfg;
-    params.ev_day_low_primary = ev_day_low_primary_cfg;
-    // default to primary if secondary not set
-    params.ev_day_low_secondary =
-        (ev_day_low_secondary_cfg > 0) ? ev_day_low_secondary_cfg :
-  ev_day_low_primary_cfg;
-    // derive counters from tolerance percent if provided
-    params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25;
-    params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
-  } else {
-    // Percent-based mapping fallback
-    params.ev_night_high = ev_from_percent(pr, below_pct);
-    params.ev_day_low_primary = ev_from_percent(pr, above_pct);
-    int secondary_pct = clampi(above_pct + pr.sec_margin_percent, 0, 100);
-    params.ev_day_low_secondary = ev_from_percent(pr, secondary_pct);
-    params.night_count_threshold = pr.base_night + (tol_pct + 24) / 25; // +1
-  per 25% params.day_count_threshold = pr.base_day + (tol_pct + 24) / 25;
-  }
-
-  params.gb_gain_delta = pr.gb_delta;
-  params.gb_gain_absolute = pr.gb_abs;
-  params.settle_samples_for_gb_record = pr.settle;
-
-  int interval_ms = cfg->get<int>("daynight.sample_interval_ms");
-  if (interval_ms <= 0)
-    interval_ms = 1000;
-
-  // If we start while already in night, capture initial GB/GR minima window
-  state.settle_remaining = params.settle_samples_for_gb_record;
-
-  DayNightAlgo::Mode current = DayNightAlgo::Mode::Unknown;
-  bool initial_mode_applied = false;
-
-  while (!global_shutdown_requested.load(std::memory_order_relaxed)) {
-    refresh_daynight_log_level();
-
-    // Check for manual force_mode override
-    const char *force_mode_str =
-  cfg->daynight.force_mode.load(std::memory_order_relaxed); if (force_mode_str
-  != nullptr) { DayNightAlgo::Mode forced_mode = DayNightAlgo::Mode::Unknown; if
-  (std::strcmp(force_mode_str, "day") == 0) { forced_mode =
-  DayNightAlgo::Mode::Day; } else if (std::strcmp(force_mode_str, "night") == 0)
-  { forced_mode = DayNightAlgo::Mode::Night;
-      }
-
-      if (forced_mode != DayNightAlgo::Mode::Unknown && forced_mode != current)
-  { if (daynight_should_log(Logger::INFO)) { LOG_INFO("DayNight: applying forced
-  mode " << force_mode_str);
-        }
-        apply_mode(forced_mode);
-        current = forced_mode;
-        if (current == DayNightAlgo::Mode::Night)
-          DayNightAlgo::on_enter_night(params, state);
-        else if (current == DayNightAlgo::Mode::Day)
-          DayNightAlgo::on_enter_day(state);
-        cfg->daynight.live_mode.store(force_mode_str,
-  std::memory_order_relaxed); initial_mode_applied = true;
-        // Skip automatic algorithm for next ~10 seconds to let forced mode
-  stick skip_auto_switch_iterations = 10;
-      }
-      // Clear the force flag after applying
-      cfg->daynight.force_mode.store(nullptr, std::memory_order_relaxed);
-    }
-
-    int ev = -1, gr = -1, gb = -1;
-    (void)read_ev(ev);
-    (void)read_awb(gr, gb);
-
-    // Read additional pure ISP sensor values for analysis
-    int total_gain = -1, ae_luma = -1, awb_ct = -1;
-    (void)hal::isp::get_total_gain(total_gain);
-    (void)hal::isp::get_ae_luma(ae_luma);
-    (void)hal::isp::get_awb_color_temp(awb_ct);
-
-    DayNightAlgo::Signals sig{ev, gb, gr};
-    DayNightAlgo::update_minima_window(state, sig);
-    auto dec = DayNightAlgo::decide(params, state, sig);
-
-    // Live status update for metrics - export ALL raw sensor values
-    int bright_pct = brightness_percent_from_ev(pr, params, ev);
-    cfg->daynight.live_brightness_percent.store(bright_pct,
-  std::memory_order_relaxed); cfg->daynight.live_ev.store(ev,
-  std::memory_order_relaxed); cfg->daynight.live_gb.store(gb,
-  std::memory_order_relaxed); cfg->daynight.live_gr.store(gr,
-  std::memory_order_relaxed); cfg->daynight.live_total_gain.store(total_gain,
-  std::memory_order_relaxed); cfg->daynight.live_ae_luma.store(ae_luma,
-  std::memory_order_relaxed); cfg->daynight.live_awb_color_temp.store(awb_ct,
-  std::memory_order_relaxed);
-
-    if (daynight_should_log(Logger::DEBUG)) {
-      LOG_DEBUG("DayNight: brightness%=" << bright_pct << " EV=" << ev << " GB="
-  << gb << " GR=" << gr
-                                          << " TotalGain=" << total_gain << "
-  AELuma=" << ae_luma
-                                          << " recGB=" << state.gb_gain_record
-  << " nCnt=" << state.night_count
-                                          << " dCnt=" << state.day_count
-                                          << " ircut=" << (state.ircut_engaged ?
-  "1" : "0") << " -> "
-                                          << (dec.toggled ? (dec.target ==
-  DayNightAlgo::Mode::Day ? "DAY" : "NIGHT") : "HOLD"));
-    }
-
-    if (!initial_mode_applied) {
-      DayNightAlgo::Mode inferred = infer_initial_mode(params, sig);
-      if (inferred != DayNightAlgo::Mode::Unknown) {
-        apply_mode(inferred);
-        current = inferred;
-        if (current == DayNightAlgo::Mode::Night)
-          DayNightAlgo::on_enter_night(params, state);
-        else if (current == DayNightAlgo::Mode::Day)
-          DayNightAlgo::on_enter_day(state);
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day"
-  : "night", std::memory_order_relaxed); initial_mode_applied = true; if
-  (daynight_should_log(Logger::INFO)) { LOG_INFO("DayNight: applied initial mode
-  "
-                   << (current == DayNightAlgo::Mode::Day ? "day" : "night"));
-        }
-      }
-    }
-
-    if (dec.toggled && dec.target != current) {
-      // Skip automatic switching if we just forced a mode
-      if (skip_auto_switch_iterations > 0) {
-        if (daynight_should_log(Logger::DEBUG)) {
-          LOG_DEBUG("DayNight: skipping automatic switch (forced mode cooldown:
-  "
-                    << skip_auto_switch_iterations << " iterations left)");
-        }
-        skip_auto_switch_iterations--;
-      } else if (anti_flap_cooldown > 0) {
-        // Prevent rapid toggling during twilight
-        if (daynight_should_log(Logger::DEBUG)) {
-          LOG_DEBUG("DayNight: skipping automatic switch (anti-flap cooldown: "
-                    << anti_flap_cooldown << " iterations left)");
-        }
-        anti_flap_cooldown--;
-      } else {
-        apply_mode(dec.target);
-        current = dec.target;
-        if (current == DayNightAlgo::Mode::Night)
-          DayNightAlgo::on_enter_night(params, state);
-        else if (current == DayNightAlgo::Mode::Day)
-          DayNightAlgo::on_enter_day(state);
-        // reflect new mode in metrics
-        cfg->daynight.live_mode.store(current == DayNightAlgo::Mode::Day ? "day"
-  : "night", std::memory_order_relaxed);
-        // Set anti-flap cooldown after successful switch
-        anti_flap_cooldown = anti_flap_iterations;
-        if (daynight_should_log(Logger::INFO)) {
-          LOG_INFO("DayNight: automatic mode switch completed, cooldown set for
-  "
-                   << anti_flap_iterations << " iterations");
-        }
-      }
-    } else {
-      // Decrement counters even when no toggle decision is made
-      if (skip_auto_switch_iterations > 0) {
-        skip_auto_switch_iterations--;
-      }
-      if (anti_flap_cooldown > 0) {
-        anti_flap_cooldown--;
-      }
-    }
-
-    const char *mode_str = (current == DayNightAlgo::Mode::Day)
-                   ? "day"
-                   : (current == DayNightAlgo::Mode::Night ? "night" :
-  "unknown"); cfg->daynight.live_mode.store(mode_str,
-  std::memory_order_relaxed); export_brightness_value(bright_pct, mode_str);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-  }
-  END OF LEGACY ALGORITHM */
-  // ============================================================================
 
   // ============================================================================
   // NEW SIMPLE TOTAL GAIN ALGORITHM
   // ============================================================================
-  DayNightAlgo::SimpleParams simple_params{};
-  DayNightAlgo::SimpleState simple_state{};
-  DayNightAlgo::simple_init(simple_state);
+  DayNightAlgo::Params params{};
+  DayNightAlgo::State state{};
+  DayNightAlgo::init(state);
 
   // Load thresholds from config
-  simple_params.total_gain_night_threshold =
+  params.total_gain_night_threshold =
       cfg->get<int>("daynight.total_gain_night_threshold");
-  simple_params.total_gain_day_threshold =
+  params.total_gain_day_threshold =
       cfg->get<int>("daynight.total_gain_day_threshold");
-  simple_params.night_count_threshold =
+  params.night_count_threshold =
       cfg->get<int>("daynight.night_count_threshold");
-  simple_params.day_count_threshold =
+  params.day_count_threshold =
       cfg->get<int>("daynight.day_count_threshold");
-  simple_params.ev_night_threshold =
+  params.ev_night_threshold =
       cfg->get<int>("daynight.ev_night_threshold");
-  simple_params.ev_day_threshold = cfg->get<int>("daynight.ev_day_threshold");
+  params.ev_day_threshold = cfg->get<int>("daynight.ev_day_threshold");
 
-  if (simple_params.total_gain_day_threshold >=
-      simple_params.total_gain_night_threshold) {
+  if (params.total_gain_day_threshold >=
+      params.total_gain_night_threshold) {
     LOG_WARN("DayNight: day_threshold ("
-             << simple_params.total_gain_day_threshold
+             << params.total_gain_day_threshold
              << ") >= night_threshold ("
-             << simple_params.total_gain_night_threshold
+             << params.total_gain_night_threshold
              << ") — hysteresis zone is inverted, automatic switching will not "
                 "work");
   }
@@ -643,7 +375,7 @@ void *thread_entry(void *arg) {
   // If initial mode cannot be determined within this many samples (gain stays
   // in the hysteresis zone), default to Night — the safe fallback for the
   // pitch-black startup case (TC-4).
-  int initial_mode_fallback_countdown = simple_params.night_count_threshold * 3;
+  int initial_mode_fallback_countdown = params.night_count_threshold * 3;
 
   // Anti-flapping cooldown
   int anti_flap_cooldown = 0;
@@ -670,7 +402,7 @@ void *thread_entry(void *arg) {
         }
         apply_mode(forced_mode);
         current = forced_mode;
-        simple_state.is_night = (current == DayNightAlgo::Mode::Night);
+        state.is_night = (current == DayNightAlgo::Mode::Night);
         cfg->daynight.live_mode.store(force_mode_str,
                                       std::memory_order_relaxed);
         initial_mode_applied = true;
@@ -698,23 +430,22 @@ void *thread_entry(void *arg) {
 
     // Calculate brightness percentage (for display only, not used in algorithm)
     Profile pr = get_profile();
-    DayNightAlgo::Params legacy_params{};
-    int bright_pct = brightness_percent_from_ev(pr, legacy_params, ev);
+    int bright_pct = brightness_percent_from_ev(pr, ev);
     cfg->daynight.live_brightness_percent.store(bright_pct,
                                                 std::memory_order_relaxed);
 
     // Run the simple algorithm using total_gain (or EV fallback for T10/T20)
     // Only run if within schedule window
     bool within_schedule = is_within_schedule();
-    auto dec = DayNightAlgo::simple_decide(simple_params, simple_state,
+    auto dec = DayNightAlgo::decide(params, state,
                                            total_gain, ev);
 
     if (daynight_should_log(Logger::DEBUG)) {
       LOG_DEBUG(
           "DayNight: TotalGain="
           << total_gain << " EV=" << ev << " AELuma=" << ae_luma << " nCnt="
-          << simple_state.night_count << " dCnt=" << simple_state.day_count
-          << " mode=" << (simple_state.is_night ? "NIGHT" : "DAY")
+          << state.night_count << " dCnt=" << state.day_count
+          << " mode=" << (state.is_night ? "NIGHT" : "DAY")
           << " schedule=" << (within_schedule ? "ACTIVE" : "INACTIVE") << " -> "
           << (dec.toggled
                   ? (dec.target == DayNightAlgo::Mode::Day ? "DAY" : "NIGHT")
@@ -730,15 +461,15 @@ void *thread_entry(void *arg) {
       // Infer initial mode from sensor readings to avoid black screen on boot
       // in dark conditions
       if (total_gain >= 0) {
-        if (total_gain > simple_params.total_gain_night_threshold) {
+        if (total_gain > params.total_gain_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
-        } else if (total_gain < simple_params.total_gain_day_threshold) {
+        } else if (total_gain < params.total_gain_day_threshold) {
           initial = DayNightAlgo::Mode::Day;
         }
       } else if (ev >= 0) {
-        if (ev > simple_params.ev_night_threshold) {
+        if (ev > params.ev_night_threshold) {
           initial = DayNightAlgo::Mode::Night;
-        } else if (ev < simple_params.ev_day_threshold) {
+        } else if (ev < params.ev_day_threshold) {
           initial = DayNightAlgo::Mode::Day;
         }
       }
@@ -763,7 +494,7 @@ void *thread_entry(void *arg) {
       if (commit) {
         apply_mode(initial);
         current = initial;
-        simple_state.is_night = (current == DayNightAlgo::Mode::Night);
+        state.is_night = (current == DayNightAlgo::Mode::Night);
         cfg->daynight.live_mode.store(
             current == DayNightAlgo::Mode::Day ? "day" : "night",
             std::memory_order_relaxed);
@@ -791,7 +522,7 @@ void *thread_entry(void *arg) {
         // clear day reading well below the 300 threshold within 1-2 samples).
         apply_mode(DayNightAlgo::Mode::Night);
         current = DayNightAlgo::Mode::Night;
-        simple_state.is_night = true;
+        state.is_night = true;
         cfg->daynight.live_mode.store("night", std::memory_order_relaxed);
         anti_flap_cooldown = anti_flap_iterations / 2;
         initial_mode_applied = true;
@@ -827,7 +558,7 @@ void *thread_entry(void *arg) {
       } else {
         apply_mode(dec.target);
         current = dec.target;
-        simple_state.is_night = (current == DayNightAlgo::Mode::Night);
+        state.is_night = (current == DayNightAlgo::Mode::Night);
         cfg->daynight.live_mode.store(
             current == DayNightAlgo::Mode::Day ? "day" : "night",
             std::memory_order_relaxed);

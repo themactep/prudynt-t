@@ -546,6 +546,8 @@ int main(int argc, const char *argv[]) {
   sigemptyset(&shutdown_signal_set);
   sigaddset(&shutdown_signal_set, SIGINT);
   sigaddset(&shutdown_signal_set, SIGTERM);
+  sigaddset(&shutdown_signal_set, SIGHUP);
+  sigaddset(&shutdown_signal_set, SIGPIPE);
   int sigmask_ret = pthread_sigmask(SIG_BLOCK, &shutdown_signal_set, nullptr);
   if (sigmask_ret != 0) {
     LOG_ERROR("Failed to block shutdown signals, pthread_sigmask returned "
@@ -684,15 +686,11 @@ int main(int argc, const char *argv[]) {
 
     if (global_restart_video || startup) {
       if (cfg->stream0.enabled) {
-        if (cfg->stream0.video_enabled) {
-          start_video(0);
-        }
+        start_video(0);
       }
 
       if (cfg->stream1.enabled) {
-        if (cfg->stream1.video_enabled) {
-          start_video(1);
-        }
+        start_video(1);
       }
 
       if (cfg->stream2.enabled &&
@@ -716,7 +714,7 @@ int main(int argc, const char *argv[]) {
         sh.has_started.acquire();
       }
 
-      if (cfg->stream0.osd.enabled || cfg->stream1.osd.enabled) {
+      if (cfg->osd.enabled) {
         int ret = pthread_create(&osd_thread, nullptr, OSD::thread_entry, NULL);
         LOG_DEBUG_OR_ERROR(ret, "create osd thread");
       }

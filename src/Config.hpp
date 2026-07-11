@@ -55,25 +55,6 @@ template <typename T> struct ConfigItem {
 
 struct _osd_privacy { // has to be before _osd
   bool enabled;
-  const char *text;
-  const char *position;
-  int rotation;
-  int font_size;
-  int stroke_size;
-  unsigned int fill_color;
-  unsigned int stroke_color;
-  const char *image_path;
-  int image_width;
-  int image_height;
-  int layer;
-  int opacity;
-};
-struct _regions { // has to be before _osd
-  int time;
-  int user;
-  int uptime;
-  int logo;
-  int brightness;
 };
 struct _stream_stats { // has to be before _osd
   uint32_t bps;
@@ -123,10 +104,6 @@ struct _daynight_schedule {
 struct _daynight {
   // User-configurable knobs
   bool enabled{true};
-  int switch_below_percent{15};
-  int switch_above_percent{80};
-  int tolerance_percent{50};
-
   // Hardware control toggles
   _daynight_controls controls;
 
@@ -135,24 +112,13 @@ struct _daynight {
 
   const char *loglevel{nullptr};
 
-  // Optional expert overrides
+  // Expert overrides
   int sample_interval_ms{1000};
-  int ev_night_high{1900000};
-  int ev_day_low_primary{479832};
-  int ev_day_low_secondary{361880};
-  int gb_gain_delta{15};
-  int gb_gain_absolute{145};
-  int night_count_threshold{6};
-  int day_count_threshold{4};
-  int settle_samples_for_gb_record{20};
   int total_gain_night_threshold{3000};
   int total_gain_day_threshold{300};
   const char *script_path{nullptr};
 
   // IQ bin file paths for day/night modes
-  const char *day_bin_path{nullptr};
-  const char *night_bin_path{nullptr};
-
   // Manual mode override (set by user via JSON API)
   std::atomic<const char *> force_mode{nullptr};
 
@@ -169,7 +135,6 @@ struct _daynight {
 };
 struct _general {
   const char *loglevel;
-  int osd_pool_size;
   int imp_polling_timeout_ms;
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
@@ -231,47 +196,12 @@ struct _motion {
   std::array<roi, 52> rois;
 };
 struct _osd {
-  int font_size;
-  int stroke_size;
-  int logo_height;
-  int logo_width;
-  const char *time_position;
-  int time_rotation;
-  const char *usertext_position;
-  int usertext_rotation;
-  const char *uptime_position;
-  int uptime_rotation;
-  const char *logo_position;
-  const char *brightness_position;
-  int logo_transparency;
-  int logo_rotation;
-  int brightness_rotation;
-  int start_delay_ms;
   bool enabled;
-  bool time_enabled;
-  bool usertext_enabled;
-  bool uptime_enabled;
-  bool logo_enabled;
-  bool brightness_enabled;
-  const char *font_path;
-  const char *time_format;
-  const char *uptime_format;
-  const char *usertext_format;
-  const char *brightness_format;
-  const char *logo_path;
-  // Individual color settings for each text element
-  unsigned int time_fill_color;
-  unsigned int time_stroke_color;
-  unsigned int uptime_fill_color;
-  unsigned int uptime_stroke_color;
-  unsigned int usertext_fill_color;
-  unsigned int usertext_stroke_color;
-  unsigned int brightness_fill_color;
-  unsigned int brightness_stroke_color;
-  _regions regions;
   _stream_stats stats;
   std::atomic<int> thread_signal;
-  _osd_privacy privacy;
+  struct {
+    bool enabled;
+  } privacy;
 };
 struct _recorder {
   bool enabled;
@@ -330,10 +260,7 @@ struct _stream {
   int profile;
   int bitrate;
   int rotation;
-  int scale_width;
-  int scale_height;
   bool enabled;
-  bool scale_enabled;
   bool power_saving;
   bool allow_shared;
   const char *mode;
@@ -353,7 +280,6 @@ struct _stream {
   int jpeg_channel;
   int jpeg_idle_fps;
   const char *jpeg_path;
-  _osd osd;
   _stream_stats stats;
   bool audio_enabled;
   bool video_enabled;
@@ -400,6 +326,7 @@ public:
   _rtsp rtsp{};
   _sensor sensor{};
   _image image{};
+  _osd osd{};
   _stream stream0{};
   _stream stream1{};
   _stream stream2{};

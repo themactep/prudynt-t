@@ -201,10 +201,6 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   }
   if (idx < 2) {
     add_boolk("audio_enabled", std::string(root) + ".audio_enabled");
-    add_boolk("video_enabled", std::string(root) + ".video_enabled");
-  }
-  if (idx < 2) {
-    add_boolk("scale_enabled", std::string(root) + ".scale_enabled");
   }
 
   add_strk("rtsp_endpoint", std::string(root) + ".rtsp_endpoint");
@@ -220,8 +216,6 @@ void handle_stream(JsonValue *obj, int idx, std::string &out, bool &sep) {
   add_int("height", std::string(root) + ".height");
   add_int("bitrate", std::string(root) + ".bitrate");
   add_int("rotation", std::string(root) + ".rotation");
-  add_int("scale_width", std::string(root) + ".scale_width");
-  add_int("scale_height", std::string(root) + ".scale_height");
   add_int("profile", std::string(root) + ".profile");
 
   // RC params
@@ -343,21 +337,6 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
       cfg->set<int>("image.running_mode", mode);
       hal::isp::set_running_mode(cfg->image.running_mode);
 
-      // Auto-switch bin file if configured and enabled
-      if (cfg->daynight.controls.binswitch) {
-        if (mode == 0) { // Day mode
-          const char *day_bin = cfg->get<const char *>("daynight.day_bin_path");
-          if (day_bin && day_bin[0] != '\0') {
-            hal::isp::switch_bin(day_bin);
-          }
-        } else if (mode == 1) { // Night mode
-          const char *night_bin =
-              cfg->get<const char *>("daynight.night_bin_path");
-          if (night_bin && night_bin[0] != '\0') {
-            hal::isp::switch_bin(night_bin);
-          }
-        }
-      }
     }
     add_key(out, s2, "running_mode");
     add_num(out, cfg->get<int>("image.running_mode"));
@@ -427,291 +406,63 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
 
 void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
                 bool &wrote) {
-  const char *root = idx == 0 ? "stream0.osd" : "stream1.osd";
+  const char *root = "osd";
 
-  auto add_int = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_NUMBER)
-        cfg->set<int>(path, (int)v->value.number.integer);
-      add_key(sect, s2, key);
-      add_num(sect, cfg->get<int>(path));
-      wrote = true;
-    }
-  };
-  auto add_boolk = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_BOOL)
-        cfg->set<bool>(path, v->value.boolean != 0);
-      add_key(sect, s2, key);
-      add_bool(sect, cfg->get<bool>(path));
-      wrote = true;
-    }
-  };
-  auto add_strs = [&](const char *key, const std::string &path) {
-    if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_STRING && v->value.string)
-        cfg->set<const char *>(path, strdup(v->value.string));
-      add_key(sect, s2, key);
-      add_str(sect, cfg->get<const char *>(path));
-      wrote = true;
-    }
-  };
+  // enabled
+  if (JsonValue *v = obj_get(obj, "enabled")) {
+    if (v->type == JSON_BOOL)
+      cfg->set<bool>(std::string(root) + ".enabled", v->value.boolean != 0);
+    add_key(sect, s2, "enabled");
+    add_bool(sect, cfg->get<bool>(std::string(root) + ".enabled"));
+    wrote = true;
+  }
 
-  auto update_text_block = [&](JsonValue *node, const std::string &name,
-                               bool include_format) {
-    if (!node || node->type != JSON_OBJECT)
-      return;
-    const std::string base = std::string(root) + "." + name + ".";
-    if (JsonValue *enabled = obj_get(node, "enabled")) {
-      if (enabled->type == JSON_BOOL)
-        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
+  // elements — stored in JSON config file directly, not in struct
+  if (JsonValue *elems = obj_get(obj, "elements")) {
+    add_key(sect, s2, "elements");
+    if (elems->type == JSON_NULL) {
+      // query mode: read from config file
+      JsonValue *cfgElems = get_nested_item(cfg->jsonConfig, "osd.elements");
+      char *js = json_to_string(cfgElems ? cfgElems : elems, 0);
+      sect += js ? js : "{}";
+      free(js);
+    } else {
+      // write mode: persist as proper JSON object, not a string
+      del_nested_item(cfg->jsonConfig, "osd.elements");
+      JsonValue *osd = get_nested_item(cfg->jsonConfig, "osd");
+      if (osd && osd->type == JSON_OBJECT) {
+        JsonValue *cloned = clone_json_value(elems);
+        if (cloned)
+          add_to_object(osd, "elements", cloned);
+      }
+      // immediately flush to disk so updateConfig()'s re-read picks it up
+      save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+      global_reload_osd = true;
+
+      char *js = json_to_string(elems, 0);
+      sect += js ? js : "{}";
+      free(js);
     }
-    if (include_format) {
-      if (JsonValue *format = obj_get(node, "format")) {
-        if (format->type == JSON_STRING && format->value.string)
-          cfg->set<const char *>(base + "format", strdup(format->value.string));
+    wrote = true;
+  }
+
+  // privacy
+  if (JsonValue *node = obj_get(obj, "privacy");
+      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    const std::string base = std::string(root) + ".privacy.";
+    if (node->type == JSON_OBJECT) {
+      if (JsonValue *en = obj_get(node, "enabled")) {
+        if (en->type == JSON_BOOL)
+          cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
     }
-    if (JsonValue *position = obj_get(node, "position")) {
-      if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position",
-                               strdup(position->value.string));
-    }
-    if (JsonValue *rotation = obj_get(node, "rotation")) {
-      if (rotation->type == JSON_NUMBER)
-        cfg->set<int>(base + "rotation", (int)rotation->value.number.integer);
-    }
-    if (JsonValue *fill = obj_get(node, "fill_color")) {
-      if (fill->type == JSON_STRING && fill->value.string)
-        cfg->set<unsigned int>(base + "fill_color",
-                               hexColorToUint(fill->value.string));
-    }
-    if (JsonValue *stroke = obj_get(node, "stroke_color")) {
-      if (stroke->type == JSON_STRING && stroke->value.string)
-        cfg->set<unsigned int>(base + "stroke_color",
-                               hexColorToUint(stroke->value.string));
-    }
-  };
-
-  auto emit_text_block = [&](const std::string &name, bool include_format) {
-    add_key(sect, s2, name.c_str(), "{");
-    bool s_txt = false;
-    const std::string base = std::string(root) + "." + name + ".";
-    add_key(sect, s_txt, "enabled");
-    add_bool(sect, cfg->get<bool>(base + "enabled"));
-    if (include_format) {
-      add_key(sect, s_txt, "format");
-      add_str(sect, cfg->get<const char *>(base + "format"));
-    }
-    add_key(sect, s_txt, "position");
-    add_str(sect, cfg->get<const char *>(base + "position"));
-    add_key(sect, s_txt, "rotation");
-    add_num(sect, cfg->get<int>(base + "rotation"));
-    add_key(sect, s_txt, "fill_color");
-    add_hexstr(sect, cfg->get<unsigned int>(base + "fill_color"));
-    add_key(sect, s_txt, "stroke_color");
-    add_hexstr(sect, cfg->get<unsigned int>(base + "stroke_color"));
-    sect += "}";
-  };
-
-  auto handle_text_block = [&](const char *name, bool include_format) {
-    if (JsonValue *node = obj_get(obj, name);
-        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-      if (node->type == JSON_OBJECT)
-        update_text_block(node, name, include_format);
-      emit_text_block(name, include_format);
-      wrote = true;
-    }
-  };
-
-  auto update_logo_block = [&](JsonValue *node) {
-    if (!node || node->type != JSON_OBJECT)
-      return;
-    const std::string base = std::string(root) + ".logo.";
-    if (JsonValue *enabled = obj_get(node, "enabled")) {
-      if (enabled->type == JSON_BOOL)
-        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
-    }
-    if (JsonValue *path = obj_get(node, "path")) {
-      if (path->type == JSON_STRING && path->value.string)
-        cfg->set<const char *>(base + "path", strdup(path->value.string));
-    }
-    if (JsonValue *position = obj_get(node, "position")) {
-      if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position",
-                               strdup(position->value.string));
-    }
-    if (JsonValue *width = obj_get(node, "width")) {
-      if (width->type == JSON_NUMBER)
-        cfg->set<int>(base + "width", (int)width->value.number.integer);
-    }
-    if (JsonValue *height = obj_get(node, "height")) {
-      if (height->type == JSON_NUMBER)
-        cfg->set<int>(base + "height", (int)height->value.number.integer);
-    }
-    if (JsonValue *rotation = obj_get(node, "rotation")) {
-      if (rotation->type == JSON_NUMBER)
-        cfg->set<int>(base + "rotation", (int)rotation->value.number.integer);
-    }
-    if (JsonValue *transparency = obj_get(node, "transparency")) {
-      if (transparency->type == JSON_NUMBER)
-        cfg->set<int>(base + "transparency",
-                      (int)transparency->value.number.integer);
-    }
-  };
-
-  auto emit_logo_block = [&]() {
-    const std::string base = std::string(root) + ".logo.";
-    add_key(sect, s2, "logo", "{");
-    bool s_logo = false;
-    add_key(sect, s_logo, "enabled");
-    add_bool(sect, cfg->get<bool>(base + "enabled"));
-    add_key(sect, s_logo, "path");
-    add_str(sect, cfg->get<const char *>(base + "path"));
-    add_key(sect, s_logo, "position");
-    add_str(sect, cfg->get<const char *>(base + "position"));
-    add_key(sect, s_logo, "width");
-    add_num(sect, cfg->get<int>(base + "width"));
-    add_key(sect, s_logo, "height");
-    add_num(sect, cfg->get<int>(base + "height"));
-    add_key(sect, s_logo, "rotation");
-    add_num(sect, cfg->get<int>(base + "rotation"));
-    add_key(sect, s_logo, "transparency");
-    add_num(sect, cfg->get<int>(base + "transparency"));
-    sect += "}";
-  };
-
-  auto handle_logo_block = [&]() {
-    if (JsonValue *node = obj_get(obj, "logo");
-        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-      if (node->type == JSON_OBJECT)
-        update_logo_block(node);
-      emit_logo_block();
-      wrote = true;
-    }
-  };
-
-  auto update_privacy_block = [&](JsonValue *node) {
-    if (!node || node->type != JSON_OBJECT)
-      return;
-    const std::string base = std::string(root) + ".privacy.";
-    if (JsonValue *enabled = obj_get(node, "enabled")) {
-      if (enabled->type == JSON_BOOL)
-        cfg->set<bool>(base + "enabled", enabled->value.boolean != 0);
-    }
-    if (JsonValue *text = obj_get(node, "text")) {
-      if (text->type == JSON_STRING && text->value.string)
-        cfg->set<const char *>(base + "text", strdup(text->value.string));
-    }
-    if (JsonValue *position = obj_get(node, "position")) {
-      if (position->type == JSON_STRING && position->value.string)
-        cfg->set<const char *>(base + "position",
-                               strdup(position->value.string));
-    }
-    if (JsonValue *rotation = obj_get(node, "rotation")) {
-      if (rotation->type == JSON_NUMBER)
-        cfg->set<int>(base + "rotation", (int)rotation->value.number.integer);
-    }
-    if (JsonValue *font_size = obj_get(node, "font_size")) {
-      if (font_size->type == JSON_NUMBER)
-        cfg->set<int>(base + "font_size", (int)font_size->value.number.integer);
-    }
-    if (JsonValue *stroke_size = obj_get(node, "stroke_size")) {
-      if (stroke_size->type == JSON_NUMBER)
-        cfg->set<int>(base + "stroke_size",
-                      (int)stroke_size->value.number.integer);
-    }
-    if (JsonValue *fill = obj_get(node, "fill_color")) {
-      if (fill->type == JSON_STRING && fill->value.string)
-        cfg->set<unsigned int>(base + "fill_color",
-                               hexColorToUint(fill->value.string));
-    }
-    if (JsonValue *stroke = obj_get(node, "stroke_color")) {
-      if (stroke->type == JSON_STRING && stroke->value.string)
-        cfg->set<unsigned int>(base + "stroke_color",
-                               hexColorToUint(stroke->value.string));
-    }
-    if (JsonValue *image_path = obj_get(node, "image_path")) {
-      if (image_path->type == JSON_STRING && image_path->value.string)
-        cfg->set<const char *>(base + "image_path",
-                               strdup(image_path->value.string));
-    }
-    if (JsonValue *image_width = obj_get(node, "image_width")) {
-      if (image_width->type == JSON_NUMBER)
-        cfg->set<int>(base + "image_width",
-                      (int)image_width->value.number.integer);
-    }
-    if (JsonValue *image_height = obj_get(node, "image_height")) {
-      if (image_height->type == JSON_NUMBER)
-        cfg->set<int>(base + "image_height",
-                      (int)image_height->value.number.integer);
-    }
-    if (JsonValue *layer = obj_get(node, "layer")) {
-      if (layer->type == JSON_NUMBER)
-        cfg->set<int>(base + "layer", (int)layer->value.number.integer);
-    }
-    if (JsonValue *opacity = obj_get(node, "opacity")) {
-      if (opacity->type == JSON_NUMBER)
-        cfg->set<int>(base + "opacity", (int)opacity->value.number.integer);
-    }
-  };
-
-  auto emit_privacy_block = [&]() {
-    const std::string base = std::string(root) + ".privacy.";
     add_key(sect, s2, "privacy", "{");
-    bool s_priv = false;
-    add_key(sect, s_priv, "enabled");
+    bool sp = false;
+    add_key(sect, sp, "enabled");
     add_bool(sect, cfg->get<bool>(base + "enabled"));
-    add_key(sect, s_priv, "text");
-    add_str(sect, cfg->get<const char *>(base + "text"));
-    add_key(sect, s_priv, "position");
-    add_str(sect, cfg->get<const char *>(base + "position"));
-    add_key(sect, s_priv, "rotation");
-    add_num(sect, cfg->get<int>(base + "rotation"));
-    add_key(sect, s_priv, "font_size");
-    add_num(sect, cfg->get<int>(base + "font_size"));
-    add_key(sect, s_priv, "stroke_size");
-    add_num(sect, cfg->get<int>(base + "stroke_size"));
-    add_key(sect, s_priv, "fill_color");
-    add_hexstr(sect, cfg->get<unsigned int>(base + "fill_color"));
-    add_key(sect, s_priv, "stroke_color");
-    add_hexstr(sect, cfg->get<unsigned int>(base + "stroke_color"));
-    add_key(sect, s_priv, "image_path");
-    add_str(sect, cfg->get<const char *>(base + "image_path"));
-    add_key(sect, s_priv, "image_width");
-    add_num(sect, cfg->get<int>(base + "image_width"));
-    add_key(sect, s_priv, "image_height");
-    add_num(sect, cfg->get<int>(base + "image_height"));
-    add_key(sect, s_priv, "layer");
-    add_num(sect, cfg->get<int>(base + "layer"));
-    add_key(sect, s_priv, "opacity");
-    add_num(sect, cfg->get<int>(base + "opacity"));
     sect += "}";
-  };
-
-  auto handle_privacy_block = [&]() {
-    if (JsonValue *node = obj_get(obj, "privacy");
-        node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-      if (node->type == JSON_OBJECT)
-        update_privacy_block(node);
-      emit_privacy_block();
-      wrote = true;
-    }
-  };
-
-  add_int("font_size", std::string(root) + ".font_size");
-  add_int("stroke_size", std::string(root) + ".stroke_size");
-  add_int("start_delay_ms", std::string(root) + ".start_delay_ms");
-
-  add_boolk("enabled", std::string(root) + ".enabled");
-  add_strs("font_path", std::string(root) + ".font_path");
-
-  handle_logo_block();
-  handle_text_block("time", true);
-  handle_text_block("uptime", true);
-  handle_text_block("usertext", true);
-  handle_text_block("brightness", true);
-  handle_privacy_block();
+    wrote = true;
+  }
 }
 
 void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
@@ -1096,8 +847,7 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   add_boolk("enabled", "daynight.enabled");
   add_strk("loglevel", "daynight.loglevel", true);
   add_strk("script_path", "daynight.script_path");
-  add_strk("day_bin_path", "daynight.day_bin_path", true);
-  add_strk("night_bin_path", "daynight.night_bin_path", true);
+
 
   // Controls (hardware toggles)
   if (JsonValue *controls_obj = obj_get(obj, "controls")) {
@@ -1114,7 +864,7 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
           wrote = true;
         }
       };
-      add_ctrl("binswitch", "daynight.controls.binswitch");
+
       add_ctrl("color", "daynight.controls.color");
       add_ctrl("ircut", "daynight.controls.ircut");
       add_ctrl("ir850", "daynight.controls.ir850");
@@ -1126,8 +876,7 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     // Read-only output of current controls
     add_key(out, s2, "controls", "{");
     bool s3 = false;
-    add_key(out, s3, "binswitch");
-    add_bool(out, cfg->daynight.controls.binswitch);
+
     add_key(out, s3, "color");
     add_bool(out, cfg->daynight.controls.color);
     add_key(out, s3, "ircut");
@@ -1189,9 +938,6 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   }
 
   // Percentage thresholds (simple algorithm)
-  add_int("switch_below_percent", "daynight.switch_below_percent");
-  add_int("switch_above_percent", "daynight.switch_above_percent");
-  add_int("tolerance_percent", "daynight.tolerance_percent");
 
   // Total gain thresholds (simple algorithm)
   add_int("total_gain_night_threshold", "daynight.total_gain_night_threshold");
@@ -1199,17 +945,8 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
 
   // Algorithm parameters
   add_int("sample_interval_ms", "daynight.sample_interval_ms");
-  add_int("night_count_threshold", "daynight.night_count_threshold");
-  add_int("day_count_threshold", "daynight.day_count_threshold");
 
   // Expert/advanced parameters (legacy algorithm)
-  add_int("ev_night_high", "daynight.ev_night_high");
-  add_int("ev_day_low_primary", "daynight.ev_day_low_primary");
-  add_int("ev_day_low_secondary", "daynight.ev_day_low_secondary");
-  add_int("gb_gain_delta", "daynight.gb_gain_delta");
-  add_int("gb_gain_absolute", "daynight.gb_gain_absolute");
-  add_int("settle_samples_for_gb_record",
-          "daynight.settle_samples_for_gb_record");
 
   // Manual mode override
   if (JsonValue *v = obj_get(obj, "force_mode")) {
@@ -1786,6 +1523,9 @@ bool process_json(const std::string &in, std::string &out) {
       handle_stream(v, 2, out, sep);
     } else if (!strcmp(k, "image") && v && v->type == JSON_OBJECT) {
       handle_image(v, out, sep);
+    } else if (!strcmp(k, "osd") && v && v->type == JSON_OBJECT) {
+      bool dummy_wrote = false;
+      handle_osd(v, 0, out, sep, dummy_wrote);
     } else if (!strcmp(k, "general") && v && v->type == JSON_OBJECT) {
       handle_general(v, out, sep);
     } else if (!strcmp(k, "rtsp") && v && v->type == JSON_OBJECT) {

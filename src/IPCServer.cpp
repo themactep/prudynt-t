@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include "SEIWriter.hpp"
 #include <unistd.h>
 #include <vector>
 
@@ -334,6 +335,23 @@ int IPCServer::handle_http_client(int fd) {
     }
   };
 
+  if (method == "GET" && path == "/api/v1/osd-sei") {
+    std::string sei_json;
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS && sei_json.empty(); ++ch) {
+      auto vs = global_video[ch];
+      if (vs && vs->imp_encoder && vs->imp_encoder->osd) {
+        sei_json = vs->imp_encoder->osd->getSEIJson();
+      }
+    }
+    if (sei_json.empty()) {
+      send_response(200, "application/json", "{}");
+    } else {
+      send_response(200, "application/json", sei_json);
+    }
+    ::close(fd);
+    return 0;
+  }
+
   if (method != "POST" || path != "/api/v1/config") {
     send_response(404, "text/plain", "not found\n");
     ::close(fd);
@@ -518,6 +536,14 @@ int IPCServer::handle_client(int fd) {
       return 0;
     }
 
+    // Limit concurrent MJPEG connections – close silently so the
+    // CGI pipeline (prudyntctl → uhttpd → browser) tears down cleanly
+    int current = active_mjpeg_clients_.fetch_add(1);
+    if (current >= kMaxMjpegClients) {
+      active_mjpeg_clients_.fetch_sub(1);
+      return 0;
+    }
+
     // Quantize w/h to multiples of 16 and cap to source size
     if (w > 0 && h > 0) {
       auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width
@@ -561,8 +587,13 @@ int IPCServer::handle_client(int fd) {
       global_jpeg[ch]->req_fps = fps;
     }
 
-    bool needs_reconfig = size_change || fps_change;
-    if (needs_reconfig) {
+    // Only trigger encoder reconfig on SIZE changes.  FPS changes are handled
+    // by the JPEG worker without deinit/init (it just adjusts polling rate).
+    // Reconfiguring the JPEG encoder (deinit/init) steals ISP frames from the
+    // H.264 encoder and causes decode errors on the RTSP stream.
+    // We still set reconfig=true for fps changes so the worker picks up the
+    // new fps value, but the worker only reinit on size changes.
+    if (size_change) {
       global_jpeg[ch]->reconfig = true;
       global_jpeg[ch]->request();
 
@@ -572,6 +603,11 @@ int IPCServer::handle_client(int fd) {
         usleep(10 * 1000);
         wait_ms -= 10;
       }
+    } else if (fps_change) {
+      // Set reconfig flag so worker picks up the fps change, but don't wait
+      // for reinit since there's no size change
+      global_jpeg[ch]->reconfig = true;
+      global_jpeg[ch]->request();
     } else {
       global_jpeg[ch]->request();
     }
@@ -604,6 +640,8 @@ int IPCServer::handle_client(int fd) {
       global_jpeg[ch]->request();
       // Pace output
       int usec = 1000000 / (fps > 0 ? fps : orig_fps);
+
+      active_mjpeg_clients_.fetch_sub(1);
       usleep(usec);
     }
 

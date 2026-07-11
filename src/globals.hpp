@@ -11,7 +11,9 @@
 #ifdef PREBUFFER_ENABLED
 #include "PreTriggerBuffer.hpp"
 #endif
-#include "liveMedia.hh"
+
+// Forward-declare live555 types (used only by legacy RTSP audio path)
+class StreamReplicator;
 
 #include <algorithm>
 #include <array>
@@ -95,7 +97,6 @@ struct BackchannelFrame {
   bool isShutdownSentinel{false};
 };
 
-class VideoPrivacyMask;
 
 struct VideoTapEntry {
   uint64_t id{0};
@@ -246,8 +247,6 @@ struct video_stream {
   bool have_pps;
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
-  std::mutex privacy_mutex;
-  std::shared_ptr<VideoPrivacyMask> privacy_mask;
   std::atomic<bool> privacy_requested{false};
 
 #ifdef PREBUFFER_ENABLED
@@ -311,6 +310,7 @@ extern bool global_restart_video;
 extern bool global_restart_audio;
 
 extern bool global_osd_thread_signal;
+extern bool global_reload_osd;
 extern bool global_main_thread_signal;
 extern bool global_motion_thread_signal;
 extern std::atomic<char> global_rtsp_thread_signal;
@@ -363,6 +363,47 @@ private:
 };
 
 extern DayNightHistoryBuffer global_daynight_history;
+
+// NALU buffer pool — avoids per-NAL heap allocations in the hot video path.
+// Buffers are reused across frames: borrow() returns an empty vector with
+// pre-allocated capacity, return() puts it back for the next borrow().
+class NaluPool {
+public:
+  explicit NaluPool(size_t maxSz = 64) : maxPoolSize(maxSz) {}
+
+  std::vector<uint8_t> borrow(size_t hint = 0) {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (!pool.empty()) {
+      auto v = std::move(pool.back());
+      pool.pop_back();
+      if (hint > 0 && v.capacity() < hint)
+        v.reserve(hint);
+      return v;
+    }
+    std::vector<uint8_t> v;
+    if (hint > 0)
+      v.reserve(hint);
+    return v;
+  }
+
+  void returnBuf(std::vector<uint8_t> &&v) {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (pool.size() < maxPoolSize) {
+      v.clear();
+      pool.push_back(std::move(v));
+    }
+  }
+
+  size_t size() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return pool.size();
+  }
+
+private:
+  mutable std::mutex mtx;
+  std::vector<std::vector<uint8_t>> pool;
+  size_t maxPoolSize;
+};
 
 // When true, video workers should keep polling/grabbing frames even if
 // there is no RTSP/WS client attached. This is used by the MP4 recorder

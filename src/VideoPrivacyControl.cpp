@@ -1,7 +1,6 @@
 #include "VideoPrivacyControl.hpp"
 
 #include "Logger.hpp"
-#include "VideoPrivacyMask.hpp"
 #include "globals.hpp"
 
 #include <algorithm>
@@ -104,60 +103,18 @@ void ensureFifo() {
 }
 
 void applyPrivacyToAllChannels(bool enabled) {
+  // Privacy lite: no OSD overlay — just set flags.
+  // Stream throttling is handled externally by privacy-plugin-lite.
+  for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+    if (global_video[ch]) {
+      global_video[ch]->privacy_requested.store(enabled,
+                                                std::memory_order_release);
+    }
+  }
   if (enabled) {
-    // When enabling, show the mask on all channels first
-    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
-      auto stream = global_video[ch];
-      if (!stream) {
-        continue;
-      }
-      std::shared_ptr<VideoPrivacyMask> mask;
-      {
-        std::lock_guard<std::mutex> lock(stream->privacy_mutex);
-        mask = stream->privacy_mask;
-      }
-      if (mask && mask->isReady()) {
-        if (!mask->setEnabled(true)) {
-          LOG_WARN("VideoPrivacyControl: failed to enable privacy on channel "
-                   << ch);
-        }
-      }
-    }
-    // Then set all flags
-    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
-      if (global_video[ch]) {
-        global_video[ch]->privacy_requested.store(true,
-                                                  std::memory_order_release);
-      }
-    }
     write_privacy_state_file();
     LOG_INFO("VideoPrivacyControl: privacy enabled on all channels");
   } else {
-    // When disabling, clear flags first
-    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
-      if (global_video[ch]) {
-        global_video[ch]->privacy_requested.store(false,
-                                                  std::memory_order_release);
-      }
-    }
-    // Then hide the masks
-    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
-      auto stream = global_video[ch];
-      if (!stream) {
-        continue;
-      }
-      std::shared_ptr<VideoPrivacyMask> mask;
-      {
-        std::lock_guard<std::mutex> lock(stream->privacy_mutex);
-        mask = stream->privacy_mask;
-      }
-      if (mask && mask->isReady()) {
-        if (!mask->setEnabled(false)) {
-          LOG_WARN("VideoPrivacyControl: failed to disable privacy on channel "
-                   << ch);
-        }
-      }
-    }
     remove_privacy_state_file();
     LOG_INFO("VideoPrivacyControl: privacy disabled on all channels");
   }

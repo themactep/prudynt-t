@@ -92,17 +92,17 @@ enum {
 };
 
 static const char *const root_keys[] = {
-    "general", "rtsp",    "sensor", "image", "audio", "stream0",
-    "stream1", "stream2", "motion", "info",  "action"};
+    "general", "rtsp",    "sensor", "image", "audio",
+    "osd",     "stream0", "stream1", "stream2", "motion",
+    "info",    "action"};
 
 /* GENERAL */
 enum {
   PNT_GENERAL_LOGLEVEL = 1,
-  PNT_GENERAL_OSD_POOL_SIZE,
   PNT_GENERAL_IMP_POLLING_TIMEOUT
 };
 
-static const char *const general_keys[] = {"loglevel", "osd_pool_size",
+static const char *const general_keys[] = {"loglevel",
                                            "imp_polling_timeout"};
 
 /* RTSP */
@@ -226,7 +226,6 @@ static const char *const audio_keys[] = {"input_enabled",
 enum {
   PNT_STREAM_ENABLED = 1,
   PNT_STREAM_AUDIO_ENABLED,
-  PNT_STREAM_SCALE_ENABLED,
   PNT_STREAM_RTSP_ENDPOINT,
   PNT_STREAM_RTSP_INFO,
   PNT_STREAM_FORMAT,
@@ -239,21 +238,18 @@ enum {
   PNT_STREAM_HEIGHT,
   PNT_STREAM_BITRATE,
   PNT_STREAM_ROTATION,
-  PNT_STREAM_SCALE_WIDTH,
-  PNT_STREAM_SCALE_HEIGHT,
   PNT_STREAM_PROFILE,
   PNT_STREAM_STATS,
   PNT_STREAM_OSD
 };
 
 static const char *const stream_keys[] = {
-    "enabled",       "audio_enabled", "video_enabled",
-    "scale_enabled", "rtsp_endpoint", "rtsp_info",
+    "enabled",       "audio_enabled",
+    "rtsp_endpoint", "rtsp_info",
     "format",        "mode",          "gop",
     "max_gop",       "fps",           "buffers",
     "width",         "height",        "bitrate",
-    "rotation",      "scale_width",   "scale_height",
-    "profile",       "stats",         "osd"};
+    "rotation",      "profile",       "stats"};
 
 /* STREAM2 (JPEG) */
 enum {
@@ -273,94 +269,13 @@ static const char *const stream2_keys[] = {"jpeg_enabled", "jpeg_path",
 
 /* OSD */
 enum {
-  // Transparency (0..100)
-  PNT_OSD_TIME_TRANSPARENCY = 1,
-  PNT_OSD_USERTEXT_TRANSPARENCY,
-  PNT_OSD_UPTIME_TRANSPARENCY,
-  PNT_OSD_LOGO_TRANSPARENCY,
-
-  // Integers
-  PNT_OSD_FONT_SIZE,
-  PNT_OSD_STROKE_SIZE,
-  PNT_OSD_LOGO_HEIGHT,
-  PNT_OSD_LOGO_WIDTH,
-  PNT_OSD_TIME_POSITION, // string
-  PNT_OSD_TIME_ROTATION,
-  PNT_OSD_USERTEXT_POSITION, // string
-  PNT_OSD_USERTEXT_ROTATION,
-  PNT_OSD_UPTIME_POSITION, // string
-  PNT_OSD_UPTIME_ROTATION,
-
-  PNT_OSD_LOGO_POSITION, // string
-  PNT_OSD_LOGO_ROTATION,
-
-  // Bools
-  PNT_OSD_ENABLED,
-  PNT_OSD_TIME_ENABLED,
-  PNT_OSD_USERTEXT_ENABLED,
-  PNT_OSD_UPTIME_ENABLED,
-  PNT_OSD_LOGO_ENABLED,
-
-  // Strings
-  PNT_OSD_FONT_PATH,
-  PNT_OSD_TIME_FORMAT,
-  PNT_OSD_UPTIME_FORMAT,
-  PNT_OSD_USERTEXT_FORMAT,
-  PNT_OSD_LOGO_PATH,
-
-  // Per-element colors (unsigned int hex)
-  PNT_OSD_TIME_FILL_COLOR,
-  PNT_OSD_TIME_STROKE_COLOR,
-  PNT_OSD_UPTIME_FILL_COLOR,
-  PNT_OSD_UPTIME_STROKE_COLOR,
-  PNT_OSD_USERTEXT_FILL_COLOR,
-  PNT_OSD_USERTEXT_STROKE_COLOR,
+  PNT_OSD_ENABLED = 1,
+  PNT_OSD_ELEMENTS,
 };
 
 static const char *const osd_keys[] = {
-    // Transparency
-    "time_transparency",
-    "usertext_transparency",
-    "uptime_transparency",
-    "logo_transparency",
-
-    // Integers and rotations
-    "font_size",
-    "stroke_size",
-    "logo_height",
-    "logo_width",
-
-    // Positions (strings)
-    "time_position",
-    "time_rotation",
-    "usertext_position",
-    "usertext_rotation",
-    "uptime_position",
-    "uptime_rotation",
-    "logo_position",
-    "logo_rotation",
-
-    // Bools
     "enabled",
-    "time_enabled",
-    "usertext_enabled",
-    "uptime_enabled",
-    "logo_enabled",
-
-    // Strings
-    "font_path",
-    "time_format",
-    "uptime_format",
-    "usertext_format",
-    "logo_path",
-
-    // Per-element colors
-    "time_fill_color",
-    "time_stroke_color",
-    "uptime_fill_color",
-    "uptime_stroke_color",
-    "usertext_fill_color",
-    "usertext_stroke_color",
+    "elements",
 };
 
 /* MOTION */
@@ -685,8 +600,7 @@ signed char WS::general_callback(struct lejp_ctx *ctx, char reason) {
 
     u_ctx->flag |= PNT_FLAG_SEPARATOR;
 
-    if (ctx->path_match >= PNT_GENERAL_OSD_POOL_SIZE &&
-        ctx->path_match <= PNT_GENERAL_IMP_POLLING_TIMEOUT) { // integer values
+    if (ctx->path_match == PNT_GENERAL_IMP_POLLING_TIMEOUT) { // integer value
       if (reason == LEJPCB_VAL_NUM_INT)
         cfg->set<int>(u_ctx->path, atoi(ctx->buf));
       add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
@@ -1290,7 +1204,7 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
         cfg->set<int>(u_ctx->path, atoi(ctx->buf));
       add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
     } else if (ctx->path_match >= PNT_STREAM_ENABLED &&
-               ctx->path_match <= PNT_STREAM_SCALE_ENABLED) { // bool values
+               ctx->path_match <= PNT_STREAM_AUDIO_ENABLED) { // bool values
       if (reason == LEJPCB_VAL_TRUE) {
         cfg->set<bool>(u_ctx->path, true);
       } else if (reason == LEJPCB_VAL_FALSE) {
@@ -1308,14 +1222,6 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
         if (reason == LEJPCB_VAL_STR_END)
           cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
         add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-        break;
-      case PNT_STREAM_SCALE_ENABLED:
-        if (reason == LEJPCB_VAL_TRUE) {
-          cfg->set<bool>(u_ctx->path, true);
-        } else if (reason == LEJPCB_VAL_FALSE) {
-          cfg->set<bool>(u_ctx->path, false);
-        }
-        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
         break;
       case PNT_STREAM_FORMAT:
         if (reason == LEJPCB_VAL_STR_END)
@@ -1347,15 +1253,6 @@ signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
         break;
       };
     }
-  } else if (reason == LECPCB_PAIR_NAME && ctx->path_match == PNT_STREAM_OSD) {
-    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
-                 stream_keys[ctx->path_match - 1], "{");
-
-    // remove separator for sub section
-    u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-
-    lejp_parser_push(ctx, u_ctx, osd_keys, LWS_ARRAY_SIZE(osd_keys),
-                     osd_callback);
   } else if (reason == LEJPCB_OBJECT_END) {
     u_ctx->message.append("}");
     lejp_parser_pop(ctx);
@@ -1449,111 +1346,15 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
 
     u_ctx->flag |= PNT_FLAG_SEPARATOR;
 
-    if (ctx->path_match >= PNT_OSD_TIME_TRANSPARENCY &&
-        ctx->path_match <= PNT_OSD_LOGO_TRANSPARENCY) {
-      int hnd = -1;
-      if (reason == LEJPCB_VAL_NUM_INT) {
-        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
-          _regions regions{-1, -1, -1, -1, -1};
-
-          if (u_ctx->value == 0) {
-            regions = cfg->stream0.osd.regions;
-          } else if (u_ctx->value == 1) {
-            regions = cfg->stream1.osd.regions;
-          }
-
-          switch (ctx->path_match) {
-          case PNT_OSD_TIME_TRANSPARENCY:
-            hnd = regions.time;
-            break;
-          case PNT_OSD_USERTEXT_TRANSPARENCY:
-            hnd = regions.user;
-            break;
-          case PNT_OSD_UPTIME_TRANSPARENCY:
-            hnd = regions.uptime;
-            break;
-          case PNT_OSD_LOGO_TRANSPARENCY:
-            hnd = regions.logo;
-            break;
-          }
-
-          if (hnd >= 0) {
-            IMPOSDGrpRgnAttr grpRgnAttr;
-            int ret = IMP_OSD_GetGrpRgnAttr(hnd, u_ctx->value, &grpRgnAttr);
-            if (ret == 0) {
-              memset(&grpRgnAttr, 0, sizeof(IMPOSDGrpRgnAttr));
-              grpRgnAttr.show = 1;
-              grpRgnAttr.gAlphaEn = 1;
-              grpRgnAttr.fgAlhpa = cfg->get<int>(u_ctx->path);
-              IMP_OSD_SetGrpRgnAttr(hnd, u_ctx->value, &grpRgnAttr);
-            }
-          }
-        };
-      }
-      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-    }
-    // integer (explicit set)
-    else if (ctx->path_match == PNT_OSD_FONT_SIZE ||
-             ctx->path_match == PNT_OSD_STROKE_SIZE ||
-             ctx->path_match == PNT_OSD_LOGO_HEIGHT ||
-             ctx->path_match == PNT_OSD_LOGO_WIDTH ||
-             ctx->path_match == PNT_OSD_TIME_ROTATION ||
-             ctx->path_match == PNT_OSD_USERTEXT_ROTATION ||
-             ctx->path_match == PNT_OSD_UPTIME_ROTATION ||
-             ctx->path_match == PNT_OSD_LOGO_ROTATION) {
-      if (reason == LEJPCB_VAL_NUM_INT) {
-        cfg->set<int>(u_ctx->path, atoi(ctx->buf));
-      }
-      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-    }
-    // position strings (x,y)
-    else if (ctx->path_match == PNT_OSD_TIME_POSITION ||
-             ctx->path_match == PNT_OSD_USERTEXT_POSITION ||
-             ctx->path_match == PNT_OSD_UPTIME_POSITION ||
-             ctx->path_match == PNT_OSD_LOGO_POSITION) {
-      if (reason == LEJPCB_VAL_STR_END) {
-        cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
-      }
-      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-    }
-    // bool
-    else if (ctx->path_match >= PNT_OSD_ENABLED &&
-             ctx->path_match <= PNT_OSD_LOGO_ENABLED) {
-      if (reason == LEJPCB_VAL_TRUE) {
+    if (ctx->path_match == PNT_OSD_ENABLED) {
+      if (reason == LEJPCB_VAL_TRUE)
         cfg->set<bool>(u_ctx->path, true);
-      } else if (reason == LEJPCB_VAL_FALSE) {
+      else if (reason == LEJPCB_VAL_FALSE)
         cfg->set<bool>(u_ctx->path, false);
-      }
       add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
-    }
-    // const char * (paths/formats)
-    else if (ctx->path_match >= PNT_OSD_FONT_PATH &&
-             ctx->path_match <= PNT_OSD_LOGO_PATH) {
-      if (reason == LEJPCB_VAL_STR_END) {
-        cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
-      }
-      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
-    }
-    // unsigned int colors (hex)
-    else if (ctx->path_match >= PNT_OSD_TIME_FILL_COLOR &&
-             ctx->path_match <= PNT_OSD_USERTEXT_STROKE_COLOR) {
-      if (reason == LEJPCB_VAL_STR_END) {
-        cfg->set<unsigned int>(u_ctx->path,
-                               (unsigned int)strtoll(ctx->buf, NULL, 16));
-      }
-      add_json_uint(u_ctx->message, cfg->get<unsigned int>(u_ctx->path));
     } else {
-      switch (ctx->path_match) {
-      case PNT_OSD_LOGO_ROTATION:
-        // encoder restart required
-        if (reason == LEJPCB_VAL_NUM_INT)
-          cfg->set<int>(u_ctx->path, atoi(ctx->buf));
-        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-        break;
-      default:
-        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
-        break;
-      };
+      // elements — pass through as raw JSON
+      add_json_str(u_ctx->message, "{}");
     }
   } else if (reason == LEJPCB_OBJECT_END) {
     u_ctx->flag |= PNT_FLAG_SEPARATOR;

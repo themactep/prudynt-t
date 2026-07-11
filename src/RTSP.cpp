@@ -1,245 +1,156 @@
 #include "RTSP.hpp"
-#include "BackchannelServerMediaSubsession.hpp"
-#include "IMPBackchannel.hpp"
-#include <chrono>
+#include "simple-rtsp/RtspServer.hpp"
+#include "simple-rtsp/RtspTypes.hpp"
+#include "Config.hpp"
+#include "Logger.hpp"
+#include "globals.hpp"
+#include <cstring>
 
 #undef MODULE
 #define MODULE "RTSP"
 
-namespace {
-
-bool wait_for_parameter_sets(int chnNr, bool is_h265, H264NALUnit &sps_out,
-                             H264NALUnit &pps_out, H264NALUnit *&vps_out) {
-  using namespace std::chrono_literals;
-
-  auto *video = global_video[chnNr].get();
-  if (!video) {
-    LOG_ERROR("wait_for_parameter_sets: missing video state for channel "
-              << chnNr);
-    return false;
-  }
-
-  const auto deadline = std::chrono::steady_clock::now() + 10s;
-  auto next_idr_retry = std::chrono::steady_clock::now();
-  unsigned wait_timeout_count = 0;
-
-  while (true) {
-    {
-      std::lock_guard<std::mutex> lock(video->codec_config_mutex);
-      if (video->have_sps && video->have_pps && (!is_h265 || video->have_vps)) {
-        sps_out.data = video->latest_sps;
-        pps_out.data = video->latest_pps;
-        if (is_h265) {
-          if (!vps_out) {
-            vps_out = new H264NALUnit;
-          }
-          vps_out->data = video->latest_vps;
-        }
-        return true;
-      }
-    }
-
-    auto now = std::chrono::steady_clock::now();
-    if (now >= next_idr_retry) {
-      IMP_Encoder_RequestIDR(chnNr);
-      next_idr_retry = now + 250ms;
-    }
-
-    if ((++wait_timeout_count % 4) == 0) {
-      LOG_WARN("Still waiting for bootstrap parameter sets on stream "
-               << chnNr << ", retrying IDR");
-    }
-
-    if (now >= deadline) {
-      LOG_ERROR("Timed out waiting for SPS/PPS for stream " << chnNr);
-      return false;
-    }
-
-    usleep(50 * 1000);
-  }
+RTSP::RTSP()
+    : server_(std::make_unique<simple_rtsp::RtspServer>()) {
 }
 
-} // namespace
+RTSP::~RTSP() {
+    server_->stop();
+}
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
-  LOG_DEBUG("identify stream " << chnNr);
+    // ── Video stream ───────────────────────────────────────────────────
+    simple_rtsp::VideoStreamConfig vcfg;
+    vcfg.name     = std::to_string(chnNr);
+    vcfg.endpoint = stream.rtsp_endpoint;
+    vcfg.codec    = stream.format ? stream.format : "H264";
+    vcfg.width    = stream.width;
+    vcfg.height   = stream.height;
+    vcfg.fps      = stream.fps > 0 ? stream.fps : 30;
+    vcfg.payloadType = 96;
+    vcfg.clockRate   = 90000;
 
-  ServerMediaSession *sms = ServerMediaSession::createNew(
-      *env, stream.rtsp_endpoint, stream.rtsp_info, cfg->rtsp.name);
-
-  // Add video subsession if enabled
-  if (stream.video_enabled) {
-    H264NALUnit sps;
-    H264NALUnit pps;
-    H264NALUnit *vps = nullptr;
-    bool have_pps = false;
-    bool have_sps = false;
-    bool have_vps = false;
-    bool is_h265 = strcmp(stream.format, "H265") == 0 ? true : false;
-
-    global_video[chnNr]->bootstrap_requested.store(true,
-                                                   std::memory_order_relaxed);
-    global_video[chnNr]->should_grab_frames.notify_one();
-    if (wait_for_parameter_sets(chnNr, is_h265, sps, pps, vps)) {
-      have_sps = !sps.data.empty();
-      have_pps = !pps.data.empty();
-      have_vps = (vps != nullptr && !vps->data.empty());
-    }
-    global_video[chnNr]->bootstrap_requested.store(false,
-                                                   std::memory_order_relaxed);
-    global_video[chnNr]->should_grab_frames.notify_one();
-
-    if (!have_sps || !have_pps || (is_h265 && !have_vps)) {
-      LOG_ERROR("Could not obtain SPS/PPS for stream "
-                << chnNr << " — skipping subsession");
-      if (vps) {
-        delete vps;
-      }
-      return;
+    // Copy current SPS/PPS/VPS from encoder state
+    if (chnNr >= 0 && chnNr < NUM_VIDEO_CHANNELS && global_video[chnNr]) {
+        auto &vs = global_video[chnNr];
+        std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
+        if (vs->have_sps) vcfg.sps = vs->latest_sps;
+        if (vs->have_pps) vcfg.pps = vs->latest_pps;
+        if (vs->have_vps) vcfg.vps = vs->latest_vps;
+        vcfg.haveCodecConfig = vs->have_sps && vs->have_pps;
     }
 
-    LOG_DEBUG("Got necessary NAL Units.");
+    // Bootstrap SPS/PPS if not yet available
+    if (!vcfg.haveCodecConfig && chnNr < NUM_VIDEO_CHANNELS && global_video[chnNr]) {
+        // Request IDR to get fresh codec config
+        global_video[chnNr]->bootstrap_requested.store(true,
+            std::memory_order_relaxed);
+        global_video[chnNr]->should_grab_frames.notify_one();
+        IMP_Encoder_RequestIDR(chnNr);
 
-    IMPServerMediaSubsession *sub = IMPServerMediaSubsession::createNew(
-        *env, (is_h265 ? vps : nullptr), sps, pps, chnNr // Conditional VPS
-    );
-    if (vps) {
-      delete vps;
-      vps = nullptr;
+        // Wait up to 5 seconds for SPS/PPS
+        for (int attempt = 0; attempt < 50; attempt++) {
+            usleep(100000); // 100ms
+            std::lock_guard<std::mutex> lock(
+                global_video[chnNr]->codec_config_mutex);
+            if (global_video[chnNr]->have_sps &&
+                global_video[chnNr]->have_pps) {
+                vcfg.sps = global_video[chnNr]->latest_sps;
+                vcfg.pps = global_video[chnNr]->latest_pps;
+                if (global_video[chnNr]->have_vps)
+                    vcfg.vps = global_video[chnNr]->latest_vps;
+                vcfg.haveCodecConfig = true;
+                break;
+            }
+        }
+        global_video[chnNr]->bootstrap_requested.store(false,
+            std::memory_order_relaxed);
+        global_video[chnNr]->should_grab_frames.notify_one();
     }
-    sms->addSubsession(sub);
-    LOG_INFO("Video stream " << chnNr << " added to session");
-  }
 
-  if (cfg->audio.input_enabled && stream.audio_enabled) {
-    IMPAudioServerMediaSubsession *audioSub =
-        IMPAudioServerMediaSubsession::createNew(*env, 0);
-    sms->addSubsession(audioSub);
-    LOG_INFO("Audio stream " << chnNr << " added to session");
-  }
+    server_->addVideoStream(chnNr, vcfg, global_video[chnNr]);
 
-  // ONVIF backchannel: add backchannel subsessions to the primary stream (ch0)
-  // with a require tag so they only appear in the SDP when the client sends
-  // "Require: www.onvif.org/ver20/backchannel" in the DESCRIBE request.
-  // Per ONVIF Streaming Spec Section 5.3, backchannel tracks must be part of
-  // the main media session, not a separate endpoint.
-  if (chnNr == 0 && cfg->audio.output_enabled) {
-#define ADD_BC_SUBSESSION_CH0(EnumName, NameString, PayloadType, Frequency,    \
-                              MimeType)                                        \
-  {                                                                            \
-    BackchannelServerMediaSubsession *bcSub =                                  \
-        BackchannelServerMediaSubsession::createNew(                           \
-            *env, IMPBackchannelFormat::EnumName);                             \
-    bcSub->setRequireTag("www.onvif.org/ver20/backchannel");                   \
-    sms->addSubsession(bcSub);                                                 \
-    LOG_INFO("Backchannel ("                                                   \
-             << NameString                                                     \
-             << ") added to ch0 (conditional on Require header)");             \
-  }
-
-    X_FOREACH_BACKCHANNEL_FORMAT(ADD_BC_SUBSESSION_CH0)
-#undef ADD_BC_SUBSESSION_CH0
-  }
-
-  rtspServer->addServerMediaSession(sms);
-
-  char *url = rtspServer->rtspURL(sms);
-  LOG_INFO("stream " << chnNr << " available at: " << url);
+    // ── Audio stream ──────────────────────────────────────────────────
+    if (!audioConfigured_ && cfg->audio.input_enabled && stream.audio_enabled
+        && global_audio[0] && global_audio[0]->imp_audio) {
+        simple_rtsp::AudioStreamConfig acfg;
+        int hwRate = global_audio[0]->imp_audio->sample_rate;
+        acfg.sampleRate = (hwRate > 0) ? hwRate : 8000;
+        acfg.channels = 1;
+        LOG_INFO("Audio hw sample_rate=" << hwRate << " -> using " << acfg.sampleRate);
+        switch (global_audio[0]->imp_audio->format) {
+        case IMPAudioFormat::G711U:
+            acfg.codec = "PCMU";
+            acfg.payloadType = 0;
+            break;
+        case IMPAudioFormat::G711A:
+            acfg.codec = "PCMA";
+            acfg.payloadType = 8;
+            break;
+        case IMPAudioFormat::AAC:
+            acfg.codec = "AAC";
+            acfg.payloadType = 97;
+            break;
+        case IMPAudioFormat::OPUS:
+            acfg.codec = "OPUS";
+            acfg.payloadType = 97;
+            break;
+        case IMPAudioFormat::PCM:
+        default:
+            // 16-bit LE PCM → L16 (network byte order requires swap)
+            acfg.codec = "L16";
+            acfg.payloadType = 97;
+            break;
+        }
+        server_->addAudioStream(0, acfg, global_audio[0]);
+        audioConfigured_ = true;
+        LOG_INFO("Audio: " << acfg.codec << " " << acfg.sampleRate << "Hz pt="
+                 << static_cast<int>(acfg.payloadType));
+    }
 }
 
 void RTSP::start() {
-  scheduler = BasicTaskScheduler::createNew();
-  env = BasicUsageEnvironment::createNew(*scheduler);
+    // ── Configure server ───────────────────────────────────────────────
+    server_->setStreamName(cfg->rtsp.name);
+    server_->setStreamInfo("stream0");
+    server_->setSendBufferSize(cfg->rtsp.send_buffer_size);
+    server_->setSendTimeout(cfg->rtsp.send_timeout_s);
 
-  if (cfg->rtsp.auth_required) {
-    UserAuthenticationDatabase *auth = new UserAuthenticationDatabase;
-    auth->addUserRecord(cfg->rtsp.username, cfg->rtsp.password);
-    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, auth,
-                                       cfg->rtsp.session_reclaim);
-  } else {
-    rtspServer = RTSPServer::createNew(*env, cfg->rtsp.port, nullptr,
-                                       cfg->rtsp.session_reclaim);
-  }
-  if (rtspServer == NULL) {
-    LOG_ERROR("Failed to create RTSP server: " << env->getResultMsg() << "\n");
-    return;
-  }
-  OutPacketBuffer::maxSize = cfg->rtsp.out_buffer_size;
-
-#if defined(USE_AUDIO_STREAM_REPLICATOR)
-  if (cfg->audio.input_enabled) {
-    audioSource = IMPDeviceSource<AudioFrame, audio_stream>::createNew(
-        *env, 0, global_audio[audioChn], "audio");
-
-    if (global_audio[audioChn]->imp_audio->format == IMPAudioFormat::PCM)
-      audioSource =
-          (IMPDeviceSource<AudioFrame, audio_stream> *)EndianSwap16::createNew(
-              *env, audioSource);
-
-    global_audio[audioChn]->streamReplicator =
-        StreamReplicator::createNew(*env, audioSource, false);
-
-    // Keep the source object alive for the replicator, but do not start audio
-    // capture until an actual RTSP client connects and requests frames.
-    global_audio[audioChn]->hasDataCallback = false;
-    global_audio[audioChn]->rtsp_client_count.store(0,
-                                                    std::memory_order_relaxed);
-  }
-#endif
-
-  if (cfg->stream0.enabled) {
-    addSubsession(0, cfg->stream0);
-  }
-
-  if (cfg->stream1.enabled) {
-    addSubsession(1, cfg->stream1);
-  }
-
-  // Optional audio-only RTSP session (microphone only, no video/backchannel)
-  if (cfg->audio.input_enabled && cfg->rtsp.audio_only_enabled) {
-    ServerMediaSession *sms = ServerMediaSession::createNew(
-        *env, cfg->rtsp.audio_only_endpoint, cfg->rtsp.audio_only_info,
-        cfg->rtsp.name);
-    IMPAudioServerMediaSubsession *audioSub =
-        IMPAudioServerMediaSubsession::createNew(*env, 0);
-    sms->addSubsession(audioSub);
-    rtspServer->addServerMediaSession(sms);
-    char *url = rtspServer->rtspURL(sms);
-    LOG_INFO("Audio-only stream available at: " << url);
-  }
-
-  global_rtsp_thread_signal = 0;
-  env->taskScheduler().doEventLoop(&global_rtsp_thread_signal);
-
-#if defined(USE_AUDIO_STREAM_REPLICATOR)
-  if (cfg->audio.input_enabled) {
-    if (global_audio[audioChn]->streamReplicator != nullptr) {
-      global_audio[audioChn]->streamReplicator->detachInputSource();
+    if (cfg->rtsp.auth_required) {
+        server_->setAuthCredentials(cfg->rtsp.username, cfg->rtsp.password);
     }
-    if (audioSource != nullptr) {
-      delete audioSource;
-      audioSource = nullptr;
+
+    // Register streams (must happen before server starts)
+    if (cfg->stream0.enabled) {
+        LOG_INFO("Registering stream 0: " << cfg->stream0.rtsp_endpoint);
+        addSubsession(0, cfg->stream0);
     }
-  }
-#endif
+    if (cfg->stream1.enabled) {
+        LOG_INFO("Registering stream 1: " << cfg->stream1.rtsp_endpoint);
+        addSubsession(1, cfg->stream1);
+    }
 
-  // Clean up VPS if it was allocated
-  /*
-  if (vps) {
-      delete vps;
-      vps = nullptr;
-  }
-  */
+    // ── Set up the signal so main.cpp can stop us ──────────────────────
+    global_rtsp_thread_signal = 0; // signal running
 
-  LOG_DEBUG("Stop RTSP Server.");
+    // ── Run the event loop (blocks until stop()) ───────────────────────
+    if (!server_->start(cfg->rtsp.port)) {
+        LOG_ERROR("Failed to start SimpleRTSP server");
+        global_rtsp_thread_signal = 1;
+        return;
+    }
 
-  // Cleanup RTSP server and environment
-  Medium::close(rtspServer);
-  env->reclaim();
-  delete scheduler;
+    // Wait until signaled to stop (poll the signal flag)
+    while (global_rtsp_thread_signal == 0 &&
+           !global_shutdown_requested.load(std::memory_order_relaxed)) {
+        usleep(100000); // 100ms poll
+    }
+
+    server_->stop();
+    global_rtsp_thread_signal = 1;
 }
 
 void *RTSP::run(void *arg) {
-  ((RTSP *)arg)->start();
-  return nullptr;
+    auto *self = static_cast<RTSP *>(arg);
+    self->start();
+    return nullptr;
 }
