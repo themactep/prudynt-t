@@ -344,7 +344,8 @@ void RtspServer::eventLoop() {
                     drained++;
                 }
                 if (drained > 0) {
-                    LOG_DEBUG("video drain " << drained << " NALs, seq=" << s->videoRtp.seq);
+                    LOG_DEBUG("video drain " << drained << " NALs, ch="
+                              << s->videoChn << " seq=" << s->videoRtp.seq);
                 }
             }
 
@@ -983,8 +984,6 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     size_t nalLen = rawLen - offset;
     if (nalLen == 0) return false;
 
-    uint8_t nalType = nalData[0] & 0x1F;
-
     // ── Timestamp ── frame counter at declared framerate ──────────────
     // Use a frame counter instead of encoder imp_ts (which resets during
     // MJPEG encoder reinit, causing 600ms backward jumps).
@@ -1093,6 +1092,13 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         // config for this session.  On the initial connection spsHash and
         // ppsHash are both zero — that's the session learning the codec,
         // not a mid-stream reconfiguration that would invalidate the SDP.
+        //
+        // NOTE: we intentionally do NOT set codecConfigSent here.
+        // The inline SPS/PPS are sent as standalone RTP NALs (below),
+        // but the definitive delivery happens when they are prepended
+        // before the first IDR frame.  Letting codecConfigSent remain
+        // false until the prepend block runs ensures the client always
+        // gets SPS/PPS both standalone and prepended on initial connect.
         if (isSps || isPps || isVps) {
             bool hadConfig = (s.spsHash != 0 || s.ppsHash != 0);
             if (hadConfig && (curSpsHash != s.spsHash || curPpsHash != s.ppsHash)) {
@@ -1100,7 +1106,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
             }
             s.spsHash = curSpsHash;
             s.ppsHash = curPpsHash;
-            s.codecConfigSent = true;
+            // codecConfigSent intentionally not set here — see comment above
         }
 
         bool configChanged = (!s.codecConfigSent) || s.spsChanged;
