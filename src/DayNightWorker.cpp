@@ -485,9 +485,11 @@ void *thread_entry(void *arg) {
         initial_night_confirm = 0;
         commit = (++initial_day_confirm >= 2);
       } else {
-        // Hysteresis zone — tick down the fallback countdown
-        initial_night_confirm = 0;
-        initial_day_confirm = 0;
+        // Hysteresis zone — tick down the fallback countdown.
+        // Decay (rather than reset) confirm counters so intermittent
+        // AE fluctuations during boot don't prevent convergence.
+        if (initial_night_confirm > 0) --initial_night_confirm;
+        if (initial_day_confirm > 0) --initial_day_confirm;
         --initial_mode_fallback_countdown;
       }
 
