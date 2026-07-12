@@ -53,12 +53,26 @@ char const *BackchannelServerMediaSubsession::sdpLines(int /*addressFamily*/) {
     std::string fmtpLine = "";
 #if defined(USE_AAC) && USE_AAC
     if (fFormat == IMPBackchannelFormat::AAC) {
+      // Generate AAC AudioSpecificConfig hex (RFC 3640)
+      unsigned freqIdx = 15; // reserved
+      static const unsigned freqs[] = {
+          96000, 88200, 64000, 48000, 44100, 32000, 24000,
+          22050, 16000, 12000, 11025, 8000,  7350
+      };
+      for (unsigned i = 0; i < sizeof(freqs)/sizeof(freqs[0]); ++i) {
+          if (freqs[i] == frequency) { freqIdx = i; break; }
+      }
+      uint16_t combined = (2u << 11) | (freqIdx << 7) | (1u << 3);
+      char aacCfg[5];
+      snprintf(aacCfg, sizeof(aacCfg), "%04x", combined);
+
       char fmtpBuf[150];
       snprintf(fmtpBuf, sizeof(fmtpBuf),
                "a=fmtp:%d "
                "streamtype=5;profile-level-id=1;mode=AAC-hbr;samplerate=%u;"
+               "config=%s;"
                "channels=1;sizelength=13;indexlength=3;indexdeltalength=3\r\n",
-               payloadType, frequency);
+               payloadType, frequency, aacCfg);
       fmtpLine = fmtpBuf;
     }
 #endif

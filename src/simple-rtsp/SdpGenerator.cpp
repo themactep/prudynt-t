@@ -16,6 +16,26 @@ static std::string hexEncode(const uint8_t *data, size_t len) {
     return out;
 }
 
+// Generate AAC AudioSpecificConfig hex string (RFC 3640, ISO 14496-3)
+// Returns 4-digit hex string for two-byte config: objectType(5b) + freqIdx(4b) + chCfg(4b) + fill(3b)
+static std::string makeAacConfig(unsigned sampleRate, unsigned channels) {
+    // Sampling frequency index table (ISO 14496-3 Table 1.16)
+    unsigned freqIdx = 15; // reserved
+    static const unsigned freqs[] = {
+        96000, 88200, 64000, 48000, 44100, 32000, 24000,
+        22050, 16000, 12000, 11025, 8000,  7350
+    };
+    for (unsigned i = 0; i < sizeof(freqs)/sizeof(freqs[0]); ++i) {
+        if (freqs[i] == sampleRate) { freqIdx = i; break; }
+    }
+
+    // objectType=2 (AAC-LC), channelConfiguration=channels
+    uint16_t combined = (2u << 11) | (freqIdx << 7) | ((channels & 0x0f) << 3);
+    char buf[5];
+    snprintf(buf, sizeof(buf), "%04x", combined);
+    return std::string(buf);
+}
+
 std::string generateSdp(const VideoStreamConfig &video,
                         const AudioStreamConfig *audio,
                         const char *serverIp) {
@@ -111,10 +131,12 @@ std::string generateSdp(const VideoStreamConfig &video,
             audio->payloadType, encName, audioClk, audioCh);
 
         if (audio->codec == "AAC") {
+            std::string aacCfg = makeAacConfig(audio->sampleRate, audio->channels);
             off += snprintf(buf + off, sizeof(buf) - off,
                 "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
+                "config=%s;"
                 "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
-                audio->payloadType);
+                audio->payloadType, aacCfg.c_str());
         }
     }
 
