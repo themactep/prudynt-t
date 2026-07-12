@@ -116,6 +116,8 @@ struct _daynight {
   int sample_interval_ms{1000};
   int total_gain_night_threshold{3000};
   int total_gain_day_threshold{300};
+  int night_count_threshold{6};
+  int day_count_threshold{4};
   const char *script_path{nullptr};
 
   // IQ bin file paths for day/night modes
