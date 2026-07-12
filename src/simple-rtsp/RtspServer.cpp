@@ -1089,8 +1089,13 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         uint32_t curPpsHash = vs->have_pps ? simpleHash(vs->latest_pps.data(), vs->latest_pps.size()) : 0;
 
         // Inline SPS/PPS: update our tracking so we know config changed.
+        // Only flag as a reconfigure when we've already seen a full codec
+        // config for this session.  On the initial connection spsHash and
+        // ppsHash are both zero — that's the session learning the codec,
+        // not a mid-stream reconfiguration that would invalidate the SDP.
         if (isSps || isPps || isVps) {
-            if (curSpsHash != s.spsHash || curPpsHash != s.ppsHash) {
+            bool hadConfig = (s.spsHash != 0 || s.ppsHash != 0);
+            if (hadConfig && (curSpsHash != s.spsHash || curPpsHash != s.ppsHash)) {
                 s.spsChanged = true;
             }
             s.spsHash = curSpsHash;
