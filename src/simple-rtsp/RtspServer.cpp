@@ -69,6 +69,24 @@ struct Session {
     uint8_t audioInterleavedRtp  = 2;
     uint8_t audioInterleavedRtcp = 3;
 
+    // UDP transport: server-side sockets and client target address
+    int     videoRtpSock    = -1;
+    int     videoRtcpSock   = -1;
+    int     audioRtpSock    = -1;
+    int     audioRtcpSock   = -1;
+    // Server-side bound ports (reported in SETUP response as server_port)
+    uint16_t videoServerRtpPort  = 0;
+    uint16_t videoServerRtcpPort = 0;
+    uint16_t audioServerRtpPort  = 0;
+    uint16_t audioServerRtcpPort = 0;
+    // Client-side ports (from SETUP request client_port, where we send to)
+    uint16_t videoClientRtpPort  = 0;
+    uint16_t videoClientRtcpPort = 0;
+    uint16_t audioClientRtpPort  = 0;
+    uint16_t audioClientRtcpPort = 0;
+    sockaddr_in clientAddr  = {};
+    socklen_t clientAddrLen = 0;
+
     // Video tap
     std::shared_ptr<MsgChannel<H264NALUnit>> videoTap;
     uint64_t videoTapId = 0;
@@ -82,6 +100,7 @@ struct Session {
     RtpState audioRtp;
 
     bool    codecConfigSent  = false; // SPS/PPS prepended for this session
+    bool    sendInitialRtcpSr = false; // Send RTCP SR after first frame
 
     // Audio uses wall-clock start (separate because audio NALs lack imp_ts)
     struct timeval startAnchor{0, 0};
@@ -447,6 +466,10 @@ void RtspServer::acceptClient() {
     s->audioRtp = RtpState{};
     s->videoRtp.ssrc = static_cast<uint32_t>(rand());
     s->audioRtp.ssrc = static_cast<uint32_t>(rand());
+    s->videoRtp.seq = static_cast<uint16_t>(rand());
+    s->audioRtp.seq = static_cast<uint16_t>(rand());
+    s->videoRtp.timestamp = 0;
+    s->audioRtp.timestamp = 0;
     s->pendingRespLen = 0;
     s->pendingRespOff = 0;
 
@@ -504,6 +527,11 @@ void RtspServer::closeClient(int idx) {
         close(s->fd);
         s->fd = -1;
     }
+    // Close UDP sockets if allocated
+    if (s->videoRtpSock   >= 0) { close(s->videoRtpSock);   s->videoRtpSock   = -1; }
+    if (s->videoRtcpSock  >= 0) { close(s->videoRtcpSock);  s->videoRtcpSock  = -1; }
+    if (s->audioRtpSock   >= 0) { close(s->audioRtpSock);   s->audioRtpSock   = -1; }
+    if (s->audioRtcpSock  >= 0) { close(s->audioRtcpSock);  s->audioRtcpSock  = -1; }
     s->sessionsIndex = -1;
     s->playing = false;
     s->sendQueue.clear();
@@ -588,12 +616,16 @@ void RtspServer::handleRequest(int idx) {
 
     Method method = parseMethod(methodStr);
 
-    // Find headers
+    // Find headers — skip the request line and any blank lines that follow.
     char *headersStart = strstr(s->readBuf, "\r\n");
     if (!headersStart) headersStart = strstr(s->readBuf, "\n");
     if (headersStart) {
-        headersStart++;
         if (*headersStart == '\r') headersStart++;
+        if (*headersStart == '\n') headersStart++;
+        // Skip any additional blank lines (some clients send \r\n\r\n
+        // between method line and headers).
+        while (*headersStart == '\r' || *headersStart == '\n')
+            headersStart++;
     } else {
         headersStart = s->readBuf;
     }
@@ -731,27 +763,67 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     }
 
     // ── Parse transport ────────────────────────────────────────────────
-    s->tcpInterleaved = true;
-
     const char *t = stristr(headers, "Transport:");
-    if (t) {
-        if (stristr(t, "RTP/AVP/TCP")) {
-            s->tcpInterleaved = true;
-            const char *il = strstr(t, "interleaved=");
-            if (il) {
-                int rtpCh, rtcpCh;
-                if (sscanf(il, "interleaved=%d-%d", &rtpCh, &rtcpCh) == 2) {
-                    if (isAudio) {
-                        s->audioInterleavedRtp  = static_cast<uint8_t>(rtpCh);
-                        s->audioInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
-                    } else {
-                        s->videoInterleavedRtp  = static_cast<uint8_t>(rtpCh);
-                        s->videoInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
-                    }
+    if (t && stristr(t, "RTP/AVP/TCP")) {
+        s->tcpInterleaved = true;
+        const char *il = strstr(t, "interleaved=");
+        if (il) {
+            int rtpCh, rtcpCh;
+            if (sscanf(il, "interleaved=%d-%d", &rtpCh, &rtcpCh) == 2) {
+                if (isAudio) {
+                    s->audioInterleavedRtp  = static_cast<uint8_t>(rtpCh);
+                    s->audioInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
+                } else {
+                    s->videoInterleavedRtp  = static_cast<uint8_t>(rtpCh);
+                    s->videoInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
                 }
             }
-        } else if (stristr(t, "RTP/AVP")) {
-            s->tcpInterleaved = false;
+        }
+    } else if (t && stristr(t, "RTP/AVP")) {
+        // UDP transport: parse client_port and create server UDP sockets
+        s->tcpInterleaved = false;
+
+        // Save client address for sendto
+        socklen_t alen = sizeof(s->clientAddr);
+        if (getpeername(s->fd, (sockaddr *)&s->clientAddr, &alen) == 0)
+            s->clientAddrLen = alen;
+
+        // Parse client ports
+        int clientRtpPort = 0, clientRtcpPort = 0;
+        const char *cp = stristr(t, "client_port=");
+        if (cp)
+            sscanf(cp, "client_port=%d-%d", &clientRtpPort, &clientRtcpPort);
+
+        // Save client target ports per stream
+        uint16_t *outClientRtp  = isVideo ? &s->videoClientRtpPort  : &s->audioClientRtpPort;
+        uint16_t *outClientRtcp = isVideo ? &s->videoClientRtcpPort : &s->audioClientRtcpPort;
+        *outClientRtp  = static_cast<uint16_t>(clientRtpPort  > 0 ? clientRtpPort  : 5004);
+        *outClientRtcp = static_cast<uint16_t>(clientRtcpPort > 0 ? clientRtcpPort : 5005);
+
+        // Create and bind server UDP sockets (any available port)
+        auto createUdpSocket = [](uint16_t &outPort) -> int {
+            int sock = socket(AF_INET, SOCK_DGRAM, 0);
+            if (sock >= 0) {
+                setNonBlocking(sock);
+                sockaddr_in addr{};
+                addr.sin_family      = AF_INET;
+                addr.sin_addr.s_addr = htonl(INADDR_ANY);
+                addr.sin_port        = 0; // let kernel pick
+                bind(sock, (sockaddr *)&addr, sizeof(addr));
+                socklen_t slen = sizeof(addr);
+                sockaddr_in bound{};
+                getsockname(sock, (sockaddr *)&bound, &slen);
+                outPort = ntohs(bound.sin_port);
+            }
+            return sock;
+        };
+
+        if (isVideo) {
+            s->videoRtpSock   = createUdpSocket(s->videoServerRtpPort);
+            s->videoRtcpSock  = createUdpSocket(s->videoServerRtcpPort);
+        } else {
+            s->audioRtpSock   = createUdpSocket(s->audioServerRtpPort);
+            s->audioRtcpSock  = createUdpSocket(s->audioServerRtcpPort);
         }
     }
 
@@ -802,11 +874,22 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
                  "Session: %s;timeout=65\r\n",
                  rtpCh, rtcpCh, s->sessionId);
     } else {
-        // UDP: server_rtp, server_rtcp (dynamically assigned, or fixed)
-        snprintf(hdr, sizeof(hdr),
-                 "Transport: RTP/AVP;unicast;client_port=0-0\r\n"
-                 "Session: %s\r\n",
-                 s->sessionId);
+        // UDP: report server ports so client knows where to receive from
+        if (isVideo) {
+            snprintf(hdr, sizeof(hdr),
+                     "Transport: RTP/AVP;unicast;client_port=%d-%d;server_port=%d-%d\r\n"
+                     "Session: %s\r\n",
+                     s->videoClientRtpPort, s->videoClientRtcpPort,
+                     s->videoServerRtpPort, s->videoServerRtcpPort,
+                     s->sessionId);
+        } else {
+            snprintf(hdr, sizeof(hdr),
+                     "Transport: RTP/AVP;unicast;client_port=%d-%d;server_port=%d-%d\r\n"
+                     "Session: %s\r\n",
+                     s->audioClientRtpPort, s->audioClientRtcpPort,
+                     s->audioServerRtpPort, s->audioServerRtcpPort,
+                     s->sessionId);
+        }
     }
 
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
@@ -890,9 +973,10 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
 
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 
-    // Send RTCP SR immediately so the client can map RTP timestamps to NTP
-    // without waiting for the periodic 5s SR.
-    sendRtcpSr(*s);
+    // Defer RTCP SR until the first video frame arrives so the timestamp
+    // and sequence number match actual RTP packets, preventing FFmpeg's
+    // "dropping old packet received too late" jitter buffer issue.
+    s->sendInitialRtcpSr = true;
 }
 
 // ── TEARDOWN ───────────────────────────────────────────────────────────────
@@ -1017,8 +1101,12 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         if (!sen || sen->fd < 0) return false;
 
         if (!sen->tcpInterleaved) {
-            // UDP: non-blocking is OK (lossy transport)
-            ssize_t n = send(sen->fd, pkt, len, MSG_DONTWAIT | MSG_NOSIGNAL);
+            // UDP: send to client via UDP socket
+            if (sen->videoRtpSock < 0) return false;
+            sockaddr_in target = sen->clientAddr;
+            target.sin_port = htons(sen->videoClientRtpPort);
+            ssize_t n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
+                               (sockaddr *)&target, sizeof(target));
             return static_cast<size_t>(n) == len;
         }
 
@@ -1150,15 +1238,25 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     }
 
     // ── Packetize ──────────────────────────────────────────────────────
+    bool ok;
     if (isH265) {
-        return packetizeH265(nalData, nalLen,
-                             nal.is_frame_start, nal.is_frame_end,
-                             pt, s.videoRtp, output);
+        ok = packetizeH265(nalData, nalLen,
+                           nal.is_frame_start, nal.is_frame_end,
+                           pt, s.videoRtp, output);
     } else {
-        return packetizeH264(nalData, nalLen,
-                             nal.is_frame_start, nal.is_frame_end,
-                             pt, s.videoRtp, output);
+        ok = packetizeH264(nalData, nalLen,
+                           nal.is_frame_start, nal.is_frame_end,
+                           pt, s.videoRtp, output);
     }
+
+    // Send deferred initial RTCP SR after the first video frame so the
+    // timestamp and sequence number match actual RTP packets.
+    if (ok && s.sendInitialRtcpSr && nal.is_frame_start) {
+        sendRtcpSr(s);
+        s.sendInitialRtcpSr = false;
+    }
+
+    return ok;
 }
 
 // ── RTP sending (audio) ────────────────────────────────────────────────────
@@ -1222,7 +1320,12 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         auto *sen = sessions_[clientIdx].get();
         if (!sen || sen->fd < 0) return false;
         if (!sen->tcpInterleaved) {
-            ssize_t n = send(sen->fd, pkt, len, MSG_DONTWAIT | MSG_NOSIGNAL);
+            // UDP: send to client via UDP socket
+            if (sen->audioRtpSock < 0) return false;
+            sockaddr_in target = sen->clientAddr;
+            target.sin_port = htons(sen->audioClientRtpPort);
+            ssize_t n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
+                               (sockaddr *)&target, sizeof(target));
             return static_cast<size_t>(n) == len;
         }
         // TCP interleaved: non-blocking send with queue.
@@ -1306,26 +1409,45 @@ void RtspServer::sendRtcpSr(Session &s) {
     uint32_t vts = htonl(s.videoRtp.timestamp);
     memcpy(rtcp + 16, &vts, 4);
     rtcp[23] = 1; rtcp[27] = 1;
-    uint8_t vhdr[4] = { '$', s.videoInterleavedRtcp, 0, 28 };
-    struct iovec viov[2];
-    viov[0].iov_base = vhdr; viov[0].iov_len = 4;
-    viov[1].iov_base = rtcp; viov[1].iov_len = 28;
-    struct msghdr vmsg{};
-    vmsg.msg_iov = viov; vmsg.msg_iovlen = 2;
-    sendmsg(s.fd, &vmsg, MSG_DONTWAIT | MSG_NOSIGNAL);
 
-    if (s.hasAudio) {
-        uint32_t asrc = htonl(s.audioRtp.ssrc);
-        memcpy(rtcp + 4, &asrc, 4);
-        uint32_t ats = htonl(s.audioRtp.timestamp);
-        memcpy(rtcp + 16, &ats, 4);
-        uint8_t ahdr[4] = { '$', s.audioInterleavedRtcp, 0, 28 };
-        struct iovec aiov[2];
-        aiov[0].iov_base = ahdr; aiov[0].iov_len = 4;
-        aiov[1].iov_base = rtcp; aiov[1].iov_len = 28;
-        struct msghdr amsg{};
-        amsg.msg_iov = aiov; amsg.msg_iovlen = 2;
-        sendmsg(s.fd, &amsg, MSG_DONTWAIT | MSG_NOSIGNAL);
+    if (!s.tcpInterleaved) {
+        // UDP: send via UDP sockets
+        sockaddr_in target = s.clientAddr;
+        target.sin_port = htons(s.videoClientRtcpPort);
+        sendto(s.videoRtcpSock, rtcp, sizeof(rtcp), MSG_DONTWAIT,
+               (sockaddr *)&target, sizeof(target));
+        if (s.hasAudio) {
+            uint32_t asrc = htonl(s.audioRtp.ssrc);
+            memcpy(rtcp + 4, &asrc, 4);
+            uint32_t ats = htonl(s.audioRtp.timestamp);
+            memcpy(rtcp + 16, &ats, 4);
+            target.sin_port = htons(s.audioClientRtcpPort);
+            sendto(s.audioRtcpSock, rtcp, sizeof(rtcp), MSG_DONTWAIT,
+                   (sockaddr *)&target, sizeof(target));
+        }
+    } else {
+        // TCP interleaved
+        uint8_t vhdr[4] = { '$', s.videoInterleavedRtcp, 0, 28 };
+        struct iovec viov[2];
+        viov[0].iov_base = vhdr; viov[0].iov_len = 4;
+        viov[1].iov_base = rtcp; viov[1].iov_len = 28;
+        struct msghdr vmsg{};
+        vmsg.msg_iov = viov; vmsg.msg_iovlen = 2;
+        sendmsg(s.fd, &vmsg, MSG_DONTWAIT | MSG_NOSIGNAL);
+
+        if (s.hasAudio) {
+            uint32_t asrc = htonl(s.audioRtp.ssrc);
+            memcpy(rtcp + 4, &asrc, 4);
+            uint32_t ats = htonl(s.audioRtp.timestamp);
+            memcpy(rtcp + 16, &ats, 4);
+            uint8_t ahdr[4] = { '$', s.audioInterleavedRtcp, 0, 28 };
+            struct iovec aiov[2];
+            aiov[0].iov_base = ahdr; aiov[0].iov_len = 4;
+            aiov[1].iov_base = rtcp; aiov[1].iov_len = 28;
+            struct msghdr amsg{};
+            amsg.msg_iov = aiov; amsg.msg_iovlen = 2;
+            sendmsg(s.fd, &amsg, MSG_DONTWAIT | MSG_NOSIGNAL);
+        }
     }
 }
 
