@@ -218,8 +218,8 @@ int add_sensor_with_retry(IMPSensorInfo &sensor_info) {
   return ret;
 }
 
-void cleanup_stale_t23_isp_state(IMPSensorInfo &sensor_info) {
 #if defined(PLATFORM_T23)
+void cleanup_stale_t23_isp_state(IMPSensorInfo &sensor_info) {
   LOG_WARN("IMPSystem init: running preemptive T23 stale ISP cleanup before "
            "sensor attach");
 
@@ -243,10 +243,8 @@ void cleanup_stale_t23_isp_state(IMPSensorInfo &sensor_info) {
 
   LOG_WARN("IMPSystem init: completed preemptive T23 stale ISP cleanup before "
            "sensor attach");
-#else
-  (void)sensor_info;
-#endif
 }
+#endif
 
 } // namespace
 
