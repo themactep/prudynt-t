@@ -80,8 +80,11 @@ std::string generateSdp(const VideoStreamConfig &video,
         } else {
             // H.264: fmtp with packetization-mode=1 (required for FU-A)
             std::string profileLevelId;
-            if (video.sps.size() >= 3) {
-                profileLevelId = hexEncode(video.sps.data(), 3);
+            // profile-level-id = bytes 1-3 of the SPS NAL unit
+            // (profile_idc, constraint flags, level_idc), skipping the
+            // NAL header byte.  RFC 6184 §8.1.
+            if (video.sps.size() >= 4) {
+                profileLevelId = hexEncode(video.sps.data() + 1, 3);
             } else {
                 profileLevelId = "42001f";
             }
