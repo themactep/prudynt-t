@@ -577,9 +577,17 @@ void VideoWorker::run() {
               global_video[encChn]->have_vps = true;
             } else if (nal_is_sps) {
               global_video[encChn]->latest_sps.assign(start + 4, end);
+              // Normalize nal_ref_idc to 3: many H.264 parsers (go2rtc,
+              // browsers) expect 0x67, not 0x27, for SPS NAL header.
+              if (!global_video[encChn]->latest_sps.empty())
+                global_video[encChn]->latest_sps[0] =
+                    (global_video[encChn]->latest_sps[0] & 0x1F) | (3 << 5);
               global_video[encChn]->have_sps = true;
             } else {
               global_video[encChn]->latest_pps.assign(start + 4, end);
+              if (!global_video[encChn]->latest_pps.empty())
+                global_video[encChn]->latest_pps[0] =
+                    (global_video[encChn]->latest_pps[0] & 0x1F) | (3 << 5);
               global_video[encChn]->have_pps = true;
             }
           }
@@ -720,6 +728,11 @@ void VideoWorker::run() {
               size_t payload_len_hint = static_cast<size_t>(end - start);
               auto nalu_buf = naluPool.borrow(payload_len_hint);
               nalu_buf.insert(nalu_buf.end(), start + 4, end);
+
+              // Normalize nal_ref_idc to 3 for SPS/PPS in the in-band
+              // stream (the RTP data that RTSP clients like go2rtc see).
+              if ((nal_is_sps || nal_is_pps) && !nalu_buf.empty())
+                nalu_buf[0] = (nalu_buf[0] & 0x1F) | (3 << 5);
 
               // Capture wall-clock time now so taps inherit it after move
               struct timeval nal_time;
