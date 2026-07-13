@@ -80,15 +80,19 @@ std::string generateSdp(const VideoStreamConfig &video,
         } else {
             // H.264: fmtp with packetization-mode=1 (required for FU-A)
             std::string profileLevelId;
-            // profile-level-id = bytes 1-3 of the SPS NAL unit
-            // (profile_idc, constraint flags, level_idc), skipping the
-            // NAL header byte.  RFC 6184 §8.1.
+            std::string sprop;
             if (video.sps.size() >= 4) {
-                profileLevelId = hexEncode(video.sps.data() + 1, 3);
+                std::vector<uint8_t> sps = video.sps;
+                // Force profile-level-id to 640032 (High 5.0) for go2rtc
+                // compatibility: go2rtc hardcodes codec 98 with 640032, and
+                // browsers expect the SDP profile-level-id to match the
+                // registered codec for proper stream negotiation.
+                profileLevelId = "640032";
+                sprop = base64Encode(video.sps.data(), video.sps.size());
             } else {
                 profileLevelId = "42001f";
+                sprop = base64Encode(video.sps.data(), video.sps.size());
             }
-            std::string sprop = base64Encode(video.sps.data(), video.sps.size());
             if (!video.pps.empty()) {
                 sprop += ",";
                 sprop += base64Encode(video.pps.data(), video.pps.size());
