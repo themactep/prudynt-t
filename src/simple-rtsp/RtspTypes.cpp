@@ -56,15 +56,12 @@ Method parseMethod(const char *s) {
 
 int parseCSeq(const char *headers) {
     if (!headers) return -1;
-    const char *p = stristr(headers, "\r\nCSeq:");
-    if (!p) p = stristr(headers, "\nCSeq:");
-    if (!p) {
-        // Check if the request starts with "CSeq:" (first header)
-        if (stristr(headers, "CSeq:") == headers)
-            p = headers;
-        else
-            return -1;
-    }
+    // Search for "CSeq:" anywhere in the headers.
+    // The headers pointer may start at the first header or mid-line if
+    // the request had \r\n\r\n between method and headers, so we scan
+    // the entire buffer rather than relying on a prefix match.
+    const char *p = stristr(headers, "CSeq:");
+    if (!p) return -1;
     while (*p && *p != ':') p++;
     if (*p == ':') p++;
     while (*p == ' ') p++;
