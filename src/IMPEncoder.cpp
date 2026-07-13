@@ -109,6 +109,22 @@ void IMPEncoder::initProfile() {
               << "fps, profile:" << stream->profile << ", " << stream->width
               << "x" << stream->height);
     return;
+  } else {
+    // H.264: honor stream->profile (0=Baseline, 1=Main, 2=High).
+    // Default to Baseline for WebRTC browser compatibility — most
+    // WebRTC implementations only support Constrained Baseline.
+    switch (stream->profile) {
+    case 0:
+      encoderProfile = IMP_ENC_PROFILE_AVC_BASELINE;
+      break;
+    case 1:
+      encoderProfile = IMP_ENC_PROFILE_AVC_MAIN;
+      break;
+    case 2:
+    default:
+      encoderProfile = IMP_ENC_PROFILE_AVC_HIGH;
+      break;
+    }
   }
 
   if (strcmp(stream->mode, "FIXQP") == 0) {
