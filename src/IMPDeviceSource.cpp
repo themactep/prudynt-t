@@ -136,9 +136,6 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame() {
         }
       }
 
-      // Always use current wallclock. This keeps fPresentationTime in the
-      // same clock domain as live555's presetNextTimestamp(), so NTP steps
-      // and stale ring-buffer frames never cause RTP timestamp jumps.
       gettimeofday(&fPresentationTime, NULL);
 
       int64_t pts_us = tv_to_us(fPresentationTime);

@@ -305,8 +305,6 @@ BIN_DIR                 = ./bin
 PRUDYNTCTL_SOURCE       = $(SRC_DIR)/prudyntctl.cpp
 MAIN_SOURCES_CPP        = $(filter-out $(PRUDYNTCTL_SOURCE),$(wildcard $(SRC_DIR)/*.cpp))
 
-# Exclude legacy live555-dependent sources (replaced by simple-rtsp)
-# Note: RTSP.cpp is KEPT — it was rewritten as the simple-rtsp integration layer
 LEGACY_RTSP_SOURCES     = $(SRC_DIR)/IMPServerMediaSubsession.cpp \
                           $(SRC_DIR)/IMPAudioServerMediaSubsession.cpp \
                           $(SRC_DIR)/IMPTextServerMediaSubsession.cpp \

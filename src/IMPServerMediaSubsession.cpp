@@ -87,9 +87,6 @@ RTPSink *IMPServerMediaSubsession::createNewRTPSink(
 
 char const *IMPServerMediaSubsession::sdpLines(int addressFamily) {
   // Check if encoder codec config (SPS/PPS/VPS) has changed since last SDP.
-  // If so, update our copies and invalidate cached SDP so live555 regenerates
-  // it. This enables dynamic resolution/profile changes without RTSP server
-  // restart.
   if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS && global_video[encChn]) {
     std::lock_guard<std::mutex> lock(global_video[encChn]->codec_config_mutex);
     bool changed = false;

@@ -109,30 +109,6 @@ prudynt() {
 	cd $TOP
 	make clean
 
-	# Rebuild live555 to ensure latest changes are included
-	echo "Rebuilding live555 with latest changes..."
-	cd 3rdparty/live
-	if [[ -f Makefile ]]; then
-		# Apply local live555 patches if present
-		if ls ../../res/live555/*.patch >/dev/null 2>&1; then
-			for p in ../../res/live555/*.patch; do
-				patch -p1 -N < "$p" || true
-			done
-		fi
-
-		LIVE555_PREFIX="${TOP}/3rdparty/install"
-		LIVE555_LIBDIR="${LIVE555_PREFIX}/lib"
-		make clean
-		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
-			make -j$(nproc) PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
-		PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
-			make install PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
-		echo "live555 rebuilt successfully"
-	else
-		echo "Warning: live555 Makefile not found, skipping live555 rebuild"
-	fi
-	cd $TOP
-
 	# Parse build type flags - default to dynamic linking (ideal for buildroot/firmware)
 	BIN_TYPE=""
 	DEBUG_BUILD=0
@@ -340,64 +316,6 @@ deps() {
 
 	# Install header
 	cp src/json_config.h $TOP/3rdparty/install/include/
-	cd ../../
-
-	echo "Build live555"
-	cd 3rdparty
-
-	# Smart live555 handling - only clone if directory doesn't exist
-	if [[ ! -d live ]]; then
-		echo "Cloning live555..."
-		git clone --depth=1 https://github.com/themactep/thingino-live555.git live
-		cd live
-	else
-		echo "live555 directory exists, checking for updates..."
-		cd live
-		# Reset to clean state and pull latest changes
-		git reset --hard HEAD
-		git clean -fd
-		git pull origin master
-	fi
-
-	# Workaround: Ensure a trailing space after 'ar cr' in Makefiles (avoids 'crlib...' issue)
-	# We do this post-genMakefiles for both static and shared builds
-	fix_ar_space() {
-		for mk in liveMedia/Makefile groupsock/Makefile UsageEnvironment/Makefile BasicUsageEnvironment/Makefile testProgs/Makefile mediaServer/Makefile proxyServer/Makefile hlsProxy/Makefile; do
-			if [[ -f "$mk" ]]; then
-				sed -i 's/ar cr$/ar cr /' "$mk" || true
-			fi
-		done
-	}
-
-	if [[ -f Makefile ]]; then
-		make distclean
-	fi
-
-	# Apply local live555 patches if present
-	if ls ../../res/live555/*.patch >/dev/null 2>&1; then
-		for p in ../../res/live555/*.patch; do
-			patch -p1 -N < "$p" || true
-		done
-	fi
-
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		echo "STATIC LIVE555"
-		cp ../../res/live555-config.prudynt-static ./config.prudynt-static
-		./genMakefiles prudynt-static
-		fix_ar_space
-	else
-		echo "SHARED LIVE555"
-		patch config.linux-with-shared-libraries ../../res/live555-prudynt.patch --output=./config.prudynt
-		./genMakefiles prudynt
-		fix_ar_space
-	fi
-
-	LIVE555_PREFIX="${TOP}/3rdparty/install"
-	LIVE555_LIBDIR="${LIVE555_PREFIX}/lib"
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
-		make PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
-	PRUDYNT_ROOT="${TOP}" PRUDYNT_CROSS="${PRUDYNT_CROSS}" \
-		make install PREFIX="${LIVE555_PREFIX}" LIBDIR="${LIVE555_LIBDIR}"
 	cd ../../
 
 	echo "import libimp"

@@ -191,9 +191,6 @@ AudioWorker::~AudioWorker() {
 }
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
-  // Use gettimeofday() as the frame timestamp so that fPresentationTime
-  // is always in the same clock domain as live555's internal timestamps.
-  // NTP steps affect both equally, so RTP delta arithmetic stays consistent.
   AudioFrame af;
   gettimeofday(&af.time, nullptr);
 

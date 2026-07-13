@@ -5,7 +5,7 @@
 
 class OSD;
 
-/// A live555 FramedSource that periodically emits the current OSD state
+/// FramedSource that periodically emits the current OSD state
 /// as a UTF-8 plaintext frame suitable for T.140 RTP transmission.
 ///
 /// Frames are delivered at ~1 Hz via a scheduled delayed task.
