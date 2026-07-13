@@ -825,6 +825,25 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
             s->audioRtpSock   = createUdpSocket(s->audioServerRtpPort);
             s->audioRtcpSock  = createUdpSocket(s->audioServerRtcpPort);
         }
+
+        // Size the UDP RTP send buffers generously. A 1080p IDR frame is a
+        // burst of ~80+ fragments (~120KB); the default Linux UDP send buffer
+        // (~16-64KB) overflows under that burst, sendto() returns EAGAIN, and
+        // the packetizer drops the rest of the NAL -> decoder desync. A 1MB
+        // buffer holds a full IDR burst so fragments are never dropped locally.
+        auto setUdpSendBuf = [](int sock, int size) {
+            if (sock >= 0 && size > 0)
+                setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+        };
+        int videoUdpBuf = 1024 * 1024;
+        int audioUdpBuf = 64 * 1024;
+        if (isVideo) {
+            setUdpSendBuf(s->videoRtpSock,  videoUdpBuf);
+            setUdpSendBuf(s->videoRtcpSock, audioUdpBuf);
+        } else {
+            setUdpSendBuf(s->audioRtpSock,  audioUdpBuf);
+            setUdpSendBuf(s->audioRtcpSock, audioUdpBuf);
+        }
     }
 
     // ── Assign stream ──────────────────────────────────────────────────
@@ -1107,6 +1126,24 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
             target.sin_port = htons(sen->videoClientRtpPort);
             ssize_t n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
                                (sockaddr *)&target, sizeof(target));
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                // Send buffer full: the IDR burst is outpacing the client's
+                // drain rate. UDP has no flow control, so blindly firing the
+                // rest of the burst overflows the client's receive buffer and
+                // drops packets -> "RTP: missed N packets" -> decoder desync.
+                // The socket is non-blocking, so a flags=0 "retry" would also
+                // fail immediately. Instead poll() until it is writable
+                // (bounded) and retry; this paces us to the client's
+                // consumption rate, exactly like TCP flow control would, and
+                // never drops a packet we could have sent.
+                struct pollfd pfd;
+                pfd.fd = sen->videoRtpSock;
+                pfd.events = POLLOUT;
+                if (poll(&pfd, 1, 250) > 0) {
+                    n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
+                               (sockaddr *)&target, sizeof(target));
+                }
+            }
             return static_cast<size_t>(n) == len;
         }
 
@@ -1114,6 +1151,36 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         // Packets that can't be sent immediately are queued for retry.
         // Always returns true — the drain loop retries queued packets.
         // Only returns false if client is disconnected.
+        //
+        // Ordering invariant: once any bytes are queued for a session, every
+        // subsequent packet must be appended to the queue rather than sent
+        // directly.  Otherwise a partially-written packet's queued tail would
+        // be re-ordered AFTER the next packet(s) sent in the same drain loop
+        // (the queue is only flushed at the start of the next iteration),
+        // corrupting the interleaved bitstream.  The drain loop empties the
+        // queue first each iteration, so direct sends resume once it drains.
+        if (!sen->sendQueue.empty()) {
+            uint8_t buf[1504];
+            size_t total = len + 4;
+            if (total > sizeof(buf)) {
+                closeClient(sen->sessionsIndex);
+                return false;
+            }
+            buf[0] = '$';
+            buf[1] = chan;
+            buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+            buf[3] = static_cast<uint8_t>(len & 0xFF);
+            memcpy(buf + 4, pkt, len);
+            if (sen->sendQueueBytes + total > 1024 * 1024) { // 1MB cap
+                closeClient(sen->sessionsIndex);
+                return false;
+            }
+            std::vector<uint8_t> pktBuf(buf, buf + total);
+            sen->sendQueue.push_back(std::move(pktBuf));
+            sen->sendQueueBytes += total;
+            return true;
+        }
+
         uint8_t buf[1504];
         size_t total = len + 4;
         buf[0] = '$';
@@ -1125,7 +1192,9 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         ssize_t n = send(sen->fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
         if (static_cast<size_t>(n) == total) return true;
 
-        // Partial or EAGAIN: enqueue for retry
+        // Partial or EAGAIN: enqueue the remainder.  From now on this
+        // session's output appends to the queue (see guard above) until the
+        // drain loop flushes it, preserving interleaved ordering.
         size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
         size_t remain = total - sent;
         if (sen->sendQueueBytes + remain > 1024 * 1024) { // 1MB cap
@@ -1138,8 +1207,6 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         sen->sendQueue.push_back(std::move(pktBuf));
         sen->sendQueueBytes += remain;
 
-        // Return true — drain loop will retry this packet.  Returning false
-        // would stop the entire video drain and drop all remaining NALs.
         return true;
     };
 
@@ -1326,9 +1393,39 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
             target.sin_port = htons(sen->audioClientRtpPort);
             ssize_t n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
                                (sockaddr *)&target, sizeof(target));
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                struct pollfd pfd;
+                pfd.fd = sen->audioRtpSock;
+                pfd.events = POLLOUT;
+                if (poll(&pfd, 1, 250) > 0) {
+                    n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
+                               (sockaddr *)&target, sizeof(target));
+                }
+            }
             return static_cast<size_t>(n) == len;
         }
         // TCP interleaved: non-blocking send with queue.
+        // Same ordering invariant as the video path: once any bytes are
+        // queued, append subsequent packets to the queue so a queued tail
+        // is never re-ordered after later packets on the shared fd.
+        if (!sen->sendQueue.empty()) {
+            uint8_t buf[1504];
+            size_t total = len + 4;
+            if (total > sizeof(buf)) return false;
+            buf[0] = '$';
+            buf[1] = chan;
+            buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+            buf[3] = static_cast<uint8_t>(len & 0xFF);
+            memcpy(buf + 4, pkt, len);
+            if (sen->sendQueueBytes + total > 1024 * 1024) {
+                closeClient(sen->sessionsIndex);
+                return false;
+            }
+            std::vector<uint8_t> pktBuf(buf, buf + total);
+            sen->sendQueue.push_back(std::move(pktBuf));
+            sen->sendQueueBytes += total;
+            return true;
+        }
         uint8_t buf[1504];
         size_t total = len + 4;
         buf[0] = '$';
@@ -1341,11 +1438,15 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         // Partial or EAGAIN: enqueue for retry
         size_t sent = (s > 0) ? static_cast<size_t>(s) : 0;
         size_t remain = total - sent;
+        if (sen->sendQueueBytes + remain > 1024 * 1024) {
+            closeClient(sen->sessionsIndex);
+            return false;
+        }
         std::vector<uint8_t> pktBuf(remain);
         memcpy(pktBuf.data(), buf + sent, remain);
         sen->sendQueue.push_back(std::move(pktBuf));
         sen->sendQueueBytes += remain;
-        return false;
+        return true;
     };
 
     if (codec == "AAC") {

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <utility>
 
 #include "Config.hpp"
 #include "IMPEncoder.hpp"
@@ -15,6 +16,174 @@
 
 #undef MODULE
 #define MODULE "VideoWorker"
+
+namespace {
+
+// H.264 level table: (level_idc, MaxFS, MaxMBPS).
+// MaxFS = max frame size in macroblocks; MaxMBPS = max macroblock rate.
+struct H264Level {
+    int idc;
+    long long maxFs;
+    long long maxMbps;
+};
+static const H264Level kH264Levels[] = {
+    {30, 1620, 40500},    {31, 3600, 108000},   {32, 5120, 216000},
+    {40, 8192, 245760},   {41, 8192, 245760},   {42, 8704, 522240},
+    {50, 22080, 589824},  {51, 36864, 983040},  {52, 36864, 2073600},
+};
+
+// Minimum level_idc (encoded as level*10) that fits a frame of `fsMbs` macroblocks
+// at `fps`.  A too-low level makes a decoder sized by it allocate an undersized
+// frame buffer, which overflows at a deterministic macroblock row and desyncs the
+// bitstream ("Invalid level prefix" / "out of range intra chroma pred mode" /
+// "error while decoding MB").
+uint8_t h264LevelForFrameMbs(long long fsMbs, int fps) {
+    long long mbps = fsMbs * (fps > 0 ? fps : 30);
+    uint8_t chosen = 0x29; // 4.1 fallback
+    for (const auto &lv : kH264Levels) {
+        if (fsMbs <= lv.maxFs && mbps <= lv.maxMbps) {
+            chosen = static_cast<uint8_t>(lv.idc);
+            break;
+        }
+    }
+    // 4.0 and 4.1 share MaxFS/MaxMBPS; prefer 4.1 (the value previously
+    // pinned) for the common <=1080p case.
+    if (chosen == 0x28) chosen = 0x29;
+    return chosen;
+}
+
+// ---- Minimal H.264 SPS parser (enough to read the coded frame size) --------
+
+struct BitReader {
+    const uint8_t *p;
+    size_t n;
+    size_t byte;
+    uint8_t mask;
+    BitReader(const uint8_t *d, size_t l) : p(d), n(l), byte(0), mask(0x80) {}
+    int getBit() {
+        if (byte >= n) return 0;
+        int b = (p[byte] & mask) ? 1 : 0;
+        mask >>= 1;
+        if (mask == 0) { mask = 0x80; ++byte; }
+        return b;
+    }
+    uint32_t getBits(int cnt) {
+        uint32_t v = 0;
+        for (int i = 0; i < cnt; ++i) v = (v << 1) | getBit();
+        return v;
+    }
+    uint32_t getUE() {
+        int zeros = 0;
+        while (getBit() == 0 && zeros < 32) ++zeros;
+        if (zeros == 0) return 0;
+        uint32_t v = (1u << zeros) - 1;
+        for (int i = 0; i < zeros; ++i) v = (v << 1) | getBit();
+        return v - 1;
+    }
+    int getSE() {
+        uint32_t k = getUE();
+        return (k & 1) ? static_cast<int>((k + 1) >> 1) : -static_cast<int>(k >> 1);
+    }
+};
+
+// Strip emulation-prevention bytes (00 00 03 -> 00 00) to recover the RBSP.
+static std::vector<uint8_t> h264Rbsp(const uint8_t *data, size_t len) {
+    std::vector<uint8_t> rbsp;
+    rbsp.reserve(len);
+    for (size_t i = 0; i < len; ++i) {
+        if (i + 2 < len && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 3) {
+            rbsp.push_back(0);
+            rbsp.push_back(0);
+            i += 2; // skip the 0x03
+            continue;
+        }
+        rbsp.push_back(data[i]);
+    }
+    return rbsp;
+}
+
+// Parse an SPS (including its NAL header byte) and return the coded frame size
+// in macroblocks.  Returns 0 if the SPS can't be parsed.
+long long h264SpsFrameMbs(const uint8_t *sps, size_t len) {
+    if (len < 4) return 0;
+    std::vector<uint8_t> rbsp = h264Rbsp(sps + 1, len - 1); // skip NAL header
+    if (rbsp.size() < 3) return 0;
+
+    BitReader br(rbsp.data(), rbsp.size());
+    uint32_t profile = br.getBits(8);
+    br.getBits(8); // constraint flags + reserved
+    br.getBits(8); // level_idc
+    br.getUE();    // seq_parameter_set_id
+
+    if (profile == 100 || profile == 110 || profile == 122 || profile == 244 ||
+        profile == 44 || profile == 83 || profile == 86 || profile == 118 ||
+        profile == 128 || profile == 138 || profile == 139 || profile == 134 ||
+        profile == 135) {
+        uint32_t chroma = br.getUE();
+        if (chroma == 3) br.getBit(); // separate_colour_plane_flag
+        br.getUE(); // bit_depth_luma_minus8
+        br.getUE(); // bit_depth_chroma_minus8
+        br.getBit(); // qpprime_y_zero_transform_bypass_flag
+        if (br.getBit()) { // seq_scaling_matrix_present_flag
+            int count = (chroma != 3) ? 8 : 12;
+            for (int i = 0; i < count; ++i) {
+                if (br.getBit()) { // scaling_list_present_flag
+                    int size = (i < 6) ? 16 : 64;
+                    int last = 8, next = 8;
+                    for (int j = 0; j < size; ++j) {
+                        if (next != 0) {
+                            int delta = br.getSE();
+                            next = (last + delta + 256) & 0xFF;
+                        }
+                        if (next != 0) last = next;
+                    }
+                }
+            }
+        }
+    }
+
+    br.getUE();              // log2_max_frame_num_minus4
+    uint32_t poc = br.getUE();
+    if (poc == 0) {
+        br.getUE();          // log2_max_pic_order_cnt_lsb_minus4
+    } else if (poc == 1) {
+        br.getBit();         // delta_pic_order_always_zero_flag
+        br.getSE();          // offset_for_non_ref_pic
+        br.getSE();          // offset_for_top_to_bottom_field
+        uint32_t n = br.getUE();
+        for (uint32_t i = 0; i < n; ++i) br.getSE();
+    }
+    br.getUE();              // max_num_ref_frames
+    br.getBit();             // gaps_in_frame_num_value_allowed_flag
+    uint32_t wMbs = br.getUE() + 1;        // pic_width_in_mbs
+    uint32_t hUnits = br.getUE() + 1;      // pic_height_in_map_units
+    uint32_t fmo = br.getBit();            // frame_mbs_only_flag
+    if (!fmo) br.getBit();                 // mb_adaptive_frame_field_flag
+    uint32_t frameMbs = hUnits * (fmo ? 1u : 2u);
+    return static_cast<long long>(wMbs) * frameMbs;
+}
+
+// Choose the level_idc for the real SPS dimensions, falling back to the
+// configured resolution when the SPS can't be parsed.
+uint8_t h264LevelForSps(const std::vector<uint8_t> &sps,
+                        const std::shared_ptr<video_stream> &vs, int fps) {
+    long long fs = h264SpsFrameMbs(sps.data(), sps.size());
+    if (fs > 0) return h264LevelForFrameMbs(fs, fps);
+    // Fallback: use configured resolution.
+    if (vs && vs->stream && vs->stream->width > 0 && vs->stream->height > 0) {
+        int wMbs = (vs->stream->width + 15) / 16;
+        int hMbs = (vs->stream->height + 15) / 16;
+        return h264LevelForFrameMbs(static_cast<long long>(wMbs) * hMbs, fps);
+    }
+    return 0x29;
+}
+
+int streamFps(const std::shared_ptr<video_stream> &vs) {
+    if (vs && vs->stream) return vs->stream->fps;
+    return 0;
+}
+
+} // namespace
 
 VideoWorker::VideoWorker(int chn) : encChn(chn) {
   LOG_DEBUG("VideoWorker created for channel " << encChn);
@@ -582,6 +751,20 @@ void VideoWorker::run() {
               if (!global_video[encChn]->latest_sps.empty())
                 global_video[encChn]->latest_sps[0] =
                     (global_video[encChn]->latest_sps[0] & 0x1F) | (3 << 5);
+              // The Ingenic encoder always emits level 5.1 regardless of the
+              // real frame size, which makes strict decoders bail and, worse,
+              // under-sizes the decoder frame buffer for resolutions above
+              // 1080p (overflow at a fixed macroblock row -> bitstream desync:
+              // "Invalid level prefix" / "out of range intra chroma pred
+              // mode" / "error while decoding MB").  Rewrite level_idc to the
+              // minimum level that actually fits the stream resolution/fps.
+              if (!stream_is_h265 &&
+                  global_video[encChn]->latest_sps.size() >= 4) {
+                uint8_t need = h264LevelForSps(
+                    global_video[encChn]->latest_sps, video_state,
+                    streamFps(video_state));
+                global_video[encChn]->latest_sps[3] = need;
+              }
               global_video[encChn]->have_sps = true;
             } else {
               global_video[encChn]->latest_pps.assign(start + 4, end);
@@ -733,6 +916,13 @@ void VideoWorker::run() {
               // stream (the RTP data that RTSP clients like go2rtc see).
               if ((nal_is_sps || nal_is_pps) && !nalu_buf.empty())
                 nalu_buf[0] = (nalu_buf[0] & 0x1F) | (3 << 5);
+              // Rewrite H264 level_idc in the inline SPS to match latest_sps
+              // (minimum level that fits the real resolution/fps).
+              if (nal_is_sps && !stream_is_h265 && nalu_buf.size() >= 4) {
+                uint8_t need = h264LevelForSps(
+                    nalu_buf, video_state, streamFps(video_state));
+                nalu_buf[3] = need;
+              }
 
               // Capture wall-clock time now so taps inherit it after move
               struct timeval nal_time;

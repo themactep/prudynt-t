@@ -30,7 +30,9 @@ inline const char *stristr(const char *haystack, const char *needle) {
 
 constexpr int MAX_CLIENTS   = 8;
 constexpr int RTSP_BUF_SIZE  = 8192;
-constexpr int RTP_MAX_PAYLOAD = 1450;  // below Ethernet MTU
+constexpr int RTP_MAX_PAYLOAD = 1200;  // stay under typical path MTU to avoid
+                                        // IP fragmentation of UDP RTP datagrams
+                                        // (fragment loss desyncs the decoder)
 constexpr int SDP_BUF_SIZE   = 4096;
 
 // ── RTSP Methods / Status ───────────────────────────────────────────────────

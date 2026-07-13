@@ -83,11 +83,10 @@ std::string generateSdp(const VideoStreamConfig &video,
             std::string sprop;
             if (video.sps.size() >= 4) {
                 std::vector<uint8_t> sps = video.sps;
-                // Force profile-level-id to 640032 (High 5.0) for go2rtc
-                // compatibility: go2rtc hardcodes codec 98 with 640032, and
-                // browsers expect the SDP profile-level-id to match the
-                // registered codec for proper stream negotiation.
-                profileLevelId = "640032";
+                // Read profile-level-id from the (already-patched) SPS instead
+                // of hardcoding a fixed value. VideoWorker rewrites level_idc
+                // to the minimum level that fits the real resolution/fps.
+                profileLevelId = hexEncode(sps.data() + 1, 3);
                 sprop = base64Encode(video.sps.data(), video.sps.size());
             } else {
                 profileLevelId = "42001f";
