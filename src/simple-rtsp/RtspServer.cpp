@@ -939,6 +939,10 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     bool isBackchannel = (s->backchannelPayloadType >= 0 &&
                           !isVideo && !isAudio);
 
+    LOG_INFO("SETUP: isVideo=" << isVideo << " isAudio=" << isAudio
+             << " isBackchannel=" << isBackchannel
+             << " bcPayloadType=" << s->backchannelPayloadType);
+
     if (isBackchannel && backchannelEnabled_) {
         handleBackchannelSetup(idx, cseq, uri, headers);
         return;
@@ -1263,7 +1267,8 @@ void RtspServer::handleAnnounce(int idx, int cseq, const char *,
     }
     char hdr[128];
     snprintf(hdr, sizeof(hdr), "Session: %s\r\n", s->sessionId);
-    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt << " session=" << s->sessionId);
+    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt << " session=" << s->sessionId
+             << " fd=" << s->fd << " idx=" << idx);
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
