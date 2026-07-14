@@ -1880,6 +1880,8 @@ void RtspServer::sendInterleaved(int fd, uint8_t channel,
 
 void RtspServer::sendRtcpSr(Session &s) {
     if (s.fd < 0) return;
+    // Backchannel-only sessions have no RTP streams to report on.
+    if (s.backchannel && s.videoChn < 0 && !s.hasAudio) return;
     uint64_t ntp = simple_rtsp::ntpTimestamp();
     uint32_t ntpMsw = htonl(static_cast<uint32_t>(ntp >> 32));
     uint32_t ntpLsw = htonl(static_cast<uint32_t>(ntp & 0xFFFFFFFF));
