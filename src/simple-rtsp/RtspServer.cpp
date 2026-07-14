@@ -1255,8 +1255,16 @@ void RtspServer::handleAnnounce(int idx, int cseq, const char *,
         pt = 0;
     }
     s->backchannelPayloadType = pt;
-    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt);
-    sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
+    // Generate session ID for subsequent SETUP/RECORD
+    if (!s->hasValidSession()) {
+        snprintf(s->sessionId, sizeof(s->sessionId), "%08X",
+                 static_cast<unsigned>(time(nullptr)) ^
+                 static_cast<unsigned>(rand()));
+    }
+    char hdr[128];
+    snprintf(hdr, sizeof(hdr), "Session: %s\r\n", s->sessionId);
+    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt << " session=" << s->sessionId);
+    sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
 // ── RECORD (start backchannel) ──────────────────────────────────────────
