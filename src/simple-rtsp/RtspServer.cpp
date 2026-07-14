@@ -904,9 +904,7 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
         inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
     }
 
-    const std::vector<BackchannelConfig> *bcfg =
-        backchannelEnabled_ ? &backchannelFormats_ : nullptr;
-    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str(), bcfg);
+    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str());
 
     char hdr[256];
     snprintf(hdr, sizeof(hdr),
@@ -936,10 +934,11 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
 
     bool isAudio = (strstr(uri, "track2") != nullptr);
     bool isVideo = (strstr(uri, "track1") != nullptr);
-    bool isBackchannel = (strstr(uri, "track3") != nullptr) ||
-                         (strstr(uri, "backchannel") != nullptr);
+    // Backchannel: client negotiated via ANNOUNCE, then SETUPs
+    // with the SDP's control URL (typically "track0" or similar).
+    bool isBackchannel = (s->backchannelPayloadType >= 0 &&
+                          !isVideo && !isAudio);
 
-    // Backchannel: client sends audio to server
     if (isBackchannel && backchannelEnabled_) {
         handleBackchannelSetup(idx, cseq, uri, headers);
         return;

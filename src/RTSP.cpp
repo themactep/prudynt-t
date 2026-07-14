@@ -123,6 +123,9 @@ void RTSP::start() {
     }
 
     // ── Enable backchannel (talkback) ──────────────────────────────────
+    // Backchannel is negotiated via ANNOUNCE (client sends SDP), not
+    // advertised in DESCRIBE.  This keeps player clients (mpv, ffplay)
+    // from trying to SETUP recvonly tracks.
     if (cfg->audio.output_enabled) {
         server_->enableBackchannel();
     }
