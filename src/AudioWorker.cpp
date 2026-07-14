@@ -192,12 +192,13 @@ AudioWorker::~AudioWorker() {
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   AudioFrame af;
-  // Use CLOCK_MONOTONIC to avoid RTP timestamp jumps when NTP adjusts
-  // the system clock (gettimeofday can go backward).
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  af.time.tv_sec = ts.tv_sec;
-  af.time.tv_usec = ts.tv_nsec / 1000;
+  // Use the IMP driver's capture timestamp (microseconds, monotonic)
+  // instead of clock_gettime().  When a loud noise burst causes the AAC
+  // encoder to fall behind, CLOCK_MONOTONIC would show a processing gap —
+  // but the driver timestamp reflects when the audio was actually
+  // captured, keeping RTP timestamps gap-free.
+  af.time.tv_sec = static_cast<time_t>(frame.timeStamp / 1000000);
+  af.time.tv_usec = static_cast<suseconds_t>(frame.timeStamp % 1000000);
 
   uint8_t *start = (uint8_t *)frame.virAddr;
   uint8_t *end = start + frame.len;
