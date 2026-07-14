@@ -345,11 +345,12 @@ STRIP_FLAG              := $(if $(filter 0,$(DEBUG_STRIP)),,"-s")
 
 # Version File Generation
 # -----------------------
-$(VERSION_FILE): $(SRC_DIR)/version.tpl.hpp
+$(VERSION_FILE): $(SRC_DIR)/version.tpl.hpp FORCE
 	@mkdir -p $(dir $(VERSION_FILE))
-	@if ! grep -q "$(commit_tag)" $(VERSION_FILE) > /dev/null 2>&1; then \
+	@new_ver=$$(sed 's/COMMIT_TAG/"$(commit_tag)"/g' $(SRC_DIR)/version.tpl.hpp); \
+	if [ ! -f $(VERSION_FILE) ] || ! echo "$$new_ver" | cmp -s $(VERSION_FILE) -; then \
 		echo "Updating $(VERSION_FILE) to $(commit_tag)"; \
-		sed 's/COMMIT_TAG/"$(commit_tag)"/g' $(SRC_DIR)/version.tpl.hpp > $(VERSION_FILE); \
+		echo "$$new_ver" > $(VERSION_FILE); \
 	fi
 
 # Compilation flags tracking - recompile all objects when CXXFLAGS changes
