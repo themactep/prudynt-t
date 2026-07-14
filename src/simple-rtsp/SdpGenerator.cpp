@@ -196,19 +196,33 @@ std::string generateSdp(const VideoStreamConfig &video,
 
     // ── Backchannel media (talkback) ──────────────────────────────────
     if (backchannel && !backchannel->empty()) {
-        for (size_t i = 0; i < backchannel->size(); i++) {
-            const auto &bc = (*backchannel)[i];
-            const char *encName = bc.codec.c_str();
-            int clk = bc.sampleRate;
-            if (bc.codec == "PCMU") clk = 8000;
-            else if (bc.codec == "PCMA") clk = 8000;
-            off += snprintf(buf + off, sizeof(buf) - off,
-                "m=audio 0 RTP/AVP %d\r\n"
-                "a=control:track3\r\n"
-                "a=rtpmap:%d %s/%d\r\n"
-                "a=recvonly\r\n",
-                bc.payloadType,
-                bc.payloadType, encName, clk);
+        // Single m=audio line with all supported payload types.
+        // The client picks one via SETUP and sends audio to track3.
+        int remain = static_cast<int>(sizeof(buf)) - off;
+        if (remain > 0) {
+            off += snprintf(buf + off, remain,
+                "m=audio 0 RTP/AVP");
+            for (const auto &bc : *backchannel) {
+                remain = static_cast<int>(sizeof(buf)) - off;
+                if (remain <= 0) break;
+                off += snprintf(buf + off, remain, " %d", bc.payloadType);
+            }
+            remain = static_cast<int>(sizeof(buf)) - off;
+            if (remain > 0)
+                off += snprintf(buf + off, remain, "\r\n"
+                    "a=control:track3\r\n"
+                    "a=recvonly\r\n");
+            for (const auto &bc : *backchannel) {
+                remain = static_cast<int>(sizeof(buf)) - off;
+                if (remain <= 0) break;
+                const char *encName = bc.codec.c_str();
+                int clk = bc.sampleRate;
+                if (bc.codec == "PCMU") clk = 8000;
+                else if (bc.codec == "PCMA") clk = 8000;
+                off += snprintf(buf + off, remain,
+                    "a=rtpmap:%d %s/%d\r\n",
+                    bc.payloadType, encName, clk);
+            }
         }
     }
 
