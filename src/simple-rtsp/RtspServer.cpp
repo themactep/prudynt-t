@@ -1291,6 +1291,8 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
 void RtspServer::handleBackchannelSetup(int idx, int cseq,
                                         const char *uri, const char *headers) {
     auto &s = sessions_[idx];
+    LOG_INFO("Backchannel SETUP: PT=" << s->backchannelPayloadType
+             << " uri=" << uri);
 
     const char *t = stristr(headers, "Transport:");
     // Backchannel only supports UDP (we receive from client)
