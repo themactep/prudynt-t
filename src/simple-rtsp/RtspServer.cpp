@@ -948,10 +948,6 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     bool isBackchannel = (s->backchannelPayloadType >= 0 &&
                           !isVideo && !isAudio);
 
-    LOG_INFO("SETUP: isVideo=" << isVideo << " isAudio=" << isAudio
-             << " isBackchannel=" << isBackchannel
-             << " bcPayloadType=" << s->backchannelPayloadType);
-
     if (isBackchannel && backchannelEnabled_) {
         handleBackchannelSetup(idx, cseq, uri, headers);
         return;
@@ -1276,8 +1272,7 @@ void RtspServer::handleAnnounce(int idx, int cseq, const char *,
     }
     char hdr[128];
     snprintf(hdr, sizeof(hdr), "Session: %s\r\n", s->sessionId);
-    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt << " session=" << s->sessionId
-             << " fd=" << s->fd << " idx=" << idx);
+    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt << " session=" << s->sessionId);
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
@@ -1305,8 +1300,6 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
 void RtspServer::handleBackchannelSetup(int idx, int cseq,
                                         const char *uri, const char *headers) {
     auto &s = sessions_[idx];
-    LOG_INFO("Backchannel SETUP: PT=" << s->backchannelPayloadType
-             << " uri=" << uri);
 
     const char *t = stristr(headers, "Transport:");
     // Backchannel only supports UDP (we receive from client)
