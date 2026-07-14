@@ -366,6 +366,26 @@ int IMPEncoder::init() {
 
   initProfile();
 
+  // Size the encoder bitstream buffers to avoid truncation at high
+  // resolutions.  The SDK default is ~512 KB which is too small for
+  // 1440p / 4K IDR frames — the encoder silently truncates, causing
+  // "bytestream -X" and "left block unavailable" decode errors.
+  // Must be called before IMP_Encoder_CreateChn.
+  if (!is_jpeg) {
+    int pixels = stream->width * stream->height;
+    // SetStreamBufSize: T31 (≥1.1.4), T40, T41, C100
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
+    uint32_t bufSize;
+    if (pixels > 3840 * 2160)      bufSize = 8 * 1024 * 1024;
+    else if (pixels > 1920 * 1080) bufSize = 2 * 1024 * 1024;
+    else                           bufSize = 1 * 1024 * 1024;
+    IMP_Encoder_SetStreamBufSize(encChn, bufSize);
+    LOG_DEBUG("Encoder stream buffer: " << bufSize / 1024 / 1024 << "MB");
+#endif
+    // SetMaxStreamCnt: available on all Ingenic SoCs (T10–T41, C100)
+    IMP_Encoder_SetMaxStreamCnt(encChn, 6);
+  }
+
   if (!is_jpeg && hal::encoder::supports_attr_bufsize() &&
       hal::encoder::get_attr_bufsize(chnAttr) == 0) {
     uint32_t yuv_size = static_cast<uint32_t>(stream->width) *
