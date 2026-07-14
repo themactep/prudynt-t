@@ -95,10 +95,12 @@ std::string generateSdp(const VideoStreamConfig &video,
         "m=video 0 RTP/AVP %d\r\n"
         "a=control:track1\r\n"
         "a=rtpmap:%d %s/%d\r\n"
-        "a=framerate:%d\r\n",
+        "a=framerate:%d\r\n"
+        "a=framesize:%d %d-%d\r\n",
         pt,
         pt, rtpFmt, video.clockRate,
-        video.fps);
+        video.fps,
+        pt, video.width, video.height);
 
     if (video.haveCodecConfig && !video.sps.empty()) {
         if (isH265) {
