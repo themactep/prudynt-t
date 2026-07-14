@@ -106,6 +106,11 @@ struct Session {
     // Audio uses wall-clock start (separate because audio NALs lack imp_ts)
     struct timeval startAnchor{0, 0};
 
+    // Video uses encoder monotonic clock (imp_ts, microseconds).
+    // Anchored to the first frame's imp_ts for the session so RTP
+    // timestamps track the actual frame cadence.
+    int64_t videoStartAnchorUs = -1;
+
     // Track last-sent SPS/PPS fingerprint to detect reconfiguration
     // (e.g. after day/night switch when fps changes and encoder re-emits
     // new codec config).
@@ -113,10 +118,17 @@ struct Session {
     uint32_t ppsHash = 0;
     bool     spsChanged = false;  // set when we detect new SPS, cleared after prepend
 
-    // Frame counter for RTP timestamp generation.  We count frames at the
-    // declared framerate instead of using encoder imp_ts (which resets during
-    // MJPEG reinit and causes 600ms backward jumps).
+    // Frame counter for RTP timestamp generation.  RTP timestamps now
+    // use encoder imp_ts (real cadence) instead of a synthetic clock.
+    // videoFrameCount is kept for diagnostics / SDP stats only.
     uint32_t videoFrameCount = 0;
+
+    // Previous frame-start RTP timestamp, used for monotonicity guard.
+    // Stored separately from videoRtp.timestamp because the RtpState
+    // struct may be read from other contexts (RTCP SR, PLAY response)
+    // that must not interfere with the monotonicity check.
+    uint32_t lastFrameRtpTs = 0;
+    bool     hasFrameRtpTs = false;
 
     time_t lastActivity = 0;
 
@@ -459,6 +471,9 @@ void RtspServer::acceptClient() {
     s->readOff = 0;
     s->playing = false;
     s->startAnchor = {0, 0};
+    s->videoStartAnchorUs = -1;
+    s->lastFrameRtpTs = 0;
+    s->hasFrameRtpTs = false;
     s->videoChn = -1;
     s->hasAudio = false;
     s->sessionId[0] = '\0';
@@ -954,6 +969,9 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         s->codecConfigSent = false;
         s->waitingForKeyframe = false;
         s->videoFrameCount = 0;
+        s->videoStartAnchorUs = -1;
+        s->lastFrameRtpTs = 0;
+        s->hasFrameRtpTs = false;
         if (s->videoChn < NUM_VIDEO_CHANNELS)
             activePlayers_[s->videoChn]++;
     }
@@ -1089,19 +1107,33 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     size_t nalLen = rawLen - offset;
     if (nalLen == 0) return false;
 
-    // ── Timestamp ── frame counter at declared framerate ──────────────
-    // Use a frame counter instead of encoder imp_ts (which resets during
-    // MJPEG encoder reinit, causing 600ms backward jumps).
+    // ── Timestamp ── encoder monotonic clock (90 kHz RTP) ────────────
+    // Use imp_ts (microseconds from encoder, smoothed by VideoWorker)
+    // anchored to the first frame of the session.  This produces RTP
+    // timestamps that match the actual frame cadence, so a client's
+    // jitter buffer never starves when the encoder falls below the
+    // configured framerate (e.g. 12 fps actual vs 30 fps configured).
+    // The old frame-counter approach always ticked at the *configured*
+    // fps, causing mpv to consume buffered frames at 30 fps and then
+    // enter buffering.
     if (nal.is_frame_start) {
-        // Get declared framerate for this channel
-        int fps = 30; // default
-        for (auto &ve : videoStreams_) {
-            if (ve.chn == s.videoChn) {
-                fps = ve.config.fps > 0 ? ve.config.fps : 30;
-                break;
-            }
+        int64_t ts_us = nal.imp_ts;
+        if (s.videoStartAnchorUs < 0) {
+            s.videoStartAnchorUs = ts_us;
         }
-        s.videoRtp.timestamp = static_cast<uint32_t>(s.videoFrameCount) * (90000u / fps);
+        int64_t rel_us = ts_us - s.videoStartAnchorUs;
+        if (rel_us < 0) rel_us = 0;
+        // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
+        uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
+        // RTP timestamps must be strictly increasing (RFC 3550).
+        // Compare against the previous frame-start timestamp, not
+        // videoRtp.timestamp (which may have been read by other paths).
+        if (s.hasFrameRtpTs && new_ts <= s.lastFrameRtpTs) {
+            new_ts = s.lastFrameRtpTs + 1;
+        }
+        s.lastFrameRtpTs = new_ts;
+        s.hasFrameRtpTs = true;
+        s.videoRtp.timestamp = new_ts;
         s.videoFrameCount++;
     }
 

@@ -28,7 +28,7 @@ class StreamReplicator;
 #include <string>
 #include <vector>
 
-#define MSG_CHANNEL_SIZE 200
+#define MSG_CHANNEL_SIZE 400
 #define BACKCHANNEL_QUEUE_SIZE 200
 #define AUDIO_OUTPUT_QUEUE_SIZE 64
 #define NUM_AUDIO_CHANNELS 1

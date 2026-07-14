@@ -84,24 +84,24 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame() {
     return;
   }
 
-  // Detect TCP backpressure: if the queue is more than 25% full the RTSP/TCP
-  // sink is falling behind (shrinking window). In that state, drop non-keyframe
-  // NAL units so the client can re-sync on the next IDR without accumulating
-  // more lag. Only applies to video; audio is never dropped.
+  // Detect TCP backpressure: if the queue is more than 75% full the RTSP/TCP
+  // sink is falling behind (shrinking window). In that state, drop whole
+  // non-keyframe frames so the client can re-sync on the next IDR without
+  // accumulating more lag. Only applies to video; audio is never dropped.
   bool congested = false;
   if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
     size_t depth = stream->msgChannel->size();
     size_t cap = stream->msgChannel->capacity();
-    congested = (cap > 0 && depth * 4 > cap);
+    congested = (cap > 0 && depth * 4 > cap * 3);
     if (congested) {
       static uint64_t last_log_ms[NUM_VIDEO_CHANNELS] = {};
       static uint32_t drop_count[NUM_VIDEO_CHANNELS] = {};
-      drop_count[encChn]++;
+      ++drop_count[encChn];
       uint64_t now_ms = static_cast<uint64_t>(::time(nullptr)) * 1000;
       if (now_ms - last_log_ms[encChn] >= 5000) {
         LOG_WARN("ch" << encChn << " RTSP queue " << depth << "/" << cap
                       << " — congested, dropped " << drop_count[encChn]
-                      << " non-keyframes in last 5s");
+                      << " non-keyframe frames in last 5s");
         drop_count[encChn] = 0;
         last_log_ms[encChn] = now_ms;
       }
@@ -109,10 +109,24 @@ void IMPDeviceSource<FrameType, Stream>::deliverFrame() {
   }
 
   FrameType nal;
+  // When congested, skip entire non-keyframe frames (not individual NALs)
+  // to avoid corrupting the bitstream with partial frames.
+  bool skip_until_keyframe = false;
   while (stream->msgChannel->read(&nal)) {
     if constexpr (std::is_same_v<FrameType, H264NALUnit>) {
-      if (congested && !nal.is_keyframe) {
-        continue; // consume from queue but do not deliver — reduces backlog
+      if (congested) {
+        if (nal.is_keyframe) {
+          skip_until_keyframe = false; // found a safe resync point
+        } else if (skip_until_keyframe) {
+          continue; // mid-skip: consume NALs silently
+        } else if (!nal.is_keyframe) {
+          // Start skipping this non-keyframe frame — all NALs until the next
+          // is_frame_start (or keyframe) belong to the dropped frame.
+          if (nal.is_frame_start) {
+            skip_until_keyframe = true;
+          }
+          continue;
+        }
       }
     }
     if (nal.data.size() > fMaxSize) {

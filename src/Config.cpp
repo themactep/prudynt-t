@@ -618,7 +618,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream0.rotation", stream0.rotation, 0, validateRotation},
       // TODO: set default width to the maximum supported by the SoC via HAL
       {"stream0.width", stream0.width, 0, validateIntGe0},
-      {"stream0.profile", stream0.profile, 2, validateInt2},
+      {"stream0.profile", stream0.profile, 1, validateInt2},
       {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
       // Rate control advanced (defaults -1/0 mean use encoder defaults)
       {"stream1.qp_init", stream1.qp_init, -1,
@@ -646,7 +646,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"stream1.rotation", stream1.rotation, 0, validateRotation},
       // TODO: set default width to the maximum supported by the SoC via HAL
       {"stream1.width", stream1.width, 0, validateIntGe0},
-      {"stream1.profile", stream1.profile, 2, validateInt2},
+      {"stream1.profile", stream1.profile, 1, validateInt2},
       // TODO: set default fps to the maximum supported by the SoC via HAL
       {"stream2.fps", stream2.fps, 25,
        [](const int &v) { return v > 1 && v <= 30; }},

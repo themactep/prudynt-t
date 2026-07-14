@@ -727,6 +727,22 @@ void VideoWorker::run() {
             }
           }
 
+          // Detect data-partitioned H.264 NALs (types 2/3/4) which are
+          // emitted by the Ingenic encoder at High profile and cannot be
+          // decoded by FFmpeg or most clients.  Log once per channel so
+          // the user knows to switch to Main profile (profile=1).
+          if (!stream_is_h265 && (h264_nal == 2 || h264_nal == 3 || h264_nal == 4)) {
+            static bool dp_warned[NUM_VIDEO_CHANNELS] = {};
+            if (!dp_warned[encChn]) {
+              dp_warned[encChn] = true;
+              LOG_WARN("ch" << encChn
+                       << " encoder emits data-partitioned NALs (type "
+                       << h264_nal
+                       << ").  Set stream profile=1 (Main) in prudynt.json "
+                          "to fix FFmpeg decode errors.");
+            }
+          }
+
           if (stream_is_h265) {
             nal_is_vps = (h265_nal == 32);
             nal_is_sps = (h265_nal == 33);
