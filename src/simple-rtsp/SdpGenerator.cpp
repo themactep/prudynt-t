@@ -195,4 +195,55 @@ std::string generateSdp(const VideoStreamConfig &video,
     return std::string(buf);
 }
 
+std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
+                                 const char *serverIp) {
+    char buf[SDP_BUF_SIZE];
+    int off = 0;
+
+    off += snprintf(buf + off, sizeof(buf) - off,
+        "v=0\r\n"
+        "o=- %d 1 IN IP4 %s\r\n"
+        "s=%s\r\n"
+        "t=0 0\r\n"
+        "a=control:*\r\n",
+        rand(), serverIp,
+        "Thingino Prudynt");
+
+    const char *encName = "mpeg4-generic";
+    int audioClk = audio.sampleRate;
+    int audioCh = audio.channels;
+
+    if (audio.codec == "OPUS") {
+        encName = "OPUS";
+        audioClk = 48000;
+        audioCh = 2;
+    } else if (audio.codec == "PCMU") {
+        encName = "PCMU";
+        audioClk = 8000;
+    } else if (audio.codec == "PCMA") {
+        encName = "PCMA";
+        audioClk = 8000;
+    } else if (audio.codec == "L16") {
+        encName = "L16";
+    }
+
+    off += snprintf(buf + off, sizeof(buf) - off,
+        "m=audio 0 RTP/AVP %d\r\n"
+        "a=control:track1\r\n"
+        "a=rtpmap:%d %s/%d/%d\r\n",
+        audio.payloadType,
+        audio.payloadType, encName, audioClk, audioCh);
+
+    if (audio.codec == "AAC") {
+        std::string aacCfg = makeAacConfig(audio.sampleRate, audio.channels);
+        off += snprintf(buf + off, sizeof(buf) - off,
+            "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
+            "config=%s;"
+            "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
+            audio.payloadType, aacCfg.c_str());
+    }
+
+    return std::string(buf);
+}
+
 } // namespace simple_rtsp

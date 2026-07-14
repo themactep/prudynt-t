@@ -59,8 +59,9 @@ struct Session {
     char videoSetupUrl[256]{};
     char audioSetupUrl[256]{};
     bool playing     = false;
-    int  videoChn    = -1;   // encoder channel index, -1 = unset
+    int  videoChn    = -1;   // encoder channel index, -1 = audio-only
     bool hasAudio    = false;
+    bool audioOnly   = false; // true for /mic-style standalone audio
 
     // Transport
     bool    tcpInterleaved     = true;
@@ -191,6 +192,11 @@ void RtspServer::addAudioStream(int chn, const AudioStreamConfig &config,
     audioStreams_.push_back({chn, config, std::move(state)});
 }
 
+void RtspServer::addAudioOnlyStream(const AudioStreamConfig &config,
+                                    std::shared_ptr<audio_stream> state) {
+    audioOnlyStreams_.push_back({config, std::move(state)});
+}
+
 // ── Start / Stop ───────────────────────────────────────────────────────────
 
 bool RtspServer::start(int port) {
@@ -318,7 +324,8 @@ void RtspServer::eventLoop() {
 
         // ── Drain taps for playing sessions ─────────────────────────────
         for (auto &s : sessions_) {
-            if (!s || !s->playing || s->videoChn < 0) continue;
+            if (!s || !s->playing) continue;
+            if (s->videoChn < 0 && !s->audioOnly) continue;
 
             bool backpressure = false;
 
@@ -476,6 +483,7 @@ void RtspServer::acceptClient() {
     s->hasFrameRtpTs = false;
     s->videoChn = -1;
     s->hasAudio = false;
+    s->audioOnly = false;
     s->sessionId[0] = '\0';
     s->lastActivity = time(nullptr);
     s->videoRtp = RtpState{};
@@ -707,6 +715,26 @@ void RtspServer::handleOptions(int idx, int cseq) {
 void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
     auto &s = sessions_[idx];
 
+    // ── Check audio-only endpoints first ──────────────────────────────
+    for (size_t i = 0; i < audioOnlyStreams_.size(); i++) {
+        const auto &acfg = audioOnlyStreams_[i].config;
+        if (!acfg.endpoint.empty() && strstr(uri, acfg.endpoint.c_str())) {
+            struct sockaddr_in localAddr;
+            socklen_t len = sizeof(localAddr);
+            char serverIp[64] = "0.0.0.0";
+            if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
+                inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
+
+            std::string sdp = generateAudioOnlySdp(acfg, serverIp);
+            char hdr[256];
+            snprintf(hdr, sizeof(hdr),
+                     "Content-Type: application/sdp\r\n"
+                     "Content-Length: %zu\r\n", sdp.size());
+            sendResponse(*s, Status::OK, cseq, hdr, sdp.c_str());
+            return;
+        }
+    }
+
     // Find which stream this URI refers to
     // URI could be: rtsp://host:port/ch0  or just /ch0
     int videoIdx = -1;
@@ -770,12 +798,33 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     auto &s = sessions_[idx];
 
     // ── Detect stream type from URI first ──────────────────────────────
+    // Check audio-only endpoints (/mic, etc.)
+    bool isAudioOnlyEndpoint = false;
+    for (const auto &entry : audioOnlyStreams_) {
+        if (!entry.config.endpoint.empty() && strstr(uri, entry.config.endpoint.c_str())) {
+            isAudioOnlyEndpoint = true;
+            s->audioOnly = true;
+            break;
+        }
+    }
+
     bool isAudio = (strstr(uri, "track2") != nullptr);
     bool isVideo = (strstr(uri, "track1") != nullptr);
+
+    // Audio-only endpoints: track1 is audio
+    if (isAudioOnlyEndpoint && isVideo) {
+        isVideo = false;
+        isAudio = true;
+    }
+
     // Fallback: if no trackID, assume first is video (for legacy clients)
     if (!isAudio && !isVideo) {
-        isVideo = (s->videoChn < 0); // first SETUP without trackID = video
-        isAudio = !isVideo && !audioStreams_.empty();
+        if (isAudioOnlyEndpoint) {
+            isAudio = true;
+        } else {
+            isVideo = (s->videoChn < 0);
+            isAudio = !isVideo && !audioStreams_.empty();
+        }
     }
 
     // ── Parse transport ────────────────────────────────────────────────
@@ -943,7 +992,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         return;
     }
 
-    if (s->videoChn < 0 && !s->hasAudio) {
+    if (s->videoChn < 0 && !s->hasAudio && !s->audioOnly) {
         sendResponse(*s, Status::BAD_REQUEST, cseq, nullptr, nullptr);
         return;
     }

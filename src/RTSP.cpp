@@ -129,6 +129,42 @@ void RTSP::start() {
         addSubsession(1, cfg->stream1);
     }
 
+    // ── Audio-only endpoint (e.g. /mic) ──────────────────────────────
+    if (cfg->rtsp.audio_only_enabled && cfg->audio.input_enabled
+        && global_audio[0] && global_audio[0]->imp_audio) {
+        simple_rtsp::AudioStreamConfig acfg;
+        acfg.endpoint = cfg->rtsp.audio_only_endpoint;
+        int hwRate = global_audio[0]->imp_audio->sample_rate;
+        acfg.sampleRate = (hwRate > 0) ? hwRate : 8000;
+        acfg.channels = 1;
+        switch (global_audio[0]->imp_audio->format) {
+        case IMPAudioFormat::G711U:
+            acfg.codec = "PCMU";
+            acfg.payloadType = 0;
+            break;
+        case IMPAudioFormat::G711A:
+            acfg.codec = "PCMA";
+            acfg.payloadType = 8;
+            break;
+        case IMPAudioFormat::AAC:
+            acfg.codec = "AAC";
+            acfg.payloadType = 97;
+            break;
+        case IMPAudioFormat::OPUS:
+            acfg.codec = "OPUS";
+            acfg.payloadType = 97;
+            break;
+        case IMPAudioFormat::PCM:
+        default:
+            acfg.codec = "L16";
+            acfg.payloadType = 97;
+            break;
+        }
+        server_->addAudioOnlyStream(acfg, global_audio[0]);
+        LOG_INFO("Audio-only endpoint: /" << acfg.endpoint
+                 << " (" << acfg.codec << " " << acfg.sampleRate << "Hz)");
+    }
+
     // ── Set up the signal so main.cpp can stop us ──────────────────────
     global_rtsp_thread_signal = 0; // signal running
 

@@ -85,6 +85,7 @@ struct VideoStreamConfig {
 };
 
 struct AudioStreamConfig {
+    std::string endpoint;      // empty = multiplexed with video; "/mic" = standalone
     std::string codec        = "AAC";
     int sampleRate           = 16000;
     int channels             = 1;

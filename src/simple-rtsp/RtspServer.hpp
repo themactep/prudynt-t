@@ -35,9 +35,13 @@ public:
     void addVideoStream(int chn, const VideoStreamConfig &config,
                         std::shared_ptr<video_stream> videoState);
 
-    // Register an audio stream.
+    // Register an audio stream (multiplexed with video).
     void addAudioStream(int chn, const AudioStreamConfig &config,
                         std::shared_ptr<audio_stream> audioState);
+
+    // Register a standalone audio-only endpoint (e.g. /mic, no video).
+    void addAudioOnlyStream(const AudioStreamConfig &config,
+                            std::shared_ptr<audio_stream> audioState);
 
     // ── Lifecycle ───────────────────────────────────────────────────────
 
@@ -116,6 +120,13 @@ private:
         std::shared_ptr<audio_stream> state;
     };
     std::vector<AudioEntry> audioStreams_;
+
+    // Standalone audio-only endpoints (e.g. /mic)
+    struct AudioOnlyEntry {
+        AudioStreamConfig config;
+        std::shared_ptr<audio_stream> state;
+    };
+    std::vector<AudioOnlyEntry> audioOnlyStreams_;
 
     // Session objects (one per connected client)
     std::vector<std::unique_ptr<Session>> sessions_;
