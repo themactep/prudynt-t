@@ -248,4 +248,46 @@ std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
     return std::string(buf);
 }
 
+std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats,
+                                   const char *serverIp,
+                                   const char *streamName) {
+    char buf[SDP_BUF_SIZE];
+    int off = 0;
+
+    off += snprintf(buf + off, sizeof(buf) - off,
+        "v=0\r\n"
+        "o=- %d 1 IN IP4 %s\r\n"
+        "s=%s\r\n"
+        "t=0 0\r\n"
+        "a=control:*\r\n",
+        rand(), serverIp,
+        streamName);
+
+    if (formats.empty()) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+            "m=audio 0 RTP/AVP 0\r\n"
+            "a=control:track0\r\n"
+            "a=recvonly\r\n"
+            "a=rtpmap:0 PCMU/8000\r\n");
+    } else {
+        off += snprintf(buf + off, sizeof(buf) - off, "m=audio 0 RTP/AVP");
+        for (const auto &bc : formats)
+            off += snprintf(buf + off, sizeof(buf) - off, " %d", bc.payloadType);
+        off += snprintf(buf + off, sizeof(buf) - off,
+            "\r\n"
+            "a=control:track0\r\n"
+            "a=recvonly\r\n");
+        for (const auto &bc : formats) {
+            const char *encName = bc.codec.c_str();
+            int clk = bc.sampleRate;
+            if (bc.codec == "PCMU") clk = 8000;
+            else if (bc.codec == "PCMA") clk = 8000;
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
+        }
+    }
+
+    return std::string(buf);
+}
+
 } // namespace simple_rtsp

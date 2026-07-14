@@ -17,4 +17,9 @@ std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
                                  const char *serverIp,
                                  const char *streamName);
 
+// Generate SDP describing available backchannel (receive) codecs.
+std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats,
+                                   const char *serverIp,
+                                   const char *streamName);
+
 } // namespace simple_rtsp

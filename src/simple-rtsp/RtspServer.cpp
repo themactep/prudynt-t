@@ -868,6 +868,24 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
         }
     }
 
+    // ── Backchannel probe (e.g. /backchannel) ────────────────────────
+    if (backchannelEnabled_ && strstr(uri, "backchannel")) {
+        struct sockaddr_in localAddr;
+        socklen_t len = sizeof(localAddr);
+        char serverIp[64] = "0.0.0.0";
+        if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
+            inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
+
+        std::string sdp = generateBackchannelSdp(backchannelFormats_,
+                                                  serverIp, streamName_.c_str());
+        char hdr[256];
+        snprintf(hdr, sizeof(hdr),
+                 "Content-Type: application/sdp\r\n"
+                 "Content-Length: %zu\r\n", sdp.size());
+        sendResponse(*s, Status::OK, cseq, hdr, sdp.c_str());
+        return;
+    }
+
     // Find which stream this URI refers to
     // URI could be: rtsp://host:port/ch0  or just /ch0
     int videoIdx = -1;
