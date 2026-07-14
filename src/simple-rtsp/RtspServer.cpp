@@ -730,7 +730,7 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
             if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
                 inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
 
-            std::string sdp = generateAudioOnlySdp(acfg, serverIp);
+            std::string sdp = generateAudioOnlySdp(acfg, serverIp, streamName_.c_str());
             char hdr[256];
             snprintf(hdr, sizeof(hdr),
                      "Content-Type: application/sdp\r\n"
@@ -785,7 +785,7 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
         inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
     }
 
-    std::string sdp = generateSdp(ve.config, audioCfg, serverIp);
+    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str());
 
     char hdr[256];
     snprintf(hdr, sizeof(hdr),

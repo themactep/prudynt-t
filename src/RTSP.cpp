@@ -4,7 +4,9 @@
 #include "Config.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "version.hpp"
 #include <cstring>
+#include <string>
 
 #undef MODULE
 #define MODULE "RTSP"
@@ -110,7 +112,8 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 
 void RTSP::start() {
     // ── Configure server ───────────────────────────────────────────────
-    server_->setStreamName(cfg->rtsp.name);
+    std::string streamName = std::string(cfg->rtsp.name) + " (" + BUILD_COMMIT + ")";
+    server_->setStreamName(streamName);
     server_->setStreamInfo("stream0");
     server_->setSendBufferSize(cfg->rtsp.send_buffer_size);
     server_->setSendTimeout(cfg->rtsp.send_timeout_s);

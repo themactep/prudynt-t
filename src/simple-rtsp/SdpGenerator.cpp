@@ -72,7 +72,8 @@ static std::string makeAacConfig(unsigned sampleRate, unsigned channels) {
 
 std::string generateSdp(const VideoStreamConfig &video,
                         const AudioStreamConfig *audio,
-                        const char *serverIp) {
+                        const char *serverIp,
+                        const char *streamName) {
     char buf[SDP_BUF_SIZE];
     int off = 0;
 
@@ -84,7 +85,7 @@ std::string generateSdp(const VideoStreamConfig &video,
         "t=0 0\r\n"
         "a=control:*\r\n",
         rand(), serverIp,
-        "Thingino Prudynt");
+        streamName);
 
     // ── Video media ────────────────────────────────────────────────────
     bool isH265 = (video.codec == "H265");
@@ -196,7 +197,8 @@ std::string generateSdp(const VideoStreamConfig &video,
 }
 
 std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
-                                 const char *serverIp) {
+                                 const char *serverIp,
+                                 const char *streamName) {
     char buf[SDP_BUF_SIZE];
     int off = 0;
 
@@ -207,7 +209,7 @@ std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
         "t=0 0\r\n"
         "a=control:*\r\n",
         rand(), serverIp,
-        "Thingino Prudynt");
+        streamName);
 
     const char *encName = "mpeg4-generic";
     int audioClk = audio.sampleRate;
