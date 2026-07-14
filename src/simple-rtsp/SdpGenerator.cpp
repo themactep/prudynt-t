@@ -16,6 +16,40 @@ static std::string hexEncode(const uint8_t *data, size_t len) {
     return out;
 }
 
+// Parse H.265 VPS NAL unit (with 2-byte NAL header, no start code) to extract
+// profile_tier_level fields required by RFC 7798 fmtp line.
+// Returns true on success.
+static bool parseVpsProfileTier(const std::vector<uint8_t> &vps,
+                                int &profileSpace, int &tierFlag,
+                                int &profileIdc, int &levelIdc) {
+    // VPS NAL unit: 2-byte header + RBSP
+    //   byte 0-1: NAL header (F|Type|LayerId, LayerId|TID)
+    //   byte 2:   vps_id(4)|base_internal(1)|base_available(1)|max_layers_upper(2)
+    //   byte 3:   max_layers_lower(4)|max_sub_layers(3)|temporal_nesting(1)
+    //   byte 4-5: reserved_0xffff_16bits
+    //   byte 6:   profile_tier_level start
+    //     byte 6:    profile_space(2)|tier_flag(1)|profile_idc(5)
+    //     byte 7-10: compatibility_flags (32 bits)
+    //     byte 11-16: constraint/reserved (48 bits)
+    //     byte 17:   level_idc (8 bits)
+    // Minimum VPS size: 2 (header) + 4 (vps fields) + 12 (profile_tier_level) = 18
+    if (vps.size() < 18)
+        return false;
+
+    // Verify this is actually a VPS NAL (type 32)
+    if (vps.size() >= 2) {
+        uint8_t nalType = (vps[0] >> 1) & 0x3F;
+        if (nalType != 32)
+            return false;
+    }
+
+    profileSpace = (vps[6] >> 6) & 0x03;
+    tierFlag    = (vps[6] >> 5) & 0x01;
+    profileIdc  =  vps[6]       & 0x1F;
+    levelIdc    =  vps[17];
+    return true;
+}
+
 // Generate AAC AudioSpecificConfig hex string (RFC 3640, ISO 14496-3)
 // Returns 4-digit hex string for two-byte config: objectType(5b) + freqIdx(4b) + chCfg(4b) + fill(3b)
 static std::string makeAacConfig(unsigned sampleRate, unsigned channels) {
@@ -68,7 +102,17 @@ std::string generateSdp(const VideoStreamConfig &video,
 
     if (video.haveCodecConfig && !video.sps.empty()) {
         if (isH265) {
-            // H.265: sprop-vps, sprop-sps, sprop-pps
+            // H.265: fmtp with profile-tier-level (RFC 7798 §7.1 mandatory)
+            // followed by sprop-vps, sprop-sps, sprop-pps
+            int profSpace = 0, tierFlag = 0, profIdc = 1, levelIdc = 90;
+            if (!video.vps.empty())
+                parseVpsProfileTier(video.vps, profSpace, tierFlag, profIdc, levelIdc);
+
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "a=fmtp:%d profile-space=%d;tier-flag=%d;"
+                "profile-id=%d;level-id=%d\r\n",
+                pt, profSpace, tierFlag, profIdc, levelIdc);
+
             if (!video.vps.empty()) {
                 off += snprintf(buf + off, sizeof(buf) - off,
                     "a=sprop-vps=%s\r\n",

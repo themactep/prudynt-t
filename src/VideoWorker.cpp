@@ -748,7 +748,9 @@ void VideoWorker::run() {
               global_video[encChn]->latest_sps.assign(start + 4, end);
               // Normalize nal_ref_idc to 3: many H.264 parsers (go2rtc,
               // browsers) expect 0x67, not 0x27, for SPS NAL header.
-              if (!global_video[encChn]->latest_sps.empty())
+              // H.265 NAL header layout differs (F|Type(6)|LayerId(1)),
+              // so this normalization only applies to H.264.
+              if (!stream_is_h265 && !global_video[encChn]->latest_sps.empty())
                 global_video[encChn]->latest_sps[0] =
                     (global_video[encChn]->latest_sps[0] & 0x1F) | (3 << 5);
               // The Ingenic encoder always emits level 5.1 regardless of the
@@ -768,7 +770,7 @@ void VideoWorker::run() {
               global_video[encChn]->have_sps = true;
             } else {
               global_video[encChn]->latest_pps.assign(start + 4, end);
-              if (!global_video[encChn]->latest_pps.empty())
+              if (!stream_is_h265 && !global_video[encChn]->latest_pps.empty())
                 global_video[encChn]->latest_pps[0] =
                     (global_video[encChn]->latest_pps[0] & 0x1F) | (3 << 5);
               global_video[encChn]->have_pps = true;
@@ -914,7 +916,9 @@ void VideoWorker::run() {
 
               // Normalize nal_ref_idc to 3 for SPS/PPS in the in-band
               // stream (the RTP data that RTSP clients like go2rtc see).
-              if ((nal_is_sps || nal_is_pps) && !nalu_buf.empty())
+              // H.265 NAL header layout differs (F|Type(6)|LayerId(1)),
+              // so this normalization only applies to H.264.
+              if (!stream_is_h265 && (nal_is_sps || nal_is_pps) && !nalu_buf.empty())
                 nalu_buf[0] = (nalu_buf[0] & 0x1F) | (3 << 5);
               // Rewrite H264 level_idc in the inline SPS to match latest_sps
               // (minimum level that fits the real resolution/fps).

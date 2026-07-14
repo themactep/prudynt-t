@@ -99,8 +99,9 @@ struct Session {
     RtpState videoRtp;
     RtpState audioRtp;
 
-    bool    codecConfigSent  = false; // SPS/PPS prepended for this session
-    bool    sendInitialRtcpSr = false; // Send RTCP SR after first frame
+    bool    codecConfigSent    = false; // SPS/PPS prepended for this session
+    bool    waitingForKeyframe = false; // drop non-IDR until first keyframe arrives
+    bool    sendInitialRtcpSr  = false; // Send RTCP SR after first frame
 
     // Audio uses wall-clock start (separate because audio NALs lack imp_ts)
     struct timeval startAnchor{0, 0};
@@ -951,6 +952,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         }
 
         s->codecConfigSent = false;
+        s->waitingForKeyframe = false;
         s->videoFrameCount = 0;
         if (s->videoChn < NUM_VIDEO_CHANNELS)
             activePlayers_[s->videoChn]++;
@@ -1297,12 +1299,22 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                     return false;
             }
             s.codecConfigSent = true;
+            s.waitingForKeyframe = true;
             s.spsChanged = false;
         } else if (isSps || isPps || isVps) {
             // inline path already updated hashes above
             (void)0;
         }
     }
+
+    // ── Keyframe gate: after codec config is sent on a new session,
+    // drop non-keyframe NALs until the first IDR arrives.  This prevents
+    // stale non-IDR frames (accumulated in the tap buffer before the
+    // encoder flush) from reaching the client without reference pictures.
+    if (s.waitingForKeyframe && !nal.is_keyframe)
+        return true;
+    if (nal.is_keyframe)
+        s.waitingForKeyframe = false;
 
     // ── Packetize ──────────────────────────────────────────────────────
     bool ok;
