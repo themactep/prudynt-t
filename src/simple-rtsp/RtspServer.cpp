@@ -404,7 +404,7 @@ void RtspServer::eventLoop() {
                     drained++;
                 }
                 if (drained > 0) {
-                    LOG_DEBUG("video drain " << drained << " NALs, ch="
+                    LOG_DDEBUG("video drain " << drained << " NALs, ch="
                               << s->videoChn << " seq=" << s->videoRtp.seq);
                 }
             }
@@ -420,7 +420,7 @@ void RtspServer::eventLoop() {
                     drained++;
                 }
                 if (drained > 0)
-                    LOG_DEBUG("audio drain " << drained << " frames");
+                    LOG_DDEBUG("audio drain " << drained << " frames");
             }
 
             // Drain orphaned main channels (always — keep encoder flowing)
