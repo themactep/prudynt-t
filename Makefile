@@ -304,17 +304,6 @@ BIN_DIR                 = ./bin
 # =======================
 PRUDYNTCTL_SOURCE       = $(SRC_DIR)/prudyntctl.cpp
 MAIN_SOURCES_CPP        = $(filter-out $(PRUDYNTCTL_SOURCE),$(wildcard $(SRC_DIR)/*.cpp))
-
-LEGACY_RTSP_SOURCES     = $(SRC_DIR)/IMPServerMediaSubsession.cpp \
-                          $(SRC_DIR)/IMPAudioServerMediaSubsession.cpp \
-                          $(SRC_DIR)/IMPTextServerMediaSubsession.cpp \
-                          $(SRC_DIR)/IMPDeviceSource.cpp \
-                          $(SRC_DIR)/OSDTextFramedSource.cpp \
-                          $(SRC_DIR)/BackchannelServerMediaSubsession.cpp \
-                          $(SRC_DIR)/BackchannelSink.cpp \
-                          $(SRC_DIR)/BackchannelStreamState.cpp \
-                          $(SRC_DIR)/AACSink.cpp
-MAIN_SOURCES_CPP        := $(filter-out $(LEGACY_RTSP_SOURCES),$(MAIN_SOURCES_CPP))
 SIMPLE_RTSP_SOURCES     = $(wildcard $(SIMPLE_RTSP_DIR)/*.cpp)
 SOURCES_C               = $(wildcard $(SRC_DIR)/*.c)
 

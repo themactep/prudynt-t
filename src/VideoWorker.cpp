@@ -1035,11 +1035,8 @@ void VideoWorker::run() {
               }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
-            /* Since the audio stream is permanently in use by the stream
-             * replicator, and the audio grabber and encoder standby is also
-             * controlled by the video threads we need to wakeup the audio
-             * thread
-             */
+            /* Wake the audio thread when video data is flowing so the
+             * audio grabber / encoder stays in sync with video activity. */
             if (cfg->audio.input_enabled && !global_audio[0]->active &&
                 !global_restart) {
               LOG_DDEBUG("NOTIFY AUDIO " << !global_audio[0]->active << " "
