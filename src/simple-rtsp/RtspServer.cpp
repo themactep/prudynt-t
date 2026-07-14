@@ -813,8 +813,17 @@ void RtspServer::handleRequest(int idx) {
         return;
     }
 
-    // Consume the processed request from the buffer
+    // Consume the processed request from the buffer.
+    // Account for any body (e.g. ANNOUNCE SDP) specified by Content-Length.
     size_t consumed = static_cast<size_t>(end - s->readBuf) + 4; // past \r\n\r\n
+    {
+        const char *cl = stristr(s->readBuf, "Content-Length:");
+        if (cl) {
+            int bodyLen = 0;
+            if (sscanf(cl, "Content-Length: %d", &bodyLen) == 1 && bodyLen > 0)
+                consumed += static_cast<size_t>(bodyLen);
+        }
+    }
     if (consumed < static_cast<size_t>(s->readOff)) {
         memmove(s->readBuf, s->readBuf + consumed,
                 static_cast<size_t>(s->readOff) - consumed);
