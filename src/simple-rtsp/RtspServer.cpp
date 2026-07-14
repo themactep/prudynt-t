@@ -131,6 +131,10 @@ struct Session {
     uint32_t lastFrameRtpTs = 0;
     bool     hasFrameRtpTs = false;
 
+    // Audio monotonicity guard (simpler: audio frames are whole, no
+    // fragmentation, so compare directly against audioRtp.timestamp).
+    bool     hasAudioRtpTs = false;
+
     time_t lastActivity = 0;
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }
@@ -481,6 +485,7 @@ void RtspServer::acceptClient() {
     s->videoStartAnchorUs = -1;
     s->lastFrameRtpTs = 0;
     s->hasFrameRtpTs = false;
+    s->hasAudioRtpTs = false;
     s->videoChn = -1;
     s->hasAudio = false;
     s->audioOnly = false;
@@ -1021,6 +1026,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         s->videoStartAnchorUs = -1;
         s->lastFrameRtpTs = 0;
         s->hasFrameRtpTs = false;
+        s->hasAudioRtpTs = false;
         if (s->videoChn < NUM_VIDEO_CHANNELS)
             activePlayers_[s->videoChn]++;
     }
@@ -1470,8 +1476,14 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
             dtUs = 0;
         }
         if (dtUs < 0) dtUs = 0;
-        s.audioRtp.timestamp = static_cast<uint32_t>(
+        uint32_t new_ts = static_cast<uint32_t>(
             dtUs * static_cast<int64_t>(sampleRate) / 1000000LL);
+        // Ensure strict monotonicity (RTP spec) — CLOCK_MONOTONIC prevents
+        // backward jumps from NTP, but guard against duplicate timestamps.
+        if (s.hasAudioRtpTs && new_ts <= s.audioRtp.timestamp)
+            new_ts = s.audioRtp.timestamp + 1;
+        s.audioRtp.timestamp = new_ts;
+        s.hasAudioRtpTs = true;
     }
 
     int clientIdx = s.sessionsIndex;

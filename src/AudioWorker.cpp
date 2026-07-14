@@ -192,7 +192,12 @@ AudioWorker::~AudioWorker() {
 
 void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   AudioFrame af;
-  gettimeofday(&af.time, nullptr);
+  // Use CLOCK_MONOTONIC to avoid RTP timestamp jumps when NTP adjusts
+  // the system clock (gettimeofday can go backward).
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  af.time.tv_sec = ts.tv_sec;
+  af.time.tv_usec = ts.tv_nsec / 1000;
 
   uint8_t *start = (uint8_t *)frame.virAddr;
   uint8_t *end = start + frame.len;
