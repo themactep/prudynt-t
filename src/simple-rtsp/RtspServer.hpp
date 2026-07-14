@@ -43,6 +43,10 @@ public:
     void addAudioOnlyStream(const AudioStreamConfig &config,
                             std::shared_ptr<audio_stream> audioState);
 
+    // Enable backchannel (talkback) — client can send audio to the camera.
+    // Formats are auto-detected from IMPBackchannel capabilities.
+    void enableBackchannel();
+
     // ── Lifecycle ───────────────────────────────────────────────────────
 
     bool start(int port);
@@ -71,6 +75,11 @@ private:
     void handlePlay(int clientIdx, int cseq, const char *uri,
                     const char *headers);
     void handleTeardown(int clientIdx, int cseq, const char *headers);
+    void handleAnnounce(int clientIdx, int cseq, const char *uri,
+                        const char *headers, const char *body);
+    void handleRecord(int clientIdx, int cseq, const char *headers);
+    void handleBackchannelSetup(int clientIdx, int cseq,
+                                const char *uri, const char *headers);
 
     // Socket helpers
     void sendResponse(Session &s, Status status, int cseq,
@@ -127,6 +136,12 @@ private:
         std::shared_ptr<audio_stream> state;
     };
     std::vector<AudioOnlyEntry> audioOnlyStreams_;
+
+    // Backchannel (talkback) configuration
+    bool backchannelEnabled_ = false;
+    std::vector<BackchannelConfig> backchannelFormats_;
+    unsigned backchannelInterleavedRtp_  = 4;
+    unsigned backchannelInterleavedRtcp_ = 5;
 
     // Session objects (one per connected client)
     std::vector<std::unique_ptr<Session>> sessions_;

@@ -73,7 +73,8 @@ static std::string makeAacConfig(unsigned sampleRate, unsigned channels) {
 std::string generateSdp(const VideoStreamConfig &video,
                         const AudioStreamConfig *audio,
                         const char *serverIp,
-                        const char *streamName) {
+                        const char *streamName,
+                        const std::vector<BackchannelConfig> *backchannel) {
     char buf[SDP_BUF_SIZE];
     int off = 0;
 
@@ -190,6 +191,24 @@ std::string generateSdp(const VideoStreamConfig &video,
                 "config=%s;"
                 "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
                 audio->payloadType, aacCfg.c_str());
+        }
+    }
+
+    // ── Backchannel media (talkback) ──────────────────────────────────
+    if (backchannel && !backchannel->empty()) {
+        for (size_t i = 0; i < backchannel->size(); i++) {
+            const auto &bc = (*backchannel)[i];
+            const char *encName = bc.codec.c_str();
+            int clk = bc.sampleRate;
+            if (bc.codec == "PCMU") clk = 8000;
+            else if (bc.codec == "PCMA") clk = 8000;
+            off += snprintf(buf + off, sizeof(buf) - off,
+                "m=audio 0 RTP/AVP %d\r\n"
+                "a=control:track3\r\n"
+                "a=rtpmap:%d %s/%d\r\n"
+                "a=recvonly\r\n",
+                bc.payloadType,
+                bc.payloadType, encName, clk);
         }
     }
 

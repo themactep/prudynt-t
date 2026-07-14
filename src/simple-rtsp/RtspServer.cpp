@@ -8,6 +8,7 @@
 #include "SdpGenerator.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "IMPBackchannel.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -62,6 +63,8 @@ struct Session {
     int  videoChn    = -1;   // encoder channel index, -1 = audio-only
     bool hasAudio    = false;
     bool audioOnly   = false; // true for /mic-style standalone audio
+    bool backchannel = false; // receiving audio from client (talkback)
+    int  backchannelPayloadType = -1; // negotiated PT from ANNOUNCE
 
     // Transport
     bool    tcpInterleaved     = true;
@@ -85,6 +88,10 @@ struct Session {
     uint16_t videoClientRtcpPort = 0;
     uint16_t audioClientRtpPort  = 0;
     uint16_t audioClientRtcpPort = 0;
+    // Backchannel: client-to-server RTP socket (we receive from client)
+    int     backchannelRtpSock  = -1;
+    uint16_t backchannelServerRtpPort = 0;
+    uint16_t backchannelClientRtpPort = 0;
     sockaddr_in clientAddr  = {};
     socklen_t clientAddrLen = 0;
 
@@ -199,6 +206,16 @@ void RtspServer::addAudioStream(int chn, const AudioStreamConfig &config,
 void RtspServer::addAudioOnlyStream(const AudioStreamConfig &config,
                                     std::shared_ptr<audio_stream> state) {
     audioOnlyStreams_.push_back({config, std::move(state)});
+}
+
+void RtspServer::enableBackchannel() {
+    // Enumerate supported formats from IMPBackchannel
+#define ADD_BC(EnumName, NameString, PayloadType, Frequency, MimeType) \
+    backchannelFormats_.push_back({NameString, Frequency, PayloadType});
+    X_FOREACH_BACKCHANNEL_FORMAT(ADD_BC)
+#undef ADD_BC
+    backchannelEnabled_ = true;
+    LOG_INFO("Backchannel enabled: " << backchannelFormats_.size() << " codecs");
 }
 
 // ── Start / Stop ───────────────────────────────────────────────────────────
@@ -417,6 +434,71 @@ void RtspServer::eventLoop() {
                 AudioFrame dummy;
                 while (global_audio[0]->msgChannel->read(&dummy)) {}
             }
+
+            // ── Receive backchannel RTP (client → camera audio) ───────
+            if (s->backchannel && s->backchannelRtpSock >= 0 &&
+                global_backchannel && global_backchannel->inputQueue) {
+                uint8_t rtpBuf[2048];
+                sockaddr_in fromAddr{};
+                socklen_t fromLen = sizeof(fromAddr);
+                ssize_t nr = recvfrom(s->backchannelRtpSock,
+                                      rtpBuf, sizeof(rtpBuf), MSG_DONTWAIT,
+                                      (sockaddr *)&fromAddr, &fromLen);
+                while (nr >= 12) {
+                    // Parse RTP header: skip 12-byte header, extract payload
+                    uint8_t pt = rtpBuf[1] & 0x7F;
+                    size_t payloadLen = static_cast<size_t>(nr) - 12;
+                    if (payloadLen > 0) {
+                        // Determine format from payload type
+                        IMPBackchannelFormat fmt = IMPBackchannelFormat::UNKNOWN;
+                        for (const auto &bc : backchannelFormats_) {
+                            if (bc.payloadType == static_cast<int>(pt)) {
+                                if (bc.codec == "PCMU")
+                                    fmt = IMPBackchannelFormat::PCMU;
+                                else if (bc.codec == "PCMA")
+                                    fmt = IMPBackchannelFormat::PCMA;
+                                else if (bc.codec == "mpeg4-generic")
+                                    fmt = IMPBackchannelFormat::AAC;
+                                break;
+                            }
+                        }
+                        if (fmt != IMPBackchannelFormat::UNKNOWN) {
+                            // For AAC, strip AU-header-length + AU-header
+                            // (RFC 3640: 2 bytes + 2 bytes per AU)
+                            const uint8_t *payload = rtpBuf + 12;
+                            if (fmt == IMPBackchannelFormat::AAC &&
+                                payloadLen >= 4) {
+                                uint16_t auHeaderLen =
+                                    (static_cast<uint16_t>(payload[0]) << 8) |
+                                    payload[1];
+                                uint16_t auHeaderBytes = auHeaderLen / 8;
+                                if (auHeaderBytes >= 2 &&
+                                    payloadLen >= 4u + auHeaderBytes) {
+                                    payload += 2 + auHeaderBytes;
+                                    payloadLen -= 2 + auHeaderBytes;
+                                }
+                            }
+                            if (payloadLen > 0 && payloadLen < 2048) {
+                                BackchannelFrame frame;
+                                frame.payload.assign(payload,
+                                                     payload + payloadLen);
+                                frame.format = fmt;
+                                frame.clientSessionId =
+                                    static_cast<unsigned>(s->sessionsIndex);
+                                if (!global_backchannel->inputQueue->write(
+                                        std::move(frame))) {
+                                    LOG_DDEBUG("Backchannel queue full, "
+                                               "dropping oldest frame");
+                                }
+                            }
+                        }
+                    }
+                    // Check for more packets
+                    nr = recvfrom(s->backchannelRtpSock,
+                                  rtpBuf, sizeof(rtpBuf), MSG_DONTWAIT,
+                                  (sockaddr *)&fromAddr, &fromLen);
+                }
+            }
         }
 
         // ── RTCP Sender Report every 5s ──────────────────────────────────
@@ -489,6 +571,8 @@ void RtspServer::acceptClient() {
     s->videoChn = -1;
     s->hasAudio = false;
     s->audioOnly = false;
+    s->backchannel = false;
+    s->backchannelPayloadType = -1;
     s->sessionId[0] = '\0';
     s->lastActivity = time(nullptr);
     s->videoRtp = RtpState{};
@@ -551,6 +635,21 @@ void RtspServer::closeClient(int idx) {
     }
     s->videoTap.reset();
     s->audioTap.reset();
+
+    // Close backchannel receive socket
+    if (s->backchannel && global_backchannel) {
+        int prev = global_backchannel->is_sending.fetch_sub(1, std::memory_order_acq_rel);
+        if (prev <= 1) {
+            BackchannelFrame stop;
+            stop.isShutdownSentinel = true;
+            global_backchannel->inputQueue->write(stop);
+        }
+        s->backchannel = false;
+    }
+    if (s->backchannelRtpSock >= 0) {
+        close(s->backchannelRtpSock);
+        s->backchannelRtpSock = -1;
+    }
 
     if (s->fd >= 0) {
         close(s->fd);
@@ -670,6 +769,19 @@ void RtspServer::handleRequest(int idx) {
         cseq = 0;
     }
 
+    // Find request body (for ANNOUNCE, SET_PARAMETER).  Body starts
+    // after the double-CRLF that terminates the headers.
+    char *bodyStart = nullptr;
+    {
+        char *endHdrs = strstr(s->readBuf, "\r\n\r\n");
+        if (!endHdrs) endHdrs = strstr(s->readBuf, "\n\n");
+        if (endHdrs) {
+            bodyStart = endHdrs;
+            while (*bodyStart == '\r' || *bodyStart == '\n') bodyStart++;
+            if (*bodyStart == '\0') bodyStart = nullptr;
+        }
+    }
+
     LOG_INFO("RTSP " << methodToString(method) << " " << uri
              << " CSeq=" << cseq);
 
@@ -680,11 +792,18 @@ void RtspServer::handleRequest(int idx) {
     case Method::SETUP:         handleSetup(idx, cseq, uri, headersStart); break;
     case Method::PLAY:          handlePlay(idx, cseq, uri, headersStart);  break;
     case Method::TEARDOWN:      handleTeardown(idx, cseq, headersStart);   break;
+    case Method::PAUSE:
+        // Pause is a no-op for live streams — acknowledge silently.
+        sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
+        break;
+    case Method::ANNOUNCE:
+        handleAnnounce(idx, cseq, uri, headersStart, bodyStart);
+        break;
+    case Method::RECORD:
+        handleRecord(idx, cseq, headersStart);
+        break;
     case Method::GET_PARAMETER:
     case Method::SET_PARAMETER:
-    case Method::PAUSE:
-    case Method::ANNOUNCE:
-    case Method::RECORD:
         LOG_DEBUG("RTSP " << methodToString(method));
         sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
         break;
@@ -785,7 +904,9 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
         inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
     }
 
-    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str());
+    const std::vector<BackchannelConfig> *bcfg =
+        backchannelEnabled_ ? &backchannelFormats_ : nullptr;
+    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str(), bcfg);
 
     char hdr[256];
     snprintf(hdr, sizeof(hdr),
@@ -815,6 +936,14 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
 
     bool isAudio = (strstr(uri, "track2") != nullptr);
     bool isVideo = (strstr(uri, "track1") != nullptr);
+    bool isBackchannel = (strstr(uri, "track3") != nullptr) ||
+                         (strstr(uri, "backchannel") != nullptr);
+
+    // Backchannel: client sends audio to server
+    if (isBackchannel && backchannelEnabled_) {
+        handleBackchannelSetup(idx, cseq, uri, headers);
+        return;
+    }
 
     // Audio-only endpoints: track1 is audio
     if (isAudioOnlyEndpoint && isVideo) {
@@ -1084,6 +1213,139 @@ void RtspServer::handleTeardown(int idx, int cseq, const char *headers) {
 
     // Clean up this session
     closeClient(idx);
+}
+
+// ── ANNOUNCE (backchannel SDP from client) ─────────────────────────────────
+
+void RtspServer::handleAnnounce(int idx, int cseq, const char *,
+                                const char *, const char *body) {
+    auto &s = sessions_[idx];
+    if (!backchannelEnabled_) {
+        sendResponse(*s, Status::NOT_FOUND, cseq, nullptr, nullptr);
+        return;
+    }
+    // Parse the client's SDP to detect audio codec.  Look for
+    // "m=audio" and extract the payload type, then match rtpmap.
+    int pt = -1;
+    if (body) {
+        const char *m = stristr(body, "m=audio");
+        if (m) {
+            int rtpPort;
+            int parsedPt;
+            if (sscanf(m, "m=audio %d RTP/AVP %d", &rtpPort, &parsedPt) == 2)
+                pt = parsedPt;
+            else if (sscanf(m, "m=audio %d RTP/AVP %d", &rtpPort, &parsedPt) == 1) {
+                // Some clients put PT on next line
+                const char *a = stristr(body, "a=rtpmap:");
+                if (a) sscanf(a, "a=rtpmap:%d", &parsedPt);
+                pt = parsedPt;
+            }
+        }
+    }
+    if (pt < 0) {
+        // Default to PCMU if we can't parse
+        pt = 0;
+    }
+    // Validate against supported formats
+    bool valid = false;
+    for (const auto &bc : backchannelFormats_) {
+        if (bc.payloadType == pt) { valid = true; break; }
+    }
+    if (!valid) {
+        LOG_WARN("Backchannel: unsupported PT " << pt << ", falling back to PCMU");
+        pt = 0;
+    }
+    s->backchannelPayloadType = pt;
+    LOG_INFO("Backchannel ANNOUNCE: PT=" << pt);
+    sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
+}
+
+// ── RECORD (start backchannel) ──────────────────────────────────────────
+
+void RtspServer::handleRecord(int idx, int cseq, const char *) {
+    auto &s = sessions_[idx];
+    if (!backchannelEnabled_ || s->backchannelPayloadType < 0) {
+        sendResponse(*s, Status::NOT_FOUND, cseq, nullptr, nullptr);
+        return;
+    }
+    s->backchannel = true;
+    // Notify BackchannelWorker that data may arrive
+    if (global_backchannel) {
+        global_backchannel->is_sending.fetch_add(1, std::memory_order_release);
+        global_backchannel->should_grab_frames.notify_one();
+    }
+    LOG_INFO("Backchannel RECORD started, PT=" << s->backchannelPayloadType);
+    sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
+}
+
+// ── Backchannel SETUP ──────────────────────────────────────────────────
+
+void RtspServer::handleBackchannelSetup(int idx, int cseq,
+                                        const char *uri, const char *headers) {
+    auto &s = sessions_[idx];
+
+    const char *t = stristr(headers, "Transport:");
+    // Backchannel only supports UDP (we receive from client)
+    if (t && stristr(t, "RTP/AVP/TCP")) {
+        sendResponse(*s, Status::BAD_REQUEST, cseq,
+                     "Unsupported: backchannel requires UDP\r\n", nullptr);
+        return;
+    }
+
+    // Parse client RTP port
+    int clientRtpPort = 0, clientRtcpPort = 0;
+    if (t) {
+        const char *cp = stristr(t, "client_port=");
+        if (cp)
+            sscanf(cp, "client_port=%d-%d", &clientRtpPort, &clientRtcpPort);
+    }
+    s->backchannelClientRtpPort = static_cast<uint16_t>(clientRtpPort > 0 ? clientRtpPort : 5004);
+
+    // Save client address for recvfrom identification
+    socklen_t alen = sizeof(s->clientAddr);
+    if (getpeername(s->fd, (sockaddr *)&s->clientAddr, &alen) != 0)
+        s->clientAddrLen = 0;
+    else
+        s->clientAddrLen = alen;
+
+    // Create UDP socket to receive backchannel RTP
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock >= 0) {
+        setNonBlocking(sock);
+        sockaddr_in addr{};
+        addr.sin_family      = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        addr.sin_port        = 0;
+        bind(sock, (sockaddr *)&addr, sizeof(addr));
+        socklen_t slen = sizeof(addr);
+        sockaddr_in bound{};
+        getsockname(sock, (sockaddr *)&bound, &slen);
+        s->backchannelServerRtpPort = ntohs(bound.sin_port);
+        s->backchannelRtpSock = sock;
+    }
+
+    if (s->backchannelRtpSock < 0) {
+        sendResponse(*s, Status::INTERNAL_ERROR, cseq, nullptr, nullptr);
+        return;
+    }
+
+    // Generate session ID on first SETUP
+    if (!s->hasValidSession()) {
+        snprintf(s->sessionId, sizeof(s->sessionId), "%08X",
+                 static_cast<unsigned>(time(nullptr)) ^
+                 static_cast<unsigned>(rand()));
+    }
+
+    char hdr[512];
+    snprintf(hdr, sizeof(hdr),
+             "Transport: RTP/AVP;unicast;client_port=%d-%d;server_port=%d-%d\r\n"
+             "Session: %s\r\n",
+             s->backchannelClientRtpPort,
+             s->backchannelClientRtpPort + 1,
+             s->backchannelServerRtpPort,
+             s->backchannelServerRtpPort + 1,
+             s->sessionId);
+    sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
 // ── Response sending ───────────────────────────────────────────────────────

@@ -92,6 +92,13 @@ struct AudioStreamConfig {
     int payloadType          = 97;
 };
 
+// Backchannel (talkback) audio formats the server can receive from a client.
+struct BackchannelConfig {
+    std::string codec;          // "PCMU", "PCMA", "mpeg4-generic"
+    int sampleRate;
+    int payloadType;
+};
+
 // ── Base-64 helper (RFC 4648) for SDP ───────────────────────────────────────
 
 std::string base64Encode(const uint8_t *data, size_t len);

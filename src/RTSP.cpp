@@ -122,6 +122,11 @@ void RTSP::start() {
         server_->setAuthCredentials(cfg->rtsp.username, cfg->rtsp.password);
     }
 
+    // ── Enable backchannel (talkback) ──────────────────────────────────
+    if (cfg->audio.output_enabled) {
+        server_->enableBackchannel();
+    }
+
     // Register streams (must happen before server starts)
     if (cfg->stream0.enabled) {
         LOG_INFO("Registering stream 0: " << cfg->stream0.rtsp_endpoint);
