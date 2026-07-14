@@ -346,7 +346,7 @@ void RtspServer::eventLoop() {
         // ── Drain taps for playing sessions ─────────────────────────────
         for (auto &s : sessions_) {
             if (!s || !s->playing) continue;
-            if (s->videoChn < 0 && !s->audioOnly) continue;
+            if (s->videoChn < 0 && !s->audioOnly && !s->backchannel) continue;
 
             bool backpressure = false;
 
@@ -1268,6 +1268,7 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
         return;
     }
     s->backchannel = true;
+    s->playing = true;  // needed for event loop to drain this session
     // Notify BackchannelWorker that data may arrive
     if (global_backchannel) {
         global_backchannel->is_sending.fetch_add(1, std::memory_order_release);
