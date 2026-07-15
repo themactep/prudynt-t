@@ -69,7 +69,8 @@ private:
 
     // Per-method handlers – return the CSeq from the request
     void handleOptions(int clientIdx, int cseq);
-    void handleDescribe(int clientIdx, int cseq, const char *uri);
+    void handleDescribe(int clientIdx, int cseq, const char *uri,
+                        const char *headers);
     void handleSetup(int clientIdx, int cseq, const char *uri,
                      const char *headers);
     void handlePlay(int clientIdx, int cseq, const char *uri,

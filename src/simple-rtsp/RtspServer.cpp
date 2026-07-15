@@ -821,7 +821,7 @@ void RtspServer::handleRequest(int idx) {
     // ── Dispatch ────────────────────────────────────────────────────────
     switch (method) {
     case Method::OPTIONS:       handleOptions(idx, cseq);        break;
-    case Method::DESCRIBE:      handleDescribe(idx, cseq, uri);  break;
+    case Method::DESCRIBE:      handleDescribe(idx, cseq, uri, headersStart);  break;
     case Method::SETUP:         handleSetup(idx, cseq, uri, headersStart); break;
     case Method::PLAY:          handlePlay(idx, cseq, uri, headersStart);  break;
     case Method::TEARDOWN:      handleTeardown(idx, cseq, headersStart);   break;
@@ -878,8 +878,14 @@ void RtspServer::handleOptions(int idx, int cseq) {
 
 // ── DESCRIBE ───────────────────────────────────────────────────────────────
 
-void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
+void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
+                               const char *headers) {
     auto &s = sessions_[idx];
+
+    // Check if client requested ONVIF backchannel (Section 5.3)
+    bool clientWantsBackchannel =
+        headers && stristr(headers, "Require:") &&
+        stristr(headers, "www.onvif.org/ver20/backchannel");
 
     // ── Check audio-only endpoints first ──────────────────────────────
     for (size_t i = 0; i < audioOnlyStreams_.size(); i++) {
@@ -970,7 +976,8 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
     }
 
     const std::vector<BackchannelConfig> *bcfg =
-        backchannelEnabled_ ? &backchannelFormats_ : nullptr;
+        (backchannelEnabled_ && clientWantsBackchannel)
+            ? &backchannelFormats_ : nullptr;
     std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str(), bcfg);
 
     char hdr[256];
