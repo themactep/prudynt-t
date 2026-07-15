@@ -976,6 +976,7 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     // Backchannel: client negotiated via ANNOUNCE, then SETUPs
     // with the SDP's control URL (typically "track0" or similar).
     bool isBackchannel = (strstr(uri, "track3") != nullptr ||
+                          strstr(uri, "track0") != nullptr ||
                           strstr(uri, "backchannel") != nullptr) &&
                           backchannelEnabled_;
 

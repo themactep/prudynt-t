@@ -203,7 +203,7 @@ std::string generateSdp(const VideoStreamConfig &video,
             off += snprintf(buf + off, sizeof(buf) - off, " %d", bc.payloadType);
         off += snprintf(buf + off, sizeof(buf) - off,
             "\r\n"
-            "a=control:track3\r\n"
+            "a=control:track0\r\n"
             "a=recvonly\r\n");
         for (const auto &bc : *backchannel) {
             const char *encName = bc.codec.c_str();
