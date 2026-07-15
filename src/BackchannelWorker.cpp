@@ -213,9 +213,13 @@ void BackchannelWorker::run() {
     BackchannelFrame frame = global_backchannel->inputQueue->wait_read();
 
     if (frame.isShutdownSentinel) {
-      LOG_DEBUG("Received shutdown sentinel — resetting for next session");
+      LOG_DEBUG("Received shutdown sentinel — flushing and resetting");
       currentSessionId = 0;
-      // Don't exit — stay alive for subsequent backchannel sessions.
+      // Clear any queued audio from the previous session so it doesn't
+      // play back when the next session starts.
+      AudioOutputWorker::clearQueue();
+      if (global_audio_output && global_audio_output->imp_audio_output)
+        global_audio_output->imp_audio_output->flush();
       continue;
     }
 
