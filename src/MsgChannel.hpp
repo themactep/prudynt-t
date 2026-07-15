@@ -7,7 +7,6 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
-#include <type_traits>
 
 /* Implementation of the MsgChannel API, except that it keeps
  * the most recent bsize elements in the queue.
@@ -17,42 +16,17 @@ public:
   MsgChannel(unsigned int bsize) : buffer_size{bsize} {
   }
 
-  // SFINAE helper: detect frame-boundary fields at compile time.
-  template <typename U, typename = void>
-  struct has_frame_markers : std::false_type {};
-  template <typename U>
-  struct has_frame_markers<U, std::void_t<decltype(std::declval<U&>().is_frame_start),
-                                          decltype(std::declval<U&>().is_frame_end)>>
-      : std::true_type {};
-
-  // Write with frame-aware eviction (for types with is_frame_start/is_frame_end).
-  // When buffer_size is exceeded, drop whole frames instead of individual NAL
-  // units.  Dropping a mid-frame NAL corrupts the bitstream and causes decoder
-  // glitches / micro-freezes until the next IDR.
-  //
-  // Returns false when the buffer was full and eviction occurred, true if the
-  // write succeeded without eviction.
   bool write(T msg) {
     std::unique_lock<std::mutex> lck(cv_mtx);
     msg_buffer.push_front(std::move(msg));
-    if (msg_buffer.size() <= buffer_size) {
-      write_cv.notify_all();
-      return true;
-    }
-    // Evict oldest complete frame if markers exist; otherwise drop oldest NAL.
-    if constexpr (has_frame_markers<T>::value) {
-      while (msg_buffer.size() > buffer_size && !msg_buffer.empty()) {
-        auto &back = msg_buffer.back();
-        bool end_marker = back.is_frame_end;
-        msg_buffer.pop_back();
-        if (end_marker) break; // evicted one complete frame
-        // Continue popping until we reach frame_end that closes this frame.
-      }
-    } else {
+    if (msg_buffer.size() > buffer_size) {
       msg_buffer.pop_back();
+      write_cv
+          .notify_all(); // wake wait_read() callers (e.g. RTSP SPS/PPS init)
+      return false;
     }
     write_cv.notify_all();
-    return false;
+    return true;
   }
 
   bool write_wait(T msg) {

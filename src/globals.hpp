@@ -12,6 +12,9 @@
 #include "PreTriggerBuffer.hpp"
 #endif
 
+// Forward-declare live555 types (used only by legacy RTSP audio path)
+class StreamReplicator;
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -25,7 +28,7 @@
 #include <string>
 #include <vector>
 
-#define MSG_CHANNEL_SIZE 400
+#define MSG_CHANNEL_SIZE 200
 #define BACKCHANNEL_QUEUE_SIZE 200
 #define AUDIO_OUTPUT_QUEUE_SIZE 64
 #define NUM_AUDIO_CHANNELS 1
@@ -194,6 +197,9 @@ struct audio_stream {
   std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
+
+  StreamReplicator *streamReplicator = nullptr;
+  std::atomic<int> rtsp_client_count{0};
 
   std::mutex tap_mutex;
   std::vector<AudioTapEntry> audio_taps;

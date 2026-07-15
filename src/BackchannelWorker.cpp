@@ -247,7 +247,7 @@ void BackchannelWorker::run() {
     if (currentSessionId == 0) {
       // No current session, this frame's sender becomes the current one
       currentSessionId = frame.clientSessionId;
-      LOG_INFO("New current session "
+      LOG_DDEBUG("New current session "
                << static_cast<unsigned>(currentSessionId) << " playing "
                << IMPBackchannel::getFormatName(frame.format) << ".");
       processFrame(frame);
