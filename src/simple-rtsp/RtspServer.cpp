@@ -1369,6 +1369,7 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
 
     if (t && stristr(t, "RTP/AVP/TCP")) {
         s->tcpInterleaved = true;
+        s->backchannel = true;  // allow PLAY to succeed before RECORD
         const char *il = strstr(t, "interleaved=");
         if (il) {
             int rtpCh, rtcpCh;
