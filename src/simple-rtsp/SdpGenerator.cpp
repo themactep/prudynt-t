@@ -210,8 +210,12 @@ std::string generateSdp(const VideoStreamConfig &video,
             int clk = bc.sampleRate;
             if (bc.codec == "PCMU") clk = 8000;
             else if (bc.codec == "PCMA") clk = 8000;
-            off += snprintf(buf + off, sizeof(buf) - off,
-                "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
+            if (bc.codec == "OPUS")
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=rtpmap:%d %s/%d/2\r\n", bc.payloadType, encName, clk);
+            else
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
             if (bc.codec == "mpeg4-generic") {
                 std::string aacCfg = makeAacConfig(bc.sampleRate, 1);
                 off += snprintf(buf + off, sizeof(buf) - off,
@@ -312,8 +316,12 @@ std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats
             int clk = bc.sampleRate;
             if (bc.codec == "PCMU") clk = 8000;
             else if (bc.codec == "PCMA") clk = 8000;
-            off += snprintf(buf + off, sizeof(buf) - off,
-                "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
+            if (bc.codec == "OPUS")
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=rtpmap:%d %s/%d/2\r\n", bc.payloadType, encName, clk);
+            else
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
             if (bc.codec == "mpeg4-generic") {
                 std::string aacCfg = makeAacConfig(bc.sampleRate, 1);
                 off += snprintf(buf + off, sizeof(buf) - off,
