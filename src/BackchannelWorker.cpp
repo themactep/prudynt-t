@@ -213,20 +213,10 @@ void BackchannelWorker::run() {
     BackchannelFrame frame = global_backchannel->inputQueue->wait_read();
 
     if (frame.isShutdownSentinel) {
-      LOG_DEBUG("Received shutdown sentinel — appending silence tail");
+      LOG_DEBUG("Received shutdown sentinel — resetting for next session");
       currentSessionId = 0;
-      // Enqueue a short silent tail so the hardware buffer drains
-      // smoothly instead of being abruptly flushed.
-      constexpr int tailMs = 100;
-      int rate = cfg->audio.output_sample_rate;
-      if (global_audio_output) {
-        int hw = global_audio_output->hardwareSampleRate.load(
-            std::memory_order_acquire);
-        if (hw > 0) rate = hw;
-      }
-      int samples = rate * tailMs / 1000;
-      if (samples > 0)
-        AudioOutputWorker::enqueuePcm(std::vector<int16_t>(samples, 0));
+      // Let the audio output queue drain naturally — any queued PCM
+      // will play out in due time.  No flush, no artificial silence.
       continue;
     }
 
