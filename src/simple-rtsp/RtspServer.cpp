@@ -1194,7 +1194,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         return;
     }
 
-    if (s->videoChn < 0 && !s->hasAudio && !s->audioOnly) {
+    if (s->videoChn < 0 && !s->hasAudio && !s->audioOnly && !s->backchannel) {
         sendResponse(*s, Status::BAD_REQUEST, cseq, nullptr, nullptr);
         return;
     }
