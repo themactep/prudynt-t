@@ -1256,6 +1256,15 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
              << " hasAudio=" << s->hasAudio
              << " players=" << activePlayers_[s->videoChn]);
 
+    // ── Activate backchannel on PLAY (ONVIF Streaming Spec §5.3) ────
+    // go2rtc sends PLAY to start the backchannel, not RECORD.
+    if (s->backchannel && global_backchannel &&
+        global_backchannel->is_sending.load(std::memory_order_relaxed) == 0) {
+        global_backchannel->is_sending.fetch_add(1, std::memory_order_release);
+        global_backchannel->should_grab_frames.notify_one();
+        LOG_INFO("Backchannel activated via PLAY");
+    }
+
     // ── Send RTSP response ─────────────────────────────────────────────
     char hdr[1024];
     // Single-stream RTP-Info: dual-stream RTP-Info blocks ffmpeg >=7
