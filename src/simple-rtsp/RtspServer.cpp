@@ -712,6 +712,34 @@ void RtspServer::handleRequest(int idx) {
                           |  static_cast<uint8_t>(s->readBuf[3]);
         size_t total = 4 + frameLen;
         if (static_cast<size_t>(s->readOff) < total) return; // incomplete
+
+        // Capture backchannel audio from TCP interleaved frames
+        if (s->backchannel && backchannelEnabled_ &&
+            s->readBuf[1] == s->videoInterleavedRtp &&
+            global_backchannel && global_backchannel->inputQueue &&
+            frameLen >= 12) {
+            const uint8_t *rtp = (const uint8_t *)s->readBuf + 4;
+            uint8_t pt = rtp[1] & 0x7F;
+            size_t payloadLen = frameLen - 12;
+            IMPBackchannelFormat fmt = IMPBackchannelFormat::UNKNOWN;
+            for (const auto &bc : backchannelFormats_) {
+                if (bc.payloadType == static_cast<int>(pt)) {
+                    if (bc.codec == "PCMU") fmt = IMPBackchannelFormat::PCMU;
+                    else if (bc.codec == "PCMA") fmt = IMPBackchannelFormat::PCMA;
+                    else if (bc.codec == "mpeg4-generic") fmt = IMPBackchannelFormat::AAC;
+                    else if (bc.codec == "OPUS") fmt = IMPBackchannelFormat::OPUS;
+                    break;
+                }
+            }
+            if (fmt != IMPBackchannelFormat::UNKNOWN && payloadLen > 0) {
+                BackchannelFrame frame;
+                frame.payload.assign(rtp + 12, rtp + 12 + payloadLen);
+                frame.format = fmt;
+                frame.clientSessionId = static_cast<unsigned>(s->sessionsIndex);
+                global_backchannel->inputQueue->write(std::move(frame));
+            }
+        }
+
         s->readOff -= static_cast<int>(total);
         memmove(s->readBuf, s->readBuf + total, static_cast<size_t>(s->readOff));
         s->readBuf[s->readOff] = '\0';
@@ -1338,12 +1366,35 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
         s->backchannelPayloadType = backchannelFormats_[0].payloadType;
 
     const char *t = stristr(headers, "Transport:");
-    // Backchannel only supports UDP (we receive from client)
+
     if (t && stristr(t, "RTP/AVP/TCP")) {
-        sendResponse(*s, Status::BAD_REQUEST, cseq,
-                     "Unsupported: backchannel requires UDP\r\n", nullptr);
+        s->tcpInterleaved = true;
+        const char *il = strstr(t, "interleaved=");
+        if (il) {
+            int rtpCh, rtcpCh;
+            if (sscanf(il, "interleaved=%d-%d", &rtpCh, &rtcpCh) == 2) {
+                s->videoInterleavedRtp  = static_cast<uint8_t>(rtpCh);
+                s->videoInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
+            }
+        }
+        // Generate session ID
+        if (!s->hasValidSession()) {
+            snprintf(s->sessionId, sizeof(s->sessionId), "%08X",
+                     static_cast<unsigned>(time(nullptr)) ^
+                     static_cast<unsigned>(rand()));
+        }
+        char hdr[256];
+        snprintf(hdr, sizeof(hdr),
+                 "Transport: RTP/AVP/TCP;unicast;interleaved=%d-%d\r\n"
+                 "Session: %s;timeout=65\r\n",
+                 s->videoInterleavedRtp, s->videoInterleavedRtcp,
+                 s->sessionId);
+        sendResponse(*s, Status::OK, cseq, hdr, nullptr);
         return;
     }
+
+    // UDP fallback
+    // (TCP handled above, UDP below)
 
     // Parse client RTP port
     int clientRtpPort = 0, clientRtcpPort = 0;
