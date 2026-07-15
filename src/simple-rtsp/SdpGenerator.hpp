@@ -10,7 +10,8 @@ namespace simple_rtsp {
 std::string generateSdp(const VideoStreamConfig &video,
                         const AudioStreamConfig *audio,  // nullptr if no audio
                         const char *serverIp,
-                        const char *streamName);
+                        const char *streamName,
+                        const std::vector<BackchannelConfig> *backchannel = nullptr);
 
 // Generate SDP for an audio-only session (no video track).
 std::string generateAudioOnlySdp(const AudioStreamConfig &audio,

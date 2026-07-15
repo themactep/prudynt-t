@@ -938,7 +938,9 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
         inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
     }
 
-    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str());
+    const std::vector<BackchannelConfig> *bcfg =
+        backchannelEnabled_ ? &backchannelFormats_ : nullptr;
+    std::string sdp = generateSdp(ve.config, audioCfg, serverIp, streamName_.c_str(), bcfg);
 
     char hdr[256];
     snprintf(hdr, sizeof(hdr),
@@ -970,8 +972,7 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     bool isVideo = (strstr(uri, "track1") != nullptr);
     // Backchannel: client negotiated via ANNOUNCE, then SETUPs
     // with the SDP's control URL (typically "track0" or similar).
-    bool isBackchannel = (s->backchannelPayloadType >= 0 &&
-                          !isVideo && !isAudio);
+    bool isBackchannel = (strstr(uri, "track3") != nullptr) && backchannelEnabled_;
 
     if (isBackchannel && backchannelEnabled_) {
         handleBackchannelSetup(idx, cseq, uri, headers);
@@ -1305,7 +1306,7 @@ void RtspServer::handleAnnounce(int idx, int cseq, const char *,
 
 void RtspServer::handleRecord(int idx, int cseq, const char *) {
     auto &s = sessions_[idx];
-    if (!backchannelEnabled_ || s->backchannelPayloadType < 0) {
+    if (!backchannelEnabled_ || (s->backchannelPayloadType < 0 && backchannelFormats_.empty())) {
         sendResponse(*s, Status::NOT_FOUND, cseq, nullptr, nullptr);
         return;
     }
@@ -1325,6 +1326,10 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
 void RtspServer::handleBackchannelSetup(int idx, int cseq,
                                         const char *uri, const char *headers) {
     auto &s = sessions_[idx];
+
+    // If no ANNOUNCE was sent, pick first available codec
+    if (s->backchannelPayloadType < 0 && !backchannelFormats_.empty())
+        s->backchannelPayloadType = backchannelFormats_[0].payloadType;
 
     const char *t = stristr(headers, "Transport:");
     // Backchannel only supports UDP (we receive from client)
