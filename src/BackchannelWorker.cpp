@@ -213,13 +213,20 @@ void BackchannelWorker::run() {
     BackchannelFrame frame = global_backchannel->inputQueue->wait_read();
 
     if (frame.isShutdownSentinel) {
-      LOG_DEBUG("Received shutdown sentinel — flushing and resetting");
+      LOG_DEBUG("Received shutdown sentinel — appending silence tail");
       currentSessionId = 0;
-      // Clear any queued audio from the previous session so it doesn't
-      // play back when the next session starts.
-      AudioOutputWorker::clearQueue();
-      if (global_audio_output && global_audio_output->imp_audio_output)
-        global_audio_output->imp_audio_output->flush();
+      // Enqueue a short silent tail so the hardware buffer drains
+      // smoothly instead of being abruptly flushed.
+      constexpr int tailMs = 100;
+      int rate = cfg->audio.output_sample_rate;
+      if (global_audio_output) {
+        int hw = global_audio_output->hardwareSampleRate.load(
+            std::memory_order_acquire);
+        if (hw > 0) rate = hw;
+      }
+      int samples = rate * tailMs / 1000;
+      if (samples > 0)
+        AudioOutputWorker::enqueuePcm(std::vector<int16_t>(samples, 0));
       continue;
     }
 
