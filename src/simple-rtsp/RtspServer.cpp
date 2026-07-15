@@ -645,6 +645,9 @@ void RtspServer::closeClient(int idx) {
             BackchannelFrame stop;
             stop.isShutdownSentinel = true;
             global_backchannel->inputQueue->write(stop);
+            // Wake the worker so it processes the sentinel even though
+            // is_sending just dropped to 0.
+            global_backchannel->should_grab_frames.notify_one();
         }
         s->backchannel = false;
     }

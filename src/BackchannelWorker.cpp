@@ -201,7 +201,8 @@ void BackchannelWorker::run() {
       global_backchannel->should_grab_frames.wait(lock, [&] {
         return !global_backchannel->running ||
                global_backchannel->is_sending.load(std::memory_order_acquire) >
-                   0;
+                   0 ||
+               global_backchannel->inputQueue->size() > 0;
       });
     }
 
@@ -212,8 +213,10 @@ void BackchannelWorker::run() {
     BackchannelFrame frame = global_backchannel->inputQueue->wait_read();
 
     if (frame.isShutdownSentinel) {
-      LOG_DEBUG("Received shutdown sentinel frame. Exiting processor loop.");
-      break;
+      LOG_DEBUG("Received shutdown sentinel — resetting for next session");
+      currentSessionId = 0;
+      // Don't exit — stay alive for subsequent backchannel sessions.
+      continue;
     }
 
     if (!global_backchannel->running) {
