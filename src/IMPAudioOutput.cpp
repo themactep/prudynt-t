@@ -215,11 +215,8 @@ bool IMPAudioOutput::playSamples(const int16_t *samples, size_t sampleCount) {
         reinterpret_cast<uint32_t *>(const_cast<uint8_t *>(bytePtr));
     frame.len = static_cast<unsigned int>(chunk);
 
-    if (IMP_AO_SendFrame(devId, channelId, &frame, NOBLOCK) != 0) {
-      // Buffer full — don't block the audio output thread.  The worker
-      // will retry on the next job from the queue.  Without this, a
-      // backchannel burst can stall the AO thread forever, locking up
-      // the speaker until prudynt is killed.
+    if (IMP_AO_SendFrame(devId, channelId, &frame, BLOCK) != 0) {
+      LOG_ERROR("IMP_AO_SendFrame failed (len=" << frame.len << ")");
       return false;
     }
 
