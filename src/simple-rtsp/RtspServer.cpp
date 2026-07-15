@@ -92,6 +92,10 @@ struct Session {
     int     backchannelRtpSock  = -1;
     uint16_t backchannelServerRtpPort = 0;
     uint16_t backchannelClientRtpPort = 0;
+    // Backchannel TCP interleaved channels (separate from video/audio
+    // so that backchannel SETUP does not corrupt video transport).
+    uint8_t backchannelInterleavedRtp  = 0;
+    uint8_t backchannelInterleavedRtcp = 1;
     sockaddr_in clientAddr  = {};
     socklen_t clientAddrLen = 0;
 
@@ -575,6 +579,8 @@ void RtspServer::acceptClient() {
     s->audioOnly = false;
     s->backchannel = false;
     s->backchannelPayloadType = -1;
+    s->backchannelInterleavedRtp = 0;
+    s->backchannelInterleavedRtcp = 1;
     s->sessionId[0] = '\0';
     s->lastActivity = time(nullptr);
     s->videoRtp = RtpState{};
@@ -715,7 +721,7 @@ void RtspServer::handleRequest(int idx) {
 
         // Capture backchannel audio from TCP interleaved frames
         if (s->backchannel && backchannelEnabled_ &&
-            s->readBuf[1] == s->videoInterleavedRtp &&
+            s->readBuf[1] == s->backchannelInterleavedRtp &&
             global_backchannel && global_backchannel->inputQueue &&
             frameLen >= 12) {
             const uint8_t *rtp = (const uint8_t *)s->readBuf + 4;
@@ -1390,8 +1396,8 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
         if (il) {
             int rtpCh, rtcpCh;
             if (sscanf(il, "interleaved=%d-%d", &rtpCh, &rtcpCh) == 2) {
-                s->videoInterleavedRtp  = static_cast<uint8_t>(rtpCh);
-                s->videoInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
+                s->backchannelInterleavedRtp  = static_cast<uint8_t>(rtpCh);
+                s->backchannelInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
             }
         }
         // Generate session ID
@@ -1404,7 +1410,7 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
         snprintf(hdr, sizeof(hdr),
                  "Transport: RTP/AVP/TCP;unicast;interleaved=%d-%d\r\n"
                  "Session: %s;timeout=65\r\n",
-                 s->videoInterleavedRtp, s->videoInterleavedRtcp,
+                 s->backchannelInterleavedRtp, s->backchannelInterleavedRtcp,
                  s->sessionId);
         sendResponse(*s, Status::OK, cseq, hdr, nullptr);
         return;

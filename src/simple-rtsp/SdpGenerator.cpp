@@ -196,7 +196,10 @@ std::string generateSdp(const VideoStreamConfig &video,
 
     // ── Backchannel (talkback) — announced in main SDP so go2rtc
     // discovers it via the same RTSP session.  Clients that don't
-    // support talkback simply ignore the recvonly track.
+    // support talkback simply ignore the sendonly track.
+    // Per ONVIF Streaming Spec §5.3, backchannel tracks use
+    // a=sendonly (client→server direction), matching the legacy
+    // live555 server behaviour that go2rtc expects.
     if (backchannel && !backchannel->empty()) {
         off += snprintf(buf + off, sizeof(buf) - off, "m=audio 0 RTP/AVP");
         for (const auto &bc : *backchannel)
@@ -204,7 +207,7 @@ std::string generateSdp(const VideoStreamConfig &video,
         off += snprintf(buf + off, sizeof(buf) - off,
             "\r\n"
             "a=control:track0\r\n"
-            "a=recvonly\r\n");
+            "a=sendonly\r\n");
         for (const auto &bc : *backchannel) {
             const char *encName = bc.codec.c_str();
             int clk = bc.sampleRate;
@@ -301,7 +304,7 @@ std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats
         off += snprintf(buf + off, sizeof(buf) - off,
             "m=audio 0 RTP/AVP 0\r\n"
             "a=control:track0\r\n"
-            "a=recvonly\r\n"
+            "a=sendonly\r\n"
             "a=rtpmap:0 PCMU/8000\r\n");
     } else {
         off += snprintf(buf + off, sizeof(buf) - off, "m=audio 0 RTP/AVP");
@@ -310,7 +313,7 @@ std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats
         off += snprintf(buf + off, sizeof(buf) - off,
             "\r\n"
             "a=control:track0\r\n"
-            "a=recvonly\r\n");
+            "a=sendonly\r\n");
         for (const auto &bc : formats) {
             const char *encName = bc.codec.c_str();
             int clk = bc.sampleRate;
