@@ -41,6 +41,13 @@
 #define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
   X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate,                   \
     "audio/mpeg4-generic")                                                     \
+  X(OPUS, "OPUS", 102, 48000, "audio/opus")                                    \
+  X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \
+  X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                       \
+  /* Add new formats here */
+#elif defined(USE_OPUS) && USE_OPUS
+#define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
+  X(OPUS, "OPUS", 102, 48000, "audio/opus")                                    \
   X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \
   X(PCMA, "PCMA", 8, 8000, "audio/PCMA")                                       \
   /* Add new formats here */

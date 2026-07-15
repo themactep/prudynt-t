@@ -10,6 +10,10 @@
 
 #include <imp/imp_audio.h>
 
+#if defined(USE_OPUS) && USE_OPUS
+#include <opus/opus.h>
+#endif
+
 #define MODULE "BackchannelWorker"
 
 BackchannelWorker::BackchannelWorker() : currentSessionId(0) {
@@ -64,6 +68,30 @@ BackchannelWorker::resampleLinear(const std::vector<int16_t> &input_pcm,
 bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
                                     IMPBackchannelFormat format,
                                     std::vector<int16_t> &outPcmBuffer) {
+#if defined(USE_OPUS) && USE_OPUS
+  // Software Opus decode — IMP hardware decoder doesn't support Opus.
+  if (format == IMPBackchannelFormat::OPUS) {
+    int error = 0;
+    OpusDecoder *dec = opus_decoder_create(48000, 1, &error);
+    if (!dec || error != 0) {
+      LOG_ERROR("opus_decoder_create failed: " << error);
+      return false;
+    }
+    // Max Opus frame is 120ms at 48kHz = 5760 samples
+    std::vector<int16_t> pcm(5760);
+    int nsamples = opus_decode(dec, payload, static_cast<opus_int32>(payloadSize),
+                                pcm.data(), static_cast<int>(pcm.size()), 0);
+    opus_decoder_destroy(dec);
+    if (nsamples < 0) {
+      LOG_ERROR("opus_decode failed: " << nsamples);
+      return false;
+    }
+    pcm.resize(static_cast<size_t>(nsamples));
+    outPcmBuffer = std::move(pcm);
+    return true;
+  }
+#endif
+
   IMPAudioStream stream_in;
   stream_in.stream = const_cast<uint8_t *>(payload);
   stream_in.len = static_cast<int>(payloadSize);

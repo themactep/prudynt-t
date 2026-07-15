@@ -459,6 +459,8 @@ void RtspServer::eventLoop() {
                                     fmt = IMPBackchannelFormat::PCMA;
                                 else if (bc.codec == "mpeg4-generic")
                                     fmt = IMPBackchannelFormat::AAC;
+                                else if (bc.codec == "OPUS")
+                                    fmt = IMPBackchannelFormat::OPUS;
                                 break;
                             }
                         }
