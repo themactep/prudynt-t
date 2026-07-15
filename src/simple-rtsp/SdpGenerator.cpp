@@ -212,6 +212,14 @@ std::string generateSdp(const VideoStreamConfig &video,
             else if (bc.codec == "PCMA") clk = 8000;
             off += snprintf(buf + off, sizeof(buf) - off,
                 "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
+            if (bc.codec == "mpeg4-generic") {
+                std::string aacCfg = makeAacConfig(bc.sampleRate, 1);
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
+                    "config=%s;"
+                    "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
+                    bc.payloadType, aacCfg.c_str());
+            }
         }
     }
 
@@ -306,6 +314,14 @@ std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats
             else if (bc.codec == "PCMA") clk = 8000;
             off += snprintf(buf + off, sizeof(buf) - off,
                 "a=rtpmap:%d %s/%d\r\n", bc.payloadType, encName, clk);
+            if (bc.codec == "mpeg4-generic") {
+                std::string aacCfg = makeAacConfig(bc.sampleRate, 1);
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
+                    "config=%s;"
+                    "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
+                    bc.payloadType, aacCfg.c_str());
+            }
         }
     }
 
