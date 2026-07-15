@@ -876,15 +876,13 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri) {
         if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
             inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
 
-        // If backchannel is disabled, return a minimal PCMU-only SDP
-        // so the probe gets a valid backchannel response rather than
-        // falling through to the regular video+audio SDP.
         // Always return backchannel SDP — never fall through to video.
         // When disabled, the generator falls back to a basic PCMU track.
         std::vector<BackchannelConfig> fmts;
         if (backchannelEnabled_)
             fmts = backchannelFormats_;
         std::string sdp = generateBackchannelSdp(fmts,
+                                                  serverIp, streamName_.c_str());
         char hdr[256];
         snprintf(hdr, sizeof(hdr),
                  "Content-Type: application/sdp\r\n"
