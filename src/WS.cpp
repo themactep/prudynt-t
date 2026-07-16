@@ -2012,9 +2012,9 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
                                           u_ctx->snapshot.throttle)) +
                      first_request_delay_us;
       LOG_DDEBUG("shedule preview image. id:" << u_ctx->id
-                                              << " delay:" << delay);
+                                              << " delay:" << delay_us);
       lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->snapshot_timer.sul,
-                       send_snapshot, delay);
+                       send_snapshot, delay_us);
 
       // send response for the image request
       u_ctx->tx_message.append(u_ctx->message);
