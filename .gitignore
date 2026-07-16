@@ -6,3 +6,5 @@ buildroot-package/
 include/*/version.hpp
 obj/
 toolchain/
+trash/
+
