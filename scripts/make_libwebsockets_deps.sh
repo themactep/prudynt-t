@@ -3,9 +3,11 @@
 # This script automates the process of setting up a cross-compilation
 # environment for the libwebsockets library. It prepares the build
 # directory, sets the toolchain for cross-compilation, clones the
-# libwebsockets repository if not present, configures the build using CMake,
-# compiles the library, and finally copies the built library and relevant
-# headers to the appropriate locations in the repository.
+# libwebsockets repository if not present, checks out the pinned release,
+# applies the local Thingino patches (mirrored from the firmware tree at
+# package/all-patches/libwebsockets/<version>/), configures the build using
+# CMake, compiles the library, and finally copies the built library and
+# relevant headers to the appropriate locations in the repository.
 # -----------------------------------------------------------------------------
 
 set -e
@@ -16,7 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 LWS_REPO="https://github.com/warmcat/libwebsockets"
 LWS_DIR="${BUILD_DIR}/libwebsockets"
-LWS_VER="ab9df9cfc39de7a49967f18387b6b76310947442"
+LWS_VER="v4.5.8"
+LWS_SOVER="21"
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
@@ -38,12 +41,21 @@ fi
 
 cd "$LWS_DIR"
 
+# Drop previously applied patches / local modifications so re-runs are clean
+git reset --hard HEAD
+git clean -fd
+
 # Checkout desired version
 if [[ -n "$LWS_VER" ]]; then
     git checkout $LWS_VER
 else
     echo "Pulling libwebsockets master"
 fi
+
+# Apply the local Thingino patches
+# (kept in sync with package/all-patches/libwebsockets/4.5.8/ in the firmware tree)
+git apply ../../res/libwebsockets/0001-fix-ipv6-and-ifa-flags-issues.patch
+git apply ../../res/libwebsockets/0002-fix-netlink-sign-conversion.patch
 
 # Create a fresh CMake build dir to avoid stale cross-toolchain cache
 rm -rf build
@@ -98,13 +110,13 @@ make -j$(nproc)
 
 # Copy libwebsockets library and headers
 echo "Copying libwebsockets library and headers..."
-$STRIP ./lib/libwebsockets.so.19
+$STRIP ./lib/libwebsockets.so.${LWS_SOVER}
 
 mkdir -p ../../install/
 mkdir -p ../../install/lib/
 
 cp ./lib/libwebsockets.a ../../install/lib/
-cp ./lib/libwebsockets.so.19 ../../install/lib/libwebsockets.so
+cp ./lib/libwebsockets.so.${LWS_SOVER} ../../install/lib/libwebsockets.so
 
 #cp -R ../include/libwebsockets ../../../include/
 cp -R include/* ../../install/include/

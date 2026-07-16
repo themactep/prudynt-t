@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 OPUS_REPO="https://github.com/xiph/opus"
 OPUS_DIR="${BUILD_DIR}/opus"
-OPUS_VER="ddbe48383984d56acd9e1ab6a090c54ca6b735a6"
+OPUS_VER="22244de5a79bd1d6d623c32e72bf1954b56235be" # v1.6.1, matches buildroot package/opus
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
@@ -44,9 +44,10 @@ fi
 
 cd "$OPUS_DIR"
 
-# Checkout desired version
+# Checkout desired version (fetch it first if the clone lacks it)
 if [[ -n "$OPUS_VER" ]]; then
-    git checkout $OPUS_VER
+    git rev-parse -q --verify "${OPUS_VER}^{commit}" >/dev/null || git fetch origin
+    git checkout -q $OPUS_VER
 else
     echo "Pulling Opus master"
 fi
@@ -62,6 +63,8 @@ if command -v ccache &>/dev/null; then
 fi
 
 # Configure the Opus build with CMake
+# (OPUS_FLOAT_APPROX mirrors the firmware tree default from
+#  package/all-patches/opus/0001-thingino-default-build-options.patch)
 echo "Configuring Opus library..."
 cmake \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
@@ -75,6 +78,7 @@ cmake \
     -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -Os" \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/install" \
     -DBUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} \
+    -DOPUS_FLOAT_APPROX=ON \
     -DOPUS_STACK_PROTECTOR=OFF \
     ..
 

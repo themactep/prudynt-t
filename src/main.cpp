@@ -34,6 +34,7 @@
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
+#include <elf.h>
 #include <fcntl.h>
 #include <filesystem>
 #include <signal.h>
@@ -43,6 +44,7 @@
 #include <thread>
 #include <time.h>
 #include <unistd.h>
+#include <vector>
 #if defined(HAS_BACKTRACE) && HAS_BACKTRACE
 #include <execinfo.h>
 #endif
@@ -166,6 +168,13 @@ struct InstanceLockGuard {
 namespace {
 sigset_t shutdown_signal_set;
 
+// Text segment bounds (defined by the linker) — used to identify likely
+// return addresses when scanning the stack in the crash handler.
+extern "C" {
+extern char __executable_start[] __attribute__((weak));
+extern char etext[] __attribute__((weak));
+}
+
 // Helper to write strings safely in signal handler
 static void safe_write(int fd, const char *str) {
   write(fd, str, strlen(str));
@@ -186,6 +195,28 @@ static void safe_write_hex(int fd, unsigned long val) {
     }
   }
   safe_write(fd, p);
+}
+
+// Helper to write a zero-padded 8-digit hex value (for aligned dumps)
+static void safe_write_hex32(int fd, unsigned long val) {
+  char buf[9];
+  for (int i = 7; i >= 0; --i) {
+    unsigned int digit = val & 0xf;
+    buf[i] = digit < 10 ? '0' + digit : 'a' + (digit - 10);
+    val >>= 4;
+  }
+  buf[8] = '\0';
+  safe_write(fd, buf);
+}
+
+// Async-signal-safe memory readability probe. Writing to a pipe forces the
+// kernel to copy from the given address and returns EFAULT on unmapped
+// memory instead of faulting. (Note: /dev/null does NOT validate buffers.)
+static bool mem_readable(int pipe_wr_fd, const void *addr, size_t len) {
+  if (pipe_wr_fd < 0) {
+    return false;
+  }
+  return write(pipe_wr_fd, addr, len) == (ssize_t)len;
 }
 
 // Enhanced crash handler with diagnostics
@@ -297,6 +328,7 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
   }
 
   // Program counter and registers (MIPS-specific)
+  unsigned long sp_val = 0;
   if (context) {
     ucontext_t *uc = (ucontext_t *)context;
     safe_write(crash_fd, "\nRegisters:\n");
@@ -314,6 +346,28 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
     safe_write(crash_fd, "RA (Return Address): 0x");
     safe_write_hex(crash_fd, uc->uc_mcontext.gregs[31]);
     safe_write(crash_fd, "\n");
+
+    // Full GPR set (o32 names)
+    static const char *const mips_reg_names[32] = {
+        "zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2",
+        "t3",   "t4", "t5", "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5",
+        "s6",   "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"};
+    safe_write(crash_fd, "\nGPRs:\n");
+    for (int i = 0; i < 32; i++) {
+      safe_write(crash_fd, "  ");
+      safe_write(crash_fd, mips_reg_names[i]);
+      // Pad register names to 4 chars for aligned columns
+      for (size_t pad = strlen(mips_reg_names[i]); pad < 4; pad++) {
+        safe_write(crash_fd, " ");
+      }
+      safe_write(crash_fd, "=");
+      safe_write_hex32(crash_fd, (unsigned long)uc->uc_mcontext.gregs[i]);
+      if ((i & 3) == 3) {
+        safe_write(crash_fd, "\n");
+      }
+    }
+
+    sp_val = (unsigned long)uc->uc_mcontext.gregs[29];
 #elif defined(__arm__)
     safe_write(crash_fd, "PC: 0x");
     safe_write_hex(crash_fd, uc->uc_mcontext.arm_pc);
@@ -324,10 +378,67 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
     safe_write(crash_fd, "LR: 0x");
     safe_write_hex(crash_fd, uc->uc_mcontext.arm_lr);
     safe_write(crash_fd, "\n");
+
+    sp_val = (unsigned long)uc->uc_mcontext.arm_sp;
 #else
     safe_write(crash_fd,
                "(register dump not available for this architecture)\n");
 #endif
+  }
+
+  // Stack dump + return-address scan. Reads are probed through a pipe
+  // (async-signal-safe) so a bogus SP cannot fault inside the handler.
+  if (sp_val && (sp_val & 3) == 0) {
+    int probe_fds[2] = {-1, -1};
+    if (pipe(probe_fds) != 0) {
+      probe_fds[0] = probe_fds[1] = -1;
+    }
+    const unsigned long *sp_words = (const unsigned long *)sp_val;
+
+    // Raw dump: 64 words (256 bytes) from SP upward
+    safe_write(crash_fd, "\nStack (256 bytes from SP):\n");
+    for (int line = 0; line < 16; line++) {
+      const unsigned long *row = sp_words + line * 4;
+      if (!mem_readable(probe_fds[1], row, 4 * sizeof(*row))) {
+        safe_write(crash_fd, "  <unreadable>\n");
+        break;
+      }
+      safe_write(crash_fd, "  ");
+      safe_write_hex32(crash_fd, (unsigned long)row);
+      safe_write(crash_fd, ":");
+      for (int k = 0; k < 4; k++) {
+        safe_write(crash_fd, " ");
+        safe_write_hex32(crash_fd, row[k]);
+      }
+      safe_write(crash_fd, "\n");
+    }
+
+    // Poor-man's backtrace: scan 2KB of stack for words pointing into
+    // .text — saved return addresses / function pointers. Feed these to
+    // addr2line on an unstripped binary of the same build.
+    unsigned long text_lo = (unsigned long)__executable_start;
+    unsigned long text_hi = (unsigned long)etext;
+    if (text_lo && text_hi > text_lo) {
+      safe_write(crash_fd, "\nText addresses on stack (2KB scan):\n");
+      for (int i = 0; i < 512; i++) {
+        const unsigned long *w = sp_words + i;
+        if (!mem_readable(probe_fds[1], w, sizeof(*w))) {
+          break;
+        }
+        if (*w >= text_lo && *w < text_hi) {
+          safe_write(crash_fd, "  SP+0x");
+          safe_write_hex(crash_fd, i * sizeof(*w));
+          safe_write(crash_fd, ": 0x");
+          safe_write_hex32(crash_fd, *w);
+          safe_write(crash_fd, "\n");
+        }
+      }
+    }
+
+    if (probe_fds[0] >= 0) {
+      close(probe_fds[0]);
+      close(probe_fds[1]);
+    }
   }
 
   // Backtrace
@@ -494,6 +605,94 @@ void start_video(int encChn) {
   sh.has_started.acquire();
 }
 
+// ── TEMP DIAGNOSTIC: GOT corruption watchdog ────────────────────────────
+// Two SIGSEGV-at-PC=0 crashes showed the static binary's GOT slot for
+// std::condition_variable::notify_all() reading as 0 at runtime while the
+// on-disk image holds a valid address. This snapshots the .got section at
+// startup and polls for divergence, logging address/old/new of any word
+// that changes. The GOT of a static executable is never legitimately
+// written at runtime, so any hit is the corrupter. Remove once found.
+static void start_got_watchdog() {
+  uintptr_t got_addr = 0;
+  size_t got_size = 0;
+
+  // Locate .got in our own ELF image
+  FILE *f = fopen("/proc/self/exe", "rb");
+  if (!f) {
+    LOG_WARN("got-watchdog: cannot open /proc/self/exe");
+    return;
+  }
+  Elf32_Ehdr eh;
+  Elf32_Shdr sh;
+  std::vector<char> shstr;
+  if (fread(&eh, sizeof(eh), 1, f) == 1 && eh.e_type != ET_EXEC) {
+    // PIE/dynamic build: section vaddrs are unrelocated (dereferencing
+    // sh_addr faults), and the dynamic linker legitimately writes GOT
+    // slots anyway. The watchdog is only meaningful for static ET_EXEC.
+    LOG_WARN("got-watchdog: binary is not a static executable, skipping");
+    fclose(f);
+    return;
+  }
+  if (fseek(f, 0, SEEK_SET) == 0 && fread(&eh, sizeof(eh), 1, f) == 1 &&
+      fseek(f, eh.e_shoff + (long)eh.e_shstrndx * eh.e_shentsize, SEEK_SET) ==
+          0 &&
+      fread(&sh, sizeof(sh), 1, f) == 1) {
+    shstr.resize(sh.sh_size);
+    if (fseek(f, sh.sh_offset, SEEK_SET) == 0 &&
+        fread(shstr.data(), 1, sh.sh_size, f) == sh.sh_size) {
+      for (int i = 0; i < eh.e_shnum; i++) {
+        if (fseek(f, eh.e_shoff + (long)i * eh.e_shentsize, SEEK_SET) != 0 ||
+            fread(&sh, sizeof(sh), 1, f) != 1) {
+          break;
+        }
+        if (sh.sh_name < shstr.size() &&
+            strcmp(&shstr[sh.sh_name], ".got") == 0) {
+          got_addr = sh.sh_addr;
+          got_size = sh.sh_size;
+          break;
+        }
+      }
+    }
+  }
+  fclose(f);
+
+  if (!got_addr || !got_size) {
+    LOG_WARN("got-watchdog: .got section not found");
+    return;
+  }
+
+  char buf[96];
+  snprintf(buf, sizeof(buf), "got-watchdog: monitoring 0x%08lx..0x%08lx",
+           (unsigned long)got_addr, (unsigned long)(got_addr + got_size));
+  LOG_INFO(buf);
+
+  std::thread([got_addr, got_size]() {
+    const volatile uint32_t *got = (const volatile uint32_t *)got_addr;
+    const size_t n = got_size / sizeof(uint32_t);
+    std::vector<uint32_t> snap(n);
+    for (size_t i = 0; i < n; i++) {
+      snap[i] = got[i];
+    }
+    int reported = 0;
+    while (reported < 32) {
+      for (size_t i = 0; i < n; i++) {
+        uint32_t v = got[i];
+        if (v != snap[i]) {
+          char msg[128];
+          snprintf(msg, sizeof(msg),
+                   "got-watchdog: GOT[%u] @0x%08lx changed 0x%08x -> 0x%08x",
+                   (unsigned)i, (unsigned long)(got_addr + i * 4), snap[i], v);
+          LOG_ERROR(msg);
+          snap[i] = v;
+          reported++;
+        }
+      }
+      usleep(2000);
+    }
+    LOG_ERROR("got-watchdog: too many changes, watchdog stopped");
+  }).detach();
+}
+
 int main(int argc, const char *argv[]) {
   if (Logger::init("INFO")) {
     LOG_ERROR("Logger initialization failed.");
@@ -504,6 +703,17 @@ int main(int argc, const char *argv[]) {
   LOG_INFO("Starting Prudynt Video Server.");
   LOG_INFO(
       "Configuration bootstrap deferred until after early startup recovery");
+
+  // TEMP DIAGNOSTIC: probe notify_all right away. Two SIGSEGV-at-PC=0
+  // crashes jumped through a zeroed GOT slot for this exact function on the
+  // first-ever call; if the slot is dead from process start this crashes
+  // here with a clean RA in main() instead of in the video worker.
+  {
+    std::condition_variable diag_cv;
+    diag_cv.notify_all();
+    LOG_INFO("diag: notify_all probe at startup OK");
+  }
+  start_got_watchdog();
 
   InstanceLockGuard instance_lock;
 

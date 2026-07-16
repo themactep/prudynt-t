@@ -150,12 +150,8 @@ prudynt() {
 
 	/usr/bin/make -j$(nproc) \
 	ARCH= CROSS_COMPILE="${PRUDYNT_CROSS}" \
-	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
-	-isystem ./3rdparty/install/include \
-	-isystem ./3rdparty/install/include/liveMedia \
-	-isystem ./3rdparty/install/include/groupsock \
-	-isystem ./3rdparty/install/include/UsageEnvironment \
-	-isystem ./3rdparty/install/include/BasicUsageEnvironment" \
+	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DNO_OPENSSL=1 \
+	-isystem ./3rdparty/install/include" \
 	LDFLAGS=" -L./3rdparty/install/lib" \
 	$STRIP_FLAG \
 	-C $PWD all
@@ -205,33 +201,14 @@ deps() {
 	cd ../
 
 	echo "Build libhelix-mp3"
-	LIBHELIX_DIR="$TOP/3rdparty/libhelix-aac"
-	MP3_SRC="$LIBHELIX_DIR/src/libhelix-mp3"
-	INSTALL_DIR="$TOP/3rdparty/install"
-	ARDUINO_COMPAT="$TOP/res/arduino_compat"
-	_CC="${PRUDYNT_CROSS#ccache }gcc"
-	mkdir -p /tmp/libhelix-mp3-build
-	for src in "$MP3_SRC"/*.c; do
-		obj="/tmp/libhelix-mp3-build/$(basename "${src%.c}").o"
-		"$_CC" $LIBC_EXTRA_CFLAGS -Os -I"$MP3_SRC" -I"$ARDUINO_COMPAT" \
-			-DUSE_DEFAULT_STDLIB -DARDUINO -c "$src" -o "$obj"
-	done
-	"${PRUDYNT_CROSS#ccache }ar" rcs "$INSTALL_DIR/lib/libhelix-mp3.a" /tmp/libhelix-mp3-build/*.o
-	find "$MP3_SRC" -maxdepth 1 -name '*.h' -exec cp {} "$INSTALL_DIR/include/" \;
-	rm -rf /tmp/libhelix-mp3-build
+	cd 3rdparty
+	PRUDYNT_CROSS=$PRUDYNT_CROSS LIBC_EXTRA_CFLAGS="$LIBC_EXTRA_CFLAGS" ../scripts/make_libhelixmp3_deps.sh
+	cd ../
 
 	echo "Build libflac-lite"
-	FLAC_SRC="$LIBHELIX_DIR/src/libflac"
-	mkdir -p /tmp/libflac-build
-	for src in "$FLAC_SRC"/*.c; do
-		obj="/tmp/libflac-build/$(basename "${src%.c}").o"
-		"$_CC" $LIBC_EXTRA_CFLAGS -Os -I"$FLAC_SRC" -I"$ARDUINO_COMPAT" \
-			-DUSE_DEFAULT_STDLIB -c "$src" -o "$obj"
-	done
-	"${PRUDYNT_CROSS#ccache }ar" rcs "$INSTALL_DIR/lib/libflac-lite.a" /tmp/libflac-build/*.o
-	cp -r "$FLAC_SRC/FLAC" "$INSTALL_DIR/include/"
-	find "$FLAC_SRC" -maxdepth 1 -name '*.h' -exec cp {} "$INSTALL_DIR/include/" \;
-	rm -rf /tmp/libflac-build
+	cd 3rdparty
+	PRUDYNT_CROSS=$PRUDYNT_CROSS LIBC_EXTRA_CFLAGS="$LIBC_EXTRA_CFLAGS" ../scripts/make_libflaclite_deps.sh
+	cd ../
 
 	echo "Build libwebsockets"
 	cd 3rdparty
@@ -251,72 +228,17 @@ deps() {
 	fi
 	cd ../
 
-	echo "Build libschrift"
-	cd 3rdparty
-
-	LIBSCHRIFT_VER="24737d2922b23df4a5692014f5ba03da0c296112"
-
-	# Smart libschrift handling
-	if [[ ! -d libschrift ]]; then
-		echo "Cloning libschrift..."
-		git clone https://github.com/tomolt/libschrift/
-		cd libschrift
-	else
-		echo "libschrift directory exists, using existing version..."
-		cd libschrift
-	fi
-	git checkout "$LIBSCHRIFT_VER"
-	# Apply local libschrift patches if present
-	if ls ../../res/libschrift/*.patch >/dev/null 2>&1; then
-		for p in ../../res/libschrift/*.patch; do
-			patch -p1 -N < "$p" || true
-		done
-	fi
-	mkdir -p $TOP/3rdparty/install/lib
-	mkdir -p $TOP/3rdparty/install/include
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -std=c99 -pedantic -Wall -Wextra -Wconversion -c -o schrift.o schrift.c
-		${PRUDYNT_CROSS}ar rc libschrift.a schrift.o
-		${PRUDYNT_CROSS}ranlib libschrift.a
-		cp libschrift.a $TOP/3rdparty/install/lib/
-	else
-		${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -std=c99 -pedantic -Wall -Wextra -Wconversion -fPIC -c -o schrift.o schrift.c
-		${PRUDYNT_CROSS}gcc -shared -o libschrift.so schrift.o
-		cp libschrift.so $TOP/3rdparty/install/lib/
-	fi
-	cp schrift.h $TOP/3rdparty/install/include/
-	cd ../../
+	# libschrift is no longer linked by prudynt (burned-in OSD removed in b718ed5);
+	# scripts/make_libschrift_deps.sh is kept dormant for manual use.
 
 	echo "Build JCT (JSON Configuration Tool)"
 	cd 3rdparty
-
-	# Smart JCT handling - use existing directory
-	if [[ ! -d jct ]]; then
-		echo "Cloning JCT..."
-		git clone --depth=1 https://github.com/themactep/jct
-		cd jct
-	else
-		cd jct
-	fi
-
-	echo "Building JCT library..."
-	make clean
-
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		echo "Building JCT static library..."
-		make static CROSS_COMPILE="${PRUDYNT_CROSS}"
-		cp libjct.a $TOP/3rdparty/install/lib/
+		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_jct_deps.sh -static
 	else
-		echo "Building JCT shared library..."
-		make shared CROSS_COMPILE="${PRUDYNT_CROSS}"
-		cp libjct.so $TOP/3rdparty/install/lib/
-		# Also copy the symlink for proper versioning
-		cp -P libjct.so.1 $TOP/3rdparty/install/lib/ 2>/dev/null || true
+		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_jct_deps.sh
 	fi
-
-	# Install header
-	cp src/json_config.h $TOP/3rdparty/install/include/
-	cd ../../
+	cd ../
 
 	echo "import libimp"
 	cd 3rdparty
@@ -371,36 +293,22 @@ deps() {
 	cd ../
 
 	if [[ "$LIBC_TYPE" == "uclibc" ]]; then
-		echo "import libuclibcshim"
+		echo "Build libuclibcshim"
 		cd 3rdparty
-		if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-uclibc; fi
-		if [[ ! -d ingenic-uclibc ]]; then
-			git clone --depth=1 https://github.com/gtxaspec/ingenic-uclibc
-		fi
-		cd ingenic-uclibc
-		# ingenic-uclibc has no Makefile; single-source shim compiled directly.
-		${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -fPIC -shared -o libuclibcshim.so uclibc_shim.c
 		if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-			${PRUDYNT_CROSS}gcc $LIBC_EXTRA_CFLAGS -fPIC -c uclibc_shim.c -o uclibc_shim.o
-			${PRUDYNT_CROSS#ccache }ar rcs libuclibcshim.a uclibc_shim.o
+			PRUDYNT_CROSS=$PRUDYNT_CROSS LIBC_EXTRA_CFLAGS="$LIBC_EXTRA_CFLAGS" ../scripts/make_uclibcshim_deps.sh -static
+		else
+			PRUDYNT_CROSS=$PRUDYNT_CROSS LIBC_EXTRA_CFLAGS="$LIBC_EXTRA_CFLAGS" ../scripts/make_uclibcshim_deps.sh
 		fi
-		cp libuclibcshim.* ../install/lib/
 		cd $TOP
 	else
-		echo "import libmuslshim"
+		echo "Build libmuslshim"
 		cd 3rdparty
-		if [[ $CLEAN_ALL -eq 1 ]]; then rm -rf ingenic-musl; fi
-		if [[ ! -d ingenic-musl ]]; then
-			git clone --depth=1 https://github.com/gtxaspec/ingenic-musl
-		fi
-		cd ingenic-musl
 		if [[ $STATIC_BUILD -eq 1 ]]; then
-			make CC="${PRUDYNT_CROSS}gcc" -j$(nproc) static
-			make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+			PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_muslshim_deps.sh -static
 		else
-			make CC="${PRUDYNT_CROSS}gcc" -j$(nproc)
+			PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_muslshim_deps.sh
 		fi
-		cp libmuslshim.* ../install/lib/
 		cd $TOP
 	fi
 
@@ -426,119 +334,21 @@ fi
 
 	echo "Build curl"
 	cd 3rdparty
-
-	CURL_VER="8.19.0"
-	CURL_TAR="curl-${CURL_VER}.tar.bz2"
-	CURL_URL="https://curl.se/download/${CURL_TAR}"
-
-	if [[ ! -d "curl-${CURL_VER}" ]]; then
-		echo "Downloading curl ${CURL_VER}..."
-		if command -v wget &>/dev/null; then
-			wget -q --show-progress "${CURL_URL}" -O "${CURL_TAR}"
-		else
-			curl -L --progress-bar "${CURL_URL}" -o "${CURL_TAR}"
-		fi
-		tar -xf "${CURL_TAR}"
-		rm -f "${CURL_TAR}"
-	fi
-
-	cd "curl-${CURL_VER}"
-	mkdir -p build-cross
-	cd build-cross
-
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		CURL_ENABLE_SHARED="--disable-shared --enable-static"
+		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_curl_deps.sh -static
 	else
-		CURL_ENABLE_SHARED="--enable-shared --disable-static"
+		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_curl_deps.sh
 	fi
-
-	../configure \
-		--host=mipsel-linux \
-		CC="${PRUDYNT_CROSS}gcc" \
-		--prefix="$TOP/3rdparty/install" \
-		--without-ssl \
-		--without-libpsl \
-		--disable-dict --disable-file --disable-ftp \
-		--disable-gopher --disable-imap --disable-ldap \
-		--disable-pop3 --disable-rtsp --disable-smtp \
-		--disable-telnet --disable-tftp \
-		--disable-manual --disable-docs \
-		--without-zlib --without-brotli --without-zstd \
-		$CURL_ENABLE_SHARED \
-		--quiet
-	make -j$(nproc)
-	make install
 	cd $TOP
 
 	echo "Build faac"
 	cd 3rdparty
-
-	FAAC_VER="6858080dd1abf528d5a946066b9f71cc3d8e0b21"
-
-	# Smart faac handling
-	if [[ ! -d faac ]]; then
-		echo "Cloning faac..."
-		git clone https://github.com/knik0/faac.git
-		cd faac
-	else
-		echo "faac directory exists, using existing version..."
-		cd faac
-	fi
-		git reset --hard HEAD 2>/dev/null || true
-		git clean -fd 2>/dev/null || true
-		git fetch origin
-		git checkout "$FAAC_VER"
-		# Apply local FAAC patches (warnings/portability fixes)
-		if ls ../../res/faac/*.patch >/dev/null 2>&1; then
-			for p in ../../res/faac/*.patch; do
-				patch -p1 < "$p"
-			done
-		fi
-
-	# faac uses meson; create a cross-file for mipsel
-	# Fix meson.build for newer meson versions (change c_std=gnu99,c99 to c_std=gnu99)
-	sed -i "s/'c_std=gnu99,c99'/'c_std=gnu99'/g" meson.build
-	# Meson treats binary values as single executable paths — split ccache from
-	# the compiler using array syntax so "ccache <prefix>gcc" works.
-	_BARE_CROSS="${PRUDYNT_CROSS#ccache }"
-	if [[ "$PRUDYNT_CROSS" != "$_BARE_CROSS" ]]; then
-		_MESON_C="['ccache', '${_BARE_CROSS}gcc']"
-		_MESON_CPP="['ccache', '${_BARE_CROSS}g++']"
-	else
-		_MESON_C="'${_BARE_CROSS}gcc'"
-		_MESON_CPP="'${_BARE_CROSS}g++'"
-	fi
-	cat > /tmp/faac-meson-cross.ini <<-CROSSFILE
-		[binaries]
-		c = ${_MESON_C}
-		cpp = ${_MESON_CPP}
-		ar = '${_BARE_CROSS}ar'
-		strip = '${_BARE_CROSS}strip'
-		pkg-config = 'pkg-config'
-
-		[host_machine]
-		system = 'linux'
-		cpu_family = 'mips'
-		cpu = 'mipsel'
-		endian = 'little'
-	CROSSFILE
-
 	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
-		FAAC_DEFAULT_LIB=static
+		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_faac_deps.sh -static
 	else
-		FAAC_DEFAULT_LIB=shared
+		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_faac_deps.sh
 	fi
-
-	rm -rf builddir
-	CFLAGS="-ffast-math" meson setup builddir \
-		--cross-file /tmp/faac-meson-cross.ini \
-		--prefix="$TOP/3rdparty/install" \
-		--default-library="$FAAC_DEFAULT_LIB" \
-		-Dfloating-point=single \
-		-Dmax-channels=2
-	ninja -C builddir -j$(nproc)
-	ninja -C builddir install
-	cd ../../
+	cd ../
 
 }
 
@@ -561,6 +371,8 @@ elif [[ "$1" == "deps" ]]; then
 elif [[ "$1" == "prudynt" ]]; then
 	prudynt "${@:2}"
 elif [[ "$1" == "full" ]]; then
+	echo "Removing 3rdparty for a fresh full build..."
+	rm -rf "${TOP}/3rdparty"
 	deps "${@:2}"
 	prudynt "${@:2}"
 fi

@@ -337,7 +337,13 @@ CXXFLAGS_FILE           = $(OBJ_DIR)/.cxxflags
 
 # Build Options
 # =============
+# Static binaries are used for development — keep symbols so crash
+# addresses (e.g. /tmp/prudynt_crash.log) can be symbolized with addr2line.
+ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
+STRIP_FLAG              :=
+else
 STRIP_FLAG              := $(if $(filter 0,$(DEBUG_STRIP)),,"-s")
+endif
 
 # =============================================================================
 # Build Rules

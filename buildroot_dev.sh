@@ -180,13 +180,9 @@ make distclean
 time /usr/bin/make V=1 -j$(( $(nproc) + 1 )) $DEBUG_STRIP_FLAG \
 	ARCH= \
 	CROSS_COMPILE="$CCACHE_BIN $HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/bin/mipsel-linux-" \
-	CFLAGS="-DPLATFORM_$PLAT $OPT_CMD -DBINARY_${BINARY_MODE^^} -DALLOW_RTSP_SERVER_PORT_REUSE=1 -DNO_OPENSSL=1 \
+	CFLAGS="-DPLATFORM_$PLAT $OPT_CMD -DBINARY_${BINARY_MODE^^} -DNO_OPENSSL=1 \
 	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include \
-	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include/libwebsockets \
-	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include/liveMedia \
-	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include/groupsock \
-	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include/UsageEnvironment \
-	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include/BasicUsageEnvironment" \
+	-I$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/include/libwebsockets" \
 	LDFLAGS="-z max-page-size=0x1000 -L$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/host/mipsel-buildroot-linux-musl/sysroot/usr/lib \
 	-L$HOME_DIR/output/$PROFILE_NAME/per-package/prudynt-t/target/usr/lib" \
 	-C "$PWD" all

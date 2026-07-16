@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 LIBHELIX_REPO="https://github.com/earlephilhower/ESP8266Audio.git"
 LIBHELIX_DIR="${BUILD_DIR}/libhelix-aac"
-LIBHELIX_VER="master"
+LIBHELIX_VER="2.4.1" # ESP8266Audio release, matches buildroot package/libhelix-aac
 MAKEFILE="$SCRIPT_DIR/../Makefile"
 
 PRUDYNT_CROSS="${PRUDYNT_CROSS#ccache }"
@@ -47,9 +47,10 @@ cd "$LIBHELIX_DIR"
 git reset --hard HEAD
 git clean -fd
 
-# Checkout desired version
+# Checkout desired version (fetch it first if the clone lacks it)
 if [[ -n "$LIBHELIX_VER" && "$LIBHELIX_VER" != "master" ]]; then
-    git checkout $LIBHELIX_VER
+    git rev-parse -q --verify "${LIBHELIX_VER}^{commit}" >/dev/null || git fetch origin
+    git checkout -q $LIBHELIX_VER
 else
     echo "Using libhelix-aac master branch"
 fi
