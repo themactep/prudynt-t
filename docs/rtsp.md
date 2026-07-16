@@ -9,9 +9,9 @@ interleaved or UDP transport.
 ```
 ┌─────────────┐     tap      ┌──────────────────┐
 │ IMP Encoder │─────────────▶│ MsgChannel       │
-│  (channel 0)│              └────────┬─────────┘
-└─────────────┘                      │
-                                     ▼
+│ (channel 0) │              └────────┬─────────┘
+└─────────────┘                       │
+                                      ▼
                               ┌──────────────┐     RTP      ┌────────┐
                               │  RtspServer  │─────────────▶│ client │
                               │  drain loop  │              └────────┘
@@ -92,8 +92,8 @@ RTSP settings in `config.json`:
 
 | URL                          | Description                        |
 |------------------------------|------------------------------------|
-| `rtsp://<ip>/ch0`           | Main H.264 stream (channel 0)      |
-| `rtsp://<ip>/ch1`           | Sub stream (channel 1, if enabled) |
+| `rtsp://<ip>/ch0`            | Main H.264 stream (channel 0)      |
+| `rtsp://<ip>/ch1`            | Sub stream (channel 1, if enabled) |
 
 Default credentials: `thingino:thingino`
 
