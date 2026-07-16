@@ -533,6 +533,15 @@ void VideoWorker::run() {
         }
 
         for (uint32_t i = 0; i < stream.packCount; ++i) {
+          // Effective frame end: the T31 libimp never sets pack.frameEnd
+          // (always false), which left the RTP marker bit unset and broke
+          // frame-boundary detection in marker-based clients (go2rtc WebRTC
+          // and MP4/MSE showed no video while ffmpeg/MediaMTX, which fall
+          // back to timestamp changes, played fine).  IMP_Encoder_GetStream
+          // returns exactly one encoded frame per call on all platforms, so
+          // the last pack of the batch is by definition the end of frame.
+          bool pack_is_frame_end =
+              stream.pack[i].frameEnd || (i + 1 == stream.packCount);
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
           if ((!recorder_active || !recorder_accepts_samples) &&
@@ -662,7 +671,7 @@ void VideoWorker::run() {
             pack_ts_us = ts_last_nonzero_us;
           }
 
-          if (stream.pack[i].frameEnd && pack_ts_us > 0) {
+          if (pack_is_frame_end && pack_ts_us > 0) {
             ts_last_frame_us = pack_ts_us;
           }
 
@@ -800,7 +809,7 @@ void VideoWorker::run() {
 
           if (recorder_accepts_samples && payload_len > 0 &&
               !(nal_is_vps || nal_is_sps || nal_is_pps)) {
-            bool pack_frame_end = stream.pack[i].frameEnd;
+            bool pack_frame_end = pack_is_frame_end;
 
             if (mp4_sample_ts_us != -1 && !mp4_sample.empty()) {
               if (mp4_waiting_frame_end) {
@@ -959,7 +968,7 @@ void VideoWorker::run() {
                 nalu.packet_index = i;
                 nalu.packet_count = stream.packCount;
                 nalu.is_frame_start = frame_start;
-                nalu.is_frame_end = stream.pack[i].frameEnd;
+                nalu.is_frame_end = pack_is_frame_end;
                 nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
                                     nal_is_vps || nal_is_sps || nal_is_pps);
                 delivered = global_video[encChn]->msgChannel->write(std::move(nalu));
@@ -1004,7 +1013,7 @@ void VideoWorker::run() {
                     tap_nalu.packet_index = i;
                     tap_nalu.packet_count = stream.packCount;
                     tap_nalu.is_frame_start = frame_start;
-                    tap_nalu.is_frame_end = stream.pack[i].frameEnd;
+                    tap_nalu.is_frame_end = pack_is_frame_end;
                     tap_nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
                                             nal_is_vps || nal_is_sps ||
                                             nal_is_pps);
@@ -1106,7 +1115,7 @@ void VideoWorker::run() {
               std::memcpy(dst + 4, start + 4, payload_len);
 
               // Flush on frame end
-              if (stream.pack[i].frameEnd) {
+              if (pack_is_frame_end) {
                 flush_prebuffer_sample();
               }
             }
