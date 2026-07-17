@@ -146,6 +146,20 @@ struct Session {
     // fragmentation, so compare directly against audioRtp.timestamp).
     bool     hasAudioRtpTs = false;
 
+    // RTCP SR clock mapping.  The wall-clock NTP time is captured ONCE
+    // per session and paired with a CLOCK_MONOTONIC reference; all
+    // subsequent SR NTP values are derived from the monotonic-domain
+    // media timestamps (imp_ts / af.time, both rebased to
+    // CLOCK_MONOTONIC by IMPSystem).  Using gettimeofday() directly in
+    // each SR breaks the NTP<->RTP mapping whenever ntpd steps or slews
+    // the system clock: receivers (ffmpeg/Frigate) recompute all PTS
+    // from the SR pair and every stream jumps by the step size
+    // ("Non-monotonic DTS" floods, watchdog restarts).
+    uint64_t ntpAnchor = 0;        // NTP 32.32 (1900 epoch) at anchor
+    int64_t  ntpAnchorMonoUs = -1; // CLOCK_MONOTONIC us at anchor
+    int64_t  lastVideoTsUs = -1;   // monotonic us of last video frame start
+    int64_t  lastAudioTsUs = -1;   // monotonic us of last audio frame
+
     time_t lastActivity = 0;
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }
@@ -1578,6 +1592,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         s.lastFrameRtpTs = new_ts;
         s.hasFrameRtpTs = true;
         s.videoRtp.timestamp = new_ts;
+        s.lastVideoTsUs = ts_us;
         s.videoFrameCount++;
     }
 
@@ -1873,6 +1888,8 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
             new_ts = s.audioRtp.timestamp + 1;
         s.audioRtp.timestamp = new_ts;
         s.hasAudioRtpTs = true;
+        s.lastAudioTsUs = static_cast<int64_t>(af.time.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(af.time.tv_usec);
     }
 
     int clientIdx = s.sessionsIndex;
@@ -1992,9 +2009,37 @@ void RtspServer::sendRtcpSr(Session &s) {
     if (s.fd < 0) return;
     // Backchannel-only sessions have no RTP streams to report on.
     if (s.backchannel && s.videoChn < 0 && !s.hasAudio) return;
-    uint64_t ntp = simple_rtsp::ntpTimestamp();
+
+    // Establish the session NTP anchor once: wall-clock NTP paired with
+    // CLOCK_MONOTONIC.  SR NTP values then advance on the monotonic
+    // timeline so NTP daemon clock steps can never shift the mapping.
+    struct timespec mono;
+    clock_gettime(CLOCK_MONOTONIC, &mono);
+    int64_t monoNowUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                        static_cast<int64_t>(mono.tv_nsec) / 1000LL;
+    if (s.ntpAnchorMonoUs < 0) {
+        s.ntpAnchor = simple_rtsp::ntpTimestamp();
+        s.ntpAnchorMonoUs = monoNowUs;
+    }
+    // NTP 32.32 value at a given monotonic-domain microsecond instant.
+    auto ntpAt = [&s](int64_t tsUs) -> uint64_t {
+        int64_t d = tsUs - s.ntpAnchorMonoUs; // may be slightly negative
+        int64_t whole = d / 1000000LL;
+        int64_t rem = d - whole * 1000000LL;  // same sign as d
+        int64_t off = whole * 4294967296LL + (rem * 4294967296LL) / 1000000LL;
+        return s.ntpAnchor + static_cast<uint64_t>(off);
+    };
+
+    // Pair each stream's SR with the NTP time OF ITS LAST RTP TIMESTAMP
+    // (not "now"): the RTP ts field below is the last packet's ts, and a
+    // stale ts paired with a fresh NTP skews the mapping by up to one
+    // frame interval per SR, wobbling receiver PTS backwards.
+    uint64_t ntp = ntpAt(s.lastVideoTsUs >= 0 ? s.lastVideoTsUs : monoNowUs);
     uint32_t ntpMsw = htonl(static_cast<uint32_t>(ntp >> 32));
     uint32_t ntpLsw = htonl(static_cast<uint32_t>(ntp & 0xFFFFFFFF));
+    uint64_t antp = ntpAt(s.lastAudioTsUs >= 0 ? s.lastAudioTsUs : monoNowUs);
+    uint32_t antpMsw = htonl(static_cast<uint32_t>(antp >> 32));
+    uint32_t antpLsw = htonl(static_cast<uint32_t>(antp & 0xFFFFFFFF));
     uint8_t rtcp[28] = {};
     rtcp[0] = 0x80; rtcp[1] = 200;
     rtcp[2] = 0; rtcp[3] = 6;
@@ -2016,6 +2061,8 @@ void RtspServer::sendRtcpSr(Session &s) {
         if (s.hasAudio) {
             uint32_t asrc = htonl(s.audioRtp.ssrc);
             memcpy(rtcp + 4, &asrc, 4);
+            memcpy(rtcp + 8, &antpMsw, 4);
+            memcpy(rtcp + 12, &antpLsw, 4);
             uint32_t ats = htonl(s.audioRtp.timestamp);
             memcpy(rtcp + 16, &ats, 4);
             target.sin_port = htons(s.audioClientRtcpPort);
@@ -2035,6 +2082,8 @@ void RtspServer::sendRtcpSr(Session &s) {
         if (s.hasAudio) {
             uint32_t asrc = htonl(s.audioRtp.ssrc);
             memcpy(rtcp + 4, &asrc, 4);
+            memcpy(rtcp + 8, &antpMsw, 4);
+            memcpy(rtcp + 12, &antpLsw, 4);
             uint32_t ats = htonl(s.audioRtp.timestamp);
             memcpy(rtcp + 16, &ats, 4);
             uint8_t ahdr[4] = { '$', s.audioInterleavedRtcp, 0, 28 };
