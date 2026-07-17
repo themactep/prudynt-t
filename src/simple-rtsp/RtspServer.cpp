@@ -64,6 +64,7 @@ struct Session {
     bool hasAudio    = false;
     bool audioOnly   = false; // true for /mic-style standalone audio
     bool backchannel = false; // receiving audio from client (talkback)
+    bool backchannelActive = false; // this session incremented is_sending
     int  backchannelPayloadType = -1; // negotiated PT from ANNOUNCE
 
     // Transport
@@ -658,8 +659,12 @@ void RtspServer::closeClient(int idx) {
     s->videoTap.reset();
     s->audioTap.reset();
 
-    // Close backchannel receive socket
-    if (s->backchannel && global_backchannel) {
+    // Close backchannel receive socket.
+    // Only decrement is_sending if this session actually incremented it
+    // (activated via PLAY or RECORD).  A session that only SETUP the
+    // backchannel and disconnected must not drive the count negative,
+    // which would permanently block future activations.
+    if (s->backchannelActive && global_backchannel) {
         int prev = global_backchannel->is_sending.fetch_sub(1, std::memory_order_acq_rel);
         if (prev <= 1) {
             BackchannelFrame stop;
@@ -669,8 +674,9 @@ void RtspServer::closeClient(int idx) {
             // is_sending just dropped to 0.
             global_backchannel->should_grab_frames.notify_one();
         }
-        s->backchannel = false;
+        s->backchannelActive = false;
     }
+    s->backchannel = false;
     if (s->backchannelRtpSock >= 0) {
         close(s->backchannelRtpSock);
         s->backchannelRtpSock = -1;
@@ -1278,8 +1284,11 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
 
     // ── Activate backchannel on PLAY (ONVIF Streaming Spec §5.3) ────
     // go2rtc sends PLAY to start the backchannel, not RECORD.
-    if (s->backchannel && global_backchannel &&
-        global_backchannel->is_sending.load(std::memory_order_relaxed) == 0) {
+    // Guard per-session (not on the global count) so that multiple
+    // concurrent backchannel sessions each pair one increment with one
+    // decrement on close.
+    if (s->backchannel && global_backchannel && !s->backchannelActive) {
+        s->backchannelActive = true;
         global_backchannel->is_sending.fetch_add(1, std::memory_order_release);
         global_backchannel->should_grab_frames.notify_one();
         LOG_INFO("Backchannel activated via PLAY");
@@ -1382,8 +1391,10 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
     }
     s->backchannel = true;
     s->playing = true;  // needed for event loop to drain this session
-    // Notify BackchannelWorker that data may arrive
-    if (global_backchannel) {
+    // Notify BackchannelWorker that data may arrive (once per session;
+    // repeated RECORD must not increment is_sending twice)
+    if (global_backchannel && !s->backchannelActive) {
+        s->backchannelActive = true;
         global_backchannel->is_sending.fetch_add(1, std::memory_order_release);
         global_backchannel->should_grab_frames.notify_one();
     }
@@ -1469,6 +1480,12 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
         sendResponse(*s, Status::INTERNAL_ERROR, cseq, nullptr, nullptr);
         return;
     }
+
+    // Mark the session as a backchannel receiver so that PLAY activates
+    // it (ONVIF §5.3) and the event loop reads the UDP socket.  The TCP
+    // interleaved branch above does the same; without this, UDP clients
+    // that activate via PLAY were silently ignored.
+    s->backchannel = true;
 
     // Generate session ID on first SETUP
     if (!s->hasValidSession()) {
