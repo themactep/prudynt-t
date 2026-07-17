@@ -393,6 +393,12 @@ bool parseAdtsHeader(const uint8_t *data, size_t size, AdtsHeader &header) {
     return false;
   }
 
+  // ADTS layer field must be 00. MPEG audio (MP3) frame headers share the
+  // 0xFFF sync pattern but carry a non-zero layer, so reject them here.
+  if ((data[1] & 0x06) != 0) {
+    return false;
+  }
+
   bool protectionAbsent = (data[1] & 0x01) != 0;
   header.profile = ((data[2] & 0xC0) >> 6) + 1; // 1=Main, 2=LC, etc
 
@@ -961,7 +967,17 @@ bool bufferLooksLikeAac(const std::vector<uint8_t> &buffer) {
     return false;
   }
   AdtsHeader header{};
-  return parseAdtsHeader(buffer.data(), buffer.size(), header);
+  if (!parseAdtsHeader(buffer.data(), buffer.size(), header)) {
+    return false;
+  }
+  // If enough data is buffered, require a second consecutive ADTS header to
+  // guard against chance sync patterns in non-AAC streams.
+  size_t next = static_cast<size_t>(header.frameLength);
+  if (next + 7 <= buffer.size()) {
+    AdtsHeader second{};
+    return parseAdtsHeader(buffer.data() + next, buffer.size() - next, second);
+  }
+  return true;
 }
 #else
 bool bufferLooksLikeAac(const std::vector<uint8_t> & /*buffer*/) {
