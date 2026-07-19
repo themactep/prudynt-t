@@ -928,6 +928,32 @@ void VideoWorker::run() {
                     sei_unit.packet_index = 0;
                     sei_unit.packet_count = 1;
                     global_video[encChn]->msgChannel->write(sei_unit);
+
+                    // Fan SEI NAL out to video taps so RTSP clients
+                    // receive OSD metadata alongside the IDR frame.
+                    {
+                      std::vector<VideoTapEntry> sei_taps_copy;
+                      {
+                        std::lock_guard<std::mutex> tap_lock(
+                            global_video[encChn]->tap_mutex);
+                        sei_taps_copy = global_video[encChn]->video_taps;
+                      }
+                      for (auto &tap : sei_taps_copy) {
+                        if (auto queue = tap.queue.lock()) {
+                          H264NALUnit tap_sei;
+                          tap_sei.data = sei_unit.data;
+                          tap_sei.frame_id = sei_unit.frame_id;
+                          tap_sei.imp_ts = sei_unit.imp_ts;
+                          tap_sei.time = sei_unit.time;
+                          tap_sei.is_frame_start = false;
+                          tap_sei.is_frame_end = false;
+                          tap_sei.is_keyframe = true;
+                          tap_sei.packet_index = 0;
+                          tap_sei.packet_count = 1;
+                          queue->write(std::move(tap_sei));
+                        }
+                      }
+                    }
                   }
                 }
               }
