@@ -4,7 +4,7 @@
 #include "BackchannelWorker.hpp"
 #include "Config.hpp"
 #include "ConfigWatcher.hpp"
-#include "DayNightWorker.hpp"
+/* DayNightWorker removed — photosensing delegated to daynightd */
 #include "IMPBackchannel.hpp"
 #include "IMPSystem.hpp"
 #include "ImagingControl.hpp"
@@ -727,8 +727,7 @@ int main(int argc, const char *argv[]) {
   pthread_t backchannel_thread;
   pthread_t audio_output_thread;
   pthread_t signal_thread;
-  pthread_t daynight_thread;
-  bool daynight_thread_started = false;
+  /* daynight_thread removed — photosensing delegated to daynightd */
   bool signal_thread_started = false;
 
   bool http_mjpeg_started = false;
@@ -934,15 +933,7 @@ int main(int argc, const char *argv[]) {
         LOG_DEBUG_OR_ERROR(ret, "create motion thread");
       }
 
-      if (startup && !daynight_thread_started &&
-          cfg->get<bool>("daynight.enabled")) {
-        int ret = pthread_create(&daynight_thread, nullptr,
-                                 DayNightWorkerNS::thread_entry, nullptr);
-        LOG_DEBUG_OR_ERROR(ret, "create daynight thread");
-        if (ret == 0) {
-          daynight_thread_started = true;
-        }
-      }
+      /* daynight photosensing thread removed — use daynightd daemon */
     }
 
     // start rtsp server
@@ -1063,10 +1054,7 @@ int main(int argc, const char *argv[]) {
 
   join_signal_thread(false);
 
-  if (daynight_thread_started) {
-    int ret = pthread_join(daynight_thread, nullptr);
-    LOG_DEBUG_OR_ERROR(ret, "join daynight thread");
-  }
+  /* daynight thread join removed — photosensing delegated to daynightd */
 
 #if defined(WEBSOCKET_ENABLED)
   if (cfg->websocket.enabled) {

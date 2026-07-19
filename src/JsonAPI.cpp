@@ -976,124 +976,88 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     }
   }
 
-  // Photosensing values - can be queried individually or via status
-  if (obj_get(obj, "brightness_percent")) {
-    add_key(out, s2, "brightness_percent");
-    add_num(out, cfg->daynight.live_brightness_percent.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "ev")) {
-    add_key(out, s2, "ev");
-    add_num(out, cfg->daynight.live_ev.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "gb")) {
-    add_key(out, s2, "gb");
-    add_num(out, cfg->daynight.live_gb.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "gr")) {
-    add_key(out, s2, "gr");
-    add_num(out, cfg->daynight.live_gr.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "total_gain")) {
-    add_key(out, s2, "total_gain");
-    add_num(out, cfg->daynight.live_total_gain.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "ae_luma")) {
-    add_key(out, s2, "ae_luma");
-    add_num(out, cfg->daynight.live_ae_luma.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "awb_color_temp")) {
-    add_key(out, s2, "awb_color_temp");
-    add_num(out, cfg->daynight.live_awb_color_temp.load());
-    wrote = true;
-  }
-  if (obj_get(obj, "mode")) {
-    add_key(out, s2, "mode");
-    const char *mode_ptr = cfg->daynight.live_mode.load();
-    add_str(out, mode_ptr ? mode_ptr : "unknown");
-    wrote = true;
-  }
+  // ── Live sensor telemetry ──────────────────────────────────────
+  // Photosensing is delegated to daynightd.
+  // Individual sensor queries relay data from /run/thingino/daynight_sensors.
+  // The "status" and "history" keys source from daynightd's JSON files.
 
-  // Live status - returns all photosensing values in one object
-  if (obj_get(obj, "status")) {
-    add_key(out, s2, "status", "{");
-    bool s3 = false;
-    int live_brightness = cfg->daynight.live_brightness_percent.load();
-    int live_ev = cfg->daynight.live_ev.load();
-    int live_gb = cfg->daynight.live_gb.load();
-    int live_gr = cfg->daynight.live_gr.load();
-    int live_total_gain = cfg->daynight.live_total_gain.load();
-    int live_ae_luma = cfg->daynight.live_ae_luma.load();
-    int live_awb_ct = cfg->daynight.live_awb_color_temp.load();
-    const char *mode_ptr = cfg->daynight.live_mode.load();
-    add_key(out, s3, "brightness_percent");
-    add_num(out, live_brightness);
-    add_key(out, s3, "ev");
-    add_num(out, live_ev);
-    add_key(out, s3, "gb");
-    add_num(out, live_gb);
-    add_key(out, s3, "gr");
-    add_num(out, live_gr);
-    add_key(out, s3, "total_gain");
-    add_num(out, live_total_gain);
-    add_key(out, s3, "ae_luma");
-    add_num(out, live_ae_luma);
-    add_key(out, s3, "awb_color_temp");
-    add_num(out, live_awb_ct);
-    add_key(out, s3, "total_gain_night_threshold");
-    add_num(out, cfg->daynight.total_gain_night_threshold);
-    add_key(out, s3, "total_gain_day_threshold");
-    add_num(out, cfg->daynight.total_gain_day_threshold);
-    add_key(out, s3, "mode");
-    add_str(out, mode_ptr ? mode_ptr : "unknown");
-    out += "}";
-    wrote = true;
-  }
-
-  // Cached history - ring buffer with latest day/night samples
-  if (obj_get(obj, "history")) {
-    add_key(out, s2, "history", "[");
-    auto samples = global_daynight_history.snapshot();
-    bool first = true;
-    for (const auto &sample : samples) {
-      if (!first) {
-        out.push_back(',');
-      }
-      first = false;
-      out.push_back('{');
-      bool hs = false;
-      add_key(out, hs, "time_now");
-      add_num(out, static_cast<int>(sample.time_now));
-      add_key(out, hs, "ev");
-      add_num(out, sample.ev);
-      add_key(out, hs, "gb");
-      add_num(out, sample.gb);
-      add_key(out, hs, "gr");
-      add_num(out, sample.gr);
-      add_key(out, hs, "total_gain");
-      add_num(out, sample.total_gain);
-      add_key(out, hs, "ae_luma");
-      add_num(out, sample.ae_luma);
-      add_key(out, hs, "awb_color_temp");
-      add_num(out, sample.awb_color_temp);
-      add_key(out, hs, "daynight_brightness");
-      add_num(out, sample.daynight_brightness);
-      add_key(out, hs, "total_gain_night_threshold");
-      add_num(out, sample.total_gain_night_threshold);
-      add_key(out, hs, "total_gain_day_threshold");
-      add_num(out, sample.total_gain_day_threshold);
-      add_key(out, hs, "daynight_mode");
-      add_str(out, sample.daynight_mode.c_str());
-      out.push_back('}');
+  auto relay_sensor_file = [&](const char *key, const char *path) -> bool {
+    if (!obj_get(obj, key))
+      return false;
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+      add_key(out, s2, key);
+      add_str(out, "unavailable");
+      return true;
     }
-    out.push_back(']');
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    rewind(fp);
+    if (sz <= 0 || sz > 65536) {
+      fclose(fp);
+      add_key(out, s2, key);
+      add_str(out, "unavailable");
+      return true;
+    }
+    std::string buf(sz, '\0');
+    size_t n = fread(&buf[0], 1, sz, fp);
+    fclose(fp);
+    if (n <= 0) {
+      add_key(out, s2, key);
+      add_str(out, "unavailable");
+      return true;
+    }
+    buf.resize(n);
+    /* Trim trailing whitespace/newlines */
+    while (!buf.empty() && (buf.back() == '\n' || buf.back() == ' '))
+      buf.pop_back();
+    add_key(out, s2, key);
+    out += buf; /* raw JSON embed */
+    return true;
+  };
+
+  if (relay_sensor_file("status", "/run/thingino/daynight_sensors"))
     wrote = true;
-  }
+
+  if (relay_sensor_file("history", "/run/thingino/daynight_history"))
+    wrote = true;
+
+  /* Individual field queries relayed from sensor file (cached parse) */
+  auto relay_sensor_field = [&](const char *key, const char *json_key) {
+    if (!obj_get(obj, key))
+      return;
+    /* Read mode from the simple mode file (fast path) */
+    if (strcmp(key, "mode") == 0 || strcmp(key, "brightness_percent") == 0) {
+      const char *fpath = (strcmp(key, "mode") == 0)
+                              ? "/run/thingino/daynight_mode"
+                              : "/run/thingino/daynight_brightness";
+      FILE *fp = fopen(fpath, "r");
+      if (fp) {
+        char buf[32] = {};
+        if (fgets(buf, sizeof(buf), fp)) {
+          size_t l = strlen(buf);
+          while (l > 0 && (buf[l - 1] == '\n' || buf[l - 1] == ' '))
+            buf[--l] = '\0';
+          add_key(out, s2, key);
+          if (strcmp(key, "mode") == 0)
+            add_str(out, buf);
+          else
+            add_num(out, atoi(buf));
+          wrote = true;
+        }
+        fclose(fp);
+      }
+    }
+  };
+
+  relay_sensor_field("mode", "mode");
+  relay_sensor_field("brightness_percent", "brightness_percent");
+  relay_sensor_field("ev", "ev");
+  relay_sensor_field("total_gain", "total_gain");
+  relay_sensor_field("gb", "gb");
+  relay_sensor_field("gr", "gr");
+  relay_sensor_field("ae_luma", "ae_luma");
+  relay_sensor_field("awb_color_temp", "awb_color_temp");
 
   if (!wrote) {
     out.resize(section_start);

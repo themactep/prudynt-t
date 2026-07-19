@@ -659,30 +659,87 @@ int IPCServer::handle_client(int fd) {
       int bps1 = cfg->stream1.stats.bps;
       int fps2 = cfg->stream2.stats.fps;
       int bps2 = cfg->stream2.stats.bps;
-      int live_brightness = cfg->daynight.live_brightness_percent.load();
-      int live_ev = cfg->daynight.live_ev.load();
-      int live_gb = cfg->daynight.live_gb.load();
-      int live_gr = cfg->daynight.live_gr.load();
-      int live_total_gain = cfg->daynight.live_total_gain.load();
-      int live_ae_luma = cfg->daynight.live_ae_luma.load();
-      int live_awb_ct = cfg->daynight.live_awb_color_temp.load();
-      const char *mode_ptr = cfg->daynight.live_mode.load();
-      const char *mode =
-          (mode_ptr && mode_ptr[0] != '\0') ? mode_ptr : "unknown";
+      /* Daynight telemetry sourced from daynightd files.
+       * Cache reads to avoid excessive file I/O on every SSE event. */
+      static time_t last_sensor_read = 0;
+      static int cached_brightness = -1;
+      static char cached_mode[16] = "unknown";
+      static bool sensor_file_found = false;
+
+      time_t tnow = time(NULL);
+      if (tnow - last_sensor_read >= 1) {
+        last_sensor_read = tnow;
+        /* Read sensor JSON for ev/total_gain/thresholds */
+        FILE *sf = fopen("/run/thingino/daynight_sensors", "r");
+        if (sf) {
+          sensor_file_found = true;
+          char sbuf[2048];
+          size_t sr = fread(sbuf, 1, sizeof(sbuf) - 1, sf);
+          fclose(sf);
+          if (sr > 0) {
+            sbuf[sr] = '\0';
+            /* Simple JSON value extraction — avoids linking a full parser */
+            auto js_int = [&](const char *key, int def) -> int {
+              char search[64];
+              snprintf(search, sizeof(search), "\"%s\":", key);
+              const char *p = strstr(sbuf, search);
+              if (p) return atoi(p + strlen(search));
+              return def;
+            };
+            auto js_str = [&](const char *key, const char *def, char *out, size_t outsz) {
+              char search[64];
+              snprintf(search, sizeof(search), "\"%s\":\"", key);
+              const char *p = strstr(sbuf, search);
+              if (p) {
+                p += strlen(search);
+                const char *q = strchr(p, '"');
+                if (q && (size_t)(q - p) < outsz) {
+                  memcpy(out, p, q - p);
+                  out[q - p] = '\0';
+                  return;
+                }
+              }
+              strncpy(out, def, outsz - 1);
+            };
+            cached_brightness = js_int("brightness_percent", -1);
+            js_str("mode", "unknown", cached_mode, sizeof(cached_mode));
+          }
+        }
+        /* Fallback: read simple text files */
+        if (!sensor_file_found) {
+          FILE *bf = fopen("/run/thingino/daynight_brightness", "r");
+          if (bf) {
+            char bbuf[16];
+            if (fgets(bbuf, sizeof(bbuf), bf)) cached_brightness = atoi(bbuf);
+            fclose(bf);
+          }
+          FILE *mf = fopen("/run/thingino/daynight_mode", "r");
+          if (mf) {
+            char mbuf[16];
+            if (fgets(mbuf, sizeof(mbuf), mf)) {
+              size_t l = strlen(mbuf);
+              while (l > 0 && (mbuf[l-1] == '\n' || mbuf[l-1] == ' ')) mbuf[--l] = '\0';
+              strncpy(cached_mode, mbuf, sizeof(cached_mode) - 1);
+            }
+            fclose(mf);
+          }
+        }
+      }
+
+      /* Use cached values for the SSE payload.
+       * Only emit fields with distinct, useful data — no duplicates. */
+      int live_brightness = cached_brightness;
+      const char *mode = cached_mode;
       long now = static_cast<long>(time(NULL));
       int n = snprintf(
           line, sizeof(line),
           "{\"ts\":%ld,\"time_now\":%ld,\"stats\":{\"stream0\":{\"fps\":%d,"
           "\"Bps\":%d},\"stream1\":{\"fps\":%d,\"Bps\":%d},"
           "\"stream2\":{\"fps\":%d,\"Bps\":%d}},"
-          "\"ev\":%d,\"gb_gain\":%d,\"gr_gain\":%d,\"daynight_brightness\":%d,"
-          "\"total_gain\":%d,\"ae_luma\":%d,\"awb_color_temp\":%d,"
-          "\"total_gain_night_threshold\":%d,\"total_gain_day_threshold\":%d,"
+          "\"daynight_brightness\":%d,"
           "\"daynight_mode\":\"%s\"}\n",
-          now, now, fps0, bps0, fps1, bps1, fps2, bps2, live_ev, live_gb,
-          live_gr, live_brightness, live_total_gain, live_ae_luma, live_awb_ct,
-          cfg->daynight.total_gain_night_threshold,
-          cfg->daynight.total_gain_day_threshold, mode);
+          now, now, fps0, bps0, fps1, bps1, fps2, bps2,
+          live_brightness, mode);
       ssize_t w = write(fd, line, n);
       if (w <= 0)
         break; // client closed
@@ -728,11 +785,38 @@ int IPCServer::handle_client(int fd) {
              (unsigned)cfg->stream2.stats.bps);
     write(fd, line, strlen(line));
 
-    // Day/Night live
-    int live_brightness_percent = cfg->daynight.live_brightness_percent.load();
-    int live_ev_val = cfg->daynight.live_ev.load();
-    int live_gb_val = cfg->daynight.live_gb.load();
-    int live_gr_val = cfg->daynight.live_gr.load();
+    // Day/Night live — sourced from daynightd files
+    int live_brightness_pct = -1;
+    int live_ev_val = -1;
+    int live_gb_val = -1;
+    int live_gr_val = -1;
+    /* Read simple text files for basic metrics */
+    FILE *prom_bf = fopen("/run/thingino/daynight_brightness", "r");
+    if (prom_bf) {
+      char bbuf[16];
+      if (fgets(bbuf, sizeof(bbuf), prom_bf)) live_brightness_pct = atoi(bbuf);
+      fclose(prom_bf);
+    }
+    /* Read sensor JSON for ev_log2 (prometheus ev metric) */
+    FILE *prom_sf = fopen("/run/thingino/daynight_sensors", "r");
+    if (prom_sf) {
+      char sbuf[2048];
+      size_t sr = fread(sbuf, 1, sizeof(sbuf) - 1, prom_sf);
+      fclose(prom_sf);
+      if (sr > 0) {
+        sbuf[sr] = '\0';
+        auto prom_js_int = [&](const char *key, int def) -> int {
+          char search[64];
+          snprintf(search, sizeof(search), "\"%s\":", key);
+          const char *p = strstr(sbuf, search);
+          if (p) return atoi(p + strlen(search));
+          return def;
+        };
+        live_ev_val = prom_js_int("ev_log2", -1);
+        live_gb_val = prom_js_int("wb_bgain", -1);
+        live_gr_val = prom_js_int("wb_rgain", -1);
+      }
+    }
     write(fd,
           "# HELP prudynt_daynight_brightness_percent Day/Night brightness "
           "percent (0..100).\n",
@@ -741,7 +825,7 @@ int IPCServer::handle_client(int fd) {
     write(fd, "# TYPE prudynt_daynight_brightness_percent gauge\n",
           strlen("# TYPE prudynt_daynight_brightness_percent gauge\n"));
     snprintf(line, sizeof(line), "prudynt_daynight_brightness_percent %d\n",
-             live_brightness_percent);
+             live_brightness_pct);
     write(fd, line, strlen(line));
 
     write(fd,
@@ -828,8 +912,22 @@ int IPCServer::handle_client(int fd) {
              BUILD_COMMIT, platform);
     write(fd, line, strlen(line));
 
-    const char *mode_ptr = cfg->daynight.live_mode.load();
-    const char *m = mode_ptr ? mode_ptr : "unknown";
+    /* Day/night state from daynightd file */
+    const char *m = "unknown";
+    char mode_buf[16];
+    FILE *mode_fp = fopen("/run/thingino/daynight_mode", "r");
+    if (mode_fp) {
+      if (fgets(mode_buf, sizeof(mode_buf), mode_fp)) {
+        size_t l = strlen(mode_buf);
+        while (l > 0 && (mode_buf[l-1] == '\n' || mode_buf[l-1] == ' '))
+          mode_buf[--l] = '\0';
+        static char mode_static[16];
+        strncpy(mode_static, mode_buf, sizeof(mode_static)-1);
+        mode_static[sizeof(mode_static)-1] = '\0';
+        m = mode_static;
+      }
+      fclose(mode_fp);
+    }
     int is_day = (strcmp(m, "day") == 0);
     int is_night = (strcmp(m, "night") == 0);
     write(fd,

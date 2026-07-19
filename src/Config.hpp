@@ -124,16 +124,7 @@ struct _daynight {
   // Manual mode override (set by user via JSON API)
   std::atomic<const char *> force_mode{nullptr};
 
-  // Live telemetry populated by the worker - RAW ISP sensor data
-  std::atomic<int> live_brightness_percent{-1};
-  std::atomic<int> live_ev{-1};
-  std::atomic<int> live_gb{-1};
-  std::atomic<int> live_gr{-1};
-  std::atomic<int> live_total_gain{-1}; // Total ISP gain (analog + digital)
-  std::atomic<int> live_ae_luma{-1};    // AE luma value
-  std::atomic<int> live_awb_color_temp{
-      -1}; // AWB color temperature (when available)
-  std::atomic<const char *> live_mode{"unknown"};
+  /* Live telemetry moved to daynightd — see /run/thingino/daynight_sensors */
 };
 struct _general {
   const char *loglevel;

@@ -320,43 +320,8 @@ extern std::array<MP4Recorder, NUM_VIDEO_CHANNELS> global_mp4_recorders;
 extern std::atomic<int> global_mp4_active_recorders;
 extern std::atomic<bool> global_shutdown_requested;
 
-struct DayNightHistorySample {
-  int64_t time_now{0};
-  int ev{0};
-  int gb{0};
-  int gr{0};
-  int total_gain{0};
-  int ae_luma{0};
-  int awb_color_temp{0};
-  int daynight_brightness{0};
-  int total_gain_night_threshold{0};
-  int total_gain_day_threshold{0};
-  std::string daynight_mode{"unknown"};
-};
-
-class DayNightHistoryBuffer {
-public:
-  static constexpr size_t kMaxEntries = 300;
-
-  void push(const DayNightHistorySample &sample) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (samples_.size() >= kMaxEntries) {
-      samples_.pop_front();
-    }
-    samples_.push_back(sample);
-  }
-
-  std::vector<DayNightHistorySample> snapshot() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return std::vector<DayNightHistorySample>(samples_.begin(), samples_.end());
-  }
-
-private:
-  mutable std::mutex mutex_;
-  std::deque<DayNightHistorySample> samples_;
-};
-
-extern DayNightHistoryBuffer global_daynight_history;
+/* DayNightHistory moved to daynightd — photosensing delegated.
+ * See /run/thingino/daynight_history for ring buffer data. */
 
 // NALU buffer pool — avoids per-NAL heap allocations in the hot video path.
 // Buffers are reused across frames: borrow() returns an empty vector with

@@ -171,22 +171,43 @@ OSD::BrightnessSample OSD::BrightnessMeter::measure() {
   IspStats stats;
   std::string mode;
 
+  /* Photosensing delegated to daynightd.
+   * Read brightness and gain from daynightd's files for OSD overlay. */
   if (cfg && cfg->get<bool>("daynight.enabled")) {
-    int live_pct = cfg->daynight.live_brightness_percent.load();
-    int live_total_gain = cfg->daynight.live_total_gain.load();
-    if (live_pct >= 0) {
-      sample.current = (float)live_pct;
-      sample.total_gain = live_total_gain;
-      const char *mp = cfg->daynight.live_mode.load();
-      sample.mode = (mp && *mp) ? mp : "UNKNOWN";
-      if (!sample.mode.empty())
-        std::transform(sample.mode.begin(), sample.mode.end(), sample.mode.begin(),
-                       [](unsigned char c) { return std::toupper(c); });
-      updateHistory(sample.current);
-      sample.average = historyAverage();
-      if (sample.average < 0.0f) sample.average = sample.current;
-      sample.valid = true;
-      return sample;
+    FILE *fp = fopen("/run/thingino/daynight_brightness", "r");
+    if (fp) {
+      char buf[32];
+      if (fgets(buf, sizeof(buf), fp)) {
+        int pct = atoi(buf);
+        if (pct >= 0) {
+          sample.current = (float)pct;
+          sample.total_gain = pct;  /* brightness % is the unified metric */
+          /* Try to get mode string from mode file */
+          FILE *mf = fopen("/run/thingino/daynight_mode", "r");
+          if (mf) {
+            char mbuf[16];
+            if (fgets(mbuf, sizeof(mbuf), mf)) {
+              size_t l = strlen(mbuf);
+              while (l > 0 && (mbuf[l-1] == '\n' || mbuf[l-1] == ' '))
+                mbuf[--l] = '\0';
+              sample.mode = mbuf;
+              if (!sample.mode.empty())
+                std::transform(sample.mode.begin(), sample.mode.end(),
+                               sample.mode.begin(),
+                               [](unsigned char c) { return std::toupper(c); });
+            }
+            fclose(mf);
+          }
+          if (sample.mode.empty()) sample.mode = "DAYNIGHTD";
+          updateHistory(sample.current);
+          sample.average = historyAverage();
+          if (sample.average < 0.0f) sample.average = sample.current;
+          sample.valid = true;
+          fclose(fp);
+          return sample;
+        }
+      }
+      fclose(fp);
     }
   }
 
