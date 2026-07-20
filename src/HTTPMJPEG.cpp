@@ -439,8 +439,18 @@ void HTTPMJPEG::handle_client(int cfd) {
         sei_json = vs->imp_encoder->osd->getSEIJson();
       }
     }
-    send_response(200, "application/json",
-                  sei_json.empty() ? "{}" : sei_json);
+    if (sei_json.empty())
+      sei_json = "{}";
+    char hdr[256];
+    int n = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.0 200 OK\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %zu\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n"
+        "\r\n", sei_json.size());
+    write_full(cfd, hdr, static_cast<size_t>(n));
+    write_full(cfd, sei_json.data(), sei_json.size());
     ::close(cfd);
     return;
   }
