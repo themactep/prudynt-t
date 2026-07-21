@@ -18,41 +18,52 @@ AACEncoder::~AACEncoder() {
 }
 
 int AACEncoder::open() {
-  unsigned long outputBufferSize;
-  handle = faacEncOpen(sampleRate, numChn, &inputSamples, &outputBufferSize);
-  if (!handle) {
-    LOG_ERROR("Failed to open FAAC encoder");
+  faac_params params;
+  faac_status st = faac_params_init(&params);
+  if (st != FAAC_OK) {
+    LOG_ERROR("faac_params_init failed: " << faac_strerror(st));
     return -1;
   }
 
-  maxOutputBytes = outputBufferSize;
-  LOG_INFO("FAAC maxOutputBytes=" << maxOutputBytes);
+  params.sample_rate   = sampleRate;
+  params.num_channels  = numChn;
+  params.object_type   = FAAC_OBJ_LOW;
+  params.mpeg_version  = FAAC_MPEG4;
+  params.input_format  = FAAC_INPUT_16BIT;
+  params.output_format = FAAC_STREAM_RAW;
+  params.bit_rate      = cfg->audio.input_bitrate * 1000;
+  params.bandwidth     = sampleRate;
+  params.use_tns       = false;
+  params.joint_mode    = FAAC_JOINT_NONE;
 
-  faacEncConfigurationPtr config = faacEncGetCurrentConfiguration(handle);
-  config->aacObjectType = LOW;
-  config->bandWidth = sampleRate;
-  config->bitRate = cfg->audio.input_bitrate * 1000;
-  config->inputFormat = FAAC_INPUT_16BIT;
-  config->mpegVersion = MPEG4;
-  config->outputFormat = RAW_STREAM; // no need for ADTS headers
-
-  // Disable to reduce CPU utilization
-  config->allowMidside = 0;
-  config->useTns = 0;
-
-  if (!faacEncSetConfiguration(handle, config)) {
-    LOG_ERROR("Failed to configure FAAC encoder");
+  st = faac_encoder_open(&params, &handle);
+  if (st != FAAC_OK) {
+    LOG_ERROR("faac_encoder_open failed: " << faac_strerror(st));
+    handle = nullptr;
     return -1;
   }
 
-  LOG_INFO("FAAC expects " << inputSamples << " samples per frame");
+  faac_encoder_info info;
+  info.struct_size = sizeof(info);
+  st = faac_encoder_get_info(handle, &info);
+  if (st != FAAC_OK) {
+    LOG_ERROR("faac_encoder_get_info failed: " << faac_strerror(st));
+    faac_encoder_close(&handle);
+    return -1;
+  }
+
+  inputSamples  = info.frame_samples;
+  maxOutputBytes = info.max_output_bytes;
+
+  LOG_INFO("FAAC maxOutputBytes=" << maxOutputBytes
+           << " inputSamples=" << inputSamples);
 
   return 0;
 }
 
 int AACEncoder::close() {
   if (handle) {
-    faacEncClose(handle);
+    faac_encoder_close(&handle);
   }
   handle = nullptr;
   return 0;
@@ -71,13 +82,14 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf,
                                                << frameSamples);
   }
 
-  const int frameLen = faacEncEncode(
-      handle, reinterpret_cast<int32_t *>(data->virAddr), frameSamples,
-      reinterpret_cast<unsigned char *>(outbuf), maxOutputBytes);
-  *outLen = frameLen;
+  uint32_t bytesWritten = 0;
+  faac_status st = faac_encoder_encode(
+      handle, data->virAddr, frameSamples * numChn,
+      outbuf, maxOutputBytes, &bytesWritten);
+  *outLen = static_cast<int>(bytesWritten);
 
-  if (frameLen < 0) {
-    LOG_ERROR("FAAC encoding failed: " << frameLen);
+  if (st != FAAC_OK) {
+    LOG_ERROR("FAAC encoding failed: " << faac_strerror(st));
     close();
     if (open() == 0) {
       LOG_INFO("AAC encoder reinitialized");

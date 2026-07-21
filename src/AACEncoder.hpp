@@ -22,9 +22,9 @@ public:
   }
 
 private:
+  faac_encoder *handle = nullptr;
   unsigned long inputSamples;
   unsigned long maxOutputBytes = 0;
-  faacEncHandle handle = nullptr;
   int sampleRate;
   int numChn;
 };

@@ -1777,23 +1777,22 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
     if (cfg->audio.input_enabled &&
         strcmp(cfg->audio.input_format, "AAC") == 0) {
       // Try to retrieve FAAC config by creating a temporary faac encoder
-      unsigned long inputSamples = 0;
-      unsigned long outputBufferSize = 0;
-      void *faacHandle = faacEncOpen(cfg->audio.input_sample_rate,
-                                     cfg->audio.force_stereo ? 2 : 1,
-                                     &inputSamples, &outputBufferSize);
-      if (faacHandle) {
-        unsigned char *decoder_info = nullptr;
-        unsigned long decoder_info_len = 0;
-        if (faacEncGetDecoderSpecificInfo(faacHandle, &decoder_info,
-                                          &decoder_info_len) == 0 &&
-            decoder_info && decoder_info_len) {
-          params.aacConfig.assign(decoder_info,
-                                  decoder_info + decoder_info_len);
-          if (decoder_info)
-            free(decoder_info);
+      faac_params fparams;
+      if (faac_params_init(&fparams) == FAAC_OK) {
+        fparams.sample_rate  = cfg->audio.input_sample_rate;
+        fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
+        fparams.bit_rate     = cfg->audio.input_bitrate * 1000;
+        fparams.object_type  = FAAC_OBJ_LOW;
+        faac_encoder *fh = nullptr;
+        if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
+          const uint8_t *asc_buf = nullptr;
+          uint32_t asc_len = 0;
+          if (faac_encoder_asc(fh, &asc_buf, &asc_len) == FAAC_OK &&
+              asc_buf && asc_len) {
+            params.aacConfig.assign(asc_buf, asc_buf + asc_len);
+          }
+          faac_encoder_close(&fh);
         }
-        faacEncClose(faacHandle);
       }
     }
 
@@ -1821,24 +1820,22 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
     if (u_ctx->mp4_muxer && cfg->audio.input_enabled &&
         strcmp(cfg->audio.input_format, "AAC") == 0) {
       // Try to retrieve FAAC config by creating a temporary faac encoder
-      unsigned long inputSamples = 0;
-      unsigned long outputBufferSize = 0;
-      void *faacHandle = faacEncOpen(cfg->audio.input_sample_rate,
-                                     cfg->audio.force_stereo ? 2 : 1,
-                                     &inputSamples, &outputBufferSize);
-      if (faacHandle) {
-        // Use faac to get decoder specific info (AudioSpecificConfig)
-        unsigned char *decoder_info = nullptr;
-        unsigned long decoder_info_len = 0;
-        if (faacEncGetDecoderSpecificInfo(faacHandle, &decoder_info,
-                                          &decoder_info_len) == 0 &&
-            decoder_info && decoder_info_len) {
-          params.aacConfig.assign(decoder_info,
-                                  decoder_info + decoder_info_len);
-          if (decoder_info)
-            free(decoder_info);
+      faac_params fparams;
+      if (faac_params_init(&fparams) == FAAC_OK) {
+        fparams.sample_rate  = cfg->audio.input_sample_rate;
+        fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
+        fparams.bit_rate     = cfg->audio.input_bitrate * 1000;
+        fparams.object_type  = FAAC_OBJ_LOW;
+        faac_encoder *fh = nullptr;
+        if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
+          const uint8_t *asc_buf = nullptr;
+          uint32_t asc_len = 0;
+          if (faac_encoder_asc(fh, &asc_buf, &asc_len) == FAAC_OK &&
+              asc_buf && asc_len) {
+            params.aacConfig.assign(asc_buf, asc_buf + asc_len);
+          }
+          faac_encoder_close(&fh);
         }
-        faacEncClose(faacHandle);
       }
     }
 
