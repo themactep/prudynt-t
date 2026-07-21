@@ -8,6 +8,7 @@
 
 #include <arpa/inet.h>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -289,6 +290,7 @@ int IPCServer::handle_http_client(int fd) {
   // Headers
   size_t body_start = hdr_end + 4;
   int content_length = 0;
+  bool wants_sse = false;
   size_t pos = req.find('\n');
   while (pos != std::string::npos && pos < hdr_end) {
     size_t next = req.find('\n', pos + 1);
@@ -307,6 +309,8 @@ int IPCServer::handle_http_client(int fd) {
       c = std::tolower(static_cast<unsigned char>(c));
     if (key == "content-length") {
       content_length = std::atoi(val.c_str());
+    } else if (key == "accept" && val.find("text/event-stream") != std::string::npos) {
+      wants_sse = true;
     }
   }
 
@@ -336,6 +340,65 @@ int IPCServer::handle_http_client(int fd) {
   };
 
   if (method == "GET" && path == "/api/v1/osd-sei") {
+    if (wants_sse) {
+      // SSE streaming mode: keep connection open, push events every 2s.
+      // Run in a detached thread so we don't block the HTTP accept loop.
+      int client_fd = fd;
+      std::thread([this, client_fd]() {
+        const char *sse_hdr =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/event-stream\r\n"
+            "Cache-Control: no-cache\r\n"
+            "Connection: keep-alive\r\n"
+            "Pragma: no-cache\r\n"
+            "Expires: 0\r\n"
+            "\r\n";
+        if (!write_full(client_fd, sse_hdr, std::strlen(sse_hdr))) {
+          ::close(client_fd);
+          return;
+        }
+
+        // Write initial retry directive
+        const char *retry_line = "retry: 2000\n\n";
+        if (!write_full(client_fd, retry_line, std::strlen(retry_line))) {
+          ::close(client_fd);
+          return;
+        }
+
+        char buf[4096];
+        while (running_.load()) {
+          std::string sei_json;
+          for (int ch = 0; ch < NUM_VIDEO_CHANNELS && sei_json.empty(); ++ch) {
+            auto vs = global_video[ch];
+            if (vs && vs->imp_encoder && vs->imp_encoder->osd) {
+              sei_json = vs->imp_encoder->osd->getSEIJson();
+            }
+          }
+          if (sei_json.empty()) {
+            sei_json = "{}";
+          }
+
+          int n = std::snprintf(buf, sizeof(buf),
+                                "data: %s\n\n", sei_json.c_str());
+          if (n > 0 && static_cast<size_t>(n) < sizeof(buf)) {
+            if (!write_full(client_fd, buf, static_cast<size_t>(n))) {
+              break; // client disconnected
+            }
+          }
+
+          // Sleep 2s, but break if server is shutting down
+          for (int i = 0; i < 20 && running_.load(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
+          if (!running_.load())
+            break;
+        }
+        ::close(client_fd);
+      }).detach();
+      return 0; // fd ownership transferred to thread
+    }
+
+    // One-shot JSON response (backward compat for CGI relay / direct poll)
     std::string sei_json;
     for (int ch = 0; ch < NUM_VIDEO_CHANNELS && sei_json.empty(); ++ch) {
       auto vs = global_video[ch];
