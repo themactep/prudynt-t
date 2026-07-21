@@ -807,7 +807,8 @@ void VideoWorker::run() {
                                                   std::memory_order_relaxed);
           }
 
-          if (recorder_accepts_samples && payload_len > 0 &&
+          if (recorder_accepts_samples &&
+              payload_len > 0 &&
               !(nal_is_vps || nal_is_sps || nal_is_pps)) {
             bool pack_frame_end = pack_is_frame_end;
 

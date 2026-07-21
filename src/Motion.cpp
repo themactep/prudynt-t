@@ -1,4 +1,5 @@
 #include "Motion.hpp"
+#include "globals.hpp"
 #include "imp_hal.hpp"
 #include <algorithm>
 #include <fcntl.h>
@@ -75,6 +76,14 @@ void Motion::detect() {
       std::chrono::milliseconds(std::max(cfg->motion.motor_settle_ms, 0));
   auto lastMotorEventTime = startTime - motorSettleWindow;
   while (global_motion_thread_signal) {
+    // Skip motion detection during privacy mode
+    if (global_video[0] &&
+        global_video[0]->privacy_requested.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(cfg->motion.ivs_polling_timeout_ms));
+      continue;
+    }
+
     ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout_ms);
     if (ret < 0) {
       LOG_WARN("IMP_IVS_PollingResult error: " << ret);

@@ -242,6 +242,8 @@ struct video_stream {
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
   std::atomic<bool> privacy_requested{false};
+  // Cached black IDR frame for privacy mode (Annex B: start_code + SPS + PPS + IDR)
+  int privacy_osd_handle{-1};  // OSD cover region handle for privacy
 
 #ifdef PREBUFFER_ENABLED
   // Pre-trigger buffer for MP4 recording

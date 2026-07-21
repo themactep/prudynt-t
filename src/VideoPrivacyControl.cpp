@@ -1,7 +1,9 @@
 #include "VideoPrivacyControl.hpp"
 
+#include "IMPEncoder.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+#include "imp_hal.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -103,14 +105,102 @@ void ensureFifo() {
 }
 
 void applyPrivacyToAllChannels(bool enabled) {
-  // Privacy lite: no OSD overlay — just set flags.
-  // Stream throttling is handled externally by privacy-plugin-lite.
   for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
-    if (global_video[ch]) {
-      global_video[ch]->privacy_requested.store(enabled,
-                                                std::memory_order_release);
+    if (!global_video[ch]) continue;
+    auto &vs = global_video[ch];
+
+    if (enabled) {
+      // ── Enable: create hardware OSD cover ─────────────────────────
+      vs->privacy_requested.store(true, std::memory_order_release);
+
+      // Flush any buffered frames
+      H264NALUnit dummy;
+      if (vs->msgChannel) {
+        while (vs->msgChannel->read(&dummy)) {}
+      }
+      {
+        std::lock_guard<std::mutex> lock(vs->tap_mutex);
+        for (auto &tap : vs->video_taps) {
+          if (auto queue = tap.queue.lock()) {
+            while (queue->read(&dummy)) {}
+          }
+        }
+      }
+
+      // Get stream dimensions
+      int sw = vs->stream ? vs->stream->width : 1920;
+      int sh = vs->stream ? vs->stream->height : 1080;
+      if (sw <= 0) sw = 1920;
+      if (sh <= 0) sh = 1080;
+
+      // Create full-frame black cover region
+      int encGrp = vs->encChn;  // OSD group = encoder channel
+      IMPOSDRgnAttr rgnAttr{};
+      rgnAttr.type = OSD_REG_COVER;
+      rgnAttr.rect.p0.x = 0;
+      rgnAttr.rect.p0.y = 0;
+      rgnAttr.rect.p1.x = sw - 1;
+      rgnAttr.rect.p1.y = sh - 1;
+      // Pick platform-appropriate pixel format for cover regions
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_C100)
+      rgnAttr.fmt = PIX_FMT_BGRA;
+#else
+      rgnAttr.fmt = PIX_FMT_MONOWHITE;
+#endif
+      rgnAttr.data.coverData.color = hal::osd::black_cover_color();
+
+      IMPRgnHandle handle = IMP_OSD_CreateRgn(&rgnAttr);
+      if (handle == INVHANDLE) {
+        LOG_ERROR("VideoPrivacyControl: IMP_OSD_CreateRgn failed for ch"
+                  << ch);
+        continue;
+      }
+
+      IMPOSDGrpRgnAttr grpAttr{};
+      grpAttr.show = 1;
+      int ret = IMP_OSD_RegisterRgn(handle, encGrp, &grpAttr);
+      if (ret != 0) {
+        LOG_ERROR("VideoPrivacyControl: IMP_OSD_RegisterRgn failed for ch"
+                  << ch << " ret=" << ret);
+        IMP_OSD_DestroyRgn(handle);
+        continue;
+      }
+
+      ret = IMP_OSD_Start(encGrp);
+      if (ret != 0) {
+        LOG_WARN("VideoPrivacyControl: IMP_OSD_Start(" << encGrp
+                << ") = " << ret);
+      }
+
+      vs->privacy_osd_handle = static_cast<int>(handle);
+      // Request IDR so the cover appears in the next keyframe
+      if (vs->running)
+        IMP_Encoder_RequestIDR(ch);
+
+      LOG_INFO("VideoPrivacyControl: OSD cover enabled on ch" << ch
+               << " (" << sw << "x" << sh << ")");
+    } else {
+      // ── Disable: destroy OSD cover ────────────────────────────────
+      vs->privacy_requested.store(false, std::memory_order_release);
+
+      if (vs->privacy_osd_handle >= 0) {
+        int encGrp = vs->encChn;
+        IMP_OSD_ShowRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
+                        encGrp, 0);
+        IMP_OSD_UnRegisterRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
+                              encGrp);
+        IMP_OSD_DestroyRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle);
+        vs->privacy_osd_handle = -1;
+      }
+
+      if (vs->running)
+        IMP_Encoder_RequestIDR(ch);
+
+      LOG_INFO("VideoPrivacyControl: OSD cover disabled on ch" << ch);
     }
   }
+
   if (enabled) {
     write_privacy_state_file();
     LOG_INFO("VideoPrivacyControl: privacy enabled on all channels");

@@ -483,13 +483,22 @@ int IMPEncoder::init() {
 
     if (cfg->osd.enabled) {
       LOG_INFO("stream " << name
-               << ": binding FS→ENC directly, OSD via SEI + subtitle");
+               << ": binding FS→OSD→ENC, OSD via hardware + SEI");
       osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
     }
 
-    ret = IMP_System_Bind(&fs, &enc);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_System_Bind(&fs, &enc)");
+    // Insert OSD group into pipeline so privacy covers can be applied
+    IMPCell osd_cell = {DEV_ID_OSD, encGrp, 0};
+    IMP_OSD_CreateGroup(encGrp);
+    ret = IMP_System_Bind(&fs, &osd_cell);
     if (ret != 0) {
+      LOG_ERROR("IMP_System_Bind(&fs, &osd) failed ret=" << ret);
+      return ret;
+    }
+    ret = IMP_System_Bind(&osd_cell, &enc);
+    if (ret != 0) {
+      LOG_ERROR("IMP_System_Bind(&osd, &enc) failed ret=" << ret);
+      IMP_System_UnBind(&fs, &osd_cell);
       return ret;
     }
     fs_to_enc_bound = true;
@@ -508,8 +517,12 @@ int IMPEncoder::deinit() {
 
   if (!is_jpeg_stream && ownsGroupResources()) {
     if (fs_to_enc_bound) {
-      ret = IMP_System_UnBind(&fs, &enc);
-      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &enc)");
+      IMPCell osd_cell = {DEV_ID_OSD, encGrp, 0};
+      ret = IMP_System_UnBind(&osd_cell, &enc);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&osd, &enc)");
+      ret = IMP_System_UnBind(&fs, &osd_cell);
+      LOG_DEBUG_OR_ERROR(ret, "IMP_System_UnBind(&fs, &osd)");
+      IMP_OSD_DestroyGroup(encGrp);
       fs_to_enc_bound = false;
     }
     if (osd) {
