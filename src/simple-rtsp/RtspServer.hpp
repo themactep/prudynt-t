@@ -43,6 +43,9 @@ public:
     void addAudioOnlyStream(const AudioStreamConfig &config,
                             std::shared_ptr<audio_stream> audioState);
 
+    // Register a subtitle (OSD text) stream.
+    void addSubtitleStream(const SubtitleStreamConfig &config);
+
     // Enable backchannel (talkback) — client can send audio to the camera.
     // Formats are auto-detected from IMPBackchannel capabilities.
     void enableBackchannel();
@@ -81,6 +84,7 @@ private:
     void handleRecord(int clientIdx, int cseq, const char *headers);
     void handleBackchannelSetup(int clientIdx, int cseq,
                                 const char *uri, const char *headers);
+    void handleSubtitleSetup(Session &s, const char *headers, const char *uri);
 
     // Socket helpers
     void sendResponse(Session &s, Status status, int cseq,
@@ -91,6 +95,7 @@ private:
     // RTP streaming helpers
     bool sendVideoNal(Session &s, const H264NALUnit &nal);
     bool sendAudioFrame(Session &s, const AudioFrame &af);
+    bool sendSubtitleText(Session &s, const std::string &text);
 
     // RTCP
     void sendRtcpSr(Session &s);
@@ -137,6 +142,12 @@ private:
         std::shared_ptr<audio_stream> state;
     };
     std::vector<AudioOnlyEntry> audioOnlyStreams_;
+
+    // Subtitle (OSD text) stream
+    struct SubtitleEntry {
+        SubtitleStreamConfig config;
+    };
+    std::vector<SubtitleEntry> subtitleStreams_;
 
     // Backchannel (talkback) configuration
     bool backchannelEnabled_ = false;

@@ -74,7 +74,8 @@ std::string generateSdp(const VideoStreamConfig &video,
                         const AudioStreamConfig *audio,
                         const char *serverIp,
                         const char *streamName,
-                        const std::vector<BackchannelConfig> *backchannel) {
+                        const std::vector<BackchannelConfig> *backchannel,
+                        const SubtitleStreamConfig *subtitle) {
     char buf[SDP_BUF_SIZE];
     int off = 0;
 
@@ -192,6 +193,19 @@ std::string generateSdp(const VideoStreamConfig &video,
                 "sizelength=13;indexlength=3;indexdeltalength=3\r\n",
                 audio->payloadType, aacCfg.c_str());
         }
+    }
+
+    // ── Subtitle media (OSD text) ────────────────────────────────────
+    if (subtitle) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+            "m=text 0 RTP/AVP %d\r\n"
+            "a=control:track4\r\n"
+            "a=rtpmap:%d %s/%d\r\n"
+            "a=ptime:1.000\r\n",
+            subtitle->payloadType,
+            subtitle->payloadType,
+            subtitle->codec.c_str(),
+            subtitle->clockRate);
     }
 
     // ── Backchannel (talkback) — announced in main SDP so go2rtc

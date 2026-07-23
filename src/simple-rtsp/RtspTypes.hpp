@@ -29,7 +29,7 @@ inline const char *stristr(const char *haystack, const char *needle) {
 // ── Constants ───────────────────────────────────────────────────────────────
 
 constexpr int MAX_CLIENTS   = 8;
-constexpr int RTSP_BUF_SIZE  = 8192;
+constexpr int RTSP_BUF_SIZE  = 16384;
 constexpr int RTP_MAX_PAYLOAD = 1200;  // stay under typical path MTU to avoid
                                         // IP fragmentation of UDP RTP datagrams
                                         // (fragment loss desyncs the decoder)
@@ -97,6 +97,13 @@ struct BackchannelConfig {
     std::string codec;          // "PCMU", "PCMA", "mpeg4-generic"
     int sampleRate;
     int payloadType;
+};
+
+// Subtitle stream — RFC 4103 text/t140, carrying ASS-formatted events.
+struct SubtitleStreamConfig {
+    std::string codec = "t140";
+    int payloadType = 98;
+    int clockRate = 1000;
 };
 
 // ── Base-64 helper (RFC 4648) for SDP ───────────────────────────────────────

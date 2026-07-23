@@ -176,6 +176,16 @@ void RTSP::start() {
                  << " (" << acfg.codec << " " << acfg.sampleRate << "Hz)");
     }
 
+    // ── Subtitle stream (OSD text via ASS over RTP) ─────────────────
+    if (cfg->osd.enabled) {
+        simple_rtsp::SubtitleStreamConfig scfg;
+        scfg.codec = "t140";
+        scfg.payloadType = 98;
+        scfg.clockRate = 1000;
+        server_->addSubtitleStream(scfg);
+        LOG_INFO("Subtitle stream registered: ASS payload=98");
+    }
+
     // ── Set up the signal so main.cpp can stop us ──────────────────────
     global_rtsp_thread_signal = 0; // signal running
 

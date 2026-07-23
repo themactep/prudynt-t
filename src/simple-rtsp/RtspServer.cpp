@@ -110,6 +110,7 @@ struct Session {
 
     // Subtitle (OSD text) — no tap, text is pulled from OSD each second
     bool hasSubtitles = false;
+    bool subtitleTcp = false;
     char subtitleSetupUrl[256]{};
     uint8_t subtitleInterleavedRtp  = 6;
     uint8_t subtitleInterleavedRtcp = 7;
@@ -477,6 +478,9 @@ void RtspServer::eventLoop() {
                     std::string text =
                         global_video[s->videoChn]->imp_encoder->osd
                             ->getPlaintextInfo();
+                    LOG_DEBUG("subtitle: ch=" << s->videoChn
+                              << " hasOsd=" << (global_video[s->videoChn]->imp_encoder->osd != nullptr)
+                              << " textLen=" << text.size());
                     if (!text.empty()) {
                         this->sendSubtitleText(*s, text);
                     }
@@ -631,6 +635,7 @@ void RtspServer::acceptClient() {
     s->hasFrameRtpTs = false;
     s->hasAudioRtpTs = false;
     s->hasSubtitles = false;
+    s->subtitleTcp = false;
     s->lastSubtitleSent = 0;
     s->assHeaderSent = false;
     s->subtitleStartTime = 0;
@@ -1105,9 +1110,9 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
 
     // Subtitle track setup
     if (isSubtitle) {
-        handleSubtitleSetup(*s, headers);
+        handleSubtitleSetup(*s, headers, uri);
         char subHdr[256];
-        if (s->tcpInterleaved) {
+        if (s->subtitleTcp) {
             snprintf(subHdr, sizeof(subHdr),
                      "Transport: RTP/AVP/TCP;unicast;interleaved=%d-%d\r\n"
                      "Session: %s;timeout=65\r\n",
@@ -1306,7 +1311,8 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         return;
     }
 
-    if (s->videoChn < 0 && !s->hasAudio && !s->audioOnly && !s->backchannel) {
+    if (s->videoChn < 0 && !s->hasAudio && !s->audioOnly && !s->backchannel &&
+        !s->hasSubtitles) {
         sendResponse(*s, Status::BAD_REQUEST, cseq, nullptr, nullptr);
         return;
     }
@@ -1359,7 +1365,8 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
 
     LOG_INFO("PLAY started: ch=" << s->videoChn
              << " hasAudio=" << s->hasAudio
-             << " players=" << activePlayers_[s->videoChn]);
+             << " hasSubtitles=" << s->hasSubtitles
+             << " players=" << (s->videoChn >= 0 ? activePlayers_[s->videoChn] : 0));
 
     // ── Activate backchannel on PLAY (ONVIF Streaming Spec §5.3) ────
     // go2rtc sends PLAY to start the backchannel, not RECORD.
@@ -1483,7 +1490,17 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
 
 // ── Backchannel SETUP ──────────────────────────────────────────────────
 
-void RtspServer::handleSubtitleSetup(Session &s, const char *headers) {
+void RtspServer::handleSubtitleSetup(Session &s, const char *headers,
+                                     const char *uri) {
+    // Extract video channel from URI (e.g. /ch0/track4 → chn=0)
+    if (s.videoChn < 0 && uri) {
+        const char *ch = strstr(uri, "/ch");
+        if (ch) {
+            int c = atoi(ch + 3);
+            if (c >= 0 && c < NUM_VIDEO_CHANNELS)
+                s.videoChn = c;
+        }
+    }
     // Generate session ID if not already set
     if (!s.hasValidSession()) {
         snprintf(s.sessionId, sizeof(s.sessionId), "%08X",
@@ -1491,13 +1508,16 @@ void RtspServer::handleSubtitleSetup(Session &s, const char *headers) {
                  static_cast<unsigned>(rand()));
     }
     const char *t = stristr(headers, "Transport:");
+    LOG_DEBUG("subtitle SETUP: transport=" << (t ? t : "(null)"));
     if (t && stristr(t, "RTP/AVP/TCP")) {
+        s.subtitleTcp = true;
         const char *il = strstr(t, "interleaved=");
         if (il) {
             int rtpCh, rtcpCh;
             if (sscanf(il, "interleaved=%d-%d", &rtpCh, &rtcpCh) == 2) {
                 s.subtitleInterleavedRtp  = static_cast<uint8_t>(rtpCh);
                 s.subtitleInterleavedRtcp = static_cast<uint8_t>(rtcpCh);
+                LOG_INFO("subtitle: TCP interleaved=" << rtpCh << "-" << rtcpCh);
             }
         }
     } else if (t && stristr(t, "RTP/AVP")) {
@@ -1508,6 +1528,12 @@ void RtspServer::handleSubtitleSetup(Session &s, const char *headers) {
             sscanf(cp, "client_port=%d-%d", &clientRtpPort, &clientRtcpPort);
         s.subtitleClientRtpPort  = static_cast<uint16_t>(clientRtpPort  > 0 ? clientRtpPort  : 5008);
         s.subtitleClientRtcpPort = static_cast<uint16_t>(clientRtcpPort > 0 ? clientRtcpPort : 5009);
+
+        // Save client address for sendto — without this, subtitle
+        // packets go to 0.0.0.0 and are silently dropped.
+        socklen_t alen = sizeof(s.clientAddr);
+        if (getpeername(s.fd, (sockaddr *)&s.clientAddr, &alen) == 0)
+            s.clientAddrLen = alen;
 
         auto createUdpSocket = [](uint16_t &outPort) -> int {
             int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -2163,7 +2189,7 @@ static void sendSubtitleRtp(Session &s,
 
     std::vector<uint8_t> rtp(12 + payloadLen);
     rtp[0] = 0x80;
-    rtp[1] = pt;
+    rtp[1] = 0x80 | pt;  // M=1 (RFC 4103 §4.1: marker on each text segment)
     rtp[2] = static_cast<uint8_t>((s.subtitleRtp.seq >> 8) & 0xFF);
     rtp[3] = static_cast<uint8_t>(s.subtitleRtp.seq & 0xFF);
     s.subtitleRtp.seq++;
@@ -2172,7 +2198,7 @@ static void sendSubtitleRtp(Session &s,
     memcpy(&rtp[8], &ssrc, 4);
     memcpy(&rtp[12], payload.data(), payloadLen);
 
-    if (s.tcpInterleaved) {
+    if (s.subtitleTcp) {
         uint8_t buf[1504];
         size_t total = rtp.size() + 4;
         buf[0] = '$';
@@ -2180,13 +2206,20 @@ static void sendSubtitleRtp(Session &s,
         buf[2] = static_cast<uint8_t>((rtp.size() >> 8) & 0xFF);
         buf[3] = static_cast<uint8_t>(rtp.size() & 0xFF);
         memcpy(buf + 4, rtp.data(), rtp.size());
-        send(s.fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+        ssize_t sent = send(s.fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+        static int sub_send_err = 0;
+        if (sent < 0 && sub_send_err++ < 3)
+            LOG_WARN("sendSubtitleRtp: send failed fd=" << s.fd << " err=" << errno);
     } else {
         if (s.subtitleRtpSock >= 0) {
             sockaddr_in target = s.clientAddr;
             target.sin_port = htons(s.subtitleClientRtpPort);
-            sendto(s.subtitleRtpSock, rtp.data(), rtp.size(), MSG_DONTWAIT,
-                   (sockaddr *)&target, sizeof(target));
+            ssize_t sent = sendto(s.subtitleRtpSock, rtp.data(), rtp.size(),
+                                  MSG_DONTWAIT, (sockaddr *)&target,
+                                  sizeof(target));
+            static int sub_sendto_err = 0;
+            if (sent < 0 && sub_sendto_err++ < 3)
+                LOG_WARN("sendSubtitleRtp: sendto failed err=" << errno);
         }
     }
 }
@@ -2246,28 +2279,28 @@ bool RtspServer::sendSubtitleText(Session &s, const std::string &text) {
 
     const auto &cfg = subtitleStreams_[0].config;
 
-    // Send ASS header once per session
     if (!s.assHeaderSent) {
         s.assHeaderSent = true;
         s.subtitleStartTime = time(nullptr);
-        sendSubtitleRtp(s, cfg, assHeader());
     }
 
-    // Build ASS Dialogue event
+    LOG_DEBUG("subtitle ch=" << s.videoChn << " tcp=" << s.subtitleTcp
+              << " ich=" << (int)s.subtitleInterleavedRtp
+              << " len=" << text.size());
+
+    // Each t140 RTP packet is an independent text event.  To get mpv /
+    // ffmpeg / VLC to render it, the payload must be a self-contained,
+    // valid ASS document (header + dialogue) every time — the receiver
+    // does not accumulate state across packets.
     double elapsed = difftime(time(nullptr), s.subtitleStartTime);
-    if (elapsed < 0) elapsed = 0;
+    std::string doc = assHeader()
+        + "Dialogue: 0,"
+        + assTime(elapsed) + ","
+        + assTime(elapsed + 10.0) + ","
+        "Default,,0,0,0,,"
+        + assEscape(text);
 
-    std::string start = assTime(elapsed);
-    std::string end   = assTime(elapsed + 1.0);
-    std::string escaped = assEscape(text);
-
-    char dialogue[4096];
-    int len = snprintf(dialogue, sizeof(dialogue),
-                       "Dialogue: 0,%s,%s,Default,,0,0,0,,%s\r\n",
-                       start.c_str(), end.c_str(), escaped.c_str());
-    if (len > 0 && static_cast<size_t>(len) < sizeof(dialogue))
-        sendSubtitleRtp(s, cfg, std::string(dialogue, static_cast<size_t>(len)));
-
+    sendSubtitleRtp(s, cfg, doc);
     return true;
 }
 
