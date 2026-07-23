@@ -1977,7 +1977,8 @@ int set_ao_gain(int gain) {
 namespace osd {
 
 uint32_t black_cover_color() {
-#if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
+#if defined(PLATFORM_T23) || defined(PLATFORM_T32) || defined(PLATFORM_T33) || \
+    defined(PLATFORM_T40) || defined(PLATFORM_T41)
   return OSD_IPU_BLACK;
 #else
   return OSD_BLACK;
@@ -2008,6 +2009,7 @@ int set_region_alpha(int handle, int alpha) {
     return ret;
 
 #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_T23) || defined(PLATFORM_T32) || defined(PLATFORM_T33) || \
     defined(PLATFORM_C100)
   rgnAttr.fmt = PIX_FMT_BGRA;
 #else

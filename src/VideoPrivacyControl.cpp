@@ -143,6 +143,7 @@ void applyPrivacyToAllChannels(bool enabled) {
       rgnAttr.rect.p1.y = sh - 1;
       // Pick platform-appropriate pixel format for cover regions
 #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_T23) || defined(PLATFORM_T32) || defined(PLATFORM_T33) || \
     defined(PLATFORM_C100)
       rgnAttr.fmt = PIX_FMT_BGRA;
 #else
