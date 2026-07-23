@@ -134,7 +134,7 @@ struct Session {
     bool    waitingForKeyframe = false; // drop non-IDR until first keyframe arrives
     bool    sendInitialRtcpSr  = false; // Send RTCP SR after first frame
 
-    // Audio uses wall-clock start (separate because audio NALs lack imp_ts)
+    // Audio uses the IMP driver's capture timestamp (microseconds).
     struct timeval startAnchor{0, 0};
 
     // Video uses encoder monotonic clock (imp_ts, microseconds).
@@ -2058,8 +2058,14 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
             new_ts = s.audioRtp.timestamp + 1;
         s.audioRtp.timestamp = new_ts;
         s.hasAudioRtpTs = true;
-        s.lastAudioTsUs = static_cast<int64_t>(af.time.tv_sec) * 1000000LL +
-                          static_cast<int64_t>(af.time.tv_usec);
+        // Use CLOCK_MONOTONIC for RTCP SR consistency — audio capture
+        // timestamps (af.time) may not be rebased by the IMP driver to
+        // the same clock domain as video imp_ts, so derive the RTCP SR
+        // reference from the monotonic clock directly.
+        struct timespec mono;
+        clock_gettime(CLOCK_MONOTONIC, &mono);
+        s.lastAudioTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
     }
 
     int clientIdx = s.sessionsIndex;
