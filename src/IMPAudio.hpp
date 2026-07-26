@@ -22,6 +22,7 @@ public:
   virtual int encode(IMPAudioFrame *data, unsigned char *outbuf,
                      int *outLen) = 0;
   virtual int close() = 0;
+  virtual void setInputRate(int /*rate*/) {}
   virtual ~IMPAudioEncoder() = default;
 };
 
@@ -29,7 +30,12 @@ class IMPAudio {
 public:
   static IMPAudio *createNew(int devId, int inChn, int aeChn);
   static int encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf,
-                          int *outLen);
+                           int *outLen);
+  // T10/T20 AAC: access encoder internals
+  static int getAACFrameSamples();
+  static int64_t getAACLastPtsUs();
+  static bool isAACEncoder();
+  static const uint8_t *getAACAsc(uint32_t &len);
 
   IMPAudio(int devId, int inChn, int aeChn)
       : devId(devId), inChn(inChn), aeChn(aeChn) {

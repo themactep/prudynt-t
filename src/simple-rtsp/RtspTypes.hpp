@@ -90,6 +90,7 @@ struct AudioStreamConfig {
     int sampleRate           = 16000;
     int channels             = 1;
     int payloadType          = 97;
+    std::vector<uint8_t> aacConfig; // raw ASC bytes from encoder (overrides hardcoded)
 };
 
 // Backchannel (talkback) audio formats the server can receive from a client.

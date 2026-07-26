@@ -186,7 +186,14 @@ std::string generateSdp(const VideoStreamConfig &video,
             audio->payloadType, encName, audioClk, audioCh);
 
         if (audio->codec == "AAC") {
-            std::string aacCfg = makeAacConfig(audio->sampleRate, audio->channels);
+            // Use the encoder's real ASC if provided (essential for HE-AAC),
+            // otherwise fall back to the hardcoded makeAacConfig.
+            std::string aacCfg;
+            if (!audio->aacConfig.empty()) {
+                aacCfg = hexEncode(audio->aacConfig.data(), audio->aacConfig.size());
+            } else {
+                aacCfg = makeAacConfig(audio->sampleRate, audio->channels);
+            }
             off += snprintf(buf + off, sizeof(buf) - off,
                 "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
                 "config=%s;"
@@ -288,7 +295,12 @@ std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
         audio.payloadType, encName, audioClk, audioCh);
 
     if (audio.codec == "AAC") {
-        std::string aacCfg = makeAacConfig(audio.sampleRate, audio.channels);
+        std::string aacCfg;
+        if (!audio.aacConfig.empty()) {
+            aacCfg = hexEncode(audio.aacConfig.data(), audio.aacConfig.size());
+        } else {
+            aacCfg = makeAacConfig(audio.sampleRate, audio.channels);
+        }
         off += snprintf(buf + off, sizeof(buf) - off,
             "a=fmtp:%d streamtype=5;profile-level-id=15;mode=AAC-hbr;"
             "config=%s;"

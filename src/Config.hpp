@@ -62,12 +62,15 @@ struct _stream_stats { // has to be before _osd
   struct timeval ts;
 };
 struct _audio {
+  // All Ingenic SoCs support 48kHz natively — capture rate is fixed.
+  static constexpr int kSampleRate = 48000;
+  // Default encoding bitrate for AAC/Opus (kbps).
+  static constexpr int kBitrateKbps = 128;
+
   bool input_enabled;
   const char *input_format;
   int input_vol;
-  int input_bitrate;
   int input_gain;
-  int input_sample_rate;
   bool tap_enabled;
   const char *tap_path;
   bool mic_is_digital;

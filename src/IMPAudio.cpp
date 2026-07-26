@@ -22,6 +22,37 @@ int IMPAudio::encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf,
   return encoder->encode(frame, outbuf, outLen);
 }
 
+#if defined(USE_AAC) && USE_AAC
+bool IMPAudio::isAACEncoder() {
+  return dynamic_cast<AACEncoder *>(encoder) != nullptr;
+}
+
+int IMPAudio::getAACFrameSamples() {
+  auto *aac = dynamic_cast<AACEncoder *>(encoder);
+  return aac ? aac->getFrameSamples() : 0;
+}
+
+int64_t IMPAudio::getAACLastPtsUs() {
+  auto *aac = dynamic_cast<AACEncoder *>(encoder);
+  return aac ? aac->getLastFramePtsUs() : 0;
+}
+
+const uint8_t *IMPAudio::getAACAsc(uint32_t &len) {
+  auto *aac = dynamic_cast<AACEncoder *>(encoder);
+  if (aac && aac->getAscLen() > 0) {
+    len = aac->getAscLen();
+    return aac->getAsc();
+  }
+  len = 0;
+  return nullptr;
+}
+#else
+bool IMPAudio::isAACEncoder() { return false; }
+int IMPAudio::getAACFrameSamples() { return 0; }
+int64_t IMPAudio::getAACLastPtsUs() { return 0; }
+const uint8_t *IMPAudio::getAACAsc(uint32_t &len) { len = 0; return nullptr; }
+#endif
+
 IMPAudio *IMPAudio::createNew(int devId, int inChn, int aeChn) {
   return new IMPAudio(devId, inChn, aeChn);
 }
@@ -32,7 +63,7 @@ int IMPAudio::init() {
 
   format = IMPAudioFormat::PCM;
   IMPAudioIOAttr ioattr = {.samplerate = static_cast<IMPAudioSampleRate>(
-                               cfg->audio.input_sample_rate),
+                               cfg->audio.kSampleRate),
                            .bitwidth = AUDIO_BIT_WIDTH_16,
                            .soundmode = AUDIO_SOUND_MODE_MONO,
                            .frmNum = 30,
@@ -51,7 +82,7 @@ int IMPAudio::init() {
   if (strcmp(cfg->audio.input_format, "OPUS") == 0) {
 #if defined(USE_OPUS) && USE_OPUS
     format = IMPAudioFormat::OPUS;
-    bitrate = cfg->audio.input_bitrate;
+    bitrate = cfg->audio.kBitrateKbps;
     encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
 #else
     LOG_ERROR("OPUS input_format requested but OPUS support is disabled at "
@@ -60,7 +91,10 @@ int IMPAudio::init() {
   } else if (strcmp(cfg->audio.input_format, "AAC") == 0) {
 #if defined(USE_AAC) && USE_AAC
     format = IMPAudioFormat::AAC;
-    bitrate = cfg->audio.input_bitrate;
+    bitrate = cfg->audio.kBitrateKbps;
+    // All Ingenic SoCs support 48kHz natively — capture at native rate
+    // instead of a lower rate + software resample.
+    ioattr.samplerate = AUDIO_SAMPLE_RATE_48000;
     encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);
 #else
     LOG_ERROR("AAC input_format requested but AAC support is disabled at build "
@@ -94,15 +128,34 @@ int IMPAudio::init() {
   }
 
   sample_rate = ioattr.samplerate;
-  if (sample_rate != cfg->audio.input_sample_rate) {
-    LOG_INFO("Overriding configured input sample rate of "
-             << cfg->audio.input_sample_rate << " Hz because "
-             << cfg->audio.input_format << " requires " << sample_rate
-             << " Hz.");
+
+  if (encattr.type > IMPAudioPalyloadType::PT_PCM) {
+    ret = IMP_AENC_CreateChn(aeChn, &encattr);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
   }
 
-  // sample points per frame
+  // AAC at 48kHz: use 20ms frames so HAL delivery closely matches FAAC's
+  // 1024-sample encode window.  With 40ms frames (1920 samples), FAAC
+  // alternates between 1 and 2 frames per delivery, causing irregular timing.
+  if (format == IMPAudioFormat::AAC)
+    frameDuration = 0.020;
+
   ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
+  ret = IMP_AI_SetPubAttr(devId, &ioattr);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetPubAttr(" << devId << ")");
+
+  memset(&ioattr, 0x0, sizeof(ioattr));
+  ret = IMP_AI_GetPubAttr(devId, &ioattr);
+  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetPubAttr(" << devId << ")");
+
+  // After GetPubAttr, the HAL may have adjusted the sample rate.  Update
+  // numPerFrm and the encoder's input rate so FAAC uses the correct rate.
+  ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
+  if (encoder) {
+    int actualRate = static_cast<int>(ioattr.samplerate);
+    LOG_DEBUG("Actual HAL sample rate: " << actualRate << " Hz");
+    encoder->setInputRate(actualRate);
+  }
 
   if (encoder) {
     // Custom encoders (AAC/OPUS): bypass IMP_AENC entirely.
@@ -113,24 +166,12 @@ int IMPAudio::init() {
     ret = encoder->open();
     if (ret != 0) {
       LOG_ERROR("Failed to open " << cfg->audio.input_format
-                                  << " encoder directly");
+                                   << " encoder directly");
       return ret;
     }
     LOG_DEBUG("Opened " << cfg->audio.input_format
                         << " encoder directly (bypassing IMP_AENC)");
   }
-
-  if (encattr.type > IMPAudioPalyloadType::PT_PCM) {
-    ret = IMP_AENC_CreateChn(aeChn, &encattr);
-    LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
-  }
-
-  ret = IMP_AI_SetPubAttr(devId, &ioattr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_SetPubAttr(" << devId << ")");
-
-  memset(&ioattr, 0x0, sizeof(ioattr));
-  ret = IMP_AI_GetPubAttr(devId, &ioattr);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetPubAttr(" << devId << ")");
 
   ret = IMP_AI_Enable(devId);
   LOG_DEBUG_OR_ERROR(ret, "IMP_AI_Enable(" << devId << ")");

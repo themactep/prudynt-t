@@ -549,8 +549,6 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
     add_num(out, cfg->get<int>("audio.mic_gain"));
     wrote = true;
   }
-  add_int("mic_bitrate", "audio.mic_bitrate", true);
-  add_int("mic_sample_rate", "audio.mic_sample_rate", true);
 #if defined(LIB_AUDIO_PROCESSING)
 
   // mic_alc_gain - apply immediately without restart (platform-specific)

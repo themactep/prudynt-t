@@ -226,6 +226,15 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
         outLen > 0) {
       start = directEncBuf.data();
       end = start + outLen;
+      if (IMPAudio::isAACEncoder()) {
+        int64_t ptsUs = IMPAudio::getAACLastPtsUs();
+        af.time.tv_sec = static_cast<time_t>(ptsUs / 1000000);
+        af.time.tv_usec = static_cast<suseconds_t>(ptsUs % 1000000);
+        frame_samples = IMPAudio::getAACFrameSamples();
+      }
+    } else if (IMPAudio::isAACEncoder()) {
+      // Encoder is accumulating — no output frame yet.
+      start = end = nullptr;
     }
   } else if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM) {
     // IMP_AENC path for built-in codecs (G711A, G711U, G726)
@@ -279,7 +288,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
         mp4_audio_sample_rate = global_audio[encChn]->imp_audio->sample_rate;
       }
       if (mp4_audio_sample_rate <= 0) {
-        mp4_audio_sample_rate = cfg->audio.input_sample_rate;
+        mp4_audio_sample_rate = cfg->audio.kSampleRate;
       }
     }
 
@@ -290,8 +299,8 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
 
     if (frame_len > 0) {
       recorder.writeAudio(start, frame_len, pts_ms);
+      mp4_audio_samples[ch] += frame_samples;
     }
-    mp4_audio_samples[ch] += frame_samples;
   }
 
   if (!any_recorder_active) {
@@ -388,7 +397,7 @@ void AudioWorker::run() {
 
   if (tap && cfg) {
     const char *path = cfg->audio.tap_path ? cfg->audio.tap_path : "";
-    int sampleRate = cfg->audio.input_sample_rate;
+    int sampleRate = cfg->audio.kSampleRate;
     int bitwidth = 16; // Prudynt captures 16-bit PCM frames
     int channels = 1;
     if (global_audio[encChn]->imp_audio) {
@@ -401,19 +410,6 @@ void AudioWorker::run() {
     }
     tap->configure(cfg->audio.tap_enabled && cfg->audio.input_enabled, path,
                    sampleRate, bitwidth, channels);
-  }
-
-  // Initialize AudioReframer only if needed, store in member variable
-  if (global_audio[encChn]->imp_audio->format == IMPAudioFormat::AAC) {
-    reframer = std::make_unique<AudioReframer>(
-        global_audio[encChn]->imp_audio->sample_rate,
-        /* inputSamplesPerFrame */
-        global_audio[encChn]->imp_audio->sample_rate * 0.040,
-        /* outputSamplesPerFrame */ 1024);
-    LOG_DEBUG("AudioReframer created for channel " << encChn);
-  } else {
-    LOG_DEBUG("AudioReframer not needed or imp_audio not ready for channel "
-              << encChn);
   }
 
   // Pre-allocate output buffer for direct encoding (AAC/OPUS bypass IMP_AENC)
@@ -446,28 +442,7 @@ void AudioWorker::run() {
           continue; // avoid using an uninitialized frame
         }
 
-        if (reframer) {
-          reframer->addFrame(reinterpret_cast<uint8_t *>(frame.virAddr),
-                             frame.timeStamp);
-          while (reframer->hasMoreFrames()) {
-            size_t frameLen = 1024 * sizeof(uint16_t) *
-                              global_audio[encChn]->imp_audio->outChnCnt;
-            std::vector<uint8_t> frameData(frameLen, 0);
-            int64_t audio_ts_us;
-            reframer->getReframedFrame(frameData.data(), audio_ts_us);
-            IMPAudioFrame reframed = {
-                .bitwidth = frame.bitwidth,
-                .soundmode = frame.soundmode,
-                .virAddr = reinterpret_cast<uint32_t *>(frameData.data()),
-                .phyAddr = frame.phyAddr,
-                .timeStamp = audio_ts_us,
-                .seq = frame.seq,
-                .len = static_cast<int>(frameLen)};
-            process_frame(reframed);
-          }
-        } else {
-          process_frame(frame);
-        }
+        process_frame(frame);
 
         if (IMP_AI_ReleaseFrame(global_audio[encChn]->devId,
                                 global_audio[encChn]->aiChn, &frame) < 0) {

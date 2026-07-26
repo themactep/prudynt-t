@@ -53,9 +53,7 @@ service prudynt restart
 ```
 
 - The FIFO defaults to `/run/prudynt/audio_in.pcm` (mode `0660`).
-- Audio is always little-endian signed 16-bit PCM and mirrors the configured
-  `audio.mic_sample_rate` (legacy `audio.input_sample_rate`) and channel count
-  (typically 16 kHz mono).
+- Audio is always little-endian signed 16-bit PCM at 48 kHz mono.
 - The writer never blocks: if no reader is attached or a consumer falls behind,
   samples are dropped so the capture thread keeps up.
 
@@ -63,7 +61,7 @@ Reading from the tap is just standard FIFO consumption. For example, to monitor
 the stream with SoX:
 
 ```
-sox -t raw -b 16 -e signed-integer -c 1 -r 16000 \
+sox -t raw -b 16 -e signed-integer -c 1 -r 48000 \
     /run/prudynt/audio_in.pcm -d
 ```
 
@@ -71,7 +69,7 @@ You can also point analysis tools (e.g. `porcupine`, `sonic-pi`) at the FIFO or
 pipe it into another process:
 
 ```
-cat /run/prudynt/audio_in.pcm | your-detector --rate 16000 --format s16le
+cat /run/prudynt/audio_in.pcm | your-detector --rate 48000 --format s16le
 ```
 
 Disable the tap by setting `audio.tap_enabled` back to `false`. The FIFO is

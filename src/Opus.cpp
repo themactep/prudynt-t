@@ -23,7 +23,7 @@ int Opus::open() {
   }
 
   // Configure encoder for maximum quality at the configured bitrate
-  int bitrate = cfg->audio.input_bitrate * 1000; // bps
+  int bitrate = cfg->audio.kBitrateKbps * 1000; // bps
   opusError = opus_encoder_ctl(encoder, OPUS_SET_BITRATE(bitrate));
   if (opusError != OPUS_OK) {
     LOG_ERROR("Failed to set bitrate ("

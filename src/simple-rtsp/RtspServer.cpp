@@ -2003,10 +2003,6 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
 
 bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
     if (s.fd < 0 || af.data.empty()) return true;
-    if (af.data.size() > 1400) {
-        LOG_ERROR("Audio frame too large: " << af.data.size() << " bytes, dropping");
-        return true;
-    }
 
     // Drop pre-session audio frames (captured before first video frame).
     // These accumulate in the tap during encoder startup and would flood the
@@ -2021,10 +2017,12 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
     // Read codec from audio config
     std::string codec = "AAC";
     int sampleRate = 16000;
+    int channels = 1;
     uint8_t pt = 97;
     if (!audioStreams_.empty()) {
         codec = audioStreams_[0].config.codec;
         sampleRate = audioStreams_[0].config.sampleRate;
+        channels = audioStreams_[0].config.channels;
         pt = static_cast<uint8_t>(audioStreams_[0].config.payloadType);
         // OPUS RTP clock must be 48000 regardless of hardware rate
         if (codec == "OPUS") sampleRate = 48000;
@@ -2052,12 +2050,14 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         if (dtUs < 0) dtUs = 0;
         uint32_t new_ts = static_cast<uint32_t>(
             dtUs * static_cast<int64_t>(sampleRate) / 1000000LL);
+        uint32_t prev_ts = s.audioRtp.timestamp;
         // Ensure strict monotonicity (RTP spec) — CLOCK_MONOTONIC prevents
         // backward jumps from NTP, but guard against duplicate timestamps.
         if (s.hasAudioRtpTs && new_ts <= s.audioRtp.timestamp)
             new_ts = s.audioRtp.timestamp + 1;
         s.audioRtp.timestamp = new_ts;
         s.hasAudioRtpTs = true;
+
         // Use CLOCK_MONOTONIC for RTCP SR consistency — audio capture
         // timestamps (af.time) may not be rebased by the IMP driver to
         // the same clock domain as video imp_ts, so derive the RTCP SR
@@ -2147,8 +2147,9 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         size_t n = af.data.size() / 2;
         for (size_t i = 0; i < n; i++)
             dst[i] = (src[i] >> 8) | (src[i] << 8);
-        return sendOne(be.data(), be.size(), pt,
-                       /*marker*/ true, s.audioRtp, output);
+        int sampleBytes = channels * 2; // 16-bit per sample per channel
+        return packetizeL16(be.data(), be.size(), sampleBytes,
+                            pt, s.audioRtp, output);
     } else {
         // PCMU, PCMA, OPUS — raw payload
         return sendOne(af.data.data(), af.data.size(), pt,

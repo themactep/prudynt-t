@@ -131,6 +131,31 @@ bool packetizeH265(const uint8_t *nalData, size_t nalLen,
     return true;
 }
 
+// ── L16 packetization (RFC 3551 §4.5.10) ─────────────────────────────────────
+
+bool packetizeL16(const uint8_t *pcmData, size_t pcmLen,
+                  int sampleBytes,
+                  uint8_t payloadType, RtpState &state,
+                  const RtpOutput &output) {
+    if (!pcmData || pcmLen == 0) return true;
+    if (sampleBytes < 1 || sampleBytes > 4) sampleBytes = 2;
+
+    size_t maxChunk = RTP_MAX_PAYLOAD;
+    // Align chunk to sample boundary so we never split a sample
+    maxChunk = (maxChunk / sampleBytes) * sampleBytes;
+    if (maxChunk == 0) maxChunk = sampleBytes;
+
+    size_t offset = 0;
+    while (offset < pcmLen) {
+        size_t chunk = std::min(pcmLen - offset, maxChunk);
+        bool last = (offset + chunk >= pcmLen);
+        if (!sendOne(pcmData + offset, chunk, payloadType, last, state, output))
+            return false;
+        offset += chunk;
+    }
+    return true;
+}
+
 // ── AAC packetization (RFC 3640 / 6416) ─────────────────────────────────────
 
 bool packetizeAAC(const uint8_t *auData, size_t auLen,

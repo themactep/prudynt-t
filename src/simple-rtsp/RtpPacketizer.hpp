@@ -36,6 +36,17 @@ bool packetizeH265(const uint8_t *nalData, size_t nalLen,
                    uint8_t payloadType, RtpState &state,
                    const RtpOutput &output);
 
+// ── L16 packetization (RFC 3551 §4.5.10) ─────────────────────────────────────
+// Fragments raw PCM into MTU-sized RTP packets.  Each packet shares the same
+// timestamp; only the last packet carries the marker bit.
+// `sampleBytes` is the size of one interleaved sample (2 for 16-bit mono, 4 for
+// stereo).  Chunk sizes are rounded down to a multiple of `sampleBytes`.
+// Returns false if the output callback returned false (backpressure).
+bool packetizeL16(const uint8_t *pcmData, size_t pcmLen,
+                  int sampleBytes,
+                  uint8_t payloadType, RtpState &state,
+                  const RtpOutput &output);
+
 // ── Raw RTP send (single packet, no codec-specific framing) ────────────────
 // Used for PCMU, PCMA, OPUS, L16 — sends payload directly with RTP header.
 // Returns false if the output callback returned false (backpressure).

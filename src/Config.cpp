@@ -454,12 +454,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
 std::vector<ConfigItem<int>> CFG::getIntItems() {
   const auto &denoiseDefaults = hal::defaults::denoise();
   return {
-      {"audio.mic_bitrate", audio.input_bitrate, 32,
-       [](const int &v) { return v >= 6 && v <= 256; }},
       {"audio.mic_gain", audio.input_gain, 25,
        [](const int &v) { return v >= -1 && v <= 31; }},
-      {"audio.mic_sample_rate", audio.input_sample_rate, 16000,
-       validateSampleRate},
       {"audio.mic_vol", audio.input_vol, 80,
        [](const int &v) { return v >= -30 && v <= 120; }},
       {"audio.spk_sample_rate", audio.output_sample_rate, 16000,

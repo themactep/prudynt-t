@@ -1861,6 +1861,9 @@ namespace audio {
 
 void init_ai_channel_param(IMPAudioIChnParam &param) {
   param.usrFrmDepth = 30;
+#if defined(PLATFORM_T10) || defined(PLATFORM_T20)
+  param.usrFrmDepth = 20;  // raptor default: 20ms frames × 20 depth
+#endif
 #if defined(PLATFORM_T23) || defined(PLATFORM_T40) || defined(PLATFORM_T41)
   param.aecChn = AUDIO_AEC_CHANNEL_FIRST_LEFT;
 #endif

@@ -16,8 +16,6 @@ All audio parameters have been renamed to match the config schema:
 | `input_format` | `mic_format` | Audio codec format |
 | `input_vol` | `mic_vol` | Microphone volume |
 | `input_gain` | `mic_gain` | Microphone analog gain |
-| `input_bitrate` | `mic_bitrate` | Encoding bitrate |
-| `input_sample_rate` | `mic_sample_rate` | Microphone sample rate |
 | `input_alc_gain` | `mic_alc_gain` | Automatic Level Control gain |
 | `input_noise_suppression` | `mic_noise_suppression` | Noise suppression level |
 | `input_high_pass_filter` | `mic_high_pass_filter` | High-pass filter enable |
@@ -74,8 +72,6 @@ The following parameters still require an audio subsystem restart as they affect
 
 - `mic_enabled` - Enable/disable microphone (restart audio + RTSP)
 - `mic_format` - Audio codec (AAC, OPUS, PCM, G711A, G711U, G726)
-- `mic_bitrate` - Encoding bitrate (6-256 kbps)
-- `mic_sample_rate` - Sample rate (8000, 16000, 44100, 48000 Hz)
 - `mic_noise_suppression` - Noise suppression level (0-3)
 - `mic_agc_enabled` - AGC enable/disable
 - `mic_agc_target_level_dbfs` - AGC target level (0-31)

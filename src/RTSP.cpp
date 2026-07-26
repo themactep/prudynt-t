@@ -91,6 +91,12 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
         case IMPAudioFormat::AAC:
             acfg.codec = "AAC";
             acfg.payloadType = 97;
+            {
+                uint32_t ascLen = 0;
+                const uint8_t *asc = IMPAudio::getAACAsc(ascLen);
+                if (asc && ascLen > 0)
+                    acfg.aacConfig.assign(asc, asc + ascLen);
+            }
             break;
         case IMPAudioFormat::OPUS:
             acfg.codec = "OPUS";
@@ -160,6 +166,12 @@ void RTSP::start() {
         case IMPAudioFormat::AAC:
             acfg.codec = "AAC";
             acfg.payloadType = 97;
+            {
+                uint32_t ascLen = 0;
+                const uint8_t *asc = IMPAudio::getAACAsc(ascLen);
+                if (asc && ascLen > 0)
+                    acfg.aacConfig.assign(asc, asc + ascLen);
+            }
             break;
         case IMPAudioFormat::OPUS:
             acfg.codec = "OPUS";
