@@ -80,23 +80,25 @@ std::string generateSdp(const VideoStreamConfig &video,
     int off = 0;
 
     // ── Session description ─────────────────────────────────────────────
+    // Bandwidth hint (session-level, RFC 4566 §5: b= before a=)
+    char bws[32] = "";
+    if (video.bitrate > 0) {
+        snprintf(bws, sizeof(bws), "b=AS:%d\r\n", video.bitrate);
+        fprintf(stderr, "SDP: b=AS:%d (video.bitrate=%d)\n", video.bitrate, video.bitrate);
+    } else {
+        fprintf(stderr, "SDP: SKIPPED b=AS (video.bitrate=%d)\n", video.bitrate);
+    }
+
     off += snprintf(buf + off, sizeof(buf) - off,
         "v=0\r\n"
         "o=- %d 1 IN IP4 %s\r\n"
         "s=%s\r\n"
         "t=0 0\r\n"
+        "%s"
         "a=control:*\r\n",
         rand(), serverIp,
-        streamName);
-
-    // Bandwidth hint (session-level, RFC 4566)
-    if (video.bitrate > 0) {
-        off += snprintf(buf + off, sizeof(buf) - off,
-            "b=AS:%d\r\n", video.bitrate);
-        fprintf(stderr, "SDP: b=AS:%d (video.bitrate=%d)\n", video.bitrate, video.bitrate);
-    } else {
-        fprintf(stderr, "SDP: SKIPPED b=AS (video.bitrate=%d)\n", video.bitrate);
-    }
+        streamName,
+        bws);
 
     // ── Video media ────────────────────────────────────────────────────
     bool isH265 = (video.codec == "H265");
