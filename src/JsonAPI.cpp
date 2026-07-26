@@ -604,7 +604,6 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   add_boolk_a("force_stereo", "audio.force_stereo", false, true);
   // Output
   add_boolk_a("spk_enabled", "audio.spk_enabled", true, true);
-  add_int("spk_sample_rate", "audio.spk_sample_rate", true);
 
   // spk_vol - apply immediately without restart
   if (JsonValue *v = obj_get(obj, "spk_vol")) {

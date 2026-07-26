@@ -458,8 +458,6 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= -1 && v <= 31; }},
       {"audio.mic_vol", audio.input_vol, 80,
        [](const int &v) { return v >= -30 && v <= 120; }},
-      {"audio.spk_sample_rate", audio.output_sample_rate, 16000,
-       validateSampleRate},
 #if defined(LIB_AUDIO_PROCESSING)
       {"audio.mic_agc_target_level_dbfs", audio.input_agc_target_level_dbfs, 10,
        [](const int &v) { return v >= 0 && v <= 31; }},

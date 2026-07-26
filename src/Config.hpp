@@ -66,6 +66,8 @@ struct _audio {
   static constexpr int kSampleRate = 48000;
   // Default encoding bitrate for AAC/Opus (kbps).
   static constexpr int kBitrateKbps = 128;
+  // Speaker/playback AAC bitrate (kbps).
+  static constexpr int kSpkBitrateKbps = 48;
 
   bool input_enabled;
   const char *input_format;
@@ -83,7 +85,7 @@ struct _audio {
   int input_agc_compression_gain_db;
   bool force_stereo;
   bool output_enabled;
-  int output_sample_rate;
+  int output_sample_rate = 48000;
   int output_vol;
   int output_gain;
 #endif
