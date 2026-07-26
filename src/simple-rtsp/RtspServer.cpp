@@ -2050,7 +2050,6 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         if (dtUs < 0) dtUs = 0;
         uint32_t new_ts = static_cast<uint32_t>(
             dtUs * static_cast<int64_t>(sampleRate) / 1000000LL);
-        uint32_t prev_ts = s.audioRtp.timestamp;
         // Ensure strict monotonicity (RTP spec) — CLOCK_MONOTONIC prevents
         // backward jumps from NTP, but guard against duplicate timestamps.
         if (s.hasAudioRtpTs && new_ts <= s.audioRtp.timestamp)
@@ -2263,7 +2262,7 @@ static std::string assTime(double sec) {
     if (s_centi >= 100) { s_whole++; s_centi -= 100; }
     if (s_whole >= 60) { m++; s_whole -= 60; }
     if (m >= 60) { h++; m -= 60; }
-    char buf[32];
+    char buf[40];
     snprintf(buf, sizeof(buf), "%u:%02u:%02u.%02u", h, m, s_whole, s_centi);
     return buf;
 }
