@@ -1753,11 +1753,19 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         if (rel_us < 0) rel_us = 0;
         // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
         uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
-        // RTP timestamps must be strictly increasing (RFC 3550).
-        // Compare against the previous frame-start timestamp, not
-        // videoRtp.timestamp (which may have been read by other paths).
-        if (s.hasFrameRtpTs && new_ts <= s.lastFrameRtpTs) {
-            new_ts = s.lastFrameRtpTs + 1;
+        // Guard against forward timestamp jumps (e.g. IMP encoder
+        // timestamp domain transition from 0→real-time, which VideoWorker
+        // cannot prevent when ts_last_frame_us is still 0).  Cap the step
+        // to ~500 ms of video; larger jumps are clamped to a smooth
+        // increment from the last RTP timestamp.
+        if (s.hasFrameRtpTs) {
+            static const uint32_t kMaxVideoRtpStep = 45000; // 500 ms at 90 kHz
+            int64_t diff = static_cast<int64_t>(new_ts) - static_cast<int64_t>(s.lastFrameRtpTs);
+            if (diff > kMaxVideoRtpStep) {
+                new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
+            } else if (diff <= 0) {
+                new_ts = s.lastFrameRtpTs + 1;
+            }
         }
         s.lastFrameRtpTs = new_ts;
         s.hasFrameRtpTs = true;
@@ -2014,6 +2022,16 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         return true;
     }
 
+    // Skip frames with zero timestamp: the IMP audio driver may produce
+    // frames with timeStamp=0 for the first few captures after enable.
+    // Using such a frame as the timestamp anchor causes a catastrophic
+    // RTP timestamp jump (0 → millions of units) when the driver later
+    // delivers frames with real timestamps, which triggers DTS
+    // discontinuity errors and buffering resets in clients like mpv.
+    if (af.time.tv_sec == 0 && af.time.tv_usec == 0) {
+        return true;
+    }
+
     // Read codec from audio config
     std::string codec = "AAC";
     int sampleRate = 16000;
@@ -2050,10 +2068,19 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         if (dtUs < 0) dtUs = 0;
         uint32_t new_ts = static_cast<uint32_t>(
             dtUs * static_cast<int64_t>(sampleRate) / 1000000LL);
-        // Ensure strict monotonicity (RTP spec) — CLOCK_MONOTONIC prevents
-        // backward jumps from NTP, but guard against duplicate timestamps.
-        if (s.hasAudioRtpTs && new_ts <= s.audioRtp.timestamp)
-            new_ts = s.audioRtp.timestamp + 1;
+        // Guard against forward timestamp jumps (e.g. IMP driver timestamp
+        // domain transition from 0→real-time).  Cap the step to 500 ms of
+        // audio; larger jumps are treated as a discontinuity and the RTP
+        // timestamp is clamped to a smooth increment from the last value.
+        if (s.hasAudioRtpTs) {
+            int32_t max_step = (sampleRate > 0) ? (sampleRate / 2) : 8000;
+            int64_t diff = static_cast<int64_t>(new_ts) - static_cast<int64_t>(s.audioRtp.timestamp);
+            if (diff > max_step) {
+                new_ts = s.audioRtp.timestamp + static_cast<uint32_t>(max_step);
+            } else if (diff <= 0) {
+                new_ts = s.audioRtp.timestamp + 1;
+            }
+        }
         s.audioRtp.timestamp = new_ts;
         s.hasAudioRtpTs = true;
 
