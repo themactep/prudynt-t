@@ -31,6 +31,7 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     vcfg.payloadType = 96;
     vcfg.clockRate   = 90000;
     vcfg.bitrate     = stream.bitrate;
+    LOG_INFO("Stream " << chnNr << " bitrate=" << vcfg.bitrate << " kbps");
 
     // Copy current SPS/PPS/VPS from encoder state
     if (chnNr >= 0 && chnNr < NUM_VIDEO_CHANNELS && global_video[chnNr]) {

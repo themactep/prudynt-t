@@ -93,6 +93,9 @@ std::string generateSdp(const VideoStreamConfig &video,
     if (video.bitrate > 0) {
         off += snprintf(buf + off, sizeof(buf) - off,
             "b=AS:%d\r\n", video.bitrate);
+        fprintf(stderr, "SDP: b=AS:%d (video.bitrate=%d)\n", video.bitrate, video.bitrate);
+    } else {
+        fprintf(stderr, "SDP: SKIPPED b=AS (video.bitrate=%d)\n", video.bitrate);
     }
 
     // ── Video media ────────────────────────────────────────────────────
