@@ -16,7 +16,6 @@
     "mic_vol": 80,
     "spk_enabled": true,
     "spk_gain": 20,
-    "spk_sample_rate": 16000,
     "spk_vol": 80,
     "tap_enabled": true,
     "tap_path": "/run/prudynt/audio_mic.pcm"
@@ -28,13 +27,7 @@
       "ir940": true,
       "ircut": true,
       "white": false
-    },
-    "enabled": true,
-    "loglevel": "INFO",
-    "sample_interval_ms": 1000,
-    "script_path": "/sbin/daynight",
-    "total_gain_day_threshold": 300,
-    "total_gain_night_threshold": 3000
+    }
   },
   "general": {
     "imp_polling_timeout": 500,
@@ -102,6 +95,34 @@
     "sensitivity": 1,
     "skip_frame_count": 5,
     "video_length": 10
+  },
+  "osd": {
+    "enabled": true,
+    "elements": {
+      "clock": {
+        "type": "timestamp",
+        "format": "%F %T",
+        "position": "10,10"
+      },
+      "host": {
+        "type": "hostname",
+        "format": "%s",
+        "position": "0,10"
+      },
+      "uptime": {
+        "type": "uptime",
+        "format": "%02lu:%02lu:%02lu",
+        "position": "-10,10"
+      },
+      "gain": {
+        "type": "gain",
+        "format": "%s",
+        "position": "10,-10"
+      }
+    },
+    "privacy": {
+      "enabled": true
+    }
   },
   "recorder": {
     "autostart": false,
@@ -192,39 +213,11 @@
     "jpeg_quality": 75
   },
   "stream3": {
-    "enabled": true,
+    "enabled": false,
     "fps": 15,
     "jpeg_channel": 1,
     "jpeg_idle_fps": 1,
     "jpeg_path": "/tmp/snapshot_ch1.jpg",
     "jpeg_quality": 75
-  },
-  "osd": {
-    "enabled": true,
-    "elements": {
-      "clock": {
-        "type": "timestamp",
-        "format": "%F %T",
-        "position": "10,10"
-      },
-      "host": {
-        "type": "hostname",
-        "format": "%s",
-        "position": "0,10"
-      },
-      "uptime": {
-        "type": "uptime",
-        "format": "%02lu:%02lu:%02lu",
-        "position": "-10,10"
-      },
-      "gain": {
-        "type": "gain",
-        "format": "%s",
-        "position": "10,-10"
-      }
-    },
-    "privacy": {
-      "enabled": true
-    }
   }
 }
