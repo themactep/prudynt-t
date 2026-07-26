@@ -89,6 +89,12 @@ std::string generateSdp(const VideoStreamConfig &video,
         rand(), serverIp,
         streamName);
 
+    // Bandwidth hint (session-level, RFC 4566)
+    if (video.bitrate > 0) {
+        off += snprintf(buf + off, sizeof(buf) - off,
+            "b=AS:%d\r\n", video.bitrate);
+    }
+
     // ── Video media ────────────────────────────────────────────────────
     bool isH265 = (video.codec == "H265");
     const char *rtpFmt = isH265 ? "H265" : "H264";

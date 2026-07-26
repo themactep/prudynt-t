@@ -78,6 +78,7 @@ struct VideoStreamConfig {
     int fps         = 30;
     int payloadType = 96;
     int clockRate   = 90000;
+    int bitrate     = 0;         // kbps, 0 = unspecified
     std::vector<uint8_t> sps;
     std::vector<uint8_t> pps;
     std::vector<uint8_t> vps;    // H.265 only
