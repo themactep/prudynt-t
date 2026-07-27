@@ -101,11 +101,11 @@ struct BackchannelConfig {
     int payloadType;
 };
 
-// Subtitle stream — RFC 4103 text/t140, carrying ASS-formatted events.
+// Subtitle stream — ASS-formatted overlay events.
 struct SubtitleStreamConfig {
     std::string codec = "t140";
     int payloadType = 98;
-    int clockRate = 1000;
+    int clockRate = 90000;
 };
 
 // ── Base-64 helper (RFC 4648) for SDP ───────────────────────────────────────

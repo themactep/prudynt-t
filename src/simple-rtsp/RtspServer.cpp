@@ -122,8 +122,7 @@ struct Session {
     uint16_t subtitleClientRtpPort  = 0;
     uint16_t subtitleClientRtcpPort = 0;
     time_t  lastSubtitleSent = 0;
-    bool    assHeaderSent = false;
-    time_t  subtitleStartTime = 0;
+    std::string lastSubtitleText;
 
     // RTP state
     RtpState videoRtp;
@@ -478,10 +477,8 @@ void RtspServer::eventLoop() {
                     std::string text =
                         global_video[s->videoChn]->imp_encoder->osd
                             ->getPlaintextInfo();
-                    LOG_DEBUG("subtitle: ch=" << s->videoChn
-                              << " hasOsd=" << (global_video[s->videoChn]->imp_encoder->osd != nullptr)
-                              << " textLen=" << text.size());
-                    if (!text.empty()) {
+                    if (!text.empty() && text != s->lastSubtitleText) {
+                        s->lastSubtitleText = text;
                         this->sendSubtitleText(*s, text);
                     }
                 }
@@ -637,8 +634,7 @@ void RtspServer::acceptClient() {
     s->hasSubtitles = false;
     s->subtitleTcp = false;
     s->lastSubtitleSent = 0;
-    s->assHeaderSent = false;
-    s->subtitleStartTime = 0;
+    s->lastSubtitleText.clear();
     s->subtitleSetupUrl[0] = '\0';
     s->videoChn = -1;
     s->hasAudio = false;
@@ -2210,26 +2206,29 @@ void RtspServer::sendInterleaved(int fd, uint8_t channel,
 
 static void sendSubtitleRtp(Session &s,
                             const SubtitleStreamConfig &cfg,
-                            const std::string &payload) {
-    if (s.fd < 0 || payload.empty()) return;
+                            const std::string &payload,
+                            bool marker) {
+    if (s.fd < 0) return;
+    if (payload.empty() && !marker) return;
 
     uint8_t pt = static_cast<uint8_t>(cfg.payloadType);
     size_t payloadLen = payload.size();
     if (payloadLen > 1200) payloadLen = 1200;
 
     uint32_t rtptime = htonl(s.subtitleRtp.timestamp);
-    s.subtitleRtp.timestamp += 1000; // 1 tick per ms, 1s per event
+    // timestamp advanced by caller
 
     std::vector<uint8_t> rtp(12 + payloadLen);
     rtp[0] = 0x80;
-    rtp[1] = 0x80 | pt;  // M=1 (RFC 4103 §4.1: marker on each text segment)
+    rtp[1] = (marker ? 0x80 : 0x00) | pt;
     rtp[2] = static_cast<uint8_t>((s.subtitleRtp.seq >> 8) & 0xFF);
     rtp[3] = static_cast<uint8_t>(s.subtitleRtp.seq & 0xFF);
     s.subtitleRtp.seq++;
     memcpy(&rtp[4], &rtptime, 4);
     uint32_t ssrc = htonl(s.subtitleRtp.ssrc);
     memcpy(&rtp[8], &ssrc, 4);
-    memcpy(&rtp[12], payload.data(), payloadLen);
+    if (payloadLen > 0)
+        memcpy(&rtp[12], payload.data(), payloadLen);
 
     if (s.subtitleTcp) {
         uint8_t buf[1504];
@@ -2257,83 +2256,43 @@ static void sendSubtitleRtp(Session &s,
     }
 }
 
-static std::string assHeader() {
-    return
-        "[Script Info]\r\n"
-        "ScriptType: v4.00+\r\n"
-        "PlayResX: 1920\r\n"
-        "PlayResY: 1080\r\n"
-        "WrapStyle: 0\r\n"
-        "\r\n"
-        "[V4+ Styles]\r\n"
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour,"
-        " OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut,"
-        " ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow,"
-        " Alignment, MarginL, MarginR, MarginV, Encoding\r\n"
-        "Style: Default,DejaVu Sans,24,&H00FFFFFF,&H00000000,"
-        "&HCC000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,"
-        "2,10,10,10,1\r\n"
-        "\r\n"
-        "[Events]\r\n"
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR,"
-        " MarginV, Effect, Text\r\n";
-}
-
-static std::string assTime(double sec) {
-    if (sec < 0.0) sec = 0.0;
-    unsigned int h = static_cast<unsigned int>(sec) / 3600;
-    unsigned int m = (static_cast<unsigned int>(sec) % 3600) / 60;
-    double s = sec - h * 3600 - m * 60;
-    unsigned int s_whole = static_cast<unsigned int>(s);
-    unsigned int s_centi = static_cast<unsigned int>((s - s_whole) * 100.0 + 0.5);
-    if (s_centi >= 100) { s_whole++; s_centi -= 100; }
-    if (s_whole >= 60) { m++; s_whole -= 60; }
-    if (m >= 60) { h++; m -= 60; }
-    char buf[40];
-    snprintf(buf, sizeof(buf), "%u:%02u:%02u.%02u", h, m, s_whole, s_centi);
-    return buf;
-}
-
-static std::string assEscape(const std::string &s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) {
-        if (c == '\\') out += "\\\\";
-        else if (c == '\r') continue;  // skip CR
-        else if (c == '\n') out += "\\N";
-        else out += c;
-    }
-    return out;
-}
-
 bool RtspServer::sendSubtitleText(Session &s, const std::string &text) {
     if (s.fd < 0 || text.empty()) return true;
     if (subtitleStreams_.empty()) return true;
 
     const auto &cfg = subtitleStreams_[0].config;
 
-    if (!s.assHeaderSent) {
-        s.assHeaderSent = true;
-        s.subtitleStartTime = time(nullptr);
-    }
-
     LOG_DEBUG("subtitle ch=" << s.videoChn << " tcp=" << s.subtitleTcp
               << " ich=" << (int)s.subtitleInterleavedRtp
               << " len=" << text.size());
 
-    // Each t140 RTP packet is an independent text event.  To get mpv /
-    // ffmpeg / VLC to render it, the payload must be a self-contained,
-    // valid ASS document (header + dialogue) every time — the receiver
-    // does not accumulate state across packets.
-    double elapsed = difftime(time(nullptr), s.subtitleStartTime);
-    std::string doc = assHeader()
-        + "Dialogue: 0,"
-        + assTime(elapsed) + ","
-        + assTime(elapsed + 10.0) + ","
-        "Default,,0,0,0,,"
-        + assEscape(text);
+    // Format as single line: strip element labels, join values.
+    // Collect values, then join with timestamp first if present.
+    std::string ts, host, other;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find("\r\n", start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        size_t colon = line.find(':');
+        if (colon != std::string::npos && colon + 1 < line.size()) {
+            std::string val = line.substr(colon + 1);
+            if (line.compare(0, colon, "clock") == 0)
+                ts = val;
+            else if (line.compare(0, colon, "host") == 0)
+                host = val;
+            else if (!val.empty())
+                other += (other.empty() ? "" : " ") + val;
+        }
+        start = end + 2;
+        if (start >= text.size()) break;
+    }
+    std::string doc = ts;
+    if (!host.empty()) doc += (doc.empty() ? "" : " ") + host;
+    if (!other.empty()) doc += (doc.empty() ? "" : " ") + other;
 
-    sendSubtitleRtp(s, cfg, doc);
+    sendSubtitleRtp(s, cfg, doc, true);         // M=1: text event
+    s.subtitleRtp.timestamp += 90000;            // 1s at 90kHz
     return true;
 }
 

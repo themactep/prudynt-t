@@ -273,6 +273,9 @@ void OSD::loadElements() {
     if (el.type == "text" && !el.format.empty())
       el.text = el.format;
 
+    // timestamp and hostname appear in the RTP subtitle track
+    el.in_subtitle = (el.type == "timestamp" || el.type == "hostname");
+
     if (!el.type.empty())
       elements_.push_back(std::move(el));
   }
@@ -425,7 +428,7 @@ std::string OSD::getPlaintextInfo() {
 
   std::string text;
   for (auto &el : elements_) {
-    if (el.text.empty()) continue;
+    if (el.text.empty() || !el.in_subtitle) continue;
     text += el.name;
     text += ":";
     text += el.text;

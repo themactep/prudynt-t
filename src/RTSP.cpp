@@ -195,9 +195,9 @@ void RTSP::start() {
         simple_rtsp::SubtitleStreamConfig scfg;
         scfg.codec = "t140";
         scfg.payloadType = 98;
-        scfg.clockRate = 1000;
+        scfg.clockRate = 90000;  // match video time_base for correct PTS mapping
         server_->addSubtitleStream(scfg);
-        LOG_INFO("Subtitle stream registered: ASS payload=98");
+        LOG_INFO("Subtitle stream registered: x-ass payload=98");
     }
 
     // ── Set up the signal so main.cpp can stop us ──────────────────────

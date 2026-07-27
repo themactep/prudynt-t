@@ -22,6 +22,7 @@ struct OSDElement {
   std::string format;
   std::string position;
   std::string text;      // current rendered text (populated each second)
+  bool in_subtitle = false;  // include in RTP subtitle track
 };
 
 class OSD {
