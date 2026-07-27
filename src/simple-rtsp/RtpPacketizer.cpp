@@ -38,9 +38,9 @@ bool sendOne(const uint8_t *payload, size_t payloadLen,
     size_t total = static_cast<size_t>(hdrLen) + payloadLen;
     if (total > sizeof(pkt)) return false;
     memcpy(pkt + hdrLen, payload, payloadLen);
-    uint16_t thisSeq = state.seq++;
-    (void)thisSeq;
-    return output(pkt, total);
+    if (!output(pkt, total)) return false;
+    state.seq++;
+    return true;
 }
 
 // ── H.264 packetization (RFC 6184) ──────────────────────────────────────────

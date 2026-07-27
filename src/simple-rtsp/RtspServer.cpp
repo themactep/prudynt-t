@@ -1797,12 +1797,8 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                 // Send buffer full: the IDR burst is outpacing the client's
                 // drain rate. UDP has no flow control, so blindly firing the
                 // rest of the burst overflows the client's receive buffer and
-                // drops packets -> "RTP: missed N packets" -> decoder desync.
-                // The socket is non-blocking, so a flags=0 "retry" would also
-                // fail immediately. Instead poll() until it is writable
-                // (bounded) and retry; this paces us to the client's
-                // consumption rate, exactly like TCP flow control would, and
-                // never drops a packet we could have sent.
+                // drops packets. Poll with a short timeout to pace to the
+                // client's consumption rate.
                 struct pollfd pfd;
                 pfd.fd = sen->videoRtpSock;
                 pfd.events = POLLOUT;
@@ -1811,7 +1807,17 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                                (sockaddr *)&target, sizeof(target));
                 }
             }
-            return static_cast<size_t>(n) == len;
+            // Always return true for UDP: a dropped datagram advances the
+            // RTP sequence number (creating a gap the receiver can detect
+            // and handle) rather than aborting the entire FU-A chain and
+            // corrupting the rest of the frame.
+            if (static_cast<size_t>(n) != len) {
+                static int udp_drop_count = 0;
+                if (udp_drop_count++ < 3)
+                    LOG_WARN("UDP RTP send failed: dropped packet (ch="
+                             << static_cast<int>(chan) << ")");
+            }
+            return true;
         }
 
         // TCP interleaved: non-blocking send with queue.
@@ -2111,7 +2117,9 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
                                (sockaddr *)&target, sizeof(target));
                 }
             }
-            return static_cast<size_t>(n) == len;
+            // Always return true for UDP: a dropped datagram creates a
+            // recoverable sequence gap rather than aborting the stream.
+            return true;
         }
         // TCP interleaved: non-blocking send with queue.
         // Same ordering invariant as the video path: once any bytes are
