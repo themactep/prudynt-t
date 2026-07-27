@@ -1766,7 +1766,15 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         s.lastFrameRtpTs = new_ts;
         s.hasFrameRtpTs = true;
         s.videoRtp.timestamp = new_ts;
-        s.lastVideoTsUs = ts_us;
+        // Capture CLOCK_MONOTONIC for RTCP SR NTP mapping.
+        // ts_us (imp_ts) is the encoder's timestamp domain,
+        // NOT monotonic time — using it directly in ntpAt()
+        // produces bogus NTP timestamps and ffplay jitter-buffer
+        // desync ("max delay reached").
+        struct timespec mono;
+        clock_gettime(CLOCK_MONOTONIC, &mono);
+        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
         s.videoFrameCount++;
     }
 
