@@ -1789,8 +1789,14 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         s.lastFrameRtpTs = new_ts;
         s.hasFrameRtpTs = true;
         s.videoRtp.timestamp = new_ts;
-        // Map imp_ts to monotonic domain for RTCP SR NTP
-        s.lastVideoTsUs = ts_us + s.videoTsToMonoOffset;
+        // Capture CLOCK_MONOTONIC for RTCP SR NTP mapping.
+        // Use real monotonic clock (not imp_ts + offset) because
+        // imp_ts and CLOCK_MONOTONIC are different hardware clocks
+        // on T31 and will drift apart over time, causing A-V desync.
+        struct timespec mono;
+        clock_gettime(CLOCK_MONOTONIC, &mono);
+        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
         s.videoFrameCount++;
     }
 
