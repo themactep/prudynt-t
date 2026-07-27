@@ -1741,17 +1741,25 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     // fps, causing mpv to consume buffered frames at 30 fps and then
     // enter buffering.
     if (nal.is_frame_start) {
-        int64_t ts_us = nal.imp_ts;
+        // Use CLOCK_MONOTONIC for RTP timestamps instead of imp_ts.
+        // The IMP encoder timestamp domain may not match the clock used
+        // by the RTCP SR NTP anchor (ntpAnchorMonoUs).  When the two
+        // clocks diverge, the NTP<->RTP mapping in Sender Reports skews
+        // and ffplay's jitter buffer overflows ("max delay reached").
+        // CLOCK_MONOTONIC guarantees both sides of the mapping advance
+        // at exactly the same rate.
+        struct timespec mono;
+        clock_gettime(CLOCK_MONOTONIC, &mono);
+        int64_t mono_us = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
         if (s.videoStartAnchorUs < 0) {
-            s.videoStartAnchorUs = ts_us;
+            s.videoStartAnchorUs = mono_us;
         }
-        int64_t rel_us = ts_us - s.videoStartAnchorUs;
+        int64_t rel_us = mono_us - s.videoStartAnchorUs;
         if (rel_us < 0) rel_us = 0;
         // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
         uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
-        // Guard against forward timestamp jumps (e.g. IMP encoder
-        // timestamp domain transition from 0→real-time, which VideoWorker
-        // cannot prevent when ts_last_frame_us is still 0).  Cap the step
+        // Guard against forward timestamp jumps.  Cap the step
         // to ~500 ms of video; larger jumps are clamped to a smooth
         // increment from the last RTP timestamp.
         if (s.hasFrameRtpTs) {
@@ -1766,15 +1774,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         s.lastFrameRtpTs = new_ts;
         s.hasFrameRtpTs = true;
         s.videoRtp.timestamp = new_ts;
-        // Capture CLOCK_MONOTONIC for RTCP SR NTP mapping.
-        // ts_us (imp_ts) is the encoder's timestamp domain,
-        // NOT monotonic time — using it directly in ntpAt()
-        // produces bogus NTP timestamps and ffplay jitter-buffer
-        // desync ("max delay reached").
-        struct timespec mono;
-        clock_gettime(CLOCK_MONOTONIC, &mono);
-        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
+        s.lastVideoTsUs = mono_us;
         s.videoFrameCount++;
     }
 
