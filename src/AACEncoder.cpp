@@ -149,7 +149,6 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf,
       *outLen += static_cast<int>(bytesWritten);
 
       lastFramePtsUs = (int64_t)nextOutTsMs * 1000;
-      uint32_t prevTsMs = nextOutTsMs;
       nextOutTsMs += frameDur;
 
       // Drift correction: snap encoder clock to HAL when it drifts > 4 frames

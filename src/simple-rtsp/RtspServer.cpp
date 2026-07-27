@@ -721,7 +721,7 @@ void RtspServer::closeClient(int idx) {
     if (s->backchannelActive && global_backchannel) {
         int prev = global_backchannel->is_sending.fetch_sub(1, std::memory_order_acq_rel);
         if (prev <= 1) {
-            BackchannelFrame stop;
+            BackchannelFrame stop{};
             stop.isShutdownSentinel = true;
             global_backchannel->inputQueue->write(stop);
             // Wake the worker so it processes the sentinel even though

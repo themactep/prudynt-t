@@ -783,6 +783,7 @@ int IPCServer::handle_client(int fd) {
               size_t l = strlen(mbuf);
               while (l > 0 && (mbuf[l-1] == '\n' || mbuf[l-1] == ' ')) mbuf[--l] = '\0';
               strncpy(cached_mode, mbuf, sizeof(cached_mode) - 1);
+              cached_mode[sizeof(cached_mode) - 1] = '\0';
             }
             fclose(mf);
           }
