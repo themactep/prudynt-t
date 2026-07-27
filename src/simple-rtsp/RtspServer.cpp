@@ -1337,6 +1337,12 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         s->videoStartAnchorUs = -1;
         s->lastFrameRtpTs = 0;
         s->hasFrameRtpTs = false;
+
+        // Flush any NALs that accumulated in the tap between
+        // registration and the first drain cycle.  Without this,
+        // stale frames arrive in a burst and ffplay's jitter
+        // buffer overflows on startup.
+        s->videoTap->clear();
         s->hasAudioRtpTs = false;
         if (s->videoChn < NUM_VIDEO_CHANNELS)
             activePlayers_[s->videoChn]++;
