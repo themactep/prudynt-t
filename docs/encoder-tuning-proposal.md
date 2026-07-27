@@ -1,8 +1,14 @@
 # Encoder Bitrate & GOP Auto-Tuning Proposal
 
 ## Context
-- Sensors expose their physical capabilities via `/proc/jz/sensor/*` (width, height, min/max FPS).
-- We already clamp stream width/height/FPS to these limits during `IMPSystem::init()`.
+- Sensors expose their physical capabilities via `/proc/jz/sensor/*` (width, height,
+  min/max FPS, I²C bus, reset GPIO, MCLK, video interface, etc.).
+- These sensor parameters are **read from procfs at startup** and any values set in
+  `prudynt.json` under the `sensor` block are silently overwritten. The only
+  user-facing FPS knob is `stream0.fps`, which drives the actual sensor capture
+  rate. `stream1.fps` controls the substream encoder rate independently.
+- We already clamp stream width/height/FPS to procfs sensor limits during
+  `IMPSystem::init()`.
 - Remaining mismatches stem from overly aggressive bitrate and GOP settings relative to the actual sensor output, which can cause encoder buffer pressure and `hwicodec` init failures on newer SDKs (e.g., T23 SDK 1.1.2).
 
 ## Goals

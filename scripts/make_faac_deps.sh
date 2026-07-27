@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 FAAC_REPO="https://github.com/knik0/faac.git"
 FAAC_DIR="${BUILD_DIR}/faac"
-FAAC_VER="79329efee51c9d3545bc4c7179b43a23fe350b6b" # faac-1.50
+FAAC_VER="faac-2.0"
 INSTALL_DIR="${BUILD_DIR}/install"
 
 # Determine if building static or shared library
@@ -96,7 +96,6 @@ CFLAGS="-ffast-math" meson setup builddir \
     --prefix="$INSTALL_DIR" \
     --default-library="$FAAC_DEFAULT_LIB" \
     -Db_lto=false \
-    -Dfloating-point=single \
     -Dmax-channels=2
 
 echo "Building faac library..."

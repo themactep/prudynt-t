@@ -20,15 +20,6 @@
     "tap_enabled": true,
     "tap_path": "/run/prudynt/audio_mic.pcm"
   },
-  "daynight": {
-    "controls": {
-      "color": true,
-      "ir850": true,
-      "ir940": true,
-      "ircut": true,
-      "white": false
-    }
-  },
   "general": {
     "imp_polling_timeout": 500,
     "loglevel": "INFO"
@@ -149,12 +140,6 @@
     "username": "thingino"
   },
   "sensor": {
-    "boot": 0,
-    "fps": 0,
-    "gpio_reset": -1,
-    "i2c_bus": 0,
-    "mclk": 1,
-    "video_interface": 0
   },
   "stream0": {
     "allow_shared": true,
