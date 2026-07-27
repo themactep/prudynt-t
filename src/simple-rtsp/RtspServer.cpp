@@ -659,6 +659,7 @@ void RtspServer::acceptClient() {
     s->videoRtp.seq = static_cast<uint16_t>(rand());
     s->audioRtp.seq = static_cast<uint16_t>(rand());
     s->subtitleRtp = RtpState{};
+    s->subtitleRtp.timestamp = 90000;  // start at 1s
     s->subtitleRtp.ssrc = static_cast<uint32_t>(rand());
     s->subtitleRtp.seq = static_cast<uint16_t>(rand());
     s->videoRtp.timestamp = 0;
@@ -2330,7 +2331,7 @@ bool RtspServer::sendSubtitleText(Session &s, const std::string &text) {
     if (!other.empty()) doc += (doc.empty() ? "" : " ") + other;
 
     sendSubtitleRtp(s, cfg, doc, true);         // M=1: text event
-    s.subtitleRtp.timestamp += 90000;            // 1s at 90kHz
+    s.subtitleRtp.timestamp += 90000;            // advance after send
     return true;
 }
 
