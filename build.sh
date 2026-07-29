@@ -112,6 +112,7 @@ prudynt() {
 	# Parse build type flags - default to dynamic linking (ideal for buildroot/firmware)
 	BIN_TYPE=""
 	DEBUG_BUILD=0
+	OSD_BURNIN=0
 	for arg in "$@"; do
 		if [ "$arg" = "-static" ]; then
 			BIN_TYPE="-DBINARY_STATIC"
@@ -123,6 +124,9 @@ prudynt() {
 			if [ -z "$BIN_TYPE" ]; then
 				BIN_TYPE="-DBINARY_STATIC"
 			fi
+		elif [ "$arg" = "--osd-burnin" ]; then
+			# Restore the burned-in OSD timestamp overlay (off by default)
+			OSD_BURNIN=1
 		fi
 	done
 	# If no explicit flag provided, default to dynamic (no flag needed in Makefile)
@@ -150,6 +154,7 @@ prudynt() {
 
 	/usr/bin/make -j$(nproc) \
 	ARCH= CROSS_COMPILE="${PRUDYNT_CROSS}" \
+	USE_OSD_BURNIN=$OSD_BURNIN \
 	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include" \
 	LDFLAGS=" -L./3rdparty/install/lib" \

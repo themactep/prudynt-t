@@ -41,6 +41,17 @@ ifeq ($(USE_PREBUFFER),1)
 override CFLAGS        += -DPREBUFFER_ENABLED
 endif
 
+# Burned-in OSD timestamp overlay
+# -------------------------------
+# Draws the camera date/time directly into the encoded video via a hardware
+# OSD region (upstream replaced this with SEI metadata). Opt-in, off by
+# default; enable with `make USE_OSD_BURNIN=1` or build.sh --osd-burnin.
+USE_OSD_BURNIN         ?= 0
+
+ifeq ($(USE_OSD_BURNIN),1)
+override CFLAGS        += -DOSD_BURN_TIMESTAMP
+endif
+
 # Optional FLAC support
 # ----------------------
 USE_FLAC               ?= 1

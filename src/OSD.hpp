@@ -108,6 +108,28 @@ private:
   std::vector<OSDElement> elements_;
   uint8_t flag{0};
 
+#ifdef OSD_BURN_TIMESTAMP
+  // Burned-in timestamp overlay (hardware OSD region on the encoder group).
+  // Renders "YYYY-MM-DD HH:MM:SS" with a small embedded bitmap font so no
+  // external font/library is required. The region is created lazily on the
+  // first update because IMPEncoder creates/binds the OSD group only after
+  // this OSD object is constructed. Compile-time opt-in via -DOSD_BURN_TIMESTAMP
+  // (make USE_OSD_BURNIN=1 / build.sh --osd-burnin).
+  void updateTimestampOverlay();
+  void renderTimestamp(const char *text);
+
+  IMPRgnHandle ts_rgn_{INVHANDLE};
+  IMPOSDRgnAttr ts_attr_{};
+  std::vector<uint8_t> ts_buf_;   // BGRA pixel buffer for the region
+  uint16_t ts_width_{0};
+  uint16_t ts_height_{0};
+  int ts_scale_{2};
+  int ts_margin_{8};
+  bool ts_region_created_{false};
+  bool osd_group_started_{false};
+  std::string last_ts_text_;
+#endif
+
   mutable std::mutex stateMutex_;
 };
 

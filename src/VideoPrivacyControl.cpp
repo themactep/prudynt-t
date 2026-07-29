@@ -168,6 +168,15 @@ void applyPrivacyToAllChannels(bool enabled) {
         continue;
       }
 
+      // Pin the cover's layer explicitly via SetGrpRgnAttr — RegisterRgn does
+      // not reliably apply it. Higher layer = nearer the front, so keeping the
+      // cover one below the burned-in OSD timestamp (layer 2) lets the
+      // timestamp composite on top while the cover still fully obscures the
+      // video (it is opaque and full-frame, so no scene leaks). Only the
+      // relative order matters — these are the only two drawn regions.
+      grpAttr.layer = 1;
+      IMP_OSD_SetGrpRgnAttr(handle, encGrp, &grpAttr);
+
       ret = IMP_OSD_Start(encGrp);
       if (ret != 0) {
         LOG_WARN("VideoPrivacyControl: IMP_OSD_Start(" << encGrp

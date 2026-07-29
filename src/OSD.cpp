@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <json_config.h>
 #include <pthread.h>
 #include <sstream>
@@ -24,6 +25,56 @@ constexpr float MAX_ANALOG_GAIN = 160.0f;
 constexpr float MAX_DIGITAL_GAIN = 80.0f;
 constexpr float DEFAULT_DAY_BRIGHTNESS = 70.0f;
 constexpr float DEFAULT_NIGHT_BRIGHTNESS = 25.0f;
+
+#ifdef OSD_BURN_TIMESTAMP
+// ── embedded 5x7 bitmap font for burned-in timestamp ─────────────────
+// Only the glyphs needed for "%Y-%m-%d %H:%M:%S" are defined. Each row is
+// stored in the low 5 bits; the leftmost pixel is bit 4 (0x10).
+constexpr int FONT_W = 5;
+constexpr int FONT_H = 7;
+
+const uint8_t FONT_DIGITS[10][FONT_H] = {
+    {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, // 0
+    {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, // 1
+    {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, // 2
+    {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}, // 3
+    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, // 4
+    {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, // 5
+    {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, // 6
+    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, // 7
+    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, // 8
+    {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}, // 9
+};
+const uint8_t FONT_DASH[FONT_H] = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00};
+const uint8_t FONT_COLON[FONT_H] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00};
+
+// Uppercase letters needed for the "PRIVACY" status word.
+const uint8_t FONT_P[FONT_H] = {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10};
+const uint8_t FONT_R[FONT_H] = {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11};
+const uint8_t FONT_I[FONT_H] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1F};
+const uint8_t FONT_V[FONT_H] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04};
+const uint8_t FONT_A[FONT_H] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
+const uint8_t FONT_C[FONT_H] = {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E};
+const uint8_t FONT_Y[FONT_H] = {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04};
+
+// Returns the 7-row glyph for a character, or nullptr for a blank cell.
+const uint8_t *glyphFor(char c) {
+  if (c >= '0' && c <= '9')
+    return FONT_DIGITS[c - '0'];
+  switch (c) {
+  case '-': return FONT_DASH;
+  case ':': return FONT_COLON;
+  case 'P': return FONT_P;
+  case 'R': return FONT_R;
+  case 'I': return FONT_I;
+  case 'V': return FONT_V;
+  case 'A': return FONT_A;
+  case 'C': return FONT_C;
+  case 'Y': return FONT_Y;
+  default:  return nullptr; // space / unsupported -> blank advance
+  }
+}
+#endif // OSD_BURN_TIMESTAMP
 } // namespace
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -311,6 +362,173 @@ void OSD::updateElementText() {
   }
 }
 
+// ── burned-in timestamp overlay ──────────────────────────────────────
+#ifdef OSD_BURN_TIMESTAMP
+
+void OSD::renderTimestamp(const char *text) {
+  const int scale = ts_scale_;
+  const int pad = scale * 2;
+  const int cell = (FONT_W + 1) * scale; // glyph width + 1 column spacing
+
+  int n = (int)strlen(text);
+  int textW = n * cell;
+  if (textW > 0)
+    textW -= scale; // trailing char has no spacing
+
+  int w = textW + pad * 2;
+  int h = FONT_H * scale + pad * 2;
+  if (w & 1)
+    ++w; // IMP regions expect an even width
+
+  ts_width_ = (uint16_t)w;
+  ts_height_ = (uint16_t)h;
+  ts_buf_.assign((size_t)w * h * 4, 0);
+  uint8_t *img = ts_buf_.data();
+
+  // Subtle dark background box; the opaque per-glyph outline below carries
+  // most of the contrast, so the box can stay light.
+  const uint8_t bg[4] = {0, 0, 0, 110}; // B, G, R, A
+  for (int i = 0; i < w * h; ++i) {
+    img[i * 4 + 0] = bg[0];
+    img[i * 4 + 1] = bg[1];
+    img[i * 4 + 2] = bg[2];
+    img[i * 4 + 3] = bg[3];
+  }
+
+  const uint8_t outline_color[4] = {0, 0, 0, 255};    // opaque black halo
+  const uint8_t fill_color[4] = {255, 255, 255, 255}; // opaque white glyph
+  const int outline = std::max(1, scale / 2);         // halo thickness (px)
+
+  // Stamp a solid scale×scale block at a destination top-left position.
+  auto putBlock = [&](int dx, int dy, const uint8_t *color) {
+    for (int yy = 0; yy < scale; ++yy) {
+      for (int xx = 0; xx < scale; ++xx) {
+        int px = dx + xx, py = dy + yy;
+        if (px < 0 || px >= w || py < 0 || py >= h)
+          continue;
+        int idx = (py * w + px) * 4;
+        img[idx + 0] = color[0];
+        img[idx + 1] = color[1];
+        img[idx + 2] = color[2];
+        img[idx + 3] = color[3];
+      }
+    }
+  };
+
+  // Iterate every set glyph pixel of the whole string, applying `fn`.
+  auto forEachGlyphPixel = [&](const std::function<void(int, int)> &fn) {
+    int penX = pad;
+    for (const char *p = text; *p; ++p) {
+      const uint8_t *g = glyphFor(*p);
+      if (g) {
+        for (int ry = 0; ry < FONT_H; ++ry) {
+          uint8_t bits = g[ry];
+          for (int rx = 0; rx < FONT_W; ++rx) {
+            if (bits & (1 << (FONT_W - 1 - rx)))
+              fn(penX + rx * scale, pad + ry * scale);
+          }
+        }
+      }
+      penX += cell;
+    }
+  };
+
+  // Pass 1: black outline — dilate each set pixel by `outline` px (circular).
+  forEachGlyphPixel([&](int bx, int by) {
+    for (int oy = -outline; oy <= outline; ++oy)
+      for (int ox = -outline; ox <= outline; ++ox)
+        if (ox * ox + oy * oy <= outline * outline)
+          putBlock(bx + ox, by + oy, outline_color);
+  });
+
+  // Pass 2: white fill on top of the halo.
+  forEachGlyphPixel([&](int bx, int by) { putBlock(bx, by, fill_color); });
+}
+
+void OSD::updateTimestampOverlay() {
+  char base[32];
+  if (strftime(base, sizeof(base), "%Y-%m-%d %H:%M:%S", ltime) == 0)
+    return;
+
+  // Append a "PRIVACY" status word after the date while privacy is active on
+  // this channel. The overlay stays visible (layer 1) above the privacy cover.
+  bool privacy_active = false;
+  for (auto v : global_video) {
+    if (v && v->encChn == encChn) {
+      privacy_active = v->privacy_requested.load(std::memory_order_acquire);
+      break;
+    }
+  }
+
+  char text[48];
+  snprintf(text, sizeof(text), "%s%s", base,
+           privacy_active ? " PRIVACY" : "");
+
+  bool need_render = !(ts_region_created_ && last_ts_text_ == text);
+  uint16_t prevW = ts_width_, prevH = ts_height_;
+  if (need_render) {
+    renderTimestamp(text);
+    last_ts_text_ = text;
+  }
+
+  if (!ts_region_created_) {
+    // The OSD group is created and bound by IMPEncoder after this object is
+    // constructed, so we register the region on the first periodic update
+    // once the pipeline is live.
+    ts_rgn_ = IMP_OSD_CreateRgn(nullptr);
+    if (ts_rgn_ == INVHANDLE) {
+      LOG_ERROR("OSD: IMP_OSD_CreateRgn failed for timestamp overlay");
+      return;
+    }
+    IMP_OSD_RegisterRgn(ts_rgn_, osdGrp, nullptr);
+
+    memset(&ts_attr_, 0, sizeof(ts_attr_));
+    ts_attr_.type = OSD_REG_PIC;
+    ts_attr_.fmt = PIX_FMT_BGRA;
+    ts_attr_.rect.p0.x = ts_margin_;
+    ts_attr_.rect.p0.y = ts_margin_;
+    ts_attr_.rect.p1.x = ts_margin_ + ts_width_ - 1;
+    ts_attr_.rect.p1.y = ts_margin_ + ts_height_ - 1;
+    ts_attr_.data.picData.pData = ts_buf_.data();
+    IMP_OSD_SetRgnAttr(ts_rgn_, &ts_attr_);
+
+    IMPOSDGrpRgnAttr grp;
+    memset(&grp, 0, sizeof(grp));
+    grp.show = 1;
+    // Higher layer = closer to the front. Keep the timestamp one above the
+    // privacy cover (layer 1) so it stays visible over the privacy screen.
+    grp.layer = 2;
+    grp.gAlphaEn = 1; // per-pixel alpha blending
+    grp.fgAlhpa = 255;
+    grp.bgAlhpa = 0;
+    IMP_OSD_SetGrpRgnAttr(ts_rgn_, osdGrp, &grp);
+
+    if (!osd_group_started_) {
+      IMP_OSD_Start(osdGrp);
+      osd_group_started_ = true;
+    }
+    ts_region_created_ = true;
+    LOG_INFO("OSD: burned-in timestamp overlay enabled ("
+             << ts_width_ << "x" << ts_height_ << ", scale " << ts_scale_
+             << ")");
+  } else if (need_render) {
+    if (ts_width_ != prevW || ts_height_ != prevH) {
+      ts_attr_.rect.p1.x = ts_margin_ + ts_width_ - 1;
+      ts_attr_.rect.p1.y = ts_margin_ + ts_height_ - 1;
+      ts_attr_.data.picData.pData = ts_buf_.data();
+      IMP_OSD_SetRgnAttr(ts_rgn_, &ts_attr_);
+    } else {
+      ts_attr_.data.picData.pData = ts_buf_.data();
+      IMP_OSD_UpdateRgnAttrData(ts_rgn_, &ts_attr_.data);
+    }
+  }
+  // The overlay stays visible during privacy: its region sits at layer 1,
+  // above the privacy cover (layer 0), so the timestamp is composited on top
+  // of the black privacy screen.
+}
+
+#endif // OSD_BURN_TIMESTAMP
+
 // ── lifecycle ────────────────────────────────────────────────────────
 
 OSD *OSD::createNew(_osd &osd, int osdGrp, int encChn, const char *parent) {
@@ -324,6 +542,12 @@ void OSD::init() {
 
   stream_width = HAL_ENC_ATTR_WIDTH(channelAttributes);
   stream_height = HAL_ENC_ATTR_HEIGHT(channelAttributes);
+
+#ifdef OSD_BURN_TIMESTAMP
+  // Scale the burned-in timestamp glyphs to the stream resolution so the
+  // overlay stays readable on both the main and sub streams.
+  ts_scale_ = std::max(2, stream_width / 480);
+#endif
 
   // stream rotation from whichever stream we're attached to
   if (strcmp(parent, "stream0") == 0)
@@ -350,6 +574,18 @@ int OSD::start() {
 }
 
 int OSD::exit() {
+#ifdef OSD_BURN_TIMESTAMP
+  // Tear down the burned-in timestamp region. IMPEncoder destroys the OSD
+  // group before calling us, so unregister best-effort and always free the
+  // region handle to avoid leaking it.
+  if (ts_region_created_) {
+    IMP_OSD_ShowRgn(ts_rgn_, osdGrp, 0);
+    IMP_OSD_UnRegisterRgn(ts_rgn_, osdGrp);
+    IMP_OSD_DestroyRgn(ts_rgn_);
+    ts_rgn_ = INVHANDLE;
+    ts_region_created_ = false;
+  }
+#endif
   return 0;
 }
 
@@ -380,6 +616,11 @@ void OSD::updateDisplayEverySecond() {
     updateBrightnessText();
 
   updateElementText();
+
+#ifdef OSD_BURN_TIMESTAMP
+  // Burn the timestamp into the video via a hardware OSD region.
+  updateTimestampOverlay();
+#endif
 }
 
 // ── SEI / subtitle output ────────────────────────────────────────────
