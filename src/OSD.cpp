@@ -548,7 +548,9 @@ void OSD::init() {
 #ifdef OSD_BURN_TIMESTAMP
   // Scale the burned-in timestamp glyphs to the stream resolution so the
   // overlay stays readable on both the main and sub streams.
-  ts_scale_ = std::max(2, stream_width / 480);
+  // Capped at 2 to stay within the IPU OSD per-region buffer limit
+  // (~32-64 KB depending on SoC).
+  ts_scale_ = std::clamp(stream_width / 480, 1, 2);
 #endif
 
   // stream rotation from whichever stream we're attached to
