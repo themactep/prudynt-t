@@ -93,7 +93,7 @@
       "clock": {
         "type": "timestamp",
         "format": "%F %T",
-        "position": "10,10"
+        "position": "-10,-10"
       },
       "host": {
         "type": "hostname",
