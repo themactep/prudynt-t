@@ -667,6 +667,13 @@ void RtspServer::acceptClient() {
     s->pendingRespLen = 0;
     s->pendingRespOff = 0;
 
+    // Reset RTCP SR / NTP anchor state so a reused Session slot
+    // does not carry stale clock references from a prior connection.
+    s->lastVideoTsUs = -1;
+    s->lastAudioTsUs = -1;
+    s->ntpAnchor = 0;
+    s->ntpAnchorMonoUs = -1;
+
     LOG_INFO("Client connected: " << inet_ntoa(addr.sin_addr) << ":"
             << ntohs(addr.sin_port));
 }
@@ -1745,62 +1752,6 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     size_t nalLen = rawLen - offset;
     if (nalLen == 0) return false;
 
-    // ── Timestamp ── encoder monotonic clock (90 kHz RTP) ────────────
-    // Use imp_ts (microseconds from encoder, smoothed by VideoWorker)
-    // anchored to the first frame of the session.  This produces RTP
-    // timestamps that match the actual frame cadence, so a client's
-    // jitter buffer never starves when the encoder falls below the
-    // configured framerate (e.g. 12 fps actual vs 30 fps configured).
-    // The old frame-counter approach always ticked at the *configured*
-    // fps, causing mpv to consume buffered frames at 30 fps and then
-    // enter buffering.
-    if (nal.is_frame_start) {
-        int64_t ts_us = nal.imp_ts;
-        if (s.videoStartAnchorUs < 0) {
-            s.videoStartAnchorUs = ts_us;
-            // Compute imp_ts -> CLOCK_MONOTONIC offset once.
-            // imp_ts may start from 0 (encoder init) while mono
-            // starts from boot; the offset corrects the base so
-            // ntpAt() receives an approximate monotonic value.
-            struct timespec mono;
-            clock_gettime(CLOCK_MONOTONIC, &mono);
-            s.videoTsToMonoOffset =
-                static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                static_cast<int64_t>(mono.tv_nsec) / 1000LL
-                - ts_us;
-        }
-        int64_t rel_us = ts_us - s.videoStartAnchorUs;
-        if (rel_us < 0) rel_us = 0;
-        // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
-        uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
-        // Guard against forward timestamp jumps (e.g. IMP encoder
-        // timestamp domain transition from 0→real-time, which VideoWorker
-        // cannot prevent when ts_last_frame_us is still 0).  Cap the step
-        // to ~500 ms of video; larger jumps are clamped to a smooth
-        // increment from the last RTP timestamp.
-        if (s.hasFrameRtpTs) {
-            static const uint32_t kMaxVideoRtpStep = 45000; // 500 ms at 90 kHz
-            int64_t diff = static_cast<int64_t>(new_ts) - static_cast<int64_t>(s.lastFrameRtpTs);
-            if (diff > kMaxVideoRtpStep) {
-                new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
-            } else if (diff <= 0) {
-                new_ts = s.lastFrameRtpTs + 1;
-            }
-        }
-        s.lastFrameRtpTs = new_ts;
-        s.hasFrameRtpTs = true;
-        s.videoRtp.timestamp = new_ts;
-        // Capture CLOCK_MONOTONIC for RTCP SR NTP mapping.
-        // Use real monotonic clock (not imp_ts + offset) because
-        // imp_ts and CLOCK_MONOTONIC are different hardware clocks
-        // on T31 and will drift apart over time, causing A-V desync.
-        struct timespec mono;
-        clock_gettime(CLOCK_MONOTONIC, &mono);
-        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
-        s.videoFrameCount++;
-    }
-
     // ── Determine codec from the registered stream ───────────────────
     bool isH265 = false;
     uint8_t pt = 96;
@@ -1808,6 +1759,101 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         if (ve.chn == s.videoChn) {
             isH265 = (ve.config.codec == "H265");
             break;
+        }
+    }
+
+    // ── Timestamp ── encoder monotonic clock (90 kHz RTP) ────────────
+    // Use imp_ts (microseconds from encoder, smoothed by VideoWorker)
+    // anchored to the first picture-bearing frame of the session.
+    // This produces RTP timestamps that match the actual frame cadence,
+    // so a client's jitter buffer never starves when the encoder falls
+    // below the configured framerate (e.g. 12 fps actual vs 30 fps
+    // configured).  The old frame-counter approach always ticked at the
+    // *configured* fps, causing mpv to consume buffered frames at 30
+    // fps and then enter buffering.
+    //
+    // Anchoring is deferred past config-only NALs (SPS/PPS/VPS/SEI).
+    // The IMP encoder may emit SPS+PPS as a separate frame-start
+    // boundary before the IDR, and if the anchor is consumed on the
+    // config NALs the entire initial burst shares ts=0, overflowing
+    // the client jitter buffer and yielding "No video PTS" in mpv.
+    if (nal.is_frame_start) {
+        int64_t ts_us = nal.imp_ts;
+
+        // Determine whether this NAL carries picture data (VCL).
+        // SPS/PPS/VPS/SEI/AUD are non-VCL and should not anchor.
+        bool isPictureNal = true;
+        if (nalLen > 0) {
+            if (isH265 && nalLen >= 2) {
+                uint8_t t = (nalData[0] >> 1) & 0x3F;
+                isPictureNal = (t <= 31);  // H.265 VCL: types 0-31
+            } else {
+                uint8_t t = nalData[0] & 0x1F;
+                isPictureNal = (t == 1 || t == 5);  // H.264: non-IDR / IDR slice
+            }
+        }
+
+        // Defer anchor when this is a config-only NAL and we haven't
+        // anchored yet.  Advance the timestamp by a minimal amount
+        // so the RTP clock stays monotonic across the config burst.
+        if (s.videoStartAnchorUs < 0 && !isPictureNal) {
+            if (s.hasFrameRtpTs) {
+                s.videoRtp.timestamp = s.lastFrameRtpTs + 1;
+            }
+            s.lastFrameRtpTs = s.videoRtp.timestamp;
+            s.hasFrameRtpTs = true;
+
+            // Update RTCP SR clock reference but do not consume
+            // the session anchor.
+            struct timespec mono;
+            clock_gettime(CLOCK_MONOTONIC, &mono);
+            s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                              static_cast<int64_t>(mono.tv_nsec) / 1000LL;
+        } else {
+            if (s.videoStartAnchorUs < 0) {
+                s.videoStartAnchorUs = ts_us;
+                // Compute imp_ts -> CLOCK_MONOTONIC offset once.
+                // imp_ts may start from 0 (encoder init) while mono
+                // starts from boot; the offset corrects the base so
+                // ntpAt() receives an approximate monotonic value.
+                struct timespec mono;
+                clock_gettime(CLOCK_MONOTONIC, &mono);
+                s.videoTsToMonoOffset =
+                    static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                    static_cast<int64_t>(mono.tv_nsec) / 1000LL
+                    - ts_us;
+            }
+            int64_t rel_us = ts_us - s.videoStartAnchorUs;
+            if (rel_us < 0) rel_us = 0;
+            // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
+            uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
+            // Guard against forward timestamp jumps (e.g. IMP encoder
+            // timestamp domain transition from 0→real-time, which VideoWorker
+            // cannot prevent when ts_last_frame_us is still 0).  Cap the step
+            // to ~500 ms of video; larger jumps are clamped to a smooth
+            // increment from the last RTP timestamp.
+            if (s.hasFrameRtpTs) {
+                static const uint32_t kMaxVideoRtpStep = 45000; // 500 ms at 90 kHz
+                int64_t diff = static_cast<int64_t>(new_ts) - static_cast<int64_t>(s.lastFrameRtpTs);
+                if (diff > kMaxVideoRtpStep) {
+                    new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
+                } else if (diff <= 0) {
+                    new_ts = s.lastFrameRtpTs + 1;
+                }
+            }
+            s.lastFrameRtpTs = new_ts;
+            s.hasFrameRtpTs = true;
+            s.videoRtp.timestamp = new_ts;
+            s.videoFrameCount++;
+
+            // Capture CLOCK_MONOTONIC for RTCP SR NTP mapping.
+            // Use real monotonic clock (not imp_ts + offset) because
+            // imp_ts and CLOCK_MONOTONIC are different hardware clocks
+            // on T31 and will drift apart over time, causing A-V desync.
+            struct timespec mono;
+            clock_gettime(CLOCK_MONOTONIC, &mono);
+            s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                              static_cast<int64_t>(mono.tv_nsec) / 1000LL;
         }
     }
 
