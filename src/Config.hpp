@@ -196,6 +196,9 @@ struct _motion {
   const char *script_path;
   std::array<roi, 52> rois;
 };
+
+constexpr int kBurninMaxScale = 10;
+
 struct _osd {
   bool enabled;
   _stream_stats stats;
@@ -207,6 +210,7 @@ struct _osd {
     bool enabled;
     const char *format;
     bool background;
+    int scale;
   } burnin;
 };
 struct _recorder {

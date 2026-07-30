@@ -468,7 +468,18 @@ void OSD::updateTimestampOverlay() {
   snprintf(text, sizeof(text), "%s%s", base,
            privacy_active ? " PRIVACY" : "");
 
-  bool need_render = !(ts_region_created_ && last_ts_text_ == text);
+  // Runtime scale update — read from config so changes take effect
+  // immediately after saving, no restart required.
+  int new_scale = ts_scale_;
+  if (cfg && cfg->osd.burnin.scale > 0)
+    new_scale = std::clamp(cfg->osd.burnin.scale, 1, kBurninMaxScale);
+  else
+    new_scale = std::clamp(stream_width / 480, 1, kBurninMaxScale);
+  bool scale_changed = (new_scale != ts_scale_);
+  if (scale_changed)
+    ts_scale_ = new_scale;
+
+  bool need_render = !ts_region_created_ || scale_changed || last_ts_text_ != text;
   uint16_t prevW = ts_width_, prevH = ts_height_;
   if (need_render) {
     renderTimestamp(text);
@@ -550,9 +561,13 @@ void OSD::init() {
 #ifdef OSD_BURN_TIMESTAMP
   // Scale the burned-in timestamp glyphs to the stream resolution so the
   // overlay stays readable on both the main and sub streams.
-  // Capped at 2 to stay within the IPU OSD per-region buffer limit
-  // (~32-64 KB depending on SoC).
-  ts_scale_ = std::clamp(stream_width / 480, 1, 2);
+  // Config override osd.burnin.scale (1-10) takes precedence; 0 = auto.
+  // Capped at kBurninMaxScale — higher scales may exceed the IPU OSD per-region
+  // buffer limit (~32-64 KB depending on SoC).
+  if (cfg && cfg->osd.burnin.scale > 0)
+    ts_scale_ = std::clamp(cfg->osd.burnin.scale, 1, kBurninMaxScale);
+  else
+    ts_scale_ = std::clamp(stream_width / 480, 1, kBurninMaxScale);
 #endif
 
   // stream rotation from whichever stream we're attached to

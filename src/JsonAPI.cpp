@@ -473,17 +473,29 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
         if (en->type == JSON_BOOL)
           cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
+      if (JsonValue *bg = obj_get(node, "background")) {
+        if (bg->type == JSON_BOOL)
+          cfg->set<bool>(base + "background", bg->value.boolean != 0);
+      }
       if (JsonValue *fmt = obj_get(node, "format")) {
         if (fmt->type == JSON_STRING)
           cfg->set<const char *>(base + "format", fmt->value.string);
+      }
+      if (JsonValue *sc = obj_get(node, "scale")) {
+        if (sc->type == JSON_NUMBER)
+          cfg->set<int>(base + "scale", (int)sc->value.number.integer);
       }
     }
     add_key(sect, s2, "burnin", "{");
     bool sp = false;
     add_key(sect, sp, "enabled");
     add_bool(sect, cfg->get<bool>(base + "enabled"));
+    add_key(sect, sp, "background");
+    add_bool(sect, cfg->get<bool>(base + "background"));
     add_key(sect, sp, "format");
     add_str(sect, cfg->get<const char *>(base + "format"));
+    add_key(sect, sp, "scale");
+    add_num(sect, cfg->get<int>(base + "scale"));
     sect += "}";
     wrote = true;
   }

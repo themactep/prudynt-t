@@ -495,6 +495,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 1 && v <= 5000; }},
       {"general.osd_pool_size", general.osd_pool_size, 0,
        [](const int &v) { return v >= 0 && v <= 65536; }},
+      {"osd.burnin.scale", osd.burnin.scale, 0,
+       [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
 
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
       /* Expert overrides preserved for backward compatibility */
