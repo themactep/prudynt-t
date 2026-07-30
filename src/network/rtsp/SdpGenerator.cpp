@@ -118,25 +118,34 @@ std::string generateSdp(const VideoStreamConfig &video,
 
     if (video.haveCodecConfig && !video.sps.empty()) {
         if (isH265) {
-            // H.265: fmtp with profile-tier-level (RFC 7798 S7.1 mandatory)
-            // followed by sprop-vps, sprop-sps, sprop-pps
+            // H.265: fmtp with profile-tier-level plus sprop-vps/sprop-sps/
+            // sprop-pps, all as parameters of the SAME a=fmtp line (RFC 7798
+            // S7.1) -- not as separate standalone a=sprop-* lines, which
+            // strict SDP parsers (e.g. go2rtc) don't recognize as part of
+            // the fmtp attribute and silently drop.
             int profSpace = 0, tierFlag = 0, profIdc = 1, levelIdc = 90;
             if (!video.vps.empty())
                 parseVpsProfileTier(video.vps, profSpace, tierFlag, profIdc, levelIdc);
 
             off += snprintf(buf + off, sizeof(buf) - off,
                 "a=fmtp:%d profile-space=%d;tier-flag=%d;"
-                "profile-id=%d;level-id=%d\r\n",
+                "profile-id=%d;level-id=%d",
                 pt, profSpace, tierFlag, profIdc, levelIdc);
 
             if (!video.vps.empty()) {
                 off += snprintf(buf + off, sizeof(buf) - off,
-                    "a=sprop-vps=%s\r\n",
+                    ";sprop-vps=%s",
                     base64Encode(video.vps.data(), video.vps.size()).c_str());
             }
             off += snprintf(buf + off, sizeof(buf) - off,
-                "a=sprop-sps=%s\r\n",
+                ";sprop-sps=%s",
                 base64Encode(video.sps.data(), video.sps.size()).c_str());
+            if (!video.pps.empty()) {
+                off += snprintf(buf + off, sizeof(buf) - off,
+                    ";sprop-pps=%s",
+                    base64Encode(video.pps.data(), video.pps.size()).c_str());
+            }
+            off += snprintf(buf + off, sizeof(buf) - off, "\r\n");
         } else {
             // H.264: fmtp with packetization-mode=1 (required for FU-A)
             std::string profileLevelId;
@@ -160,12 +169,6 @@ std::string generateSdp(const VideoStreamConfig &video,
                 "a=fmtp:%d packetization-mode=1;profile-level-id=%s;"
                 "sprop-parameter-sets=%s\r\n",
                 pt, profileLevelId.c_str(), sprop.c_str());
-        }
-        // PPS for H.265
-        if (isH265 && !video.pps.empty()) {
-            off += snprintf(buf + off, sizeof(buf) - off,
-                "a=sprop-pps=%s\r\n",
-                base64Encode(video.pps.data(), video.pps.size()).c_str());
         }
     }
 
