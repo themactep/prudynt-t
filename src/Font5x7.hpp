@@ -37,6 +37,7 @@ constexpr const uint8_t *DIGITS[10] = {
 constexpr uint8_t SYM_DASH[HEIGHT]  = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}; // '-'
 constexpr uint8_t SYM_COLON[HEIGHT] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00}; // ':'
 constexpr uint8_t SYM_PLUS[HEIGHT]  = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}; // '+'
+constexpr uint8_t SYM_HASH[HEIGHT]  = {0x0A, 0x15, 0x1F, 0x0A, 0x1F, 0x15, 0x0A}; // '#'
 constexpr uint8_t SYM_SPACE[HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // ' '
 
 // ── uppercase A-Z ────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ inline const uint8_t *glyphFor(char c) {
   case '-': return SYM_DASH;
   case ':': return SYM_COLON;
   case '+': return SYM_PLUS;
+  case '#': return SYM_HASH;
   default:  return nullptr;
   }
 }
