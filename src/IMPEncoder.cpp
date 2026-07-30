@@ -481,7 +481,7 @@ int IMPEncoder::init() {
       return ret;
     }
 
-    if (cfg->osd.enabled) {
+    if (cfg->osd.enabled || cfg->osd.burnin.enabled) {
       LOG_INFO("stream " << name
                << ": binding FS→OSD→ENC, OSD via hardware + SEI");
       osd = OSD::createNew(cfg->osd, encGrp, encChn, name);

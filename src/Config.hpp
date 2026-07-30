@@ -3,6 +3,8 @@
 #include <any>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <json_config.h>
@@ -388,7 +390,12 @@ public:
     for (auto &item : *items) {
       if (item.path == name) {
         if (item.validate(value)) {
-          item.value = value;
+          if constexpr (std::is_same_v<T, const char *>) {
+            if (item.value) free((void *)item.value);
+            item.value = value ? strdup(value) : nullptr;
+          } else {
+            item.value = value;
+          }
           item.noSave = noSave;
           return true;
         } else {

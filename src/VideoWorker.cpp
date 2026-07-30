@@ -517,10 +517,11 @@ void VideoWorker::run() {
           nominal_frame_step_us = 1000;
         }
 
-        // SEI metadata active whenever OSD is enabled
+        // SEI metadata active only when OSD (SEI) is explicitly enabled
         bool osd_sei_active = false;
         if (video_state && video_state->imp_encoder &&
-            video_state->imp_encoder->osd) {
+            video_state->imp_encoder->osd &&
+            cfg->osd.enabled) {
           osd_sei_active = true;
         }
         bool sei_pending_for_frame = false;
