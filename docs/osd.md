@@ -38,6 +38,18 @@ The overlay automatically appends "PRIVACY" when the privacy screen is active
 on that channel. The timestamp sits at layer 2 (above the privacy cover at
 layer 1) so it remains visible even with the privacy screen enabled.
 
+### Motion detection exclusion
+
+When `osd.burnin.enabled` is true, the motion detection ROI is automatically
+adjusted to exclude the burn-in text rectangle. Three detection strips cover
+the rest of the frame: left of the text, right of the text, and below the
+text. This prevents the constantly updating timestamp from triggering false
+motion events.
+
+The excluded rectangle is computed from the format string length and font
+scale — no manual configuration needed. Toggling burn-in on/off takes effect
+on the next Prudynt restart.
+
 ### Embedded 5×7 Font
 
 Defined in `src/Font5x7.hpp` (namespace `font5x7`). Covers:
