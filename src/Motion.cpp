@@ -298,10 +298,56 @@ int Motion::init() {
   move_param.roiRect[0].p1.y = cfg->motion.roi_1_y - 1;
   move_param.roiRectCnt = cfg->motion.roi_count;
 
-  LOG_INFO("Motion detection roi[0]:" << " roi_0_x: " << cfg->motion.roi_0_x
-                                      << ", roi_0_y:" << cfg->motion.roi_0_y
-                                      << ", roi_1_x: " << cfg->motion.roi_1_x
-                                      << ", roi_1_y:" << cfg->motion.roi_1_y);
+  // Exclude burn-in timestamp rectangle from motion detection.
+  // Split the ROI into up to 3 strips around the OSD text area.
+  if (cfg->osd.burnin.enabled) {
+    int bscale = cfg->osd.burnin.scale > 0
+                     ? cfg->osd.burnin.scale
+                     : std::clamp(motion_width / 480, 1, 10);
+    const int margin = 8;
+    const int glyph_w = 5, glyph_h = 7;
+    int cell = (glyph_w + 1) * bscale;            // glyph width + 1-col gap
+    int pad = bscale * 2;
+    int burnin_h = margin + glyph_h * bscale + pad * 2;
+    int burnin_y = margin;
+    // Estimate text width from format string: ~3 output chars per directive.
+    int fmt_len = cfg->osd.burnin.format ? (int)strlen(cfg->osd.burnin.format) : 0;
+    int est_chars = std::max(10, fmt_len * 3);    // floor of 10 chars
+    int burnin_w = est_chars * cell + pad * 2 - bscale; // last char no gap
+    int burnin_x = margin;
+
+    int r0x = cfg->motion.roi_0_x, r0y = cfg->motion.roi_0_y;
+    int r1x = cfg->motion.roi_1_x, r1y = cfg->motion.roi_1_y;
+
+    // Build up to 3 ROIs around the burn-in rectangle.
+    int cnt = 0;
+    auto addRoi = [&](int x0, int y0, int x1, int y1) {
+      if (cnt >= IMP_IVS_MOVE_MAX_ROI_CNT || x0 >= x1 || y0 >= y1) return;
+      move_param.roiRect[cnt].p0.x = x0;
+      move_param.roiRect[cnt].p0.y = y0;
+      move_param.roiRect[cnt].p1.x = x1 - 1;
+      move_param.roiRect[cnt].p1.y = y1 - 1;
+      cnt++;
+    };
+    // Left of text: full height.
+    addRoi(r0x, r0y, burnin_x, r1y);
+    // Right of text: full height.
+    addRoi(burnin_x + burnin_w, r0y, r1x, r1y);
+    // Below text, only its own width.
+    addRoi(burnin_x, burnin_y + burnin_h, burnin_x + burnin_w, r1y);
+    if (cnt > 0) {
+      move_param.roiRectCnt = cnt;
+      LOG_INFO("Motion: burn-in exclusion active ("
+               << burnin_w << "x" << burnin_h << " at " << burnin_x << ","
+               << burnin_y << "), " << cnt << " ROI strips");
+    }
+  }
+
+  for (int i = 0; i < move_param.roiRectCnt; i++) {
+    LOG_INFO("Motion roi[" << i << "]: "
+             << move_param.roiRect[i].p0.x << "," << move_param.roiRect[i].p0.y
+             << " -> " << move_param.roiRect[i].p1.x << "," << move_param.roiRect[i].p1.y);
+  }
 
   move_intf = IMP_IVS_CreateMoveInterface(&move_param);
 
