@@ -98,9 +98,13 @@ bool packetizeH265(const uint8_t *nalData, size_t nalLen,
     if (!nalData || nalLen < 2) return true;
 
     uint8_t nalType = (nalData[0] >> 1) & 0x3F;
+    // HEVC NAL types 0-31 are VCL (slice) units; 32+ are VPS/SPS/PPS/SEI/etc.
+    // Only a slice may legitimately be the last NAL of an access unit, so
+    // only slice types should ever carry the RTP marker bit.
+    bool isVcl = nalType <= 31;
 
     if (nalLen <= static_cast<size_t>(RTP_MAX_PAYLOAD)) {
-        bool marker = isLastFrame;
+        bool marker = isLastFrame && isVcl;
         return sendOne(nalData, nalLen, payloadType, marker, state, output);
     }
 
@@ -115,7 +119,7 @@ bool packetizeH265(const uint8_t *nalData, size_t nalLen,
                                 static_cast<size_t>(RTP_MAX_PAYLOAD - 3));
         bool start = (offset == 0);
         bool end   = (offset + chunk >= fragLen);
-        bool marker = isLastFrame && end;
+        bool marker = isLastFrame && end && isVcl;
 
         uint8_t fuBuf[RTP_MAX_PAYLOAD];
         fuBuf[0] = fuIndicator;
