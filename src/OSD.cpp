@@ -446,8 +446,10 @@ void OSD::renderTimestamp(const char *text) {
 }
 
 void OSD::updateTimestampOverlay() {
-  char base[32];
-  if (strftime(base, sizeof(base), "%Y-%m-%d %H:%M:%S", ltime) == 0)
+  char base[64];
+  const char *fmt = (cfg && cfg->osd.burnin.format && cfg->osd.burnin.format[0])
+                        ? cfg->osd.burnin.format : "%F %T";
+  if (strftime(base, sizeof(base), fmt, ltime) == 0)
     return;
 
   // Append a "PRIVACY" status word after the date while privacy is active on

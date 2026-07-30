@@ -115,7 +115,8 @@
       "enabled": true
     },
     "burnin": {
-      "enabled": true
+      "enabled": true,
+      "format": "%F %T"
     }
   },
   "recorder": {

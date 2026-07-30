@@ -318,6 +318,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"osd.privacy.enabled", osd.privacy.enabled, true,
        validateBool},
       {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
+      {"osd.burnin.format", osd.burnin.format, "%F %T"},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},

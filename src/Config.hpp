@@ -202,6 +202,7 @@ struct _osd {
   } privacy;
   struct {
     bool enabled;
+    const char *format;
   } burnin;
 };
 struct _recorder {

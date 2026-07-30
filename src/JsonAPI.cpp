@@ -463,6 +463,30 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     sect += "}";
     wrote = true;
   }
+
+  // burnin
+  if (JsonValue *node = obj_get(obj, "burnin");
+      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    const std::string base = std::string(root) + ".burnin.";
+    if (node->type == JSON_OBJECT) {
+      if (JsonValue *en = obj_get(node, "enabled")) {
+        if (en->type == JSON_BOOL)
+          cfg->set<bool>(base + "enabled", en->value.boolean != 0);
+      }
+      if (JsonValue *fmt = obj_get(node, "format")) {
+        if (fmt->type == JSON_STRING)
+          cfg->set<const char *>(base + "format", fmt->value.string);
+      }
+    }
+    add_key(sect, s2, "burnin", "{");
+    bool sp = false;
+    add_key(sect, sp, "enabled");
+    add_bool(sect, cfg->get<bool>(base + "enabled"));
+    add_key(sect, sp, "format");
+    add_string(sect, cfg->get<const char *>(base + "format"));
+    sect += "}";
+    wrote = true;
+  }
 }
 
 void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
