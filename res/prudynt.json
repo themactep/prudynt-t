@@ -113,6 +113,9 @@
     },
     "privacy": {
       "enabled": true
+    },
+    "burnin": {
+      "enabled": true
     }
   },
   "recorder": {

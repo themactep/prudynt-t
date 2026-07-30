@@ -619,7 +619,13 @@ void OSD::updateDisplayEverySecond() {
 
 #ifdef OSD_BURN_TIMESTAMP
   // Burn the timestamp into the video via a hardware OSD region.
-  updateTimestampOverlay();
+  // Runtime toggle via osd.burnin.enabled in prudynt.json.
+  if (cfg && cfg->osd.burnin.enabled) {
+    updateTimestampOverlay();
+  } else if (ts_region_created_) {
+    IMP_OSD_ShowRgn(ts_rgn_, osdGrp, 0);
+    ts_region_created_ = false;
+  }
 #endif
 }
 

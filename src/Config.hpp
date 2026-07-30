@@ -200,6 +200,9 @@ struct _osd {
   struct {
     bool enabled;
   } privacy;
+  struct {
+    bool enabled;
+  } burnin;
 };
 struct _recorder {
   bool enabled;
