@@ -2078,7 +2078,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
 
     // Send deferred initial RTCP SR after the first video frame so the
     // timestamp and sequence number match actual RTP packets.
-    if (ok && s.sendInitialRtcpSr && nal.is_frame_start) {
+    if (ok && s.sendInitialRtcpSr && nal.is_frame_start && s.videoStartAnchorUs >= 0) {
         sendRtcpSr(s);
         s.sendInitialRtcpSr = false;
     }
