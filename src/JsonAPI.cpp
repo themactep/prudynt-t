@@ -483,7 +483,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     add_key(sect, sp, "enabled");
     add_bool(sect, cfg->get<bool>(base + "enabled"));
     add_key(sect, sp, "format");
-    add_string(sect, cfg->get<const char *>(base + "format"));
+    add_str(sect, cfg->get<const char *>(base + "format"));
     sect += "}";
     wrote = true;
   }
