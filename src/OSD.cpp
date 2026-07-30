@@ -439,28 +439,22 @@ void OSD::updateTimestampOverlay() {
   if (strftime(base, sizeof(base), fmt, ltime) == 0)
     return;
 
-  // Replace @b / %b token with Swatch Internet Time (.beats).
-  {
-    const char *tok = nullptr;
-    if (strstr(base, "@b")) tok = "@b";
-    else if (strstr(base, "%b")) tok = "%b";
-    if (tok) {
-      time_t now = time(nullptr);
-      struct tm utc;
-      gmtime_r(&now, &utc);
-      int secs = utc.tm_hour * 3600 + utc.tm_min * 60 + utc.tm_sec + 3600;
-      if (secs >= 86400) secs -= 86400;
-      int beats = (secs * 1000) / 86400;
-      char beatstr[8];
-      snprintf(beatstr, sizeof(beatstr), "@%03d", beats);
-      // Replace only the first occurrence.
-      std::string tmp(base);
-      size_t pos = tmp.find(tok);
-      if (pos != std::string::npos)
-        tmp.replace(pos, 2, beatstr);
-      strncpy(base, tmp.c_str(), sizeof(base) - 1);
-      base[sizeof(base) - 1] = '\0';
-    }
+  // Replace @b token with Swatch Internet Time (.beats).
+  if (strstr(base, "@b")) {
+    time_t now = time(nullptr);
+    struct tm utc;
+    gmtime_r(&now, &utc);
+    int secs = utc.tm_hour * 3600 + utc.tm_min * 60 + utc.tm_sec + 3600;
+    if (secs >= 86400) secs -= 86400;
+    int beats = (secs * 1000) / 86400;
+    char beatstr[8];
+    snprintf(beatstr, sizeof(beatstr), "@%03d", beats);
+    std::string tmp(base);
+    size_t pos = tmp.find("@b");
+    if (pos != std::string::npos)
+      tmp.replace(pos, 2, beatstr);
+    strncpy(base, tmp.c_str(), sizeof(base) - 1);
+    base[sizeof(base) - 1] = '\0';
   }
 
   // Append a "PRIVACY" status word after the date while privacy is active on
