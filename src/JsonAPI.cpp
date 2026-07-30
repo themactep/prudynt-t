@@ -485,6 +485,14 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
         if (sc->type == JSON_NUMBER)
           cfg->set<int>(base + "scale", (int)sc->value.number.integer);
       }
+      if (JsonValue *fc = obj_get(node, "fill_color")) {
+        if (fc->type == JSON_STRING)
+          cfg->set<const char *>(base + "fill_color", fc->value.string);
+      }
+      if (JsonValue *oc = obj_get(node, "outline_color")) {
+        if (oc->type == JSON_STRING)
+          cfg->set<const char *>(base + "outline_color", oc->value.string);
+      }
     }
     add_key(sect, s2, "burnin", "{");
     bool sp = false;
@@ -496,6 +504,10 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     add_str(sect, cfg->get<const char *>(base + "format"));
     add_key(sect, sp, "scale");
     add_num(sect, cfg->get<int>(base + "scale"));
+    add_key(sect, sp, "fill_color");
+    add_str(sect, cfg->get<const char *>(base + "fill_color"));
+    add_key(sect, sp, "outline_color");
+    add_str(sect, cfg->get<const char *>(base + "outline_color"));
     sect += "}";
     wrote = true;
   }

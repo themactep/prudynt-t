@@ -211,6 +211,8 @@ struct _osd {
     const char *format;
     bool background;
     int scale;
+    const char *fill_color;
+    const char *outline_color;
   } burnin;
 };
 struct _recorder {

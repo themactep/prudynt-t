@@ -1,5 +1,6 @@
 #include "OSD.hpp"
 #include "Config.hpp"
+#include "Font5x7.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
 #include "imp_hal.hpp"
@@ -26,55 +27,7 @@ constexpr float MAX_DIGITAL_GAIN = 80.0f;
 constexpr float DEFAULT_DAY_BRIGHTNESS = 70.0f;
 constexpr float DEFAULT_NIGHT_BRIGHTNESS = 25.0f;
 
-#ifdef OSD_BURN_TIMESTAMP
-// ── embedded 5x7 bitmap font for burned-in timestamp ─────────────────
-// Only the glyphs needed for "%Y-%m-%d %H:%M:%S" are defined. Each row is
-// stored in the low 5 bits; the leftmost pixel is bit 4 (0x10).
-constexpr int FONT_W = 5;
-constexpr int FONT_H = 7;
 
-const uint8_t FONT_DIGITS[10][FONT_H] = {
-    {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, // 0
-    {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, // 1
-    {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, // 2
-    {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}, // 3
-    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, // 4
-    {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}, // 5
-    {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, // 6
-    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, // 7
-    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, // 8
-    {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}, // 9
-};
-const uint8_t FONT_DASH[FONT_H] = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00};
-const uint8_t FONT_COLON[FONT_H] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00};
-
-// Uppercase letters needed for the "PRIVACY" status word.
-const uint8_t FONT_P[FONT_H] = {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10};
-const uint8_t FONT_R[FONT_H] = {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11};
-const uint8_t FONT_I[FONT_H] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1F};
-const uint8_t FONT_V[FONT_H] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04};
-const uint8_t FONT_A[FONT_H] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-const uint8_t FONT_C[FONT_H] = {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E};
-const uint8_t FONT_Y[FONT_H] = {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04};
-
-// Returns the 7-row glyph for a character, or nullptr for a blank cell.
-const uint8_t *glyphFor(char c) {
-  if (c >= '0' && c <= '9')
-    return FONT_DIGITS[c - '0'];
-  switch (c) {
-  case '-': return FONT_DASH;
-  case ':': return FONT_COLON;
-  case 'P': return FONT_P;
-  case 'R': return FONT_R;
-  case 'I': return FONT_I;
-  case 'V': return FONT_V;
-  case 'A': return FONT_A;
-  case 'C': return FONT_C;
-  case 'Y': return FONT_Y;
-  default:  return nullptr; // space / unsupported -> blank advance
-  }
-}
-#endif // OSD_BURN_TIMESTAMP
 } // namespace
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -365,10 +318,34 @@ void OSD::updateElementText() {
 // ── burned-in timestamp overlay ──────────────────────────────────────
 #ifdef OSD_BURN_TIMESTAMP
 
+// Parse a hex color string "#RRGGBBAA" (or "RRGGBBAA") into BGRA bytes.
+// Returns true on success; output is unchanged on failure.
+static bool parseHexColor(const char *hex, uint8_t bgra[4]) {
+  if (!hex) return false;
+  if (*hex == '#') ++hex;
+  if (strlen(hex) != 8) return false;
+  auto hexNib = [](char c) -> int {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+  };
+  int r, g, b, a;
+  if ((r = (hexNib(hex[0]) << 4) | hexNib(hex[1])) < 0) return false;
+  if ((g = (hexNib(hex[2]) << 4) | hexNib(hex[3])) < 0) return false;
+  if ((b = (hexNib(hex[4]) << 4) | hexNib(hex[5])) < 0) return false;
+  if ((a = (hexNib(hex[6]) << 4) | hexNib(hex[7])) < 0) return false;
+  bgra[0] = (uint8_t)b;
+  bgra[1] = (uint8_t)g;
+  bgra[2] = (uint8_t)r;
+  bgra[3] = (uint8_t)a;
+  return true;
+}
+
 void OSD::renderTimestamp(const char *text) {
   const int scale = ts_scale_;
   const int pad = scale * 2;
-  const int cell = (FONT_W + 1) * scale; // glyph width + 1 column spacing
+  const int cell = (font5x7::WIDTH + 1) * scale; // glyph width + 1 column spacing
 
   int n = (int)strlen(text);
   int textW = n * cell;
@@ -376,7 +353,7 @@ void OSD::renderTimestamp(const char *text) {
     textW -= scale; // trailing char has no spacing
 
   int w = textW + pad * 2;
-  int h = FONT_H * scale + pad * 2;
+  int h = font5x7::HEIGHT * scale + pad * 2;
   if (w & 1)
     ++w; // IMP regions expect an even width
 
@@ -397,9 +374,17 @@ void OSD::renderTimestamp(const char *text) {
     }
   }
 
-  const uint8_t outline_color[4] = {0, 0, 0, 255};    // opaque black halo
-  const uint8_t fill_color[4] = {255, 255, 255, 255}; // opaque white glyph
-  const int outline = std::max(1, scale / 2);         // halo thickness (px)
+  uint8_t fill_color[4] = {255, 255, 255, 255};   // default: opaque white
+  uint8_t outline_color[4] = {0, 0, 0, 255};       // default: opaque black
+  const int outline = std::max(1, scale / 2);       // halo thickness (px)
+
+  // Apply color overrides from config.
+  if (cfg) {
+    if (cfg->osd.burnin.fill_color && cfg->osd.burnin.fill_color[0])
+      parseHexColor(cfg->osd.burnin.fill_color, fill_color);
+    if (cfg->osd.burnin.outline_color && cfg->osd.burnin.outline_color[0])
+      parseHexColor(cfg->osd.burnin.outline_color, outline_color);
+  }
 
   // Stamp a solid scale×scale block at a destination top-left position.
   auto putBlock = [&](int dx, int dy, const uint8_t *color) {
@@ -421,12 +406,12 @@ void OSD::renderTimestamp(const char *text) {
   auto forEachGlyphPixel = [&](const std::function<void(int, int)> &fn) {
     int penX = pad;
     for (const char *p = text; *p; ++p) {
-      const uint8_t *g = glyphFor(*p);
+      const uint8_t *g = font5x7::glyphFor(*p);
       if (g) {
-        for (int ry = 0; ry < FONT_H; ++ry) {
+        for (int ry = 0; ry < font5x7::HEIGHT; ++ry) {
           uint8_t bits = g[ry];
-          for (int rx = 0; rx < FONT_W; ++rx) {
-            if (bits & (1 << (FONT_W - 1 - rx)))
+          for (int rx = 0; rx < font5x7::WIDTH; ++rx) {
+            if (bits & (1 << (font5x7::WIDTH - 1 - rx)))
               fn(penX + rx * scale, pad + ry * scale);
           }
         }

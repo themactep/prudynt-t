@@ -443,6 +443,10 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
        validateCharNotEmpty},
       {"osd.burnin.format", osd.burnin.format, "%F %T",
        validateCharNotEmpty},
+      {"osd.burnin.fill_color", osd.burnin.fill_color, "#ffffffff",
+       validateCharNotEmpty},
+      {"osd.burnin.outline_color", osd.burnin.outline_color, "#000000ff",
+       validateCharNotEmpty},
 #if defined(WEBSOCKET_ENABLED)
       {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},
       {"websocket.token", websocket.token, "auto",
