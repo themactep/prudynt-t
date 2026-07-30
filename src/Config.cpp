@@ -318,6 +318,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"osd.privacy.enabled", osd.privacy.enabled, true,
        validateBool},
       {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
+      {"osd.burnin.background", osd.burnin.background, true, validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
@@ -492,6 +493,8 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 100 && v <= 60000; }},
       {"general.imp_polling_timeout", general.imp_polling_timeout_ms, 500,
        [](const int &v) { return v >= 1 && v <= 5000; }},
+      {"general.osd_pool_size", general.osd_pool_size, 0,
+       [](const int &v) { return v >= 0 && v <= 65536; }},
 
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
       /* Expert overrides preserved for backward compatibility */

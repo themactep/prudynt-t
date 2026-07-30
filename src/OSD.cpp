@@ -385,14 +385,16 @@ void OSD::renderTimestamp(const char *text) {
   ts_buf_.assign((size_t)w * h * 4, 0);
   uint8_t *img = ts_buf_.data();
 
-  // Subtle dark background box; the opaque per-glyph outline below carries
-  // most of the contrast, so the box can stay light.
-  const uint8_t bg[4] = {0, 0, 0, 110}; // B, G, R, A
-  for (int i = 0; i < w * h; ++i) {
-    img[i * 4 + 0] = bg[0];
-    img[i * 4 + 1] = bg[1];
-    img[i * 4 + 2] = bg[2];
-    img[i * 4 + 3] = bg[3];
+  // Subtle dark background box (optional); the opaque per-glyph outline
+  // below carries most of the contrast, so the box can stay light.
+  if (cfg && cfg->osd.burnin.background) {
+    const uint8_t bg[4] = {0, 0, 0, 110}; // B, G, R, A
+    for (int i = 0; i < w * h; ++i) {
+      img[i * 4 + 0] = bg[0];
+      img[i * 4 + 1] = bg[1];
+      img[i * 4 + 2] = bg[2];
+      img[i * 4 + 3] = bg[3];
+    }
   }
 
   const uint8_t outline_color[4] = {0, 0, 0, 255};    // opaque black halo
@@ -462,7 +464,7 @@ void OSD::updateTimestampOverlay() {
     }
   }
 
-  char text[48];
+  char text[72];
   snprintf(text, sizeof(text), "%s%s", base,
            privacy_active ? " PRIVACY" : "");
 

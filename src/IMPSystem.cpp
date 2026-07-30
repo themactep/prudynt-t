@@ -312,6 +312,25 @@ int IMPSystem::init() {
   clamp_streams_to_sensor_limits();
 #endif
 
+  {
+    int pool_size_kb;
+    if (cfg->general.osd_pool_size > 0) {
+      pool_size_kb = cfg->general.osd_pool_size;
+    } else {
+      // Auto-calculate from the largest enabled stream: ~10% RGBA coverage +
+      // 256KB margin
+      int max_pixels = 0;
+      for (auto *s :
+           {&cfg->stream0, &cfg->stream1, &cfg->stream2, &cfg->stream3}) {
+        if (s->enabled)
+          max_pixels = std::max(max_pixels, s->width * s->height);
+      }
+      pool_size_kb = (max_pixels * 4 * 0.1) / 1024 + 256;
+    }
+    ret = IMP_OSD_SetPoolSize(pool_size_kb * 1024);
+    LOG_DEBUG_OR_ERROR(ret, "IMP_OSD_SetPoolSize(" << pool_size_kb << "KB)");
+  }
+
   IMPVersion impVersion;
   ret = IMP_System_GetVersion(&impVersion);
   LOG_INFO("LIBIMP Version " << impVersion.aVersion);

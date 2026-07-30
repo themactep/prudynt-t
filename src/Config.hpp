@@ -133,6 +133,7 @@ struct _daynight {
 };
 struct _general {
   const char *loglevel;
+  int osd_pool_size;
   int imp_polling_timeout_ms;
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
@@ -203,6 +204,7 @@ struct _osd {
   struct {
     bool enabled;
     const char *format;
+    bool background;
   } burnin;
 };
 struct _recorder {
