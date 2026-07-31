@@ -1,9 +1,12 @@
 #include "HTTPMJPEG.hpp"
 
+#include "Config.hpp"
 #include "JPEGWorker.hpp"
 #include "JsonAPI.hpp"
 #include "Logger.hpp"
 #include "globals.hpp"
+
+#include <json_config.h>
 
 #include <algorithm>
 #include <arpa/inet.h>
@@ -458,6 +461,33 @@ void HTTPMJPEG::handle_client(int cfd) {
   // Check authentication if required (skip for localhost)
   if (auth_required_ && !is_loopback(cfd) && !check_auth(req, username_, password_)) {
     send_auth_required();
+    ::close(cfd);
+    return;
+  }
+
+  // Handle REST GET for config subtrees
+  const char *cfg_prefix = "/api/v1/config/";
+  if (api_enabled_ && path.rfind(cfg_prefix, 0) == 0 && method == "GET") {
+    std::string json_path = path.substr(strlen(cfg_prefix));
+    // Replace / with . for nested paths: e.g. osd/sei → osd.sei
+    for (auto &c : json_path)
+      if (c == '/') c = '.';
+
+    JsonValue *sub = get_nested_item(cfg->jsonConfig, json_path.c_str());
+    char *js = json_to_string(sub ? sub : create_json_value(JSON_OBJECT), 0);
+    std::string body = js ? js : "{}";
+    free(js);
+
+    char hdr[256];
+    int n = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.0 200 OK\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %zu\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n"
+        "\r\n", body.size());
+    write_full(cfd, hdr, static_cast<size_t>(n));
+    write_full(cfd, body.data(), body.size());
     ::close(cfd);
     return;
   }
