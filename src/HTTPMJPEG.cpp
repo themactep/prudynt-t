@@ -458,14 +458,7 @@ void HTTPMJPEG::handle_client(int cfd) {
     return;
   }
 
-  // Check authentication if required (skip for localhost)
-  if (auth_required_ && !is_loopback(cfd) && !check_auth(req, username_, password_)) {
-    send_auth_required();
-    ::close(cfd);
-    return;
-  }
-
-  // Handle REST GET for config subtrees
+  // Handle REST GET for config subtrees (read-only, same auth policy as SEI)
   const char *cfg_prefix = "/api/v1/config/";
   if (api_enabled_ && path.rfind(cfg_prefix, 0) == 0 && method == "GET") {
     std::string json_path = path.substr(strlen(cfg_prefix));
@@ -488,6 +481,13 @@ void HTTPMJPEG::handle_client(int cfd) {
         "\r\n", body.size());
     write_full(cfd, hdr, static_cast<size_t>(n));
     write_full(cfd, body.data(), body.size());
+    ::close(cfd);
+    return;
+  }
+
+  // Check authentication if required (skip for localhost)
+  if (auth_required_ && !is_loopback(cfd) && !check_auth(req, username_, password_)) {
+    send_auth_required();
     ::close(cfd);
     return;
   }
