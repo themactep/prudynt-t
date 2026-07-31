@@ -521,7 +521,7 @@ void VideoWorker::run() {
         bool osd_sei_active = false;
         if (video_state && video_state->imp_encoder &&
             video_state->imp_encoder->osd &&
-            cfg->osd.enabled) {
+            cfg->osd.sei.enabled) {
           osd_sei_active = true;
         }
         bool sei_pending_for_frame = false;

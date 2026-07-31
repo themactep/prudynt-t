@@ -191,7 +191,7 @@ void RTSP::start() {
     }
 
     // ── Subtitle stream (OSD text via ASS over RTP) ─────────────────
-    if (cfg->osd.enabled) {
+    if (cfg->osd.sei.enabled) {
         simple_rtsp::SubtitleStreamConfig scfg;
         scfg.codec = "t140";
         scfg.payloadType = 98;

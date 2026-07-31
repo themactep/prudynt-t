@@ -313,12 +313,11 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"stream0.audio_enabled", stream0.audio_enabled, true, validateBool},
       {"stream0.enabled", stream0.enabled, true, validateBool},
       {"stream0.allow_shared", stream0.allow_shared, true, validateBool},
-      {"osd.enabled", osd.enabled, true, validateBool},
+      {"osd.sei.enabled", osd.sei.enabled, true, validateBool},
 
       {"osd.privacy.enabled", osd.privacy.enabled, true,
        validateBool},
       {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
-      {"osd.burnin.background", osd.burnin.background, true, validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},
@@ -446,6 +445,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"osd.burnin.fill_color", osd.burnin.fill_color, "#ffffffff",
        validateCharNotEmpty},
       {"osd.burnin.outline_color", osd.burnin.outline_color, "#000000ff",
+       validateCharNotEmpty},
+      {"osd.burnin.background_color", osd.burnin.background_color, "#00000080",
        validateCharNotEmpty},
 #if defined(WEBSOCKET_ENABLED)
       {"websocket.name", websocket.name, "wss prudynt", validateCharNotEmpty},

@@ -408,41 +408,47 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
                 bool &wrote) {
   const char *root = "osd";
 
-  // enabled
-  if (JsonValue *v = obj_get(obj, "enabled")) {
-    if (v->type == JSON_BOOL)
-      cfg->set<bool>(std::string(root) + ".enabled", v->value.boolean != 0);
-    add_key(sect, s2, "enabled");
-    add_bool(sect, cfg->get<bool>(std::string(root) + ".enabled"));
-    wrote = true;
-  }
-
-  // elements — stored in JSON config file directly, not in struct
-  if (JsonValue *elems = obj_get(obj, "elements")) {
-    add_key(sect, s2, "elements");
-    if (elems->type == JSON_NULL) {
-      // query mode: read from config file
-      JsonValue *cfgElems = get_nested_item(cfg->jsonConfig, "osd.elements");
-      char *js = json_to_string(cfgElems ? cfgElems : elems, 0);
+  // sei
+  if (JsonValue *node = obj_get(obj, "sei");
+      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
+    const std::string base = std::string(root) + ".sei.";
+    if (node->type == JSON_OBJECT) {
+      if (JsonValue *en = obj_get(node, "enabled")) {
+        if (en->type == JSON_BOOL)
+          cfg->set<bool>(base + "enabled", en->value.boolean != 0);
+      }
+      // elements — stored in JSON config file directly, not in struct
+      if (JsonValue *elems = obj_get(node, "elements")) {
+        del_nested_item(cfg->jsonConfig, "osd.sei.elements");
+        JsonValue *osd = get_nested_item(cfg->jsonConfig, "osd");
+        if (osd && osd->type == JSON_OBJECT) {
+          JsonValue *seiSec = get_nested_item(osd, "sei");
+          if (!seiSec || seiSec->type != JSON_OBJECT) {
+            seiSec = create_json_value(JSON_OBJECT);
+            add_to_object(osd, "sei", seiSec);
+          }
+          JsonValue *cloned = clone_json_value(elems);
+          if (cloned)
+            add_to_object(seiSec, "elements", cloned);
+        }
+        save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+        global_reload_osd = true;
+      }
+    }
+    add_key(sect, s2, "sei", "{");
+    bool sp = false;
+    add_key(sect, sp, "enabled");
+    add_bool(sect, cfg->get<bool>(base + "enabled"));
+    add_key(sect, sp, "elements");
+    JsonValue *cfgElems = get_nested_item(cfg->jsonConfig, "osd.sei.elements");
+    if (cfgElems) {
+      char *js = json_to_string(cfgElems, 0);
       sect += js ? js : "{}";
       free(js);
     } else {
-      // write mode: persist as proper JSON object, not a string
-      del_nested_item(cfg->jsonConfig, "osd.elements");
-      JsonValue *osd = get_nested_item(cfg->jsonConfig, "osd");
-      if (osd && osd->type == JSON_OBJECT) {
-        JsonValue *cloned = clone_json_value(elems);
-        if (cloned)
-          add_to_object(osd, "elements", cloned);
-      }
-      // immediately flush to disk so updateConfig()'s re-read picks it up
-      save_config(cfg->filePath.c_str(), cfg->jsonConfig);
-      global_reload_osd = true;
-
-      char *js = json_to_string(elems, 0);
-      sect += js ? js : "{}";
-      free(js);
+      sect += "{}";
     }
+    sect += "}";
     wrote = true;
   }
 
@@ -473,9 +479,9 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
         if (en->type == JSON_BOOL)
           cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
-      if (JsonValue *bg = obj_get(node, "background")) {
-        if (bg->type == JSON_BOOL)
-          cfg->set<bool>(base + "background", bg->value.boolean != 0);
+      if (JsonValue *bg = obj_get(node, "background_color")) {
+        if (bg->type == JSON_STRING)
+          cfg->set<const char *>(base + "background_color", bg->value.string);
       }
       if (JsonValue *fmt = obj_get(node, "format")) {
         if (fmt->type == JSON_STRING)
@@ -498,8 +504,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     bool sp = false;
     add_key(sect, sp, "enabled");
     add_bool(sect, cfg->get<bool>(base + "enabled"));
-    add_key(sect, sp, "background");
-    add_bool(sect, cfg->get<bool>(base + "background"));
+    add_key(sect, sp, "background_color");
+    add_str(sect, cfg->get<const char *>(base + "background_color"));
     add_key(sect, sp, "format");
     add_str(sect, cfg->get<const char *>(base + "format"));
     add_key(sect, sp, "scale");

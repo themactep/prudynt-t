@@ -27,7 +27,7 @@ All keys under `osd.burnin`:
 | `enabled` | bool | `false` | Enable burn-in overlay |
 | `format` | string | `"%F %T"` | `strftime` format string |
 | `scale` | int | `0` (auto) | Font scale 1–10; 0 = auto from stream width |
-| `background` | bool | `false` | Semi-transparent dark background box |
+| `background_color` | string | `"#00000080"` | Background box color `#RRGGBBAA` |
 | `fill_color` | string | `"#ffffffff"` | Glyph fill color `#RRGGBBAA` |
 | `outline_color` | string | `"#000000ff"` | Glyph outline/halo color `#RRGGBBAA` |
 
@@ -78,7 +78,7 @@ glow effect.
     "enabled": true,
     "format": "%F %T",
     "scale": 4,
-    "background": true,
+    "background_color": "#00000080",
     "fill_color": "#ffffffff",
     "outline_color": "#000000ff"
   }
@@ -93,8 +93,8 @@ Textual metadata embedded in H.264/H.265 SEI NAL units and RTP subtitle tracks
 (t.140 / x-ass). Rendered by compatible clients via the `/x/json-osd-sei.cgi`
 endpoint or the WebUI preview overlay.
 
-Enable with `osd.enabled` in `prudynt.json`. Elements are configured as a
-JSON object under `osd.elements`.
+Enable with `osd.sei.enabled` in `prudynt.json`. Elements are configured as a
+JSON object under `osd.sei.elements`.
 
 ### Element types
 
@@ -120,17 +120,19 @@ JSON object under `osd.elements`.
 
 ```jsonc
 "osd": {
-  "enabled": true,
-  "elements": {
-    "clock": {
-      "type": "timestamp",
-      "format": "%F %T",
-      "position": "-10,-10"
-    },
-    "host": {
-      "type": "hostname",
-      "format": "%s",
-      "position": "0,10"
+  "sei": {
+    "enabled": true,
+    "elements": {
+      "clock": {
+        "type": "timestamp",
+        "format": "%F %T",
+        "position": "-10,-10"
+      },
+      "host": {
+        "type": "hostname",
+        "format": "%s",
+        "position": "0,10"
+      }
     }
   }
 }
@@ -154,8 +156,8 @@ Both the OSD settings page (`/streamer-osd.html`) and the preview page
 OSD modal provide controls for burn-in and SEI OSD:
 
 - **Burn-in**: enabled toggle, `strftime` format, scale (auto or 1–10),
-  fill/outline color with swatch + native color picker + alpha slider,
-  background toggle.
+  fill/outline/background color with swatch + native color picker + alpha
+  slider.
 - **SEI OSD**: enabled toggle, element list with add/remove, per-element
   type/format/position. Visual settings (font size, stroke width, colors)
   stored in browser localStorage.
@@ -169,6 +171,6 @@ API Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/x/json-prudynt.cgi` | POST | Read/write OSD config (see `osd.burnin.*` and `osd.elements`) |
+| `/x/json-prudynt.cgi` | POST | Read/write OSD config (see `osd.sei.*` and `osd.burnin.*`) |
 | `/x/json-osd-sei.cgi` | GET | Live SEI overlay data (rotation, elements) |
 | `:8080/api/v1/osd-sei` | GET | Same as above, via Prudynt HTTP API |

@@ -923,7 +923,7 @@ int main(int argc, const char *argv[]) {
         sh.has_started.acquire();
       }
 
-      if (cfg->osd.enabled || cfg->osd.burnin.enabled) {
+      if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled) {
         int ret = pthread_create(&osd_thread, nullptr, OSD::thread_entry, NULL);
         LOG_DEBUG_OR_ERROR(ret, "create osd thread");
       }

@@ -364,8 +364,9 @@ void OSD::renderTimestamp(const char *text) {
 
   // Subtle dark background box (optional); the opaque per-glyph outline
   // below carries most of the contrast, so the box can stay light.
-  if (cfg && cfg->osd.burnin.background) {
-    const uint8_t bg[4] = {0, 0, 0, 110}; // B, G, R, A
+  if (cfg && cfg->osd.burnin.background_color && cfg->osd.burnin.background_color[0]) {
+    uint8_t bg[4] = {0, 0, 0, 110}; // B, G, R, A default
+    parseHexColor(cfg->osd.burnin.background_color, bg);
     for (int i = 0; i < w * h; ++i) {
       img[i * 4 + 0] = bg[0];
       img[i * 4 + 1] = bg[1];

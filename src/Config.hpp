@@ -200,16 +200,18 @@ struct _motion {
 constexpr int kBurninMaxScale = 10;
 
 struct _osd {
-  bool enabled;
   _stream_stats stats;
   std::atomic<int> thread_signal;
+  struct {
+    bool enabled;
+  } sei;
   struct {
     bool enabled;
   } privacy;
   struct {
     bool enabled;
     const char *format;
-    bool background;
+    const char *background_color;
     int scale;
     const char *fill_color;
     const char *outline_color;
