@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <fstream>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -404,11 +405,11 @@ void HTTPMJPEG::handle_client(int cfd) {
 
   auto send_response = [&](int code, const char *ctype,
                            const std::string &payload) {
-    char hdr[256];
+    char hdr[512];
     int n = snprintf(
         hdr, sizeof(hdr),
         "HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length: "
-        "%zu\r\nConnection: close\r\n\r\n",
+        "%zu\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
         code,
         (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")),
         ctype, payload.size());
@@ -423,10 +424,78 @@ void HTTPMJPEG::handle_client(int cfd) {
         "WWW-Authenticate: Basic realm=\"Prudynt MJPEG Server\"\r\n"
         "Content-Type: text/plain\r\n"
         "Content-Length: 13\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
         "Connection: close\r\n\r\n"
         "Unauthorized\n";
     write_full(cfd, hdr, strlen(hdr));
   };
+
+  // Extract X-API-Key header for config endpoint auth
+  auto extract_header = [&](const std::string &name) -> std::string {
+    std::string lower = name;
+    for (auto &c : lower) c = std::tolower(static_cast<unsigned char>(c));
+    lower += ':';
+    size_t pos = 0;
+    while (pos < req.size()) {
+      size_t eol = req.find('\r', pos);
+      if (eol == std::string::npos) eol = req.find('\n', pos);
+      if (eol == std::string::npos) break;
+      std::string line = req.substr(pos, eol - pos);
+      if (line.size() > lower.size()) {
+        std::string key = line.substr(0, lower.size());
+        for (auto &c : key) c = std::tolower(static_cast<unsigned char>(c));
+        if (key == lower) {
+          std::string val = line.substr(lower.size());
+          size_t a = 0;
+          while (a < val.size() && val[a] == ' ') ++a;
+          return val.substr(a);
+        }
+      }
+      pos = eol;
+      while (pos < req.size() && (req[pos] == '\r' || req[pos] == '\n')) ++pos;
+    }
+    return {};
+  };
+
+  auto verify_api_key = [&](const std::string &provided) -> bool {
+    if (provided.empty()) return false;
+    std::ifstream kf("/etc/thingino-api.key");
+    if (!kf.is_open()) return false;
+    std::string stored;
+    std::getline(kf, stored);
+    while (!stored.empty() && (stored.back() == '\n' || stored.back() == '\r' || stored.back() == ' '))
+      stored.pop_back();
+    return provided == stored;
+  };
+
+  // Verify API key for config endpoints (skip for loopback)
+  std::string api_key = extract_header("X-API-Key");
+  if (api_key.empty()) {
+    // Fall back to ?token= query parameter
+    auto find_qs = [&](const std::string &key) -> std::string {
+      std::string search = key + '=';
+      size_t p = qs.find(search);
+      if (p == std::string::npos) return {};
+      p += search.size();
+      size_t e = qs.find('&', p);
+      return qs.substr(p, e == std::string::npos ? std::string::npos : e - p);
+    };
+    api_key = find_qs("token");
+  }
+  bool api_authenticated = verify_api_key(api_key);
+
+  // Handle CORS preflight
+  if (method == "OPTIONS") {
+    const char *cors = "HTTP/1.0 204 No Content\r\n"
+      "Access-Control-Allow-Origin: *\r\n"
+      "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+      "Access-Control-Allow-Headers: Content-Type, X-API-Key\r\n"
+      "Access-Control-Max-Age: 86400\r\n"
+      "Connection: close\r\n\r\n";
+    write_full(cfd, cors, strlen(cors));
+    ::close(cfd);
+    return;
+  }
 
   // Handle SEI OSD metadata endpoint (no auth required — read-only, non-sensitive)
   if (api_enabled_ && path == "/api/v1/osd-sei") {
@@ -458,9 +527,14 @@ void HTTPMJPEG::handle_client(int cfd) {
     return;
   }
 
-  // Handle REST GET for config subtrees (read-only, same auth policy as SEI)
+  // Handle REST GET for config subtrees
   const char *cfg_prefix = "/api/v1/config/";
   if (api_enabled_ && path.rfind(cfg_prefix, 0) == 0 && method == "GET") {
+    if (!api_authenticated) {
+      send_response(401, "application/json", "{\"error\":\"Authentication required\"}\n");
+      ::close(cfd);
+      return;
+    }
     std::string json_path = path.substr(strlen(cfg_prefix));
     // Replace / with . for nested paths: e.g. osd/sei → osd.sei
     for (auto &c : json_path)
@@ -485,15 +559,13 @@ void HTTPMJPEG::handle_client(int cfd) {
     return;
   }
 
-  // Check authentication if required (skip for localhost)
-  if (auth_required_ && !is_loopback(cfd) && !check_auth(req, username_, password_)) {
-    send_auth_required();
-    ::close(cfd);
-    return;
-  }
-
-  // Handle JSON API on the same port
+  // Handle JSON API on the same port (before Basic Auth check)
   if (api_enabled_ && path == "/api/v1/config") {
+    if (!api_authenticated) {
+      send_response(401, "application/json", "{\"error\":\"Authentication required\"}\n");
+      ::close(cfd);
+      return;
+    }
     // Require POST
     if (method != "POST") {
       send_response(405, "text/plain", "method not allowed\n");

@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <fstream>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -197,8 +198,8 @@ void IPCServer::http_loop() {
 
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
-  // Bind only to loopback to avoid exposing the config API externally
-  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  // Bind to all interfaces — API key auth secures external access
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons(static_cast<uint16_t>(http_port_));
   if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
     LOG_ERROR("HTTP API: bind(" << http_port_
@@ -291,6 +292,7 @@ int IPCServer::handle_http_client(int fd) {
   size_t body_start = hdr_end + 4;
   int content_length = 0;
   bool wants_sse = false;
+  std::string api_key_header;
   size_t pos = req.find('\n');
   while (pos != std::string::npos && pos < hdr_end) {
     size_t next = req.find('\n', pos + 1);
@@ -311,6 +313,8 @@ int IPCServer::handle_http_client(int fd) {
       content_length = std::atoi(val.c_str());
     } else if (key == "accept" && val.find("text/event-stream") != std::string::npos) {
       wants_sse = true;
+    } else if (key == "x-api-key") {
+      api_key_header = val;
     }
   }
 
@@ -325,11 +329,11 @@ int IPCServer::handle_http_client(int fd) {
 
   auto send_response = [&](int code, const std::string &ctype,
                            const std::string &payload) {
-    char hdr[256];
+    char hdr[512];
     int n = snprintf(
         hdr, sizeof(hdr),
         "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: "
-        "%zu\r\nConnection: close\r\n\r\n",
+        "%zu\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
         code,
         (code == 200 ? "OK" : (code == 404 ? "Not Found" : "Bad Request")),
         ctype.c_str(), payload.size());
@@ -338,6 +342,19 @@ int IPCServer::handle_http_client(int fd) {
       write_full(fd, payload.data(), payload.size());
     }
   };
+
+  // Handle CORS preflight
+  if (method == "OPTIONS") {
+    const char *cors = "HTTP/1.1 204 No Content\r\n"
+      "Access-Control-Allow-Origin: *\r\n"
+      "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+      "Access-Control-Allow-Headers: Content-Type, X-API-Key\r\n"
+      "Access-Control-Max-Age: 86400\r\n"
+      "Connection: close\r\n\r\n";
+    write_full(fd, cors, strlen(cors));
+    ::close(fd);
+    return 0;
+  }
 
   if (method == "GET" && path == "/api/v1/osd-sei") {
     if (wants_sse) {
@@ -415,10 +432,31 @@ int IPCServer::handle_http_client(int fd) {
     return 0;
   }
 
+  // Verify API key for config endpoints (same key as web UI)
+  auto verify_api_key = [&](const std::string &provided) -> bool {
+    if (provided.empty()) return false;
+    std::ifstream kf("/etc/thingino-api.key");
+    if (!kf.is_open()) return false;
+    std::string stored;
+    std::getline(kf, stored);
+    // trim trailing whitespace/newline
+    while (!stored.empty() && (stored.back() == '\n' || stored.back() == '\r' || stored.back() == ' '))
+      stored.pop_back();
+    return provided == stored;
+  };
+
   if (method != "POST" || path != "/api/v1/config") {
     send_response(404, "text/plain", "not found\n");
     ::close(fd);
     return 0;
+  }
+
+  if (!api_key_header.empty() && verify_api_key(api_key_header))
+    ; // authenticated
+  else {
+    send_response(401, "application/json", "{\"error\":\"Authentication required. Use X-API-Key header\"}\n");
+    ::close(fd);
+    return -1;
   }
 
   if (content_length <= 0) {
