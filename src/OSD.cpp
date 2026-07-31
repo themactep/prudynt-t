@@ -362,16 +362,17 @@ void OSD::renderTimestamp(const char *text) {
   ts_buf_.assign((size_t)w * h * 4, 0);
   uint8_t *img = ts_buf_.data();
 
-  // Subtle dark background box (optional); the opaque per-glyph outline
-  // below carries most of the contrast, so the box can stay light.
+  // Subtle dark background box (optional).
   if (cfg && cfg->osd.burnin.background_color && cfg->osd.burnin.background_color[0]) {
     uint8_t bg[4] = {0, 0, 0, 110}; // B, G, R, A default
     parseHexColor(cfg->osd.burnin.background_color, bg);
-    for (int i = 0; i < w * h; ++i) {
-      img[i * 4 + 0] = bg[0];
-      img[i * 4 + 1] = bg[1];
-      img[i * 4 + 2] = bg[2];
-      img[i * 4 + 3] = bg[3];
+    if (bg[3] != 0) {
+      for (int i = 0; i < w * h; ++i) {
+        img[i * 4 + 0] = bg[0];
+        img[i * 4 + 1] = bg[1];
+        img[i * 4 + 2] = bg[2];
+        img[i * 4 + 3] = bg[3];
+      }
     }
   }
 
@@ -432,16 +433,22 @@ void OSD::renderTimestamp(const char *text) {
     }
   };
 
-  // Pass 1: black outline — dilate each set pixel by `outline` px (circular).
-  forEachGlyphPixel([&](int bx, int by) {
-    for (int oy = -outline; oy <= outline; ++oy)
-      for (int ox = -outline; ox <= outline; ++ox)
-        if (ox * ox + oy * oy <= outline * outline)
-          putBlock(bx + ox, by + oy, outline_color);
-  });
+  // Pass 1: outline halo — dilate each set pixel by `outline` px (circular).
+  // Skip if outline alpha is zero.
+  if (outline_color[3] != 0) {
+    forEachGlyphPixel([&](int bx, int by) {
+      for (int oy = -outline; oy <= outline; ++oy)
+        for (int ox = -outline; ox <= outline; ++ox)
+          if (ox * ox + oy * oy <= outline * outline)
+            putBlock(bx + ox, by + oy, outline_color);
+    });
+  }
 
-  // Pass 2: white fill on top of the halo.
-  forEachGlyphPixel([&](int bx, int by) { putBlock(bx, by, fill_color); });
+  // Pass 2: fill on top of the halo.
+  // Skip if fill alpha is zero.
+  if (fill_color[3] != 0) {
+    forEachGlyphPixel([&](int bx, int by) { putBlock(bx, by, fill_color); });
+  }
 }
 
 void OSD::updateTimestampOverlay() {
