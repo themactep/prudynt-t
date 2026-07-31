@@ -418,7 +418,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
           cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
       // entries — stored in JSON config file directly, not in struct
-      if (JsonValue *elems = obj_get(node, "entries")) {
+      if (JsonValue *elems = obj_get(node, "entries");
+          elems && elems->type == JSON_OBJECT) {
         del_nested_item(cfg->jsonConfig, "osd.sei.entries");
         JsonValue *osd = get_nested_item(cfg->jsonConfig, "osd");
         if (osd && osd->type == JSON_OBJECT) {
