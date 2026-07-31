@@ -387,18 +387,29 @@ void OSD::renderTimestamp(const char *text) {
       parseHexColor(cfg->osd.burnin.outline_color, outline_color);
   }
 
-  // Stamp a solid scale×scale block at a destination top-left position.
+  // Stamp a solid scale×scale block at a destination top-left position
+  // with source-over alpha blending.
   auto putBlock = [&](int dx, int dy, const uint8_t *color) {
+    int sa = color[3];
+    if (sa == 0) return;
+    int inv_sa = 255 - sa;
     for (int yy = 0; yy < scale; ++yy) {
       for (int xx = 0; xx < scale; ++xx) {
         int px = dx + xx, py = dy + yy;
         if (px < 0 || px >= w || py < 0 || py >= h)
           continue;
         int idx = (py * w + px) * 4;
-        img[idx + 0] = color[0];
-        img[idx + 1] = color[1];
-        img[idx + 2] = color[2];
-        img[idx + 3] = color[3];
+        if (sa == 255) {
+          img[idx + 0] = color[0];
+          img[idx + 1] = color[1];
+          img[idx + 2] = color[2];
+          img[idx + 3] = 255;
+        } else {
+          img[idx + 0] = (uint8_t)((sa * color[0] + inv_sa * img[idx + 0]) / 255);
+          img[idx + 1] = (uint8_t)((sa * color[1] + inv_sa * img[idx + 1]) / 255);
+          img[idx + 2] = (uint8_t)((sa * color[2] + inv_sa * img[idx + 2]) / 255);
+          img[idx + 3] = (uint8_t)(sa + (inv_sa * img[idx + 3]) / 255);
+        }
       }
     }
   };
