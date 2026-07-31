@@ -94,7 +94,7 @@ Textual metadata embedded in H.264/H.265 SEI NAL units and RTP subtitle tracks
 endpoint or the WebUI preview overlay.
 
 Enable with `osd.sei.enabled` in `prudynt.json`. Elements are configured as a
-JSON object under `osd.sei.elements`.
+JSON object under `osd.sei.entries`.
 
 ### Element types
 
@@ -122,7 +122,7 @@ JSON object under `osd.sei.elements`.
 "osd": {
   "sei": {
     "enabled": true,
-    "elements": {
+    "entries": {
       "clock": {
         "type": "timestamp",
         "format": "%F %T",
@@ -172,5 +172,5 @@ API Endpoints
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/x/json-prudynt.cgi` | POST | Read/write OSD config (see `osd.sei.*` and `osd.burnin.*`) |
-| `/x/json-osd-sei.cgi` | GET | Live SEI overlay data (rotation, elements) |
+| `/x/json-osd-sei.cgi` | GET | Live SEI overlay data (rotation, entries) |
 | `:8080/api/v1/osd-sei` | GET | Same as above, via Prudynt HTTP API |

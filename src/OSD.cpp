@@ -249,7 +249,7 @@ void OSD::updateBrightnessText() {
 void OSD::loadElements() {
   elements_.clear();
 
-  std::string path = "osd.elements";
+  std::string path = "osd.sei.entries";
   JsonValue *cfgJson = cfg->jsonConfig;
   if (!cfgJson) return;
 

@@ -728,22 +728,22 @@ bool CFG::readConfig() {
     return false; // Exit on parsing error
   }
 
-  // Migrate old osd.enabled / osd.elements → osd.sei.enabled / osd.sei.elements
+  // Migrate old osd.enabled / osd.elements → osd.sei.enabled / osd.sei.entries
   JsonValue *osd = get_nested_item(jsonConfig, "osd");
   if (osd && osd->type == JSON_OBJECT) {
-    JsonValue *oldElements = get_nested_item(osd, "elements");
+    JsonValue *oldEntries = get_nested_item(osd, "elements");
     JsonValue *oldEnabled = get_nested_item(osd, "enabled");
     JsonValue *sei = get_nested_item(osd, "sei");
-    if ((oldElements || oldEnabled) && !sei) {
-      LOG_INFO("Migrating osd.enabled / osd.elements → osd.sei.enabled / osd.sei.elements");
+    if ((oldEntries || oldEnabled) && !sei) {
+      LOG_INFO("Migrating osd.enabled / osd.elements → osd.sei.enabled / osd.sei.entries");
       sei = create_json_value(JSON_OBJECT);
       add_to_object(osd, "sei", sei);
       if (oldEnabled) {
         add_to_object(sei, "enabled", clone_json_value(oldEnabled));
         del_nested_item(osd, "enabled");
       }
-      if (oldElements) {
-        add_to_object(sei, "elements", clone_json_value(oldElements));
+      if (oldEntries) {
+        add_to_object(sei, "entries", clone_json_value(oldEntries));
         del_nested_item(osd, "elements");
       }
       save_config(configPath.c_str(), jsonConfig);

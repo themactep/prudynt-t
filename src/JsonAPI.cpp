@@ -417,9 +417,9 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
         if (en->type == JSON_BOOL)
           cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
-      // elements — stored in JSON config file directly, not in struct
-      if (JsonValue *elems = obj_get(node, "elements")) {
-        del_nested_item(cfg->jsonConfig, "osd.sei.elements");
+      // entries — stored in JSON config file directly, not in struct
+      if (JsonValue *elems = obj_get(node, "entries")) {
+        del_nested_item(cfg->jsonConfig, "osd.sei.entries");
         JsonValue *osd = get_nested_item(cfg->jsonConfig, "osd");
         if (osd && osd->type == JSON_OBJECT) {
           JsonValue *seiSec = get_nested_item(osd, "sei");
@@ -429,7 +429,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
           }
           JsonValue *cloned = clone_json_value(elems);
           if (cloned)
-            add_to_object(seiSec, "elements", cloned);
+            add_to_object(seiSec, "entries", cloned);
         }
         save_config(cfg->filePath.c_str(), cfg->jsonConfig);
         global_reload_osd = true;
@@ -439,8 +439,8 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     bool sp = false;
     add_key(sect, sp, "enabled");
     add_bool(sect, cfg->get<bool>(base + "enabled"));
-    add_key(sect, sp, "elements");
-    JsonValue *cfgElems = get_nested_item(cfg->jsonConfig, "osd.sei.elements");
+    add_key(sect, sp, "entries");
+    JsonValue *cfgElems = get_nested_item(cfg->jsonConfig, "osd.sei.entries");
     if (cfgElems) {
       char *js = json_to_string(cfgElems, 0);
       sect += js ? js : "{}";

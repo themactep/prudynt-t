@@ -90,7 +90,7 @@
   "osd": {
     "sei": {
       "enabled": false,
-      "elements": {
+      "entries": {
         "clock": {
           "type": "timestamp",
           "format": "%F %T",
