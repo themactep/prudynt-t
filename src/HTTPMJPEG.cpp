@@ -189,88 +189,6 @@ std::string get_param(const std::string &qs, const std::string &name) {
   return "";
 }
 
-// Extract Authorization header value
-std::string get_auth_header(const std::string &req) {
-  size_t pos = 0;
-  while (pos < req.size()) {
-    size_t line_end = req.find('\n', pos);
-    if (line_end == std::string::npos)
-      break;
-    std::string line = req.substr(pos, line_end - pos);
-    // Remove \r if present
-    if (!line.empty() && line.back() == '\r')
-      line.pop_back();
-
-    // Case-insensitive header search
-    if (line.size() > 14) {
-      std::string header_name = line.substr(0, 14);
-      for (auto &c : header_name)
-        c = std::tolower(static_cast<unsigned char>(c));
-      if (header_name == "authorization:") {
-        size_t val_start = 14;
-        while (val_start < line.size() &&
-               std::isspace(static_cast<unsigned char>(line[val_start])))
-          ++val_start;
-        return line.substr(val_start);
-      }
-    }
-    pos = line_end + 1;
-  }
-  return "";
-}
-
-// Check HTTP Basic Authentication
-bool check_auth(const std::string &req, const char *username,
-                const char *password) {
-  std::string auth = get_auth_header(req);
-  if (auth.empty())
-    return false;
-
-  // Check for "Basic " prefix (case-insensitive)
-  if (auth.size() < 6)
-    return false;
-  std::string prefix = auth.substr(0, 6);
-  for (auto &c : prefix)
-    c = std::tolower(static_cast<unsigned char>(c));
-  if (prefix != "basic ")
-    return false;
-
-  // Decode base64 credentials
-  std::string encoded = auth.substr(6);
-  std::string decoded = base64_decode(encoded);
-
-  // Expected format: "username:password"
-  size_t colon = decoded.find(':');
-  if (colon == std::string::npos)
-    return false;
-
-  std::string user = decoded.substr(0, colon);
-  std::string pass = decoded.substr(colon + 1);
-
-  return (user == username && pass == password);
-}
-
-// Return true if the peer connected via a loopback interface.
-// Used to skip HTTP Basic Auth for local (on-device) clients.
-bool is_loopback(int fd) {
-  sockaddr_storage ss{};
-  socklen_t len = sizeof(ss);
-  if (::getpeername(fd, reinterpret_cast<sockaddr *>(&ss), &len) != 0)
-    return false;
-
-  if (ss.ss_family == AF_INET) {
-    auto *sa = reinterpret_cast<sockaddr_in *>(&ss);
-    return sa->sin_addr.s_addr == htonl(INADDR_LOOPBACK); // 127.0.0.1
-  }
-  if (ss.ss_family == AF_INET6) {
-    auto *sa6 = reinterpret_cast<sockaddr_in6 *>(&ss);
-    static const unsigned char loopback[16] = {0, 0, 0, 0, 0, 0, 0, 0,
-                                               0, 0, 0, 0, 0, 0, 0, 1};
-    return memcmp(sa6->sin6_addr.s6_addr, loopback, 16) == 0; // ::1
-  }
-  return false;
-}
-
 } // namespace
 
 HTTPMJPEG::HTTPMJPEG() = default;
@@ -416,18 +334,6 @@ void HTTPMJPEG::handle_client(int cfd) {
     write_full(cfd, hdr, static_cast<size_t>(n));
     if (!payload.empty())
       write_full(cfd, payload.data(), payload.size());
-  };
-
-  auto send_auth_required = [&]() {
-    const char *hdr =
-        "HTTP/1.0 401 Unauthorized\r\n"
-        "WWW-Authenticate: Basic realm=\"Prudynt MJPEG Server\"\r\n"
-        "Content-Type: text/plain\r\n"
-        "Content-Length: 13\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
-        "Connection: close\r\n\r\n"
-        "Unauthorized\n";
-    write_full(cfd, hdr, strlen(hdr));
   };
 
   // Extract X-API-Key header for config endpoint auth
