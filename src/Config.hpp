@@ -405,6 +405,23 @@ public:
             item.value = value;
           }
           item.noSave = noSave;
+          // Keep jsonConfig in sync so GET /api/v1/config/* returns
+          // current values without requiring a config file reload.
+          if (jsonConfig) {
+            std::string valueStr;
+            if constexpr (std::is_same_v<T, const char *>) {
+              valueStr = item.value ? std::string(item.value) : "";
+            } else if constexpr (std::is_same_v<T, bool>) {
+              valueStr = item.value ? "true" : "false";
+            } else if constexpr (std::is_same_v<T, int>) {
+              valueStr = std::to_string(item.value);
+            } else if constexpr (std::is_same_v<T, unsigned int>) {
+              valueStr = std::to_string(item.value);
+            } else if constexpr (std::is_same_v<T, float>) {
+              valueStr = std::to_string(item.value);
+            }
+            set_nested_item(jsonConfig, item.path, valueStr.c_str());
+          }
           return true;
         } else {
           return false;

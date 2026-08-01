@@ -621,6 +621,25 @@ void HTTPMJPEG::handle_client(int cfd) {
       send_response(400, "application/json",
                     "{\"error\":\"invalid_request\"}\n");
     } else {
+      // Persist in-memory changes to disk so they survive reboots
+      save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+
+      // Also update /etc/onvif.json with the new RTSP credentials
+      // so ONVIF stays in sync
+      JsonValue *rtsp_pw = get_nested_item(cfg->jsonConfig, "rtsp.password");
+      JsonValue *rtsp_un = get_nested_item(cfg->jsonConfig, "rtsp.username");
+      if (rtsp_pw || rtsp_un) {
+        JsonValue *onvif_root = load_config("/etc/onvif.json");
+        if (onvif_root) {
+          if (rtsp_pw && rtsp_pw->type == JSON_STRING && rtsp_pw->value.string)
+            set_nested_item(onvif_root, "server.password", rtsp_pw->value.string);
+          if (rtsp_un && rtsp_un->type == JSON_STRING && rtsp_un->value.string)
+            set_nested_item(onvif_root, "server.username", rtsp_un->value.string);
+          save_config("/etc/onvif.json", onvif_root);
+          free_json_value(onvif_root);
+        }
+      }
+
       send_response(200, "application/json", resp_json);
     }
     ::close(cfd);

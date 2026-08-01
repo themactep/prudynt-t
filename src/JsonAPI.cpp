@@ -1180,8 +1180,10 @@ void handle_rtsp(JsonValue *obj, std::string &out, bool &sep) {
   auto wrote = false;
   auto add_int = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_NUMBER)
+      if (v->type == JSON_NUMBER) {
         cfg->set<int>(path, (int)v->value.number.integer);
+        global_restart_rtsp = true;
+      }
       add_key(out, s2, key);
       add_num(out, cfg->get<int>(path));
       wrote = true;
@@ -1189,8 +1191,10 @@ void handle_rtsp(JsonValue *obj, std::string &out, bool &sep) {
   };
   auto add_str_r = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_STRING && v->value.string)
+      if (v->type == JSON_STRING && v->value.string) {
         cfg->set<const char *>(path, strdup(v->value.string));
+        global_restart_rtsp = true;
+      }
       add_key(out, s2, key);
       add_str(out, cfg->get<const char *>(path));
       wrote = true;
@@ -1198,8 +1202,10 @@ void handle_rtsp(JsonValue *obj, std::string &out, bool &sep) {
   };
   auto add_bool_r = [&](const char *key, const char *path) {
     if (JsonValue *v = obj_get(obj, key)) {
-      if (v->type == JSON_BOOL)
+      if (v->type == JSON_BOOL) {
         cfg->set<bool>(path, v->value.boolean != 0);
+        global_restart_rtsp = true;
+      }
       add_key(out, s2, key);
       add_bool(out, cfg->get<bool>(path));
       wrote = true;
