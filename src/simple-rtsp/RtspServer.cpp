@@ -794,7 +794,13 @@ void RtspServer::handleRequest(int idx) {
 
     // Append to read buffer
     if (s->readOff + n >= RTSP_BUF_SIZE) {
-        const char *remoteIp = inet_ntoa(s->clientAddr.sin_addr);
+        // Copy remote address immediately — inet_ntoa returns a static
+        // buffer that the camera-IP lookup below will overwrite.
+        char remoteIp[64];
+        {
+            const char *p = inet_ntoa(s->clientAddr.sin_addr);
+            strncpy(remoteIp, p ? p : "0.0.0.0", sizeof(remoteIp) - 1);
+        }
         int remotePort = ntohs(s->clientAddr.sin_port);
 
         // Dump the oversized request if a debug_dump_path is configured
