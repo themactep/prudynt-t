@@ -676,6 +676,8 @@ void RtspServer::acceptClient() {
     s->ntpAnchor = 0;
     s->ntpAnchorMonoUs = -1;
 
+    s->clientAddr = addr;
+
     LOG_INFO("Client connected: " << inet_ntoa(addr.sin_addr) << ":"
             << ntohs(addr.sin_port));
 }
