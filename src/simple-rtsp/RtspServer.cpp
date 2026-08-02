@@ -935,11 +935,45 @@ void RtspServer::handleRequest(int idx) {
     }
     if (s->readOff == 0) return; // nothing left to parse
 
-    // Check for complete request (ends with \r\n\r\n)
-    char *end = strstr(s->readBuf, "\r\n\r\n");
+    // Check for complete request (ends with \r\n\r\n).
+    // Use a NUL-safe scan — strstr() stops at the first 0x00 byte,
+    // which breaks when buggy clients (LibVLC 2.0.3 / LIVE555) send
+    // raw RTCP on the control socket (RTCP is full of NULs).
+    char *end = nullptr;
+    for (int i = 0; i <= s->readOff - 4; i++) {
+        if (memcmp(s->readBuf + i, "\r\n\r\n", 4) == 0) {
+            end = s->readBuf + i;
+            break;
+        }
+    }
     if (!end) {
-        end = strstr(s->readBuf, "\n\n");
+        for (int i = 0; i <= s->readOff - 2; i++) {
+            if (memcmp(s->readBuf + i, "\n\n", 2) == 0) {
+                end = s->readBuf + i;
+                break;
+            }
+        }
         if (!end) return; // incomplete — wait for more data
+    }
+
+    // Find the start of this request: byte after the previous \r\n\r\n
+    // (or the beginning of the buffer).  Strip any garbage that
+    // accumulated before it so sscanf parses the right data.
+    {
+        char *reqStart = s->readBuf;
+        for (char *p = end - 5; p >= s->readBuf; p--) {
+            if (memcmp(p, "\r\n\r\n", 4) == 0) {
+                reqStart = p + 4;
+                break;
+            }
+        }
+        if (reqStart > s->readBuf) {
+            ptrdiff_t shift = reqStart - s->readBuf;
+            s->readOff -= static_cast<int>(shift);
+            memmove(s->readBuf, reqStart, static_cast<size_t>(s->readOff));
+            s->readBuf[s->readOff] = '\0';
+            end -= shift;
+        }
     }
 
     // Parse request line
