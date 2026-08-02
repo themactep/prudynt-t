@@ -803,12 +803,10 @@ void RtspServer::handleRequest(int idx) {
         }
         int remotePort = ntohs(s->clientAddr.sin_port);
 
-        // Dump the oversized request if a debug_dump_path is configured
-        // (e.g. /mnt/nfs/prudynt-debug) and the directory is writable.
+        // Dump the full accumulated buffer + new data for offline diagnosis.
         const char *dumpBase = cfg ? cfg->general.debug_dump_path : nullptr;
         bool dumped = false;
         if (dumpBase && dumpBase[0] != '\0') {
-            // Get this camera's own IP from the session socket.
             char cameraIp[64] = "unknown";
             {
                 sockaddr_in localAddr{};
@@ -828,7 +826,6 @@ void RtspServer::handleRequest(int idx) {
             ::mkdir(dumpBase, 0755);
             ::mkdir(camDir, 0755);
 
-            // Only proceed if the camera directory is writable
             if (access(camDir, W_OK) == 0) {
                 char path[384];
                 time_t now = time(nullptr);
@@ -847,18 +844,49 @@ void RtspServer::handleRequest(int idx) {
                     fwrite(tmp, 1, static_cast<size_t>(n), f);
                     fclose(f);
                     dumped = true;
-                    LOG_WARN("Request too large (" << s->readOff + n
-                             << " bytes) from " << remoteIp << ":"
-                             << remotePort << ", dumped to " << path);
                 }
             }
         }
-        if (!dumped) {
-            LOG_WARN("Request too large (" << s->readOff + n
-                     << " bytes) from " << remoteIp << ":"
-                     << remotePort << ", resetting buffer");
+
+        // Salvage the last complete RTSP request from the overflow so the
+        // keepalive still gets handled.  Scan tmp (the most recent data)
+        // backwards for \r\n\r\n and keep just that request.
+        char *reqEnd = nullptr;
+        for (char *p = tmp + n - 4; p >= tmp; p--) {
+            if (p[0] == '\r' && p[1] == '\n' &&
+                p[2] == '\r' && p[3] == '\n') {
+                reqEnd = p + 4;
+                break;
+            }
         }
-        s->readOff = 0;
+        if (reqEnd) {
+            // Find the start of this request: byte after previous \r\n\r\n
+            char *reqStart = tmp;
+            for (char *p = reqEnd - 5; p >= tmp; p--) {
+                if (p[0] == '\r' && p[1] == '\n' &&
+                    p[2] == '\r' && p[3] == '\n') {
+                    reqStart = p + 4;
+                    break;
+                }
+            }
+            size_t keepLen = static_cast<size_t>(reqEnd - reqStart);
+            size_t trailing  = static_cast<size_t>(tmp + n - reqEnd);
+            size_t totalKeep = keepLen + trailing;
+            if (totalKeep > 0 && totalKeep < RTSP_BUF_SIZE) {
+                memcpy(s->readBuf, reqStart, totalKeep);
+                s->readOff = static_cast<int>(totalKeep);
+                s->readBuf[s->readOff] = '\0';
+            } else {
+                s->readOff = 0;
+            }
+        } else {
+            s->readOff = 0;
+        }
+
+        LOG_WARN("Request too large (" << s->readOff + n
+                 << " bytes) from " << remoteIp << ":"
+                 << remotePort << (dumped ? ", dumped" : "")
+                 << (s->readOff > 0 ? ", salvaged last request" : ""));
     }
     memcpy(s->readBuf + s->readOff, tmp, static_cast<size_t>(n));
     s->readOff += static_cast<int>(n);
