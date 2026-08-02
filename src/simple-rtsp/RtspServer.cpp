@@ -821,13 +821,13 @@ void RtspServer::handleRequest(int idx) {
                 }
             }
 
-            char camDir[320];
+            char camDir[384];
             snprintf(camDir, sizeof(camDir), "%s/%s", dumpBase, cameraIp);
             ::mkdir(dumpBase, 0755);
             ::mkdir(camDir, 0755);
 
             if (access(camDir, W_OK) == 0) {
-                char path[384];
+                char path[512];
                 time_t now = time(nullptr);
                 struct tm tm;
                 localtime_r(&now, &tm);
