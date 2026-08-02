@@ -939,27 +939,34 @@ void RtspServer::handleRequest(int idx) {
     // Use a NUL-safe scan — strstr() stops at the first 0x00 byte,
     // which breaks when buggy clients (LibVLC 2.0.3 / LIVE555) send
     // raw RTCP on the control socket (RTCP is full of NULs).
+    //
+    // The \r\n\r\n pattern can appear inside RTCP data by coincidence.
+    // We loop: find the next candidate, try to parse it as RTSP, and
+    // skip it if the parse fails.
     char *end = nullptr;
-    for (int i = 0; i <= s->readOff - 4; i++) {
-        if (memcmp(s->readBuf + i, "\r\n\r\n", 4) == 0) {
-            end = s->readBuf + i;
-            break;
-        }
-    }
-    if (!end) {
-        for (int i = 0; i <= s->readOff - 2; i++) {
-            if (memcmp(s->readBuf + i, "\n\n", 2) == 0) {
+    char methodStr[64]{}, uri[256]{}, version[64]{};
+    int parsed = 0;
+
+    while (s->readOff >= 4) {
+        // Find next \r\n\r\n or \n\n boundary
+        end = nullptr;
+        for (int i = 0; i <= s->readOff - 4; i++) {
+            if (memcmp(s->readBuf + i, "\r\n\r\n", 4) == 0) {
                 end = s->readBuf + i;
                 break;
             }
         }
-        if (!end) return; // incomplete — wait for more data
-    }
+        if (!end) {
+            for (int i = 0; i <= s->readOff - 2; i++) {
+                if (memcmp(s->readBuf + i, "\n\n", 2) == 0) {
+                    end = s->readBuf + i;
+                    break;
+                }
+            }
+        }
+        if (!end) return; // no complete request in buffer
 
-    // Find the start of this request: byte after the previous \r\n\r\n
-    // (or the beginning of the buffer).  Strip any garbage that
-    // accumulated before it so sscanf parses the right data.
-    {
+        // Find the start of the candidate request
         char *reqStart = s->readBuf;
         for (char *p = end - 5; p >= s->readBuf; p--) {
             if (memcmp(p, "\r\n\r\n", 4) == 0) {
@@ -967,21 +974,36 @@ void RtspServer::handleRequest(int idx) {
                 break;
             }
         }
-        if (reqStart > s->readBuf) {
-            ptrdiff_t shift = reqStart - s->readBuf;
-            s->readOff -= static_cast<int>(shift);
-            memmove(s->readBuf, reqStart, static_cast<size_t>(s->readOff));
-            s->readBuf[s->readOff] = '\0';
-            end -= shift;
-        }
-    }
 
-    // Parse request line
-    char methodStr[64]{}, uri[256]{}, version[64]{};
-    int parsed = sscanf(s->readBuf, "%63s %255s %63s", methodStr, uri, version);
-    if (parsed < 2) {
-        LOG_WARN("Malformed request: " << s->readBuf);
-        sendResponse(*s, Status::BAD_REQUEST, 0, nullptr, nullptr);
+        // Try to parse the request line — reject if it doesn't look
+        // like RTSP (garbage bytes coincidentally matching \r\n\r\n).
+        parsed = sscanf(reqStart, "%63s %255s %63s", methodStr, uri, version);
+        if (parsed >= 2) {
+            Method m = parseMethod(methodStr);
+            bool isResponse = (strncmp(methodStr, "RTSP/", 5) == 0);
+            if (m != Method::UNKNOWN || isResponse) {
+                // Valid request (or echoed response) — accept.
+                // Strip garbage before reqStart.
+                if (reqStart > s->readBuf) {
+                    ptrdiff_t shift = reqStart - s->readBuf;
+                    s->readOff -= static_cast<int>(shift);
+                    memmove(s->readBuf, reqStart,
+                            static_cast<size_t>(s->readOff));
+                    s->readBuf[s->readOff] = '\0';
+                    end -= shift;
+                }
+                break;
+            }
+        }
+
+        // Candidate was garbage — skip past it and try the next.
+        size_t skip = static_cast<size_t>(end - s->readBuf) + 4;
+        s->readOff -= static_cast<int>(skip);
+        memmove(s->readBuf, s->readBuf + skip,
+                static_cast<size_t>(s->readOff));
+    }
+    if (!end || parsed < 2) {
+        // Exhausted buffer with no valid request.
         s->readOff = 0;
         return;
     }
