@@ -200,6 +200,11 @@ bool validateCharNotEmpty(const char *v) {
   return std::strlen(v) > 0;
 }
 
+bool validateCharEmptyOk(const char *v) {
+  (void)v;
+  return true;
+}
+
 bool validateLogLevelString(const char *v) {
   if (!v || v[0] == '\0') {
     return true;
@@ -404,6 +409,8 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"rtsp.audio_only_info", rtsp.audio_only_info,
        "audio from the microphone", validateCharNotEmpty},
       {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
+      {"general.debug_dump_path", general.debug_dump_path, "",
+       validateCharEmptyOk},
       {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false,
        "/proc/jz/sensor/name"},
       {"sensor.chip_id", sensor.chip_id, "unknown", validateCharNotEmpty, false,

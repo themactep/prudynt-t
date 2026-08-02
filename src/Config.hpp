@@ -135,6 +135,7 @@ struct _daynight {
 };
 struct _general {
   const char *loglevel;
+  const char *debug_dump_path;
   int osd_pool_size;
   int imp_polling_timeout_ms;
   bool timestamp_validation_enabled;

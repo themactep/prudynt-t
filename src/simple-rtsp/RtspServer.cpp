@@ -13,6 +13,9 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
+#include <cstdio>
+#include <ctime>
+#include <sys/stat.h>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -131,7 +134,6 @@ struct Session {
 
     bool    codecConfigSent    = false; // SPS/PPS prepended for this session
     bool    waitingForKeyframe = false; // drop non-IDR until first keyframe arrives
-    bool    sendInitialRtcpSr  = false; // Send RTCP SR after first frame
 
     // Audio uses the IMP driver's capture timestamp (microseconds).
     struct timeval startAnchor{0, 0};
@@ -792,7 +794,64 @@ void RtspServer::handleRequest(int idx) {
 
     // Append to read buffer
     if (s->readOff + n >= RTSP_BUF_SIZE) {
-        LOG_WARN("Request too large, resetting buffer");
+        const char *remoteIp = inet_ntoa(s->clientAddr.sin_addr);
+        int remotePort = ntohs(s->clientAddr.sin_port);
+
+        // Dump the oversized request if a debug_dump_path is configured
+        // (e.g. /mnt/nfs/prudynt-debug) and the directory is writable.
+        const char *dumpBase = cfg ? cfg->general.debug_dump_path : nullptr;
+        bool dumped = false;
+        if (dumpBase && dumpBase[0] != '\0') {
+            // Get this camera's own IP from the session socket.
+            char cameraIp[64] = "unknown";
+            {
+                sockaddr_in localAddr{};
+                socklen_t addrLen = sizeof(localAddr);
+                if (getsockname(s->fd,
+                                reinterpret_cast<sockaddr *>(&localAddr),
+                                &addrLen) == 0) {
+                    const char *lip = inet_ntoa(localAddr.sin_addr);
+                    if (lip) {
+                        strncpy(cameraIp, lip, sizeof(cameraIp) - 1);
+                    }
+                }
+            }
+
+            char camDir[320];
+            snprintf(camDir, sizeof(camDir), "%s/%s", dumpBase, cameraIp);
+            ::mkdir(dumpBase, 0755);
+            ::mkdir(camDir, 0755);
+
+            // Only proceed if the camera directory is writable
+            if (access(camDir, W_OK) == 0) {
+                char path[384];
+                time_t now = time(nullptr);
+                struct tm tm;
+                localtime_r(&now, &tm);
+                snprintf(path, sizeof(path),
+                         "%s/overflow-%04d%02d%02d-%02d%02d%02d-%s-%d.bin",
+                         camDir,
+                         tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                         tm.tm_hour, tm.tm_min, tm.tm_sec,
+                         remoteIp, remotePort);
+                FILE *f = fopen(path, "wb");
+                if (f) {
+                    fwrite(s->readBuf, 1,
+                           static_cast<size_t>(s->readOff), f);
+                    fwrite(tmp, 1, static_cast<size_t>(n), f);
+                    fclose(f);
+                    dumped = true;
+                    LOG_WARN("Request too large (" << s->readOff + n
+                             << " bytes) from " << remoteIp << ":"
+                             << remotePort << ", dumped to " << path);
+                }
+            }
+        }
+        if (!dumped) {
+            LOG_WARN("Request too large (" << s->readOff + n
+                     << " bytes) from " << remoteIp << ":"
+                     << remotePort << ", resetting buffer");
+        }
         s->readOff = 0;
     }
     memcpy(s->readBuf + s->readOff, tmp, static_cast<size_t>(n));
@@ -1412,10 +1471,22 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
 
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 
-    // Defer RTCP SR until the first video frame arrives so the timestamp
-    // and sequence number match actual RTP packets, preventing FFmpeg's
-    // "dropping old packet received too late" jitter buffer issue.
-    s->sendInitialRtcpSr = true;
+    // Send initial RTCP SR immediately after the PLAY response.
+    // The RTP-Info header above advertises rtptime=0; this SR pairs
+    // that same RTP timestamp 0 with the current NTP wall-clock time
+    // so receivers can compute PTS from the very first RTP packet.
+    //
+    // Burst 3 copies with a 5 ms gap between each.  For TCP interleaved
+    // transport the first copy is sufficient (TCP ordering guarantees it
+    // precedes RTP data).  For UDP transport the SR travels on a separate
+    // socket from RTP data; the burst compensates for UDP's lack of
+    // ordering and occasional packet loss.  Receivers that see duplicate
+    // SRs will simply update their NTP→RTP mapping to the same values.
+    sendRtcpSr(*s);
+    usleep(5000);
+    sendRtcpSr(*s);
+    usleep(5000);
+    sendRtcpSr(*s);
 }
 
 // ── TEARDOWN ───────────────────────────────────────────────────────────────
@@ -2076,13 +2147,6 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                            pt, s.videoRtp, output);
     }
 
-    // Send deferred initial RTCP SR after the first video frame so the
-    // timestamp and sequence number match actual RTP packets.
-    if (ok && s.sendInitialRtcpSr && nal.is_frame_start && s.videoStartAnchorUs >= 0) {
-        sendRtcpSr(s);
-        s.sendInitialRtcpSr = false;
-    }
-
     return ok;
 }
 
@@ -2139,10 +2203,19 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
                         static_cast<int64_t>(s.startAnchor.tv_sec)) * 1000000LL
                      + (static_cast<int64_t>(af.time.tv_usec) -
                         static_cast<int64_t>(s.startAnchor.tv_usec));
-        // Anchor on first audio frame's capture time if not already set
+        // Anchor on first audio frame's capture time if not already set.
+        // Subtract a 1 ms guard band so any frames that were captured
+        // slightly before the anchor frame still produce positive offsets
+        // instead of backward DTS jumps.
         if (s.audioRtp.timestamp == 0 && s.startAnchor.tv_sec == 0 && s.startAnchor.tv_usec == 0) {
             s.startAnchor = af.time;
-            dtUs = 0;
+            if (s.startAnchor.tv_usec >= 1000) {
+                s.startAnchor.tv_usec -= 1000;
+            } else if (s.startAnchor.tv_sec > 0) {
+                s.startAnchor.tv_sec -= 1;
+                s.startAnchor.tv_usec += 1000000 - 1000;
+            }
+            dtUs = 1000;
         }
         if (dtUs < 0) dtUs = 0;
         uint32_t new_ts = static_cast<uint32_t>(
