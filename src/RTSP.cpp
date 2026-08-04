@@ -7,6 +7,7 @@
 #include "version.hpp"
 #include <cstring>
 #include <string>
+#include <unistd.h>
 
 #undef MODULE
 #define MODULE "RTSP"
