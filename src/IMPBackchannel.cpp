@@ -30,7 +30,7 @@ static int aac_openDecoder(void * /*pvoidDecoderAttr*/, void * /*pDecoder*/) {
 
   memset(&aacFrameInfo, 0, sizeof(_AACFrameInfo));
   aacFrameInfo.nChans = 1;
-  aacFrameInfo.sampRateCore = cfg->audio.kSampleRate;
+  aacFrameInfo.sampRateCore = cfg->audio.mic_sample_rate();
   aacFrameInfo.profile = AAC_PROFILE_LC;
 
   int raw_ret = AACSetRawBlockParams(tl_aacDecoder, 0, &aacFrameInfo);

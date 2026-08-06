@@ -288,7 +288,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
         mp4_audio_sample_rate = global_audio[encChn]->imp_audio->sample_rate;
       }
       if (mp4_audio_sample_rate <= 0) {
-        mp4_audio_sample_rate = cfg->audio.kSampleRate;
+        mp4_audio_sample_rate = cfg->audio.mic_sample_rate();
       }
     }
 
@@ -397,7 +397,7 @@ void AudioWorker::run() {
 
   if (tap && cfg) {
     const char *path = cfg->audio.tap_path ? cfg->audio.tap_path : "";
-    int sampleRate = cfg->audio.kSampleRate;
+    int sampleRate = cfg->audio.mic_sample_rate();
     int bitwidth = 16; // Prudynt captures 16-bit PCM frames
     int channels = 1;
     if (global_audio[encChn]->imp_audio) {

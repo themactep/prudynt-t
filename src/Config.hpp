@@ -65,9 +65,10 @@ struct _stream_stats { // has to be before _osd
 };
 struct _audio {
   // All Ingenic SoCs support 48kHz natively — capture rate is fixed.
-  static constexpr int kSampleRate = 48000;
+  int mic_sample_rate() const { return mic_hq ? 48000 : 16000; }
+
   // Default encoding bitrate for AAC/Opus (kbps).
-  static constexpr int kBitrateKbps = 128;
+  int mic_bitrate_kbps() const { return mic_hq ? 128 : 32; }
   // Speaker/playback AAC bitrate (kbps).
   static constexpr int kSpkBitrateKbps = 48;
 
@@ -78,6 +79,7 @@ struct _audio {
   bool tap_enabled;
   const char *tap_path;
   bool mic_is_digital;
+  bool mic_hq;
 #if defined(LIB_AUDIO_PROCESSING)
   int input_alc_gain;
   int input_noise_suppression;
@@ -91,9 +93,7 @@ struct _audio {
   int output_vol;
   int output_gain;
 #endif
-  // Buffer tuning (in 20 ms frames per channel)
-  int buffer_warn_frames;
-  int buffer_cap_frames;
+
 };
 struct _daynight_controls {
   bool binswitch{true};

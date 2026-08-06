@@ -32,7 +32,7 @@ int AACEncoder::open() {
   params.object_type = FAAC_OBJ_LOW;
   params.input_format = FAAC_INPUT_16BIT;
   params.output_format = FAAC_STREAM_ADTS;
-  params.bit_rate = cfg->audio.kBitrateKbps * 1000;
+  params.bit_rate = cfg->audio.mic_bitrate_kbps() * 1000;
   params.bandwidth = 0;
   params.use_tns = false;
   params.joint_mode = FAAC_JOINT_NONE;

@@ -1,7 +1,5 @@
 {
   "audio": {
-    "buffer_cap_frames": 100,
-    "buffer_warn_frames": 80,
     "force_stereo": false,
     "mic_agc_compression_gain_db": 0,
     "mic_agc_enabled": false,
@@ -12,6 +10,7 @@
     "mic_gain": 25,
     "mic_high_pass_filter": false,
     "mic_is_digital": false,
+    "mic_hq": true,
     "mic_noise_suppression": 0,
     "mic_vol": 80,
     "spk_enabled": true,

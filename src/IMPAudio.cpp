@@ -63,7 +63,8 @@ int IMPAudio::init() {
 
   format = IMPAudioFormat::PCM;
   IMPAudioIOAttr ioattr = {.samplerate = static_cast<IMPAudioSampleRate>(
-                               cfg->audio.kSampleRate),
+                               cfg->audio.mic_hq ? AUDIO_SAMPLE_RATE_48000
+                                                        : AUDIO_SAMPLE_RATE_16000),
                            .bitwidth = AUDIO_BIT_WIDTH_16,
                            .soundmode = AUDIO_SOUND_MODE_MONO,
                            .frmNum = 30,
@@ -82,7 +83,7 @@ int IMPAudio::init() {
   if (strcmp(cfg->audio.input_format, "OPUS") == 0) {
 #if defined(USE_OPUS) && USE_OPUS
     format = IMPAudioFormat::OPUS;
-    bitrate = cfg->audio.kBitrateKbps;
+    bitrate = cfg->audio.mic_bitrate_kbps();
     encoder = Opus::createNew(ioattr.samplerate, outChnCnt);
 #else
     LOG_ERROR("OPUS input_format requested but OPUS support is disabled at "
@@ -91,7 +92,7 @@ int IMPAudio::init() {
   } else if (strcmp(cfg->audio.input_format, "AAC") == 0) {
 #if defined(USE_AAC) && USE_AAC
     format = IMPAudioFormat::AAC;
-    bitrate = cfg->audio.kBitrateKbps;
+    bitrate = cfg->audio.mic_bitrate_kbps();
     // All Ingenic SoCs support 48kHz natively — capture at native rate
     // instead of a lower rate + software resample.
     ioattr.samplerate = AUDIO_SAMPLE_RATE_48000;

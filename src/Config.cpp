@@ -283,6 +283,7 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"audio.force_stereo", audio.force_stereo, false, validateBool},
       {"audio.mic_enabled", audio.input_enabled, true, validateBool},
       {"audio.mic_is_digital", audio.mic_is_digital, false, validateBool},
+      {"audio.mic_hq", audio.mic_hq, true, validateBool},
       {"audio.spk_enabled", audio.output_enabled, true, validateBool},
       {"audio.tap_enabled", audio.tap_enabled, false, validateBool},
 #if defined(LIB_AUDIO_PROCESSING)
@@ -488,10 +489,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"audio.spk_vol", audio.output_vol, 60,
        [](const int &v) { return v >= -30 && v <= 120; }},
 #endif
-      {"audio.buffer_warn_frames", audio.buffer_warn_frames, 240,
-       [](const int &v) { return v >= 10 && v <= 1000; }},
-      {"audio.buffer_cap_frames", audio.buffer_cap_frames, 400,
-       [](const int &v) { return v >= 10 && v <= 1000; }},
+
       {"daynight.total_gain_night_threshold",
        daynight.total_gain_night_threshold, 3000,
        [](const int &v) { return v >= 0; }},

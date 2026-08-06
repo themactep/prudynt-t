@@ -840,7 +840,7 @@ int main(int argc, const char *argv[]) {
 
   global_audio[0] = std::make_shared<audio_stream>(audio_input_device_id, 0, 0);
   global_audio[0]->msgChannel =
-      std::make_shared<MsgChannel<AudioFrame>>(cfg->audio.buffer_cap_frames);
+      std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE);
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 

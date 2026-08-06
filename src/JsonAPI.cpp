@@ -577,6 +577,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
 
   // Input
   add_boolk_a("mic_enabled", "audio.mic_enabled", false, true);
+  add_boolk_a("mic_hq", "audio.mic_hq", false, true);
   add_strk_a("mic_format", "audio.mic_format", true);
 
   // mic_vol - apply immediately without restart
@@ -698,8 +699,7 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
     wrote = true;
   }
 #endif
-  add_int("buffer_warn_frames", "audio.buffer_warn_frames", false);
-  add_int("buffer_cap_frames", "audio.buffer_cap_frames", false);
+
 
   if (!wrote) {
     out.erase(out.size() - 1);

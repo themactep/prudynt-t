@@ -489,7 +489,7 @@ bool build_aac_config(std::vector<uint8_t> &aacConfig) {
   static constexpr int sample_rate_table[] = {96000, 88200, 64000, 48000, 44100,
                                               32000, 24000, 22050, 16000, 12000,
                                               11025, 8000,  7350};
-  int sample_rate = cfg->audio.kSampleRate;
+  int sample_rate = cfg->audio.mic_sample_rate();
   int sample_rate_index = -1;
   for (int i = 0; i < static_cast<int>(sizeof(sample_rate_table) /
                                        sizeof(sample_rate_table[0]));
@@ -645,7 +645,7 @@ bool start_recording(const std::string &path, int target_channel) {
 #else
     init.channels = 1;
 #endif
-    init.sampleRate = cfg->audio.kSampleRate;
+    init.sampleRate = cfg->audio.mic_sample_rate();
     if (std::strcmp(cfg->audio.input_format, "AAC") == 0) {
       if (!build_aac_config(init.aacConfig)) {
         init.channels = 0;

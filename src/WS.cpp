@@ -1768,7 +1768,7 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
     params.height = cfg->stream0.height;
     params.fps = cfg->stream0.fps;
     params.avcC = avcC;
-    params.sampleRate = cfg->audio.kSampleRate;
+    params.sampleRate = cfg->audio.mic_sample_rate();
     params.channels = cfg->audio.input_enabled ? 1 : 0;
 
     // Build AAC AudioSpecificConfig from FAAC encoder parameters if available
@@ -1777,9 +1777,9 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
       // Try to retrieve FAAC config by creating a temporary faac encoder
       faac_params fparams;
       if (faac_params_init(&fparams) == FAAC_OK) {
-        fparams.sample_rate  = cfg->audio.kSampleRate;
+        fparams.sample_rate  = cfg->audio.mic_sample_rate();
         fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
-        fparams.bit_rate     = cfg->audio.kBitrateKbps * 1000;
+        fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;
         fparams.object_type  = FAAC_OBJ_LOW;
         faac_encoder *fh = nullptr;
         if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
@@ -1820,9 +1820,9 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
       // Try to retrieve FAAC config by creating a temporary faac encoder
       faac_params fparams;
       if (faac_params_init(&fparams) == FAAC_OK) {
-        fparams.sample_rate  = cfg->audio.kSampleRate;
+        fparams.sample_rate  = cfg->audio.mic_sample_rate();
         fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
-        fparams.bit_rate     = cfg->audio.kBitrateKbps * 1000;
+        fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;
         fparams.object_type  = FAAC_OBJ_LOW;
         faac_encoder *fh = nullptr;
         if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
