@@ -337,6 +337,16 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
       cfg->set<int>("image.running_mode", mode);
       hal::isp::set_running_mode(cfg->image.running_mode);
 
+      // Night mode runs streams at half the configured FPS to reduce
+      // sensor noise and bandwidth.  This is a runtime adjustment only
+      // — the config file is left alone so the user's value survives
+      // reboots.
+      int divisor = (mode == 1) ? 2 : 1;
+      for (int ch = 0; ch < 2; ++ch) {
+        int cfg_fps = (ch == 0) ? cfg->stream0.fps : cfg->stream1.fps;
+        int effective_fps = std::max(1, cfg_fps / divisor);
+        hal::encoder::set_framerate(ch, effective_fps, 1);
+      }
     }
     add_key(out, s2, "running_mode");
     add_num(out, cfg->get<int>("image.running_mode"));
