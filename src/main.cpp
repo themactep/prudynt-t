@@ -888,9 +888,15 @@ int main(int argc, const char *argv[]) {
     }
 
     if (cfg->audio.output_enabled && (global_restart_audio || startup)) {
+      StartHelper bc_sh{0};
       int ret = pthread_create(&backchannel_thread, nullptr,
-                               BackchannelWorker::thread_entry, NULL);
+                               BackchannelWorker::thread_entry,
+                               static_cast<void *>(&bc_sh));
       LOG_DEBUG_OR_ERROR(ret, "create backchannel thread");
+      // Wait for ADEC hardware init to complete before starting video.
+      // The IMP SDK shares internal state between ADEC and encoder
+      // subsystems; concurrent init causes memory corruption -> SIGILL.
+      bc_sh.has_started.acquire();
     }
 
     if (global_restart_video || startup) {

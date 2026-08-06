@@ -3,6 +3,7 @@
 #include "AudioOutputWorker.hpp"
 #include "IMPBackchannel.hpp"
 #include "Logger.hpp"
+#include "WorkerUtils.hpp"
 
 #include <cmath>
 #include <stdexcept>
@@ -269,6 +270,14 @@ void *BackchannelWorker::thread_entry(void *arg) {
     LOG_INFO("Starting BackchannelWorker thread.");
 
     global_backchannel->imp_backchannel = IMPBackchannel::createNew();
+
+    // Signal that IMP hardware init (ADEC channels) is complete.
+    // The IMP SDK shares internal state between ADEC and encoder
+    // subsystems; concurrent init causes memory corruption -> SIGILL.
+    if (arg) {
+      auto *sh = static_cast<StartHelper *>(arg);
+      sh->has_started.release();
+    }
 
     BackchannelWorker processor;
     processor.run();
