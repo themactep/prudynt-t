@@ -331,22 +331,19 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
   add_int("anti_flicker", "image.anti_flicker",
           [] { hal::isp::set_anti_flicker(cfg->image.anti_flicker); });
 
+  add_boolk(
+      "isp_bypass", "image.isp_bypass",
+      [] { hal::isp::set_isp_bypass(true); },
+      [] { hal::isp::set_isp_bypass(false); });
+
   if (JsonValue *rm = obj_get(obj, "running_mode")) {
     if (rm->type == JSON_NUMBER) {
       int mode = (int)rm->value.number.integer;
       cfg->set<int>("image.running_mode", mode);
+      // Apply running_mode to the ISP for night/day switching
+      // (monochrome/color, AE strategy, IRCUT, etc.).  Framerate is
+      // not changed — the sensor and encoder stay at the configured rate.
       hal::isp::set_running_mode(cfg->image.running_mode);
-
-      // Night mode runs streams at half the configured FPS to reduce
-      // sensor noise and bandwidth.  This is a runtime adjustment only
-      // — the config file is left alone so the user's value survives
-      // reboots.
-      int divisor = (mode == 1) ? 2 : 1;
-      for (int ch = 0; ch < 2; ++ch) {
-        int cfg_fps = (ch == 0) ? cfg->stream0.fps : cfg->stream1.fps;
-        int effective_fps = std::max(1, cfg_fps / divisor);
-        hal::encoder::set_framerate(ch, effective_fps, 1);
-      }
     }
     add_key(out, s2, "running_mode");
     add_num(out, cfg->get<int>("image.running_mode"));

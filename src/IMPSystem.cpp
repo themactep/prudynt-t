@@ -167,6 +167,17 @@ void clamp_stream_to_sensor_limits(const char *stream_name, _stream &stream) {
     log_change("fps", stream.fps, sensor_min_fps);
     stream.fps = sensor_min_fps;
   }
+
+  // T31 encoder hardware is limited to ~26fps at 1080p regardless
+  // of RAM size.  Capping to 25 avoids DMA failures and frame-rate
+  // collapse that occurs above this threshold.
+#if defined(PLATFORM_T31)
+  if (stream.width * stream.height >= 1920 * 1080 && stream.fps > 25) {
+    LOG_INFO(stream_name << ": fps capped from " << stream.fps
+             << " to 25 (T31 1080p encoder limit)");
+    stream.fps = 25;
+  }
+#endif
 }
 
 void clamp_streams_to_sensor_limits() {
@@ -594,7 +605,9 @@ int IMPSystem::init() {
                                        << fps_num << ", " << fps_den << ")");
 #endif
 
-  // Set the ISP to DAY on launch
+  // Set the ISP to DAY on launch — safe initial state.
+  // daynightd will switch to night via the API after everything
+  // is initialized and streaming.
   ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_running_mode(Day)");
 #endif // #if !defined(NO_TUNINGS)
