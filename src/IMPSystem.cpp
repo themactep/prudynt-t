@@ -605,11 +605,14 @@ int IMPSystem::init() {
                                        << fps_num << ", " << fps_den << ")");
 #endif
 
-  // Set the ISP to DAY on launch — safe initial state.
-  // daynightd will switch to night via the API after everything
-  // is initialized and streaming.
-  ret = hal::isp::set_running_mode(hal::isp::RunningMode::Day);
-  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_running_mode(Day)");
+  // Apply the configured running_mode at the end of init.
+  // This ensures the ISP starts in the correct mode from boot,
+  // avoiding a race where daynightd's API call fails because
+  // prudynt's HTTP server isn't listening yet.
+  ret = hal::isp::set_running_mode(
+      static_cast<hal::isp::RunningMode>(cfg->image.running_mode));
+  LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::isp::set_running_mode("
+                                  << cfg->image.running_mode << ")");
 #endif // #if !defined(NO_TUNINGS)
 
   return ret;
