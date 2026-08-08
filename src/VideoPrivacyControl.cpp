@@ -144,19 +144,26 @@ void applyPrivacyToAllChannels(bool enabled) {
       rgnAttr.fmt = PIX_FMT_BGRA;
       rgnAttr.data.coverData.color = hal::osd::black_cover_color();
 
+      LOG_DEBUG("VideoPrivacyControl: creating OSD cover for ch" << ch
+                << " encGrp=" << encGrp
+                << " fmt=" << (int)rgnAttr.fmt
+                << " size=" << sw << "x" << sh);
+
       IMPRgnHandle handle = IMP_OSD_CreateRgn(&rgnAttr);
       if (handle == INVHANDLE) {
         LOG_ERROR("VideoPrivacyControl: IMP_OSD_CreateRgn failed for ch"
-                  << ch);
+                  << ch << " encGrp=" << encGrp);
         continue;
       }
+      LOG_DEBUG("VideoPrivacyControl: IMP_OSD_CreateRgn ok handle="
+                << (int)handle << " ch" << ch);
 
       IMPOSDGrpRgnAttr grpAttr{};
       grpAttr.show = 1;
       int ret = IMP_OSD_RegisterRgn(handle, encGrp, &grpAttr);
       if (ret != 0) {
         LOG_ERROR("VideoPrivacyControl: IMP_OSD_RegisterRgn failed for ch"
-                  << ch << " ret=" << ret);
+                  << ch << " encGrp=" << encGrp << " ret=" << ret);
         IMP_OSD_DestroyRgn(handle);
         continue;
       }
@@ -168,7 +175,11 @@ void applyPrivacyToAllChannels(bool enabled) {
       // video (it is opaque and full-frame, so no scene leaks). Only the
       // relative order matters — these are the only two drawn regions.
       grpAttr.layer = 1;
-      IMP_OSD_SetGrpRgnAttr(handle, encGrp, &grpAttr);
+      ret = IMP_OSD_SetGrpRgnAttr(handle, encGrp, &grpAttr);
+      if (ret != 0) {
+        LOG_WARN("VideoPrivacyControl: IMP_OSD_SetGrpRgnAttr failed for ch"
+                 << ch << " encGrp=" << encGrp << " ret=" << ret);
+      }
 
       ret = IMP_OSD_Start(encGrp);
       if (ret != 0) {
@@ -178,8 +189,13 @@ void applyPrivacyToAllChannels(bool enabled) {
 
       vs->privacy_osd_handle = static_cast<int>(handle);
       // Request IDR so the cover appears in the next keyframe
-      if (vs->running)
-        IMP_Encoder_RequestIDR(ch);
+      if (vs->running) {
+        ret = IMP_Encoder_RequestIDR(ch);
+        if (ret != 0) {
+          LOG_WARN("VideoPrivacyControl: IMP_Encoder_RequestIDR(ch" << ch
+                   << ") = " << ret);
+        }
+      }
 
       LOG_INFO("VideoPrivacyControl: OSD cover enabled on ch" << ch
                << " (" << sw << "x" << sh << ")");
@@ -189,16 +205,30 @@ void applyPrivacyToAllChannels(bool enabled) {
 
       if (vs->privacy_osd_handle >= 0) {
         int encGrp = vs->encChn;
-        IMP_OSD_ShowRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
+        int ret;
+        ret = IMP_OSD_ShowRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
                         encGrp, 0);
-        IMP_OSD_UnRegisterRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
+        if (ret != 0) {
+          LOG_WARN("VideoPrivacyControl: IMP_OSD_ShowRgn(hide) ch" << ch
+                   << " ret=" << ret);
+        }
+        ret = IMP_OSD_UnRegisterRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
                               encGrp);
+        if (ret != 0) {
+          LOG_WARN("VideoPrivacyControl: IMP_OSD_UnRegisterRgn ch" << ch
+                   << " ret=" << ret);
+        }
         IMP_OSD_DestroyRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle);
         vs->privacy_osd_handle = -1;
       }
 
-      if (vs->running)
-        IMP_Encoder_RequestIDR(ch);
+      if (vs->running) {
+        int ret = IMP_Encoder_RequestIDR(ch);
+        if (ret != 0) {
+          LOG_WARN("VideoPrivacyControl: IMP_Encoder_RequestIDR(ch" << ch
+                   << ") = " << ret);
+        }
+      }
 
       LOG_INFO("VideoPrivacyControl: OSD cover disabled on ch" << ch);
     }
