@@ -70,6 +70,9 @@ private:
     // RTSP request dispatch
     void handleRequest(int clientIdx);
 
+    // Authentication
+    bool checkAuth(Session &s, const char *headers);
+
     // Per-method handlers – return the CSeq from the request
     void handleOptions(int clientIdx, int cseq);
     void handleDescribe(int clientIdx, int cseq, const char *uri,

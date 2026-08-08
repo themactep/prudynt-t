@@ -188,6 +188,7 @@ struct Session {
     int64_t  lastAudioTsUs = -1;   // monotonic us of last audio frame
 
     time_t lastActivity = 0;
+    bool   authenticated = false;
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }
 
@@ -654,6 +655,7 @@ void RtspServer::acceptClient() {
     s->backchannelInterleavedRtcp = 1;
     s->sessionId[0] = '\0';
     s->lastActivity = time(nullptr);
+    s->authenticated = false;
     s->videoRtp = RtpState{};
     s->audioRtp = RtpState{};
     s->videoRtp.ssrc = static_cast<uint32_t>(rand());
@@ -775,6 +777,78 @@ void RtspServer::cleanupAllSessions() {
     for (size_t i = 0; i < sessions_.size(); i++)
         closeClient(static_cast<int>(i));
     sessions_.clear();
+}
+
+// ── Base64 decode helper ───────────────────────────────────────────────────
+
+static std::string base64Decode(const char *in, size_t len) {
+    static const signed char kDecodeTable[256] = {
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+        41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+    };
+    std::string out;
+    out.reserve((len * 3) / 4 + 2);
+    int val = 0, valb = -8;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = static_cast<unsigned char>(in[i]);
+        if (c == '=' || c == '\r' || c == '\n') break;
+        if (c > 127 || kDecodeTable[c] < 0) continue;
+        val = (val << 6) + kDecodeTable[c];
+        valb += 6;
+        if (valb >= 0) {
+            out.push_back(static_cast<char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return out;
+}
+
+// ── Authentication check ───────────────────────────────────────────────────
+
+bool RtspServer::checkAuth(Session &s, const char *headers) {
+    if (!authRequired_) return true;
+    if (s.authenticated) return true;
+    if (!headers) return false;
+
+    const char *auth = stristr(headers, "Authorization:");
+    if (!auth) return false;
+
+    // Skip past "Authorization:" and whitespace
+    auth += 14;
+    while (*auth == ' ' || *auth == '\t') auth++;
+
+    // Expect "Basic <base64>"
+    if (strncasecmp(auth, "Basic", 5) != 0) return false;
+    auth += 5;
+    while (*auth == ' ' || *auth == '\t') auth++;
+
+    // Extract the base64 credential string (up to \r or \n)
+    const char *end = auth;
+    while (*end && *end != '\r' && *end != '\n') end++;
+
+    std::string decoded = base64Decode(auth, static_cast<size_t>(end - auth));
+
+    // Expect "username:password"
+    size_t colon = decoded.find(':');
+    if (colon == std::string::npos) return false;
+
+    std::string user = decoded.substr(0, colon);
+    std::string pass = decoded.substr(colon + 1);
+
+    if (user == username_ && pass == password_) {
+        s.authenticated = true;
+        LOG_INFO("RTSP authentication successful for " << user);
+        return true;
+    }
+
+    LOG_WARN("RTSP authentication failed for user \"" << user << "\"");
+    return false;
 }
 
 // ── Request handling ───────────────────────────────────────────────────────
@@ -1062,6 +1136,31 @@ void RtspServer::handleRequest(int idx) {
 
     LOG_INFO("RTSP " << methodToString(method) << " " << uri
              << " CSeq=" << cseq);
+
+    // ── Authentication ──────────────────────────────────────────────────
+    if (!checkAuth(*s, headersStart)) {
+        sendResponse(*s, Status::UNAUTHORIZED, cseq,
+                     "WWW-Authenticate: Basic realm=\"thingino\"\r\n",
+                     nullptr);
+        // Consume this request
+        size_t consumed2 = static_cast<size_t>(end - s->readBuf) + 4;
+        {
+            const char *cl2 = stristr(s->readBuf, "Content-Length:");
+            if (cl2) {
+                int bodyLen2 = 0;
+                if (sscanf(cl2, "Content-Length: %d", &bodyLen2) == 1 && bodyLen2 > 0)
+                    consumed2 += static_cast<size_t>(bodyLen2);
+            }
+        }
+        if (consumed2 < static_cast<size_t>(s->readOff)) {
+            memmove(s->readBuf, s->readBuf + consumed2,
+                    static_cast<size_t>(s->readOff) - consumed2);
+            s->readOff -= static_cast<int>(consumed2);
+        } else {
+            s->readOff = 0;
+        }
+        return;
+    }
 
     // ── Dispatch ────────────────────────────────────────────────────────
     switch (method) {
