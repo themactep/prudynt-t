@@ -786,6 +786,16 @@ int main(int argc, const char *argv[]) {
   recover_stale_imp_state();
 
   cfg = std::make_shared<CFG>();
+
+  // Refuse to start with a corrupted config — bare defaults are only
+  // acceptable when there is no config file at all.
+  if (cfg->config_corrupted) {
+    LOG_ERROR("Configuration file is corrupted.  Restore a valid"
+              " /etc/prudynt.json or remove it to start with defaults.");
+    join_signal_thread(true);
+    return 1;
+  }
+
   Logger::setLevel(cfg->general.loglevel);
 
 #if defined(WEBSOCKET_ENABLED)

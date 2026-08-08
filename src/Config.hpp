@@ -323,6 +323,7 @@ public:
   }
 
   bool config_loaded = false;
+  bool config_corrupted = false;
   JsonValue *jsonConfig = nullptr;
   std::string filePath{};
   mutable std::mutex configMutex;

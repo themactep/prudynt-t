@@ -729,8 +729,10 @@ bool CFG::readConfig() {
   // Load JSON using JCT
   jsonConfig = load_config(configPath.c_str());
   if (!jsonConfig) {
-    LOG_WARN("JSON parse error: Failed to parse " + configPath);
-    return false; // Exit on parsing error
+    LOG_ERROR("JSON parse error: Failed to parse " + configPath +
+              " — config file is corrupted");
+    config_corrupted = true;
+    return false;
   }
 
   // Migrate old osd.enabled / osd.elements → osd.sei.enabled / osd.sei.entries
