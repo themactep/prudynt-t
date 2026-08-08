@@ -838,6 +838,20 @@ void handle_privacy(JsonValue *obj, std::string &out, bool &sep) {
     }
   }
 
+  // save_state: persist runtime toggles to config
+  if (JsonValue *v = obj_get(obj, "save_state")) {
+    if (v->type == JSON_BOOL) {
+      cfg->privacy.save_state = v->value.boolean != 0;
+      add_key(out, s2, "save_state");
+      add_bool(out, cfg->privacy.save_state);
+      wrote = true;
+    } else if (v->type == JSON_NULL) {
+      add_key(out, s2, "save_state");
+      add_bool(out, cfg->privacy.save_state);
+      wrote = true;
+    }
+  }
+
   if (!wrote) {
     out.erase(out.size() - 1);
     return;
