@@ -208,6 +208,7 @@ void VideoWorker::run() {
   uint32_t bps = 0;
   uint32_t fps = 0;
   uint32_t error_count = 0; // Keep track of polling errors
+  int poll_timeout_streak = 0; // Encoder watchdog: consecutive timeouts
   unsigned long long ms = 0;
   bool run_for_jpeg = false;
   auto video_state = global_video[encChn];
@@ -495,6 +496,7 @@ void VideoWorker::run() {
       }
       if (IMP_Encoder_PollingStream(encChn,
                                     cfg->general.imp_polling_timeout_ms) == 0) {
+        poll_timeout_streak = 0;  // reset watchdog on success
         IMPEncoderStream stream;
         memset(&stream, 0, sizeof(stream));
         if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) != 0) {
@@ -1200,6 +1202,26 @@ void VideoWorker::run() {
         LOG_DDEBUG("IMP_Encoder_PollingStream("
                    << encChn << ", " << cfg->general.imp_polling_timeout_ms
                    << ") timeout !");
+
+        // Encoder watchdog: after consecutive polling timeouts, the
+        // encoder pipeline may have stalled (e.g. DMA buffer exhaustion
+        // at 1080p).  Force-cycle the encoder to recover.
+        poll_timeout_streak++;
+        if (poll_timeout_streak >= 10) {
+          poll_timeout_streak = 0;
+          LOG_WARN("Encoder ch" << encChn << ": 10 consecutive polling "
+                   "timeouts — force-cycling encoder to recover");
+          IMP_Encoder_StopRecvPic(encChn);
+          IMP_FrameSource_DisableChn(encChn);
+          IMP_FrameSource_EnableChn(encChn);
+          if (IMP_Encoder_StartRecvPic(encChn) == 0) {
+            IMP_Encoder_RequestIDR(encChn);
+            LOG_INFO("Encoder ch" << encChn << ": recovery cycle complete");
+          } else {
+            LOG_ERROR("Encoder ch" << encChn << ": StartRecvPic failed "
+                      "during recovery");
+          }
+        }
       }
     } else if (global_video[encChn]->onDataCallback == nullptr &&
                !global_restart_video && !global_video[encChn]->run_for_jpeg &&
