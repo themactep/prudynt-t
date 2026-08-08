@@ -55,9 +55,6 @@ template <typename T> struct ConfigItem {
   const char *procPath = nullptr;
 };
 
-struct _osd_privacy { // has to be before _osd
-  bool enabled;
-};
 struct _stream_stats { // has to be before _osd
   uint32_t bps;
   uint8_t fps;
@@ -210,9 +207,6 @@ struct _osd {
   struct {
     bool enabled;
   } sei;
-  struct {
-    bool enabled;
-  } privacy;
   struct {
     bool enabled;
     const char *format;

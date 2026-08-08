@@ -460,24 +460,6 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
     wrote = true;
   }
 
-  // privacy
-  if (JsonValue *node = obj_get(obj, "privacy");
-      node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {
-    const std::string base = std::string(root) + ".privacy.";
-    if (node->type == JSON_OBJECT) {
-      if (JsonValue *en = obj_get(node, "enabled")) {
-        if (en->type == JSON_BOOL)
-          cfg->set<bool>(base + "enabled", en->value.boolean != 0);
-      }
-    }
-    add_key(sect, s2, "privacy", "{");
-    bool sp = false;
-    add_key(sect, sp, "enabled");
-    add_bool(sect, cfg->get<bool>(base + "enabled"));
-    sect += "}";
-    wrote = true;
-  }
-
   // burnin
   if (JsonValue *node = obj_get(obj, "burnin");
       node && (node->type == JSON_OBJECT || node->type == JSON_NULL)) {

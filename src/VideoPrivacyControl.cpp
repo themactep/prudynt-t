@@ -266,6 +266,8 @@ void handleCommand(const std::string &line) {
   }
 
   // Always apply privacy to all channels simultaneously for security
+  LOG_INFO("VideoPrivacyControl: handleCommand applying privacy="
+           << (value ? "on" : "off"));
   applyPrivacyToAllChannels(value);
 
   // Persist state to config if save_state is enabled
@@ -312,10 +314,49 @@ void fifoLoop() {
 } // namespace
 
 void VideoPrivacyControl::applyStartupState() {
-  if (cfg && cfg->privacy.enabled) {
-    LOG_INFO("VideoPrivacyControl: applying persisted privacy on startup");
-    applyPrivacyToAllChannels(true);
+  LOG_INFO("VideoPrivacyControl::applyStartupState() ENTRY"
+           << " cfg=" << (cfg ? "ptr" : "NULL")
+           << " privacy.enabled="
+           << (cfg ? (cfg->privacy.enabled ? "true" : "false") : "n/a"));
+
+  if (!cfg) {
+    LOG_WARN("VideoPrivacyControl::applyStartupState() cfg is NULL, skipping");
+    return;
   }
+  if (!cfg->privacy.enabled) {
+    LOG_INFO("VideoPrivacyControl::applyStartupState() privacy.enabled=false, skipping");
+    return;
+  }
+
+  LOG_INFO("VideoPrivacyControl: applying persisted privacy on startup");
+
+  // Write to the FIFO so the privacy thread handles it (same path as the
+  // shell 'privacy on' command).  Direct IMP_OSD calls from main would race
+  // with encoder group init in the video worker threads.
+  //
+  // The FIFO thread may still be blocked on open(O_RDONLY) waiting for a
+  // writer — retry non-blocking until the channel is established.
+  const char *cmd = "PRIVACY value=on\n";
+  for (int attempt = 0; attempt < 50; ++attempt) {
+    LOG_DEBUG("VideoPrivacyControl::applyStartupState attempt " << (attempt + 1));
+    int fd = open(kFifoPath, O_WRONLY | O_NONBLOCK);
+    if (fd >= 0) {
+      LOG_INFO("VideoPrivacyControl: writing startup privacy command");
+      ssize_t n = write(fd, cmd, strlen(cmd));
+      LOG_INFO("VideoPrivacyControl: wrote " << n << " bytes to FIFO");
+      close(fd);
+      return;
+    }
+    LOG_DEBUG("VideoPrivacyControl::applyStartupState open errno=" << errno
+              << " (" << strerror(errno) << ")");
+    if (errno != ENXIO) {
+      LOG_WARN("VideoPrivacyControl: cannot open FIFO " << kFifoPath
+               << " for startup privacy: " << strerror(errno));
+      return;
+    }
+    usleep(100000);  // 100 ms
+  }
+  LOG_WARN("VideoPrivacyControl: timed out waiting for FIFO reader");
 }
 
 void VideoPrivacyControl::run() {

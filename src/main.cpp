@@ -944,6 +944,7 @@ int main(int argc, const char *argv[]) {
 
     // Apply persisted privacy state on first startup (before RTSP goes live)
     if (startup) {
+      LOG_INFO("main: calling VideoPrivacyControl::applyStartupState()");
       VideoPrivacyControl::applyStartupState();
     }
 
@@ -1089,6 +1090,16 @@ int main(int argc, const char *argv[]) {
   if (imp_system) {
     delete imp_system;
     imp_system = nullptr;
+  }
+
+  // Clean up runtime state so stale files (privacy.active etc.) don't
+  // survive across restarts and mislead status probes.
+  {
+    std::error_code ec;
+    std::filesystem::remove_all(kPrudyntRunDir, ec);
+    if (ec) {
+      LOG_WARN("Failed to remove " << kPrudyntRunDir << ": " << ec.message());
+    }
   }
 
   return 0;
