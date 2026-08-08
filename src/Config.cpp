@@ -307,6 +307,8 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"image.vflip", image.vflip, false, validateBool},
       {"image.hflip", image.hflip, false, validateBool},
       {"motion.enabled", motion.enabled, false, validateBool},
+      {"privacy.enabled", privacy.enabled, false, validateBool},
+      {"privacy.save_state", privacy.save_state, false, validateBool},
       {"recorder.enabled", recorder.enabled, false, validateBool},
 #ifdef PREBUFFER_ENABLED
       {"recorder.prebuffer_enabled", recorder.prebuffer_enabled, false,

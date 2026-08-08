@@ -942,6 +942,11 @@ int main(int argc, const char *argv[]) {
       /* daynight photosensing thread removed — use daynightd daemon */
     }
 
+    // Apply persisted privacy state on first startup (before RTSP goes live)
+    if (startup) {
+      VideoPrivacyControl::applyStartupState();
+    }
+
     // start rtsp server
     if (global_rtsp_thread_signal != 0 && (global_restart_rtsp || startup)) {
       int ret = pthread_create(&rtsp_thread, nullptr, RTSP::run, &rtsp);

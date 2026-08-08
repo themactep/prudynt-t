@@ -141,14 +141,7 @@ void applyPrivacyToAllChannels(bool enabled) {
       rgnAttr.rect.p0.y = 0;
       rgnAttr.rect.p1.x = sw - 1;
       rgnAttr.rect.p1.y = sh - 1;
-      // Pick platform-appropriate pixel format for cover regions
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
-    defined(PLATFORM_T23) || defined(PLATFORM_T32) || defined(PLATFORM_T33) || \
-    defined(PLATFORM_C100)
       rgnAttr.fmt = PIX_FMT_BGRA;
-#else
-      rgnAttr.fmt = PIX_FMT_MONOWHITE;
-#endif
       rgnAttr.data.coverData.color = hal::osd::black_cover_color();
 
       IMPRgnHandle handle = IMP_OSD_CreateRgn(&rgnAttr);
@@ -274,6 +267,14 @@ void handleCommand(const std::string &line) {
 
   // Always apply privacy to all channels simultaneously for security
   applyPrivacyToAllChannels(value);
+
+  // Persist state to config if save_state is enabled
+  if (cfg && cfg->privacy.save_state) {
+    cfg->privacy.enabled = value;
+    cfg->updateConfig();
+    LOG_INFO("VideoPrivacyControl: persisted privacy.enabled = "
+             << (value ? "true" : "false"));
+  }
 }
 
 void fifoLoop() {
@@ -309,6 +310,13 @@ void fifoLoop() {
 }
 
 } // namespace
+
+void VideoPrivacyControl::applyStartupState() {
+  if (cfg && cfg->privacy.enabled) {
+    LOG_INFO("VideoPrivacyControl: applying persisted privacy on startup");
+    applyPrivacyToAllChannels(true);
+  }
+}
 
 void VideoPrivacyControl::run() {
   fifoLoop();

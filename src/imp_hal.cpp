@@ -2011,13 +2011,7 @@ int set_region_alpha(int handle, int alpha) {
   if (ret != 0)
     return ret;
 
-#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
-    defined(PLATFORM_T23) || defined(PLATFORM_T32) || defined(PLATFORM_T33) || \
-    defined(PLATFORM_C100)
   rgnAttr.fmt = PIX_FMT_BGRA;
-#else
-  rgnAttr.fmt = PIX_FMT_MONOWHITE;
-#endif
   // Alpha typically carried in pixel data; we still set fmt to safe value
   return IMP_OSD_SetRgnAttr(static_cast<IMPRgnHandle>(handle), &rgnAttr);
 }

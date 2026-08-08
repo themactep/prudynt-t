@@ -197,6 +197,10 @@ struct _motion {
   const char *script_path;
   std::array<roi, 52> rois;
 };
+struct _privacy {
+  bool enabled;
+  bool save_state;
+};
 
 constexpr int kBurninMaxScale = 10;
 
@@ -348,6 +352,7 @@ public:
   _stream stream3{};
   _daynight daynight{};
   _motion motion{};
+  _privacy privacy{};
 #if defined(WEBSOCKET_ENABLED)
   _websocket websocket{};
 #endif
