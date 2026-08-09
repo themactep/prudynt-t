@@ -188,11 +188,9 @@ void PreTriggerBuffer::enforceTimeLimit(int64_t newest_timestamp_us) {
   int64_t cutoff_ts = newest_timestamp_us - duration_us_;
 
   // Remove frames older than cutoff
-  size_t removed_count = 0;
   while (!frames_.empty() && frames_.front().timestamp_us < cutoff_ts) {
     memory_usage_.fetch_sub(frames_.front().data.size());
     frames_.erase(frames_.begin());
-    removed_count++;
   }
 }
 

@@ -207,7 +207,6 @@ void VideoWorker::run() {
 
   uint32_t bps = 0;
   uint32_t fps = 0;
-  uint32_t error_count = 0; // Keep track of polling errors
   int poll_timeout_streak = 0; // Encoder watchdog: consecutive timeouts
   unsigned long long ms = 0;
   bool run_for_jpeg = false;
@@ -501,7 +500,6 @@ void VideoWorker::run() {
         memset(&stream, 0, sizeof(stream));
         if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) != 0) {
           LOG_ERROR("IMP_Encoder_GetStream(" << encChn << ") failed");
-          error_count++;
           continue;
         }
 
@@ -1198,7 +1196,6 @@ void VideoWorker::run() {
           }
         }
       } else {
-        error_count++;
         LOG_DDEBUG("IMP_Encoder_PollingStream("
                    << encChn << ", " << cfg->general.imp_polling_timeout_ms
                    << ") timeout !");
