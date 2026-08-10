@@ -100,7 +100,7 @@ void IMPEncoder::initProfile() {
   } else if (strcmp(stream->format, "JPEG") == 0) {
     encoderProfile = IMP_ENC_PROFILE_JPEG;
     IMP_Encoder_SetDefaultParam(&chnAttr, encoderProfile, IMP_ENC_RC_MODE_FIXQP,
-                                eff_width, eff_height, 24, 1, 0, 0,
+                                eff_width, eff_height, stream->fps, 1, 0, 0,
                                 stream->jpeg_quality, 0);
     // 1000 / stream->jpeg_refresh
     LOG_DEBUG("STREAM PROFILE "
