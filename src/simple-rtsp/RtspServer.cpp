@@ -2362,6 +2362,16 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                            pt, s.videoRtp, output);
     }
 
+    // ── Initial burst pacing ───────────────────────────────────────────
+    // The first few frames after PLAY arrive in a tight burst (SPS/PPS
+    // at ts≈0, IDR at ts≈1, P-frames at ts≈2-8).  Without pacing, the
+    // client's jitter buffer overflows and ffmpeg reports "max delay
+    // reached" followed by "RTP: missed N packets".  A 20 ms inter-frame
+    // gap for the first 8 frames spreads the startup burst over ~160 ms,
+    // giving the jitter buffer time to drain between frames.
+    if (nal.is_frame_start && s.videoFrameCount > 0 && s.videoFrameCount < 9)
+        usleep(20000);
+
     return ok;
 }
 
