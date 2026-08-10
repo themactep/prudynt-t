@@ -1,0 +1,2549 @@
+#if defined(WEBSOCKET_ENABLED)
+#include "network/WS.hpp"
+#include "config/Config.hpp"
+#include "isp/ImagingControl.hpp"
+#include "video/OSD.hpp"
+#include "stream/globals.hpp"
+#include "isp/imp_hal.hpp"
+#include "libwebsockets.h"
+#include <arpa/inet.h>
+#include <faac.h>
+#include <filesystem>
+#include <fstream>
+#include <imp/imp_audio.h>
+#include <imp/imp_isp.h>
+#include <imp/imp_osd.h>
+#include <memory>
+#include <random>
+#include <set>
+#include <sys/inotify.h>
+#include <variant>
+
+#include <iomanip>
+
+#define MODULE "WEBSOCKET"
+
+#include "recording/MP4MuxerFactory.hpp"
+
+#pragma region keys_and_enums
+
+using namespace std::chrono;
+using namespace std::filesystem;
+
+/*
+  ToDo's
+  add new font scales
+  add stream buffer sharing
+*/
+
+/* PNT_WS_MSG */
+enum {
+  PNT_WS_MSG_OK,
+  PNT_WS_MSG_NULL,
+  PNT_WS_MSG_ERROR,
+  PNT_WS_MSG_INITIATED,
+  PNT_WS_MSG_DROPPED,
+  PNT_WS_MSG_TRUE,
+  PNT_WS_MSG_FALSE,
+  PNT_WS_MSG_UNSUPPORTED
+};
+
+static const char *const pnt_ws_msg[] = {
+    "ok",      "null", "error", "initiated",
+    "dropped", "true", "false", "not supported on this plattform"};
+
+/* u_ctx->flag */
+enum {
+  PNT_FLAG_SEPARATOR = 1,
+
+  PNT_FLAG_ROI_ARRAY = 2,
+  PNT_FLAG_ROI_ENTRY = 4,
+
+  PNT_FLAG_RESTART_RTSP = 32,
+  PNT_FLAG_RESTART_VIDEO = 64,
+  PNT_FLAG_RESTART_AUDIO = 128,
+
+  PNT_FLAG_WS_REQUEST_PENDING = 256,
+  PNT_FLAG_WS_PREVIEW_PENDING = 512,
+  PNT_FLAG_WS_REQUEST_PREVIEW = 1024,
+  PNT_FLAG_WS_SEND_PREVIEW = 2048,
+
+  PNT_FLAG_HTTP_SEND_MESSAGE = 4096,
+  PNT_FLAG_HTTP_RECEIVED_MESSAGE = 8192,
+  PNT_FLAG_HTTP_SEND_PREVIEW = 16384,
+  PNT_FLAG_HTTP_SEND_MP4 = 65536,
+  PNT_FLAG_HTTP_STREAM_PENDING = 131072,
+  PNT_FLAG_HTTP_SEND_INVALID = 32768
+};
+
+/* ROOT */
+enum {
+  PNT_GENERAL = 1,
+  PNT_RTSP,
+  PNT_SENSOR,
+  PNT_IMAGE,
+  PNT_AUDIO,
+  PNT_STREAM0,
+  PNT_STREAM1,
+  PNT_STREAM2,
+  PNT_MOTION,
+  PNT_INFO,
+  PNT_ACTION
+};
+
+static const char *const root_keys[] = {
+    "general", "rtsp",    "sensor", "image", "audio",
+    "osd",     "stream0", "stream1", "stream2", "motion",
+    "info",    "action"};
+
+/* GENERAL */
+enum {
+  PNT_GENERAL_LOGLEVEL = 1,
+  PNT_GENERAL_IMP_POLLING_TIMEOUT
+};
+
+static const char *const general_keys[] = {"loglevel",
+                                           "imp_polling_timeout"};
+
+/* RTSP */
+enum {
+  PNT_RTSP_PORT = 1,
+  PNT_RTSP_EST_BITRATE,
+  PNT_RTSP_OUT_BUFFER_SIZE,
+  PNT_RTSP_SEND_BUFFER_SIZE,
+  PNT_RTSP_SEND_TIMEOUT,
+  PNT_RTSP_AUTH_REQUIRED,
+  PNT_RTSP_NAME,
+  PNT_RTSP_USERNAME,
+  PNT_RTSP_PASSWORD
+};
+
+static const char *const rtsp_keys[] = {"port",
+                                        "est_bitrate",
+                                        "out_buffer_size",
+                                        "send_buffer_size",
+                                        "send_timeout",
+                                        "auth_required",
+                                        "name",
+                                        "username",
+                                        "password"};
+
+/* SENSOR */
+enum {
+  PNT_SENSOR_MODEL = 1,
+  PNT_SENSOR_FPS,
+  PNT_SENSOR_WIDTH,
+  PNT_SENSOR_HEIGHT,
+  PNT_SENSOR_I2C_ADDRESS
+};
+
+static const char *const sensor_keys[] = {"model", "fps", "width", "height",
+                                          "i2c_address"};
+
+/* IMAGE */
+enum {
+  PNT_IMAGE_BRIGHTNESS = 1,
+  PNT_IMAGE_CONTRAST,
+  PNT_IMAGE_HUE,
+  PNT_IMAGE_SHARPNESS,
+  PNT_IMAGE_SATURATION,
+  PNT_IMAGE_SINTER_STRENGTH,
+  PNT_IMAGE_TEMPER_STRENGTH,
+  PNT_IMAGE_VFLIP,
+  PNT_IMAGE_HFLIP,
+  PNT_IMAGE_ANTIFLICKER,
+  PNT_IMAGE_RUNNING_MODE,
+  PNT_IMAGE_AE_COMPENSATION,
+  PNT_IMAGE_DPC_STRENGTH,
+  PNT_IMAGE_DEFOG_STRENGTH,
+  PNT_IMAGE_DRC_STRENGTH,
+  PNT_IMAGE_HIGHLIGHT_DEPRESS,
+  PNT_IMAGE_BACKLIGHT_COMPENSTATION,
+  PNT_IMAGE_MAX_AGAIN,
+  PNT_IMAGE_MAX_DGAIN,
+  PNT_IMAGE_CORE_WB_MODE,
+  PNT_IMAGE_WB_RGAIN,
+  PNT_IMAGE_WB_BGAIN
+};
+
+static const char *const image_keys[] = {"brightness",
+                                         "contrast",
+                                         "hue",
+                                         "sharpness",
+                                         "saturation",
+                                         "sinter_strength",
+                                         "temper_strength",
+                                         "vflip",
+                                         "hflip",
+                                         "anti_flicker",
+                                         "running_mode",
+                                         "ae_compensation",
+                                         "dpc_strength",
+                                         "defog_strength",
+                                         "drc_strength",
+                                         "highlight_depress",
+                                         "backlight_compensation",
+                                         "max_again",
+                                         "max_dgain",
+                                         "core_wb_mode",
+                                         "wb_rgain",
+                                         "wb_bgain"};
+
+/* AUDIO */
+enum {
+  PNT_AUDIO_INPUT_ENABLED = 1,
+  PNT_AUDIO_INPUT_AGC_ENABLED,
+  PNT_AUDIO_INPUT_HIGH_PASS_FILTER,
+  PNT_AUDIO_INPUT_VOL,
+  PNT_AUDIO_INPUT_GAIN,
+  PNT_AUDIO_INPUT_ALC_GAIN,
+  PNT_AUDIO_INPUT_NOISE_SUPPRESSION,
+  PNT_AUDIO_INPUT_AGC_TARGET_LEVEL_DBFS,
+  PNT_AUDIO_INPUT_AGC_COMPRESSION_GAIN_DB,
+  PNT_AUDIO_INPUT_BITRATE,
+  PNT_AUDIO_INPUT_FORMAT,
+  PNT_AUDIO_INPUT_SAMPLE_RATE,
+  PNT_AUDIO_OUTPUT_ENABLED,
+  PNT_AUDIO_OUTPUT_SAMPLE_RATE
+};
+
+static const char *const audio_keys[] = {"input_enabled",
+                                         "input_agc_enabled",
+                                         "input_high_pass_filter",
+                                         "input_vol",
+                                         "input_gain",
+                                         "input_alc_gain",
+                                         "input_noise_suppression",
+                                         "input_agc_target_level_dbfs",
+                                         "input_agc_compression_gain_db",
+                                          "input_format",
+                                         "output_enabled",
+                                         "output_sample_rate"};
+
+/* STREAM */
+enum {
+  PNT_STREAM_ENABLED = 1,
+  PNT_STREAM_AUDIO_ENABLED,
+  PNT_STREAM_RTSP_ENDPOINT,
+  PNT_STREAM_RTSP_INFO,
+  PNT_STREAM_FORMAT,
+  PNT_STREAM_MODE,
+  PNT_STREAM_GOP,
+  PNT_STREAM_MAX_GOP,
+  PNT_STREAM_FPS,
+  PNT_STREAM_BUFFERS,
+  PNT_STREAM_WIDTH,
+  PNT_STREAM_HEIGHT,
+  PNT_STREAM_BITRATE,
+  PNT_STREAM_ROTATION,
+  PNT_STREAM_PROFILE,
+  PNT_STREAM_STATS,
+  PNT_STREAM_OSD
+};
+
+static const char *const stream_keys[] = {
+    "enabled",       "audio_enabled",
+    "rtsp_endpoint", "rtsp_info",
+    "format",        "mode",          "gop",
+    "max_gop",       "fps",           "buffers",
+    "width",         "height",        "bitrate",
+    "rotation",      "profile",       "stats"};
+
+/* STREAM2 (JPEG) */
+enum {
+  PNT_STREAM2_JPEG_ENABLED = 1,
+  PNT_STREAM2_JPEG_PATH,
+  PNT_STREAM2_JPEG_QUALITY,
+  // PNT_STREAM2_JPEG_REFRESH,
+  PNT_STREAM2_JPEG_CHANNEL,
+  PNT_STREAM2_STATS,
+  PNT_STREAM2_FPS
+};
+
+static const char *const stream2_keys[] = {"jpeg_enabled", "jpeg_path",
+                                           "jpeg_quality",
+                                           //"jpeg_refresh",
+                                           "jpeg_channel", "stats", "fps"};
+
+/* OSD */
+enum {
+  PNT_OSD_ENABLED = 1,
+  PNT_OSD_ELEMENTS,
+};
+
+static const char *const osd_keys[] = {
+    "enabled",
+    "elements",
+};
+
+/* MOTION */
+enum {
+  PNT_MOTION_DEBOUNCE_TIME = 1,
+  PNT_MOTION_POST_TIME,
+  PNT_MOTION_COOLDOWN_TIME,
+  PNT_MOTION_MOTOR_SETTLE_MS,
+  PNT_MOTION_INIT_TIME,
+  PNT_MOTION_MIN_TIME,
+  PNT_MOTION_THREAD_WAIT,
+  PNT_MOTION_SENSITIVITY,
+  PNT_MOTION_SKIP_FRAME_COUNT,
+  PNT_MOTION_FRAME_WIDTH,
+  PNT_MOTION_FRAME_HEIGHT,
+  PNT_MOTION_ROI_0_X,
+  PNT_MOTION_ROI_0_Y,
+  PNT_MOTION_ROI_1_X,
+  PNT_MOTION_ROI_1_Y,
+  PNT_MOTION_ROI_COUNT,
+  PNT_MOTION_ENABLED,
+  PNT_MOTION_SCRIPT_PATH,
+  PNT_MOTION_ROIS,
+};
+
+static const char *const motion_keys[] = {
+    "debounce_time",    "post_time",   "cooldown_time", "motor_settle_ms",
+    "init_time",        "min_time",    "thread_wait",   "sensitivity",
+    "skip_frame_count", "frame_width", "frame_height",  "roi_0_x",
+    "roi_0_y",          "roi_1_x",     "roi_1_y",       "roi_count",
+    "enabled",          "script_path", "rois"};
+
+/* INFO */
+enum { PNT_INFO_IMP_SYSTEM_VERSION = 1 };
+
+static const char *const info_keys[] = {"imp_system_version"};
+
+/* ACTION */
+enum { PNT_RESTART_THREAD = 1, PNT_SAVE_CONFIG, PNT_CAPTURE };
+
+enum { PNT_THREAD_RTSP = 1, PNT_THREAD_VIDEO = 2, PNT_THREAD_AUDIO = 4 };
+
+static const char *const action_keys[] = {"restart_thread", "save_config",
+                                          "dump_config", "capture"};
+
+#pragma endregion keys_and_enums
+
+char token[WEBSOCKET_TOKEN_LENGTH + 1]{0};
+
+struct snapshot_info {
+  int r;             // current requests
+  int rps;           // requests per second
+  int throttle = 50; // throttle value to set a variable request delay time
+  steady_clock::time_point last_snapshot_request;
+};
+
+struct user_ctx;
+
+struct snapshot_sul_wrapper {
+  lws_sorted_usec_list_t sul;
+  struct user_ctx *owner;
+};
+
+struct mp4_sul_wrapper {
+  lws_sorted_usec_list_t sul;
+  struct user_ctx *owner;
+};
+
+struct user_ctx {
+  char id[SESSION_ID_LENGTH + 1]; // +1 for null terminator
+  struct lws *wsi;                // libwebsockets handle
+  char root[ROOT_MAX_LENGTH];     // json root path (replaced std::string)
+  std::string path;               // json sub path
+  int value; // to use a number in the JSON parser e.g. encChn (encoder channel)
+  int flag;  // bitmask info store e.g. JSON separator (","") or thread restart
+  bool imaging_dirty;
+  roi region;
+  int midx;
+  int vidx;
+  size_t post_data_size;
+  std::string rx_message;
+  std::string tx_message;
+  std::string message;
+  snapshot_sul_wrapper snapshot_timer; // lws Soft Timer
+  mp4_sul_wrapper mp4_timer;           // separate timer for mp4 init polling
+  struct snapshot_info snapshot;
+  // MP4 HTTP streaming state
+  MP4Muxer *mp4_muxer = nullptr;
+  std::vector<unsigned char>
+      http_stream_buf; // pre-built buffer (with LWS_PRE headroom)
+  std::vector<unsigned char>
+      pending_fragments; // queued fragment bytes (with no LWS_PRE)
+  std::mutex pending_mutex;
+  std::shared_ptr<MsgChannel<H264NALUnit>> preview_video_queue;
+  std::shared_ptr<MsgChannel<AudioFrame>> preview_audio_queue;
+  VideoTapEntry video_tap_entry;
+  AudioTapEntry audio_tap_entry;
+  std::vector<uint8_t> preview_video_sample;
+
+  user_ctx(const char *session_id, lws *wsi_handle)
+      : wsi(wsi_handle), value(0), flag(0), imaging_dirty(false), region(),
+        midx(0), vidx(0), post_data_size(0), rx_message(), tx_message(),
+        message(), snapshot() {
+    strncpy(id, session_id, SESSION_ID_LENGTH);
+    id[SESSION_ID_LENGTH] = '\0';
+    root[0] = '\0'; // Initialize root as empty string
+
+    snapshot_timer.owner = this;
+    mp4_timer.owner = this;
+  }
+
+  ~user_ctx() {
+    teardown_stream_taps();
+  }
+
+  void teardown_stream_taps() {
+    if (video_tap_entry.id) {
+      unregister_video_tap(0, video_tap_entry.id);
+      video_tap_entry = {};
+    }
+    if (audio_tap_entry.id) {
+      unregister_audio_tap(0, audio_tap_entry.id);
+      audio_tap_entry = {};
+    }
+    preview_video_queue.reset();
+    preview_audio_queue.reset();
+    preview_video_sample.clear();
+  }
+
+  void pump_video_preview() {
+    if (!mp4_muxer || !preview_video_queue) {
+      return;
+    }
+
+    H264NALUnit unit;
+    while (preview_video_queue->read(&unit)) {
+      if (unit.data.empty()) {
+        continue;
+      }
+      uint8_t nalType = unit.data[0] & 0x1F;
+      bool isVCL = (nalType == 1 || nalType == 5);
+      bool isKey = (nalType == 5);
+
+      uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
+      preview_video_sample.push_back(static_cast<uint8_t>((nl >> 24) & 0xFF));
+      preview_video_sample.push_back(static_cast<uint8_t>((nl >> 16) & 0xFF));
+      preview_video_sample.push_back(static_cast<uint8_t>((nl >> 8) & 0xFF));
+      preview_video_sample.push_back(static_cast<uint8_t>(nl & 0xFF));
+      preview_video_sample.insert(preview_video_sample.end(), unit.data.begin(),
+                                  unit.data.end());
+
+      if (isVCL) {
+        auto now = std::chrono::steady_clock::now();
+        int64_t pts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             now.time_since_epoch())
+                             .count();
+        auto frag =
+            mp4_muxer->muxVideo(preview_video_sample.data(),
+                                preview_video_sample.size(), pts_ms, isKey);
+        preview_video_sample.clear();
+        if (!frag.empty()) {
+          std::lock_guard<std::mutex> plock(pending_mutex);
+          pending_fragments.insert(pending_fragments.end(), frag.begin(),
+                                   frag.end());
+          flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+          lws_callback_on_writable(wsi);
+        }
+      }
+    }
+  }
+
+  void pump_audio_preview() {
+    if (!mp4_muxer || !preview_audio_queue) {
+      return;
+    }
+
+    AudioFrame af;
+    while (preview_audio_queue->read(&af)) {
+      if (af.data.empty()) {
+        continue;
+      }
+      int64_t pts_ms = static_cast<int64_t>(af.time.tv_sec) * 1000LL +
+                       af.time.tv_usec / 1000LL;
+      auto frag = mp4_muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
+      if (!frag.empty()) {
+        std::lock_guard<std::mutex> plock(pending_mutex);
+        pending_fragments.insert(pending_fragments.end(), frag.begin(),
+                                 frag.end());
+        flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+        lws_callback_on_writable(wsi);
+      }
+    }
+  }
+};
+
+const char *generateToken() {
+  static const char characters[] =
+      "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  static const size_t charCount =
+      strlen(characters); // exclude terminating null
+  static char tokenBuffer[WEBSOCKET_TOKEN_LENGTH + 1];
+
+  std::random_device rd;
+  std::mt19937 generator(rd());
+  std::uniform_int_distribution<size_t> distribution(0, charCount - 1);
+
+  // Always generate exactly WEBSOCKET_TOKEN_LENGTH characters
+  for (int i = 0; i < WEBSOCKET_TOKEN_LENGTH; i++) {
+    tokenBuffer[i] = characters[distribution(generator)];
+  }
+  tokenBuffer[WEBSOCKET_TOKEN_LENGTH] = '\0';
+
+  return tokenBuffer;
+}
+
+int restart_threads_by_signal(int &flag) {
+  // inform main to restart threads
+  std::unique_lock lck(mutex_main);
+  if (!global_restart_rtsp && !global_restart_video && !global_restart_audio) {
+    if ((flag & PNT_FLAG_RESTART_RTSP) || (flag & PNT_FLAG_RESTART_VIDEO) ||
+        (flag & PNT_FLAG_RESTART_AUDIO)) {
+      if (flag & PNT_FLAG_RESTART_RTSP) {
+        global_restart_rtsp = true;
+        flag &= ~PNT_FLAG_RESTART_RTSP;
+      }
+      if (flag & PNT_FLAG_RESTART_VIDEO) {
+        global_restart_video = true;
+        flag &= ~PNT_FLAG_RESTART_VIDEO;
+      }
+      if (flag & PNT_FLAG_RESTART_AUDIO) {
+        global_restart_audio = true;
+        flag &= ~PNT_FLAG_RESTART_AUDIO;
+      }
+      global_cv_worker_restart.notify_one();
+      return 1;
+    }
+  } else {
+    return -1;
+  }
+  return 0;
+}
+
+bool get_snapshot(std::vector<unsigned char> &image) {
+  std::ifstream file(global_jpeg[0]->stream->jpeg_path, std::ios::binary);
+  if (!file.is_open()) {
+    LOG_DDEBUG(strerror(errno));
+    return false;
+  }
+
+  file.seekg(0, std::ios::end);
+  size_t file_size = file.tellg();
+  if (file_size) {
+    image.resize(LWS_PRE + file_size);
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char *>(image.data() + LWS_PRE), file_size);
+    file.close();
+    return true;
+  }
+
+  return false;
+}
+
+template <typename... Args>
+void append_session_msg(std::string &ws_send_msg, const char *t, Args &&...a) {
+  char message[256];
+  std::memset(message, 0, sizeof(message));
+  std::snprintf(message, sizeof(message), t, std::forward<Args>(a)...);
+  ws_send_msg += message;
+}
+
+void add_json_null(std::string &message) {
+  append_session_msg(message, "%s", pnt_ws_msg[PNT_WS_MSG_NULL]);
+}
+
+void add_json_bool(std::string &message, bool bl) {
+  append_session_msg(message, "%s",
+                     bl ? pnt_ws_msg[PNT_WS_MSG_TRUE]
+                        : pnt_ws_msg[PNT_WS_MSG_FALSE]);
+}
+
+void add_json_str(std::string &message, const char *value) {
+  if (value == nullptr) {
+    add_json_null(message);
+  } else {
+    append_session_msg(message, "\"%s\"", value);
+  }
+}
+
+void add_json_num(std::string &message, int value) {
+  append_session_msg(message, "%d", value);
+}
+
+void add_json_uint(std::string &message, unsigned int value) {
+  append_session_msg(message, "\"%#x\"", value);
+}
+
+void add_json_key(std::string &message, bool separator, const char *key,
+                  const char *opener = "") {
+  append_session_msg(message, "%s\"%s\":%s", separator ? "," : "", key, opener);
+}
+
+// Helper function to safely combine path components
+void combine_path(std::string &result, const char *root, const char *path) {
+  result = root;
+  result += ".";
+  result += path;
+}
+
+// For stream comparisons, replace direct string comparisons with strcmp
+bool is_stream(const char *root, const char *stream_name) {
+  return strcmp(root, stream_name) == 0;
+}
+
+signed char WS::general_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if ((reason & LEJP_FLAG_CB_IS_VALUE) && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 general_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    if (ctx->path_match == PNT_GENERAL_IMP_POLLING_TIMEOUT) { // integer value
+      if (reason == LEJPCB_VAL_NUM_INT)
+        cfg->set<int>(u_ctx->path, atoi(ctx->buf));
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+    } else {
+      switch (ctx->path_match) {
+      case PNT_GENERAL_LOGLEVEL:
+        if (reason == LEJPCB_VAL_STR_END) {
+          if (cfg->set<const char *>(u_ctx->path, strdup(ctx->buf))) {
+            Logger::setLevel(ctx->buf);
+          }
+        }
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      default:
+        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+        break;
+      }
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::rtsp_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 rtsp_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    // int values
+    if (ctx->path_match >= PNT_RTSP_PORT &&
+        ctx->path_match <= PNT_RTSP_SEND_BUFFER_SIZE) {
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+          // better restart rtsp manually ?
+          // u_ctx->signal = PNT_THREAD_RTSP | PNT_THREAD_ACTION_RESTART; //
+          // restart RTSP
+        }
+      }
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      // const char * values
+    } else if (ctx->path_match >= PNT_RTSP_NAME &&
+               ctx->path_match <= PNT_RTSP_PASSWORD) {
+      if (reason == LEJPCB_VAL_STR_END) {
+        if (cfg->set<const char *>(u_ctx->path, strdup(ctx->buf))) {
+          // better restart rtsp manually ?
+          // u_ctx->signal = PNT_THREAD_RTSP | PNT_THREAD_ACTION_RESTART;
+        }
+      }
+      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+    } else {
+      switch (ctx->path_match) {
+      case PNT_RTSP_AUTH_REQUIRED:
+        if (reason == LEJPCB_VAL_TRUE) {
+          if (cfg->set<bool>(u_ctx->path, true)) {
+            // better restart rtsp manually ?
+            // u_ctx->signal = PNT_THREAD_RTSP | PNT_THREAD_ACTION_RESTART;
+          }
+        } else if (reason == LEJPCB_VAL_FALSE) {
+          if (cfg->set<bool>(u_ctx->path, false)) {
+            // better restart rtsp manually ?
+            // u_ctx->signal = PNT_THREAD_RTSP | PNT_THREAD_ACTION_RESTART;
+          }
+        }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+        break;
+      default:
+        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+        break;
+      }
+    }
+
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::sensor_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 sensor_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    // int values
+    if (ctx->path_match >= PNT_SENSOR_FPS &&
+        ctx->path_match <= PNT_SENSOR_HEIGHT) {
+      // normally this cannot be set and is read from proc
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+    } else {
+      switch (ctx->path_match) {
+      case PNT_SENSOR_MODEL:
+        // normally this cannot be set and is read from proc
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      case PNT_SENSOR_I2C_ADDRESS:
+        // normally this cannot be set and is read from proc
+        add_json_uint(u_ctx->message, cfg->get<unsigned int>(u_ctx->path));
+        break;
+      default:
+        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+        break;
+      }
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::image_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+#if !defined(NO_TUNINGS)
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 image_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    if (ctx->path_match == PNT_IMAGE_DEFOG_STRENGTH) {
+      if (!hal::caps().has_isp_defog) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_defog_strength(
+                static_cast<uint8_t>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      }
+    } else if (ctx->path_match >= PNT_IMAGE_CORE_WB_MODE &&
+               ctx->path_match <= PNT_IMAGE_WB_BGAIN) {
+      if (!hal::caps().has_isp_wb) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_wb(cfg->image.core_wb_mode,
+                             static_cast<unsigned short>(cfg->image.wb_rgain),
+                             static_cast<unsigned short>(cfg->image.wb_bgain));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      }
+    } else {
+      switch (ctx->path_match) {
+      case PNT_IMAGE_BRIGHTNESS:
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_brightness(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_CONTRAST:
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_contrast(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_HUE:
+        if (!hal::caps().has_isp_hue) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_hue(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_SATURATION:
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_saturation(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_SHARPNESS:
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_sharpness(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_SINTER_STRENGTH:
+        if (!hal::caps().has_isp_sinter) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_sinter_strength(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_TEMPER_STRENGTH:
+        if (!hal::caps().has_isp_temper) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_temper_strength(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_VFLIP:
+        if (!hal::caps().has_isp_vflip) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_TRUE) {
+          if (cfg->set<bool>(u_ctx->path, true)) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_vflip(true);
+          }
+        } else if (reason == LEJPCB_VAL_FALSE) {
+          if (cfg->set<bool>(u_ctx->path, false)) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_vflip(false);
+          }
+        }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+        break;
+      case PNT_IMAGE_HFLIP:
+        if (!hal::caps().has_isp_hflip) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_TRUE) {
+          if (cfg->set<bool>(u_ctx->path, true)) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_hflip(true);
+          }
+        } else if (reason == LEJPCB_VAL_FALSE) {
+          if (cfg->set<bool>(u_ctx->path, false)) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_hflip(false);
+          }
+        }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+        break;
+      case PNT_IMAGE_ANTIFLICKER:
+        if (!hal::caps().has_isp_anti_flicker) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_anti_flicker(cfg->get<int>(u_ctx->path));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_RUNNING_MODE: {
+        if (!hal::caps().has_isp_running_mode) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_running_mode(cfg->get<int>(u_ctx->path));
+          }
+        }
+
+        int running_mode;
+        int ret = hal::isp::get_running_mode(running_mode);
+        if (ret == 0)
+          cfg->set<int>(u_ctx->path, running_mode);
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      } break;
+      case PNT_IMAGE_AE_COMPENSATION:
+        if (!hal::caps().has_isp_ae_comp) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_ae_compensation(cfg->get<int>(u_ctx->path));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_DPC_STRENGTH:
+        if (!hal::caps().has_isp_dpc) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_dpc_strength(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_DRC_STRENGTH:
+        if (!hal::caps().has_isp_drc) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_drc_strength(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_HIGHLIGHT_DEPRESS:
+        if (!hal::caps().has_isp_highlight_depress) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_highlight_depress(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_BACKLIGHT_COMPENSTATION:
+        if (!hal::caps().has_isp_backlight_comp) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_backlight_comp(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_MAX_AGAIN:
+        if (!hal::caps().has_isp_max_gain) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_max_again(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_IMAGE_MAX_DGAIN:
+        if (!hal::caps().has_isp_max_gain) {
+          add_json_null(u_ctx->message);
+          break;
+        }
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            u_ctx->imaging_dirty = true;
+            hal::isp::set_max_dgain(
+                static_cast<unsigned char>(cfg->get<int>(u_ctx->path)));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      default:
+        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+        break;
+      }
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+    if (u_ctx->imaging_dirty) {
+      ImagingControl::refreshSnapshot();
+      u_ctx->imaging_dirty = false;
+    }
+  }
+#else
+  // When NO_TUNINGS is defined, still need to pop the parser on OBJECT_END
+  if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+#endif
+  return 0;
+}
+
+signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 audio_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    if (ctx->path_match == PNT_AUDIO_INPUT_HIGH_PASS_FILTER) {
+      IMPAudioIOAttr ioattr;
+      int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
+      if (ret == 0) {
+        if (reason == LEJPCB_VAL_TRUE) {
+          if (cfg->set<bool>(u_ctx->path, true)) {
+            ret = IMP_AI_EnableHpf(&ioattr);
+          }
+        } else if (reason == LEJPCB_VAL_FALSE) {
+          if (cfg->set<bool>(u_ctx->path, false)) {
+            ret = IMP_AI_DisableHpf();
+          }
+        }
+      }
+      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+    }
+    // integer values
+    else if (ctx->path_match == PNT_AUDIO_INPUT_NOISE_SUPPRESSION ||
+             ctx->path_match == PNT_AUDIO_INPUT_SAMPLE_RATE ||
+             ctx->path_match == PNT_AUDIO_INPUT_BITRATE ||
+             ctx->path_match == PNT_AUDIO_OUTPUT_SAMPLE_RATE) {
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+          global_restart_audio = true;
+        }
+      }
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+    } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_ENABLED) {
+      if (!hal::caps().has_audio_agc) {
+        add_json_null(u_ctx->message);
+      } else {
+        IMPAudioIOAttr ioattr;
+        int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
+        if (ret == 0) {
+          if (reason == LEJPCB_VAL_TRUE) {
+            if (cfg->set<bool>(u_ctx->path, true)) {
+              global_restart_audio = true;
+            }
+          } else if (reason == LEJPCB_VAL_FALSE) {
+            if (cfg->set<bool>(u_ctx->path, false)) {
+              global_restart_audio = true;
+            }
+          }
+        }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+      }
+    } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_TARGET_LEVEL_DBFS ||
+               ctx->path_match == PNT_AUDIO_INPUT_AGC_COMPRESSION_GAIN_DB) {
+      if (!hal::caps().has_audio_agc) {
+        add_json_null(u_ctx->message);
+      } else {
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            global_restart_audio = true;
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      }
+    } else {
+      switch (ctx->path_match) {
+      case PNT_AUDIO_OUTPUT_ENABLED:
+        if (reason == LEJPCB_VAL_TRUE) {
+          if (cfg->set<bool>(u_ctx->path, true)) {
+            global_restart_audio = true;
+            global_restart_rtsp = true;
+          }
+        } else if (reason == LEJPCB_VAL_FALSE) {
+          if (cfg->set<bool>(u_ctx->path, false)) {
+            global_restart_audio = true;
+            global_restart_rtsp = true;
+          }
+        }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+        break;
+      case PNT_AUDIO_INPUT_ENABLED:
+        if (reason == LEJPCB_VAL_TRUE) {
+          if (cfg->set<bool>(u_ctx->path, true)) {
+            IMP_AI_Enable(u_ctx->value);
+          }
+        } else if (reason == LEJPCB_VAL_FALSE) {
+          if (cfg->set<bool>(u_ctx->path, false)) {
+            IMP_AI_Disable(u_ctx->value);
+          }
+        }
+        add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+        break;
+      case PNT_AUDIO_INPUT_VOL:
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            IMP_AI_SetVol(u_ctx->value, global_audio[u_ctx->value]->aiChn,
+                          cfg->get<int>(u_ctx->path));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_AUDIO_INPUT_GAIN:
+        if (reason == LEJPCB_VAL_NUM_INT) {
+          if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+            IMP_AI_SetGain(u_ctx->value, global_audio[u_ctx->value]->aiChn,
+                           cfg->get<int>(u_ctx->path));
+          }
+        }
+        add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        break;
+      case PNT_AUDIO_INPUT_ALC_GAIN:
+        if (!hal::caps().has_audio_alc) {
+          add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_UNSUPPORTED]);
+        } else {
+          if (reason == LEJPCB_VAL_NUM_INT) {
+            if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+              hal::audio::set_ai_alc(cfg->get<int>(u_ctx->path));
+            }
+          }
+          add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+        }
+        break;
+      case PNT_AUDIO_INPUT_FORMAT:
+        if (reason == LEJPCB_VAL_STR_END)
+          cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      default:
+        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+        break;
+      }
+    }
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::stream_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+  combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 stream_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    if (ctx->path_match >= PNT_STREAM_GOP &&
+        ctx->path_match <= PNT_STREAM_PROFILE) { // integer values
+      if (reason == LEJPCB_VAL_NUM_INT)
+        cfg->set<int>(u_ctx->path, atoi(ctx->buf));
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+    } else if (ctx->path_match >= PNT_STREAM_ENABLED &&
+               ctx->path_match <= PNT_STREAM_AUDIO_ENABLED) { // bool values
+      if (reason == LEJPCB_VAL_TRUE) {
+        cfg->set<bool>(u_ctx->path, true);
+      } else if (reason == LEJPCB_VAL_FALSE) {
+        cfg->set<bool>(u_ctx->path, false);
+      }
+      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+    } else {
+      switch (ctx->path_match) {
+      case PNT_STREAM_RTSP_ENDPOINT:
+        if (reason == LEJPCB_VAL_STR_END)
+          cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      case PNT_STREAM_RTSP_INFO:
+        if (reason == LEJPCB_VAL_STR_END)
+          cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      case PNT_STREAM_FORMAT:
+        if (reason == LEJPCB_VAL_STR_END)
+          cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      case PNT_STREAM_MODE:
+        if (reason == LEJPCB_VAL_STR_END)
+          cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
+        add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+        break;
+      case PNT_STREAM_STATS:
+        if (reason == LEJPCB_VAL_NULL) {
+          uint8_t fps = 0;
+          uint32_t bps = 0;
+          if (is_stream(u_ctx->root, "stream0")) {
+            fps = cfg->stream0.stats.fps;
+            bps = cfg->stream0.stats.bps;
+          } else if (is_stream(u_ctx->root, "stream1")) {
+            fps = cfg->stream1.stats.fps;
+            bps = cfg->stream1.stats.bps;
+          }
+          append_session_msg(u_ctx->message, "{\"fps\":%d,\"Bps\":%d}", fps,
+                             bps);
+        }
+        break;
+      default:
+        u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+        break;
+      };
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::stream2_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 stream2_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    switch (ctx->path_match) {
+    case PNT_STREAM2_JPEG_ENABLED:
+      if (reason == LEJPCB_VAL_TRUE) {
+        cfg->set<bool>(u_ctx->path, true);
+      } else if (reason == LEJPCB_VAL_FALSE) {
+        cfg->set<bool>(u_ctx->path, false);
+      }
+      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+      break;
+    case PNT_STREAM2_JPEG_PATH:
+      if (reason == LEJPCB_VAL_STR_END) {
+        if (cfg->set<const char *>(u_ctx->path, strdup(ctx->buf))) {
+        }
+      }
+      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+      break;
+    case PNT_STREAM2_JPEG_QUALITY:
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+        }
+      }
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      break;
+    case PNT_STREAM2_FPS:
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+        }
+      }
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      break;
+    case PNT_STREAM2_JPEG_CHANNEL:
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
+        }
+      }
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      break;
+    case PNT_STREAM2_STATS:
+      if (reason == LEJPCB_VAL_NULL) {
+        uint8_t fps = 0;
+        uint32_t bps = 0;
+        if (is_stream(u_ctx->root, "stream2")) {
+          fps = cfg->stream2.stats.fps;
+          bps = cfg->stream2.stats.bps;
+        }
+        append_session_msg(u_ctx->message, "{\"fps\":%d,\"Bps\":%d}", fps, bps);
+      }
+      break;
+    default:
+      u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+      break;
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    u_ctx->path = u_ctx->root;
+    u_ctx->path += ".osd.";
+    u_ctx->path += ctx->path;
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 osd_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    if (ctx->path_match == PNT_OSD_ENABLED) {
+      if (reason == LEJPCB_VAL_TRUE)
+        cfg->set<bool>(u_ctx->path, true);
+      else if (reason == LEJPCB_VAL_FALSE)
+        cfg->set<bool>(u_ctx->path, false);
+      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+    } else {
+      // elements --- pass through as raw JSON
+      add_json_str(u_ctx->message, "{}");
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::motion_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+  combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 motion_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    // integer
+    if (ctx->path_match >= PNT_MOTION_DEBOUNCE_TIME &&
+        ctx->path_match <= PNT_MOTION_ROI_COUNT) {
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        cfg->set<int>(u_ctx->path, atoi(ctx->buf));
+      }
+      add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
+      // bool
+    } else if (ctx->path_match == PNT_MOTION_ENABLED) {
+      if (reason == LEJPCB_VAL_TRUE) {
+        cfg->set<bool>(u_ctx->path, true);
+      } else if (reason == LEJPCB_VAL_FALSE) {
+        cfg->set<bool>(u_ctx->path, false);
+      }
+      add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
+      // std::string
+    } else if (ctx->path_match == PNT_MOTION_SCRIPT_PATH) {
+      if (reason == LEJPCB_VAL_STR_END) {
+        if (cfg->set<const char *>(u_ctx->path, strdup(ctx->buf))) {
+        }
+      }
+      add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));
+    } else if (ctx->path_match == PNT_MOTION_ROIS) {
+      if (reason == LEJPCB_VAL_NULL) {
+        for (int i = 0; i < cfg->motion.roi_count; i++) {
+        }
+      }
+      add_json_str(u_ctx->message, cfg->get<std::string>(u_ctx->path).c_str());
+    } else {
+      u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+    }
+  } else if (reason == LECPCB_PAIR_NAME && ctx->path_match == PNT_MOTION_ROIS) {
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 motion_keys[ctx->path_match - 1]);
+
+    // remove separator for sub section
+    u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+
+    lejp_parser_push(ctx, u_ctx, motion_keys, LWS_ARRAY_SIZE(motion_keys),
+                     motion_roi_callback);
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::motion_roi_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+  combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+  if ((reason & LEJP_FLAG_CB_IS_VALUE) && (reason == LEJPCB_VAL_NULL)) {
+    u_ctx->message.append("[");
+    for (int i = 0; i < cfg->motion.roi_count; i++) {
+      if ((u_ctx->flag & PNT_FLAG_SEPARATOR))
+        u_ctx->message.append(",");
+
+      append_session_msg(u_ctx->message, "[%d,%d,%d,%d]",
+                         cfg->motion.rois[i].p0_x, cfg->motion.rois[i].p0_y,
+                         cfg->motion.rois[i].p1_x, cfg->motion.rois[i].p1_y);
+      u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    }
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("]");
+    lejp_parser_pop(ctx);
+  } else {
+    switch (reason) {
+    case LEJPCB_ARRAY_START:
+      // not first, we need a separator
+      if (u_ctx->flag & PNT_FLAG_SEPARATOR) {
+        u_ctx->message.append(",");
+      }
+      // is roi array open ? if so, open entry array
+      if (u_ctx->flag & PNT_FLAG_ROI_ARRAY) {
+        u_ctx->flag |= PNT_FLAG_ROI_ENTRY; // entry array
+        u_ctx->vidx = 0;                   // entry array index
+        u_ctx->message.append("[");
+      }
+      // roi array is not open ! open it
+      else {
+        u_ctx->flag |= PNT_FLAG_ROI_ARRAY; // roi array
+        u_ctx->midx = 0;                   // roi array index
+        u_ctx->message.append("[");
+      }
+      break;
+
+    case LEJPCB_VAL_NUM_INT:
+      // parse roi entry with 4 elements
+      if (u_ctx->flag & PNT_FLAG_ROI_ENTRY) {
+        u_ctx->vidx++;
+        if (u_ctx->vidx == 1) {
+          u_ctx->region.p0_x = atoi(ctx->buf);
+        } else if (u_ctx->vidx == 2) {
+          u_ctx->region.p0_y = atoi(ctx->buf);
+        } else if (u_ctx->vidx == 3) {
+          u_ctx->region.p1_x = atoi(ctx->buf);
+        } else if (u_ctx->vidx == 4) {
+          u_ctx->region.p1_y = atoi(ctx->buf);
+        }
+      }
+      break;
+
+    case LEJPCB_ARRAY_END:
+      // roi entry closed
+      if (u_ctx->flag & PNT_FLAG_ROI_ENTRY) {
+        u_ctx->flag &= ~PNT_FLAG_ROI_ENTRY;
+
+        // we read 4 roi values add to message
+        if (u_ctx->vidx >= 4) {
+          append_session_msg(u_ctx->message, "%d,%d,%d,%d", u_ctx->region.p0_x,
+                             u_ctx->region.p0_y, u_ctx->region.p1_x,
+                             u_ctx->region.p1_y);
+        }
+        u_ctx->message.append("]");
+
+        // roi entry parsed
+        u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+        // read up to 52 roi entries into u_ctx->region
+        if (u_ctx->midx <= 52) {
+          cfg->motion.rois[u_ctx->midx] = {
+              u_ctx->region.p0_x, u_ctx->region.p0_y, u_ctx->region.p1_x,
+              u_ctx->region.p1_y};
+          u_ctx->midx++;
+        }
+      }
+      // roi main array closed
+      else if (u_ctx->flag & PNT_FLAG_ROI_ARRAY) {
+        u_ctx->flag |= PNT_FLAG_SEPARATOR;
+        cfg->motion.roi_count = u_ctx->midx;
+        u_ctx->message.append("]");
+        lejp_parser_pop(ctx);
+      }
+      break;
+    }
+  }
+  return 0;
+}
+
+signed char WS::info_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 info_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    switch (ctx->path_match) {
+    case PNT_INFO_IMP_SYSTEM_VERSION: {
+      IMPVersion impVersion;
+      int ret = IMP_System_GetVersion(&impVersion);
+      if (ret) {
+        add_json_str(u_ctx->message, impVersion.aVersion);
+      } else {
+        add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_ERROR]);
+      }
+    } break;
+    default:
+      u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+      break;
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::action_callback(struct lejp_ctx *ctx, char reason) {
+  struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+
+  if (reason & LEJP_FLAG_CB_IS_VALUE && ctx->path_match) {
+    combine_path(u_ctx->path, u_ctx->root, ctx->path);
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 action_keys[ctx->path_match - 1]);
+
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+
+    switch (ctx->path_match) {
+    case PNT_RESTART_THREAD:
+      if (reason == LEJPCB_VAL_NUM_INT) {
+        int msg_id = PNT_WS_MSG_INITIATED;
+        int restart_flag = 0;
+        int thread_restart = atoi(ctx->buf);
+
+        if (thread_restart & PNT_THREAD_RTSP) {
+          restart_flag |= PNT_FLAG_RESTART_RTSP | PNT_FLAG_RESTART_VIDEO |
+                          PNT_FLAG_RESTART_AUDIO;
+        }
+        if (thread_restart & PNT_THREAD_VIDEO) {
+          restart_flag |= PNT_FLAG_RESTART_VIDEO;
+        }
+        if (thread_restart & PNT_THREAD_AUDIO) {
+          restart_flag |= PNT_FLAG_RESTART_AUDIO;
+        }
+        if (restart_flag) {
+          if (restart_threads_by_signal(restart_flag) < 0)
+            msg_id = PNT_WS_MSG_DROPPED;
+        } else {
+          msg_id = PNT_WS_MSG_ERROR;
+        }
+        add_json_str(u_ctx->message, pnt_ws_msg[msg_id]);
+      } else {
+        add_json_null(u_ctx->message);
+      }
+      break;
+    case PNT_SAVE_CONFIG:
+      cfg->updateConfig();
+      add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]);
+      break;
+    case PNT_CAPTURE:
+      u_ctx->flag |= PNT_FLAG_WS_REQUEST_PREVIEW;
+      add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_INITIATED]);
+      break;
+    default:
+      u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+      break;
+    }
+  } else if (reason == LEJPCB_OBJECT_END) {
+    u_ctx->flag |= PNT_FLAG_SEPARATOR;
+    u_ctx->message.append("}");
+    lejp_parser_pop(ctx);
+  }
+
+  return 0;
+}
+
+signed char WS::root_callback(struct lejp_ctx *ctx, char reason) {
+  if ((reason & LEJPCB_OBJECT_START) && ctx->path_match) {
+    struct user_ctx *u_ctx = (struct user_ctx *)ctx->user;
+    u_ctx->path.clear();
+    strncpy(u_ctx->root, ctx->path,
+            sizeof(u_ctx->root) - 1);            // Copy path safely
+    u_ctx->root[sizeof(u_ctx->root) - 1] = '\0'; // Ensure null termination
+
+    add_json_key(u_ctx->message, (u_ctx->flag & PNT_FLAG_SEPARATOR),
+                 root_keys[ctx->path_match - 1], "{");
+
+    u_ctx->flag &= ~PNT_FLAG_SEPARATOR;
+
+    switch (ctx->path_match) {
+    case PNT_GENERAL:
+      lejp_parser_push(ctx, u_ctx, general_keys, LWS_ARRAY_SIZE(general_keys),
+                       general_callback);
+      break;
+    case PNT_RTSP:
+      lejp_parser_push(ctx, u_ctx, rtsp_keys, LWS_ARRAY_SIZE(rtsp_keys),
+                       rtsp_callback);
+      break;
+    case PNT_SENSOR:
+      lejp_parser_push(ctx, u_ctx, sensor_keys, LWS_ARRAY_SIZE(sensor_keys),
+                       sensor_callback);
+      break;
+    case PNT_IMAGE:
+      lejp_parser_push(ctx, u_ctx, image_keys, LWS_ARRAY_SIZE(image_keys),
+                       image_callback);
+      break;
+
+    case PNT_AUDIO:
+      u_ctx->value = global_audio[0]->aiChn;
+      lejp_parser_push(ctx, u_ctx, audio_keys, LWS_ARRAY_SIZE(audio_keys),
+                       audio_callback);
+      break;
+
+    case PNT_STREAM0:
+      u_ctx->value = global_video[0]->encChn;
+      lejp_parser_push(ctx, &u_ctx, stream_keys, LWS_ARRAY_SIZE(stream_keys),
+                       stream_callback);
+      break;
+    case PNT_STREAM1:
+      u_ctx->value = global_video[1]->encChn;
+      lejp_parser_push(ctx, &u_ctx, stream_keys, LWS_ARRAY_SIZE(stream_keys),
+                       stream_callback);
+      break;
+    case PNT_STREAM2:
+      lejp_parser_push(ctx, u_ctx, stream2_keys, LWS_ARRAY_SIZE(stream2_keys),
+                       stream2_callback);
+      break;
+    case PNT_MOTION:
+      lejp_parser_push(ctx, u_ctx, motion_keys, LWS_ARRAY_SIZE(motion_keys),
+                       motion_callback);
+      break;
+    case PNT_INFO:
+      lejp_parser_push(ctx, u_ctx, info_keys, LWS_ARRAY_SIZE(info_keys),
+                       info_callback);
+      break;
+    case PNT_ACTION:
+      lejp_parser_push(ctx, u_ctx, action_keys, LWS_ARRAY_SIZE(action_keys),
+                       action_callback);
+      break;
+    }
+  }
+
+  return 0;
+}
+
+const char *generateSessionID() {
+  static char idBuffer[SESSION_ID_LENGTH + 1];
+  std::random_device rd;
+  std::mt19937 eng(rd());
+  std::uniform_int_distribution<uint32_t> distr;
+
+  uint32_t randomValue = distr(eng);
+  uint32_t timeStamp = (uint32_t)std::time(nullptr);
+
+  // Format: 8 chars from random + 8 chars from timestamp
+  snprintf(idBuffer, sizeof(idBuffer), "%08x%08x", randomValue, timeStamp);
+
+  return idBuffer;
+}
+
+static void send_snapshot(lws_sorted_usec_list_t *sul) {
+  snapshot_sul_wrapper *wrapper =
+      lws_container_of(sul, snapshot_sul_wrapper, sul);
+  struct user_ctx *u_ctx = wrapper->owner;
+  LOG_DDEBUG("process shedule. id:" << u_ctx->id);
+  u_ctx->flag |= PNT_FLAG_WS_SEND_PREVIEW;
+  lws_callback_on_writable(u_ctx->wsi);
+}
+
+static void send_mp4_init(lws_sorted_usec_list_t *sul) {
+  mp4_sul_wrapper *wrapper = lws_container_of(sul, mp4_sul_wrapper, sul);
+  struct user_ctx *u_ctx = wrapper->owner;
+  LOG_DDEBUG("process mp4 init schedule. id:" << u_ctx->id);
+
+  // Try to obtain SPS/PPS from global video channel (non-blocking reads)
+  std::vector<uint8_t> sps;
+  std::vector<uint8_t> pps;
+  bool have_sps = false;
+  bool have_pps = false;
+
+  // Drain available messages until we find SPS/PPS or none left
+  while (true) {
+    H264NALUnit unit;
+    if (!global_video[0]->msgChannel->read(&unit)) {
+      break; // no more messages currently
+    }
+    if (unit.data.empty())
+      continue;
+    uint8_t nalType = (unit.data[0] & 0x1F);
+    if (nalType == 7) { // SPS
+      sps = unit.data;
+      have_sps = true;
+      LOG_DEBUG("Found SPS for MP4 init");
+    } else if (nalType == 8) { // PPS
+      pps = unit.data;
+      have_pps = true;
+      LOG_DEBUG("Found PPS for MP4 init");
+    }
+    if (have_sps && have_pps)
+      break;
+  }
+
+  if (!have_sps || !have_pps) {
+    // reschedule after 100ms
+    lws_sul_schedule(lws_get_context(u_ctx->wsi), 0, &u_ctx->mp4_timer.sul,
+                     send_mp4_init, LWS_USEC_PER_SEC / 10);
+    return;
+  }
+
+  // Build avcC (AVCDecoderConfigurationRecord)
+  std::vector<uint8_t> avcC;
+  if (sps.size() >= 4) {
+    avcC.push_back(0x01);   // configurationVersion
+    avcC.push_back(sps[1]); // AVCProfileIndication
+    avcC.push_back(sps[2]); // profile_compatibility
+    avcC.push_back(sps[3]); // AVCLevelIndication
+    avcC.push_back(0xFF);   // 6 bits reserved + lengthSizeMinusOne (3)
+    avcC.push_back(0xE1);   // 3 bits reserved + numOfSequenceParameterSets (1)
+    // SPS length
+    uint16_t sps_len = htons((uint16_t)sps.size());
+    avcC.insert(avcC.end(), (uint8_t *)&sps_len, (uint8_t *)&sps_len + 2);
+    avcC.insert(avcC.end(), sps.begin(), sps.end());
+    // PPS
+    avcC.push_back(0x01); // numOfPictureParameterSets
+    uint16_t pps_len = htons((uint16_t)pps.size());
+    avcC.insert(avcC.end(), (uint8_t *)&pps_len, (uint8_t *)&pps_len + 2);
+    avcC.insert(avcC.end(), pps.begin(), pps.end());
+  }
+
+  // initialize muxer with avcC
+  if (u_ctx->mp4_muxer) {
+    MP4Muxer::InitParams params;
+    params.width = cfg->stream0.width;
+    params.height = cfg->stream0.height;
+    params.fps = cfg->stream0.fps;
+    params.avcC = avcC;
+    params.sampleRate = cfg->audio.mic_sample_rate();
+    params.channels = cfg->audio.input_enabled ? 1 : 0;
+
+    // Build AAC AudioSpecificConfig from FAAC encoder parameters if available
+    if (cfg->audio.input_enabled &&
+        strcmp(cfg->audio.input_format, "AAC") == 0) {
+      // Try to retrieve FAAC config by creating a temporary faac encoder
+      faac_params fparams;
+      if (faac_params_init(&fparams) == FAAC_OK) {
+        fparams.sample_rate  = cfg->audio.mic_sample_rate();
+        fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
+        fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;
+        fparams.object_type  = FAAC_OBJ_LOW;
+        faac_encoder *fh = nullptr;
+        if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
+          const uint8_t *asc_buf = nullptr;
+          uint32_t asc_len = 0;
+          if (faac_encoder_asc(fh, &asc_buf, &asc_len) == FAAC_OK &&
+              asc_buf && asc_len) {
+            params.aacConfig.assign(asc_buf, asc_buf + asc_len);
+          }
+          faac_encoder_close(&fh);
+        }
+      }
+    }
+
+    if (!u_ctx->mp4_muxer->init(params)) {
+      LOG_DEBUG("MP4Muxer init failed during scheduled init");
+      DestroyMP4Muxer(u_ctx->mp4_muxer);
+      u_ctx->mp4_muxer = nullptr;
+      if (lws_return_http_status(u_ctx->wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR,
+                                 NULL) ||
+          lws_http_transaction_completed(u_ctx->wsi)) {
+        return;
+      }
+      return;
+    }
+
+    auto init_seg = u_ctx->mp4_muxer->getInitSegment();
+    u_ctx->http_stream_buf.clear();
+    u_ctx->http_stream_buf.resize(LWS_PRE + init_seg.size());
+    if (!init_seg.empty()) {
+      std::memcpy(u_ctx->http_stream_buf.data() + LWS_PRE, init_seg.data(),
+                  init_seg.size());
+    }
+
+    // Build AAC AudioSpecificConfig from FAAC encoder parameters if available
+    if (u_ctx->mp4_muxer && cfg->audio.input_enabled &&
+        strcmp(cfg->audio.input_format, "AAC") == 0) {
+      // Try to retrieve FAAC config by creating a temporary faac encoder
+      faac_params fparams;
+      if (faac_params_init(&fparams) == FAAC_OK) {
+        fparams.sample_rate  = cfg->audio.mic_sample_rate();
+        fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
+        fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;
+        fparams.object_type  = FAAC_OBJ_LOW;
+        faac_encoder *fh = nullptr;
+        if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
+          const uint8_t *asc_buf = nullptr;
+          uint32_t asc_len = 0;
+          if (faac_encoder_asc(fh, &asc_buf, &asc_len) == FAAC_OK &&
+              asc_buf && asc_len) {
+            params.aacConfig.assign(asc_buf, asc_buf + asc_len);
+          }
+          faac_encoder_close(&fh);
+        }
+      }
+    }
+
+    u_ctx->flag |= PNT_FLAG_HTTP_SEND_MP4;
+    lws_callback_on_writable(u_ctx->wsi);
+  }
+}
+
+int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
+                    void *user, void *in, size_t len) {
+  struct lejp_ctx ctx;
+  user_ctx *u_ctx = (struct user_ctx *)user;
+
+  char client_ip[128];
+  lws_get_peer_simple(wsi, client_ip, sizeof(client_ip));
+
+  char *url_ptr = nullptr;
+  int url_length = 0;
+  int request_method = 0;
+
+  // security token ?token=
+  char url_token[128]{0};
+  char content_type[128]{0};
+
+  // get url and method
+  if (reason >= LWS_CALLBACK_HTTP && reason <= LWS_CALLBACK_HTTP_WRITEABLE) {
+    request_method = lws_http_get_uri_and_method(wsi, &url_ptr, &url_length);
+    lws_hdr_copy(wsi, content_type, sizeof(content_type),
+                 WSI_TOKEN_HTTP_CONTENT_TYPE);
+  }
+
+  switch (reason) {
+  // ############################ WEBSOCKET ###############################
+  case LWS_CALLBACK_ESTABLISHED:
+    LOG_DEBUG("LWS_CALLBACK_ESTABLISHED ip:" << client_ip);
+    LOG_DDEBUG("LWS_CALLBACK_ESTABLISHED id:" << u_ctx->id
+                                              << ", ip:" << client_ip);
+
+    // check if security is required and validate token
+    url_length =
+        lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
+    LOG_DEBUG("Expected token: " << std::string(token, WEBSOCKET_TOKEN_LENGTH));
+    LOG_DEBUG("Received token: " << url_token);
+    if (strcmp(token, url_token) == 0 ||
+        (strcmp(cfg->websocket.token, "auto") != 0 &&
+         strcmp(cfg->websocket.token, "") != 0 &&
+         strcmp(cfg->websocket.token, url_token) == 0)) {
+      /* initialize new u_ctx session structure.
+       * assign current wsi and a new sessionid
+       */
+      new (user) user_ctx(generateSessionID(), wsi);
+      LOG_DEBUG(
+          "WebSocket connection authenticated and user context initialized");
+    } else {
+      LOG_DEBUG("Unauthenticated websocket connect from: " << client_ip);
+      if (cfg->websocket.ws_secured) {
+        LOG_DEBUG("Connection refused.");
+        return -1;
+      } else {
+        LOG_DEBUG("Allowing unauthenticated connection (ws_secured=false)");
+        new (user) user_ctx(generateSessionID(), wsi);
+      }
+    }
+    break;
+
+  case LWS_CALLBACK_RECEIVE:
+    LOG_DDEBUG("LWS_CALLBACK_RECEIVE "
+               << " id:" << u_ctx->id << " ,flag:" << u_ctx->flag
+               << " ,ip:" << client_ip << " ,len:" << len
+               << " ,last:" << lws_is_final_fragment(wsi));
+
+    /* larger requests can be segmented into several requests,
+     * so we have to collect all the data until we reach the last segment.
+     * On receiving the first segment we should clear the rx_message
+     */
+    if (lws_is_first_fragment(wsi))
+      u_ctx->rx_message.clear();
+
+    u_ctx->rx_message.append((char *)in, len);
+
+    if (!lws_is_final_fragment(wsi))
+      return 0;
+
+    LOG_DDEBUG("u_ctx->rx_message: id:" << u_ctx->id
+                                        << ", rx:" << u_ctx->rx_message);
+
+    // set request pending
+    // u_ctx->flag |= PNT_FLAG_WS_REQUEST_PENDING;
+
+    // parse json and write response into u_ctx->message
+    u_ctx->message = "{"; // open response json
+    lejp_construct(&ctx, root_callback, u_ctx, root_keys,
+                   LWS_ARRAY_SIZE(root_keys));
+    lejp_parse(&ctx, (uint8_t *)u_ctx->rx_message.c_str(),
+               u_ctx->rx_message.length());
+    lejp_destruct(&ctx);
+    u_ctx->message.append("}");         // close response json
+    u_ctx->rx_message.clear();          // cleanup received data
+    u_ctx->flag &= ~PNT_FLAG_SEPARATOR; // always reset separator after parsing
+
+    // splitt overlapping responses with a ";"
+    if (u_ctx->flag & PNT_FLAG_WS_REQUEST_PENDING) {
+      u_ctx->tx_message.append(";");
+    }
+
+    u_ctx->flag |= PNT_FLAG_WS_REQUEST_PENDING;
+
+    // incoming snapshot request via websocket
+    if (u_ctx->flag & PNT_FLAG_WS_REQUEST_PREVIEW) {
+      // clenaup request flag
+      u_ctx->flag &= ~PNT_FLAG_WS_REQUEST_PREVIEW;
+
+      // drop overlapping image requests
+      if (u_ctx->flag & PNT_FLAG_WS_PREVIEW_PENDING) {
+        LOG_DDEBUG("drop overlapping image request. id:" << u_ctx->id);
+        return 0;
+      };
+
+      // set prview pending flag
+      u_ctx->flag |= PNT_FLAG_WS_PREVIEW_PENDING;
+
+      /* 'first_request_delay_us'
+       * first request after thread sleep should be a bit delayed, because the
+       * first images after wakup can be incomplete or having osd missed a
+       * default of 100 milliseconds should delay ~3 images
+       */
+      int first_request_delay_us = 0;
+      u_ctx->snapshot.r++;
+
+      {
+        global_jpeg[0]->request();
+
+        /* if the jpeg channel is inactive we need to start him
+         * this can also cause that required video channel also
+         * must been started
+         */
+        if (!global_jpeg[0]->active) {
+          first_request_delay_us = cfg->websocket.first_image_delay_ms * 1000;
+          global_jpeg[0]->should_grab_frames.notify_all();
+          global_jpeg[0]->is_activated.acquire();
+        }
+      }
+
+      auto now = steady_clock::now();
+      auto dur = duration_cast<milliseconds>(
+                     now - u_ctx->snapshot.last_snapshot_request)
+                     .count();
+
+      /* Throttling to prevent images from being sent faster than they are
+       * created 'u_ctx->snapshot.throttle' is calculated to delay sendings
+       */
+      if (dur > 1000) {
+        u_ctx->snapshot.last_snapshot_request = now;
+        u_ctx->snapshot.rps = u_ctx->snapshot.r;
+        u_ctx->snapshot.r = 0;
+
+        u_ctx->snapshot.throttle +=
+            global_jpeg[0]->stream->stats.fps - u_ctx->snapshot.rps;
+
+        if (u_ctx->snapshot.throttle > 100) {
+          u_ctx->snapshot.throttle = 100;
+        } else if (u_ctx->snapshot.throttle < 1) {
+          u_ctx->snapshot.throttle = 1;
+        }
+
+        LOG_DDEBUG("RPS: " << u_ctx->snapshot.rps << " "
+                           << u_ctx->snapshot.throttle << " " << dur);
+      }
+
+      int delay_us = (LWS_USEC_PER_SEC / (global_jpeg[0]->stream->stats.fps +
+                                          u_ctx->snapshot.throttle)) +
+                     first_request_delay_us;
+      LOG_DDEBUG("shedule preview image. id:" << u_ctx->id
+                                              << " delay:" << delay_us);
+      lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->snapshot_timer.sul,
+                       send_snapshot, delay_us);
+
+      // send response for the image request
+      u_ctx->tx_message.append(u_ctx->message);
+      lws_callback_on_writable(wsi);
+    } else {
+      // send response for all 'non image request' json requests
+      u_ctx->tx_message.append(u_ctx->message);
+      lws_callback_on_writable(wsi);
+    }
+
+    break;
+
+  case LWS_CALLBACK_SERVER_WRITEABLE:
+    LOG_DDEBUG("LWS_CALLBACK_SERVER_WRITEABLE id:" << u_ctx->id
+                                                   << ", ip:" << client_ip);
+
+    // send response message
+    if (!u_ctx->tx_message.empty()) {
+      u_ctx->flag &= ~PNT_FLAG_WS_REQUEST_PENDING;
+
+      /* send all outstanding messages
+       * if messages faster received than an answer can be send, they will
+       * append to tx_message and separated with a ";". now we split them and
+       * send each segment separate
+       */
+      std::stringstream ss(u_ctx->tx_message);
+      std::string item;
+
+      while (std::getline(ss, item, ';')) {
+        LOG_DDEBUG("u_ctx->tx_message id:" << u_ctx->id << ", tx:" << item);
+        item = std::string(LWS_PRE, '\0') + item;
+        lws_write(wsi, (unsigned char *)item.c_str() + LWS_PRE,
+                  item.length() - LWS_PRE, LWS_WRITE_TEXT);
+      }
+
+      u_ctx->tx_message.clear();
+    }
+
+    // delayed snapshot request via websocket, sending the image
+    if (u_ctx->flag & PNT_FLAG_WS_SEND_PREVIEW) {
+      LOG_DDEBUG("send preview image. id:" << u_ctx->id);
+      global_jpeg[0]->request();
+      std::vector<unsigned char> jpeg_buf;
+      if (get_snapshot(jpeg_buf)) {
+        lws_write(wsi, jpeg_buf.data() + LWS_PRE, jpeg_buf.size() - LWS_PRE,
+                  LWS_WRITE_BINARY);
+      }
+      u_ctx->flag &= ~(PNT_FLAG_WS_SEND_PREVIEW | PNT_FLAG_WS_PREVIEW_PENDING);
+    }
+    break;
+
+  case LWS_CALLBACK_CLOSED:
+    LOG_DEBUG("LWS_CALLBACK_CLOSED ip:" << client_ip
+                                        << " - WebSocket connection closed");
+    LOG_DDEBUG("LWS_CALLBACK_CLOSED id:" << u_ctx->id << ", ip:" << client_ip
+                                         << ", flag:" << u_ctx->flag);
+
+    // cleanup delete possibly existing shedules for this session
+    lws_sul_cancel(&u_ctx->snapshot_timer.sul);
+    lws_sul_cancel(&u_ctx->mp4_timer.sul);
+
+    // restore any replaced callbacks and cleanup muxer
+    if (u_ctx->mp4_muxer) {
+      u_ctx->mp4_muxer->close();
+      DestroyMP4Muxer(u_ctx->mp4_muxer);
+      u_ctx->mp4_muxer = nullptr;
+    }
+    u_ctx->teardown_stream_taps();
+
+    u_ctx->pending_fragments.clear();
+    u_ctx->http_stream_buf.clear();
+
+    u_ctx->~user_ctx();
+    break;
+
+  // ############################ HTTP ###############################
+  case LWS_CALLBACK_HTTP: {
+    LOG_DDEBUG("LWS_CALLBACK_HTTP ip:" << client_ip
+                                       << " url:" << (char *)url_ptr
+                                       << " method:" << request_method);
+
+    // check if security is required and validate token
+    url_length =
+        lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
+    if (strcmp(token, url_token) == 0 ||
+        (strcmp(cfg->websocket.token, "auto") != 0 &&
+         strcmp(cfg->websocket.token, "") != 0 &&
+         strcmp(cfg->websocket.token, url_token) == 0)) {
+      /* initialize new u_ctx session structure.
+      * assign current wsi and a new sessionid
+      ' don't know if we need it for http
+      */
+      new (user) user_ctx(generateSessionID(), wsi);
+    } else {
+      LOG_DEBUG("Unauthenticated http connect from: " << client_ip);
+      if (cfg->websocket.http_secured) {
+        LOG_DEBUG("Connection refused.");
+        if (lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, NULL) ||
+            lws_http_transaction_completed(wsi)) {
+          return -1;
+        }
+      }
+    }
+
+    // http GET
+    if (request_method == 0) {
+      // Send preview image
+      if (strcmp(url_ptr, "/preview.jpg") == 0) {
+        u_ctx->flag |= PNT_FLAG_HTTP_SEND_PREVIEW;
+
+        global_jpeg[0]->request();
+
+        if (!global_jpeg[0]->active) {
+          global_jpeg[0]->should_grab_frames.notify_all();
+          global_jpeg[0]->is_activated.acquire();
+          /* we need this delay to grab a valid image when stream resume from
+           * sleep usleep is a bad choice, but lws_sul_schedule won't work as
+           * expected here hopfully we find a better solution later
+           */
+          usleep(cfg->websocket.first_image_delay_ms * 1000);
+        }
+
+        lws_callback_on_writable(wsi);
+        return 0;
+      }
+
+      // HTTP fMP4 init segment endpoint
+      if (strcmp(url_ptr, "/ch0.mp4") == 0) {
+        // create muxer for this session
+        u_ctx->mp4_muxer = CreateMP4Muxer();
+        if (!u_ctx->mp4_muxer) {
+          LOG_DEBUG("MP4Muxer not available");
+          if (lws_return_http_status(wsi, HTTP_STATUS_SERVICE_UNAVAILABLE,
+                                     NULL) ||
+              lws_http_transaction_completed(wsi)) {
+            return -1;
+          }
+          return 0;
+        }
+
+        // schedule mp4 init task that will poll for SPS/PPS and initialize
+        // muxer
+        lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->mp4_timer.sul,
+                         send_mp4_init, 0);
+        return 0;
+      }
+    }
+    // http POST
+    else if (request_method == 1) {
+      // get content length
+      if (strcmp(url_ptr, "/json") == 0 &&
+          strcmp(content_type, "application/json") == 0) {
+        // Read content length header and store received data
+        char length_str[16];
+        if (lws_hdr_copy(wsi, length_str, sizeof(length_str),
+                         WSI_TOKEN_HTTP_CONTENT_LENGTH) > 0) {
+          if (atoi(length_str)) {
+            u_ctx->flag |= PNT_FLAG_HTTP_RECEIVED_MESSAGE;
+          }
+        }
+        return 0;
+      }
+    }
+
+    // not implemented
+    u_ctx->flag |= PNT_FLAG_HTTP_SEND_INVALID;
+    lws_callback_on_writable(wsi);
+    return 0;
+  }
+
+  break;
+
+  case LWS_CALLBACK_HTTP_BODY:
+    LOG_DDEBUG("LWS_CALLBACK_HTTP_BODY ip:" << client_ip);
+    u_ctx->rx_message.append((char *)in, len);
+    break;
+
+  case LWS_CALLBACK_HTTP_BODY_COMPLETION: // LWS_CALLBACK_HTTP_BODY:
+    LOG_DDEBUG("LWS_CALLBACK_HTTP_BODY ip:" << client_ip
+                                            << ", data:" << u_ctx->rx_message);
+
+    if (u_ctx->flag & PNT_FLAG_HTTP_RECEIVED_MESSAGE) {
+      // parse json and write response into u_ctx->message
+      u_ctx->message = "{"; // open response json
+      lejp_construct(&ctx, root_callback, u_ctx, root_keys,
+                     LWS_ARRAY_SIZE(root_keys));
+      lejp_parse(&ctx, (uint8_t *)u_ctx->rx_message.c_str(),
+                 u_ctx->rx_message.length());
+      lejp_destruct(&ctx);
+      u_ctx->message.append("}"); // close response json
+      u_ctx->rx_message.clear();  // cleanup received data
+      u_ctx->flag &=
+          ~PNT_FLAG_SEPARATOR; // always reset separator after parsing
+      u_ctx->flag |= PNT_FLAG_HTTP_SEND_MESSAGE;
+
+      /* copy response into u_ctx->message into u_ctx->tx_message
+       * can be helpfull to handle overlapping requests in future
+       */
+      u_ctx->tx_message = u_ctx->message;
+      u_ctx->tx_message.clear();
+
+      // send response
+      lws_callback_on_writable(wsi);
+
+      return 0;
+    }
+    break;
+
+  case LWS_CALLBACK_HTTP_WRITEABLE:
+    LOG_DDEBUG("LWS_CALLBACK_HTTP_WRITEABLE ip:" << client_ip << " "
+                                                 << (int)u_ctx->flag);
+
+    {
+      uint8_t header[LWS_PRE + 1024];
+      memset(header, 0, sizeof(header));
+      uint8_t *start = &header[LWS_PRE];
+      uint8_t *p = &header[LWS_PRE];
+      uint8_t *end = &header[sizeof(header) - 1];
+
+      if (u_ctx->flag & PNT_FLAG_HTTP_SEND_PREVIEW) {
+        u_ctx->flag &= ~PNT_FLAG_HTTP_SEND_PREVIEW;
+
+        // Write image
+        std::vector<unsigned char> jpeg_buf;
+        if (get_snapshot(jpeg_buf)) {
+          if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, "image/jpeg",
+                                          jpeg_buf.size() - LWS_PRE, &p, end) ||
+              lws_finalize_write_http_header(wsi, start, &p, end) ||
+              !lws_write(wsi, jpeg_buf.data() + LWS_PRE,
+                         jpeg_buf.size() - LWS_PRE, LWS_WRITE_BINARY) ||
+              lws_http_transaction_completed(wsi)) {
+            LOG_ERROR("lws error sending image");
+            return 1;
+          } else {
+            return 0;
+          }
+        }
+      }
+
+      if (u_ctx->flag & PNT_FLAG_HTTP_SEND_MESSAGE) {
+        u_ctx->flag &= ~PNT_FLAG_HTTP_SEND_MESSAGE;
+        LOG_DDEBUG("/json " << u_ctx->flag);
+        if (!u_ctx->message.empty()) {
+          LOG_DDEBUG("TO " << client_ip << ":  " << u_ctx->message);
+
+          // Prepare the HTTP headers
+          if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK,
+                                          "application/json",
+                                          u_ctx->message.length(), &p, end) ||
+              lws_finalize_write_http_header(wsi, start, &p, end) ||
+              !lws_write(wsi, (unsigned char *)u_ctx->message.c_str(),
+                         u_ctx->message.length(), LWS_WRITE_TEXT) ||
+              lws_http_transaction_completed(wsi)) {
+            LOG_ERROR("lws error sending response");
+            return -1;
+          } else {
+            return 0;
+          }
+        }
+        return 0;
+      }
+
+      if (u_ctx->flag & PNT_FLAG_HTTP_SEND_MP4) {
+        u_ctx->flag &= ~PNT_FLAG_HTTP_SEND_MP4;
+
+        size_t payload_size = 0;
+        if (u_ctx->http_stream_buf.size() > (size_t)LWS_PRE) {
+          payload_size = u_ctx->http_stream_buf.size() - LWS_PRE;
+        }
+
+        // Use chunked transfer so we can keep sending fragments.
+        if (lws_add_http_common_headers(wsi, HTTP_STATUS_OK, "video/mp4", -1,
+                                        &p, end) ||
+            lws_finalize_write_http_header(wsi, start, &p, end)) {
+          LOG_ERROR("lws error sending mp4 init segment");
+          if (u_ctx->mp4_muxer) {
+            u_ctx->mp4_muxer->close();
+            DestroyMP4Muxer(u_ctx->mp4_muxer);
+            u_ctx->mp4_muxer = nullptr;
+          }
+          u_ctx->http_stream_buf.clear();
+          return -1;
+        }
+        // send init segment as first chunk (if present)
+        if (payload_size > 0) {
+          // write chunk header
+          char chunk_hdr[64];
+          int hlen = snprintf(chunk_hdr, sizeof(chunk_hdr), "%x\r\n",
+                              (unsigned int)payload_size);
+          unsigned char hdrbuf[LWS_PRE + 64];
+          memset(hdrbuf, 0, sizeof(hdrbuf));
+          memcpy(hdrbuf + LWS_PRE, chunk_hdr, hlen);
+          if (lws_write(wsi, hdrbuf + LWS_PRE, hlen, LWS_WRITE_BINARY) <= 0) {
+            LOG_ERROR("lws error sending mp4 chunk header");
+            return -1;
+          }
+
+          // write payload
+          if (lws_write(wsi, u_ctx->http_stream_buf.data() + LWS_PRE,
+                        payload_size, LWS_WRITE_BINARY) <= 0) {
+            LOG_ERROR("lws error sending mp4 init payload");
+            return -1;
+          }
+
+          // write CRLF
+          unsigned char crlf[LWS_PRE + 3];
+          memset(crlf, 0, sizeof(crlf));
+          memcpy(crlf + LWS_PRE, "\r\n", 2);
+          if (lws_write(wsi, crlf + LWS_PRE, 2, LWS_WRITE_BINARY) <= 0) {
+            LOG_ERROR("lws error sending mp4 chunk CRLF");
+            return -1;
+          }
+        }
+
+        // register dedicated taps so preview does not steal RTSP callbacks
+        u_ctx->teardown_stream_taps();
+        u_ctx->preview_video_queue =
+            std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE);
+        u_ctx->video_tap_entry =
+            register_video_tap(0, u_ctx->preview_video_queue,
+                               [u_ctx]() { u_ctx->pump_video_preview(); });
+
+        if (cfg->audio.input_enabled &&
+            strcmp(cfg->audio.input_format, "AAC") == 0) {
+          u_ctx->preview_audio_queue =
+              std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE);
+          u_ctx->audio_tap_entry =
+              register_audio_tap(0, u_ctx->preview_audio_queue,
+                                 [u_ctx]() { u_ctx->pump_audio_preview(); });
+        }
+        // keep connection open; don't call lws_http_transaction_completed here
+        u_ctx->http_stream_buf.clear();
+        return 0;
+      }
+
+      // send pending stream fragments (chunked). Keep sending while writable
+      // and fragments exist.
+      if (u_ctx->flag & PNT_FLAG_HTTP_STREAM_PENDING) {
+        std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
+        if (!u_ctx->pending_fragments.empty()) {
+          // send as a single chunk
+          size_t sz = u_ctx->pending_fragments.size();
+          // chunk header
+          char chunk_hdr[64];
+          int hlen = snprintf(chunk_hdr, sizeof(chunk_hdr), "%x\r\n",
+                              (unsigned int)sz);
+          unsigned char hdrbuf[LWS_PRE + 64];
+          memset(hdrbuf, 0, sizeof(hdrbuf));
+          memcpy(hdrbuf + LWS_PRE, chunk_hdr, hlen);
+          if (lws_write(wsi, hdrbuf + LWS_PRE, hlen, LWS_WRITE_BINARY) <= 0) {
+            LOG_ERROR("lws error sending mp4 fragment header");
+            return -1;
+          }
+
+          // write payload in chunks if too large
+          unsigned char *payload_ptr = u_ctx->pending_fragments.data();
+          size_t remaining = sz;
+          while (remaining > 0) {
+            int to_send = (int)std::min<size_t>(remaining, 16384);
+            if (lws_write(wsi, payload_ptr, to_send, LWS_WRITE_BINARY) <= 0) {
+              LOG_ERROR("lws error sending mp4 fragment payload");
+              return -1;
+            }
+            payload_ptr += to_send;
+            remaining -= to_send;
+          }
+
+          // write CRLF
+          unsigned char crlf[LWS_PRE + 3];
+          memset(crlf, 0, sizeof(crlf));
+          memcpy(crlf + LWS_PRE, "\r\n", 2);
+          if (lws_write(wsi, crlf + LWS_PRE, 2, LWS_WRITE_BINARY) <= 0) {
+            LOG_ERROR("lws error sending mp4 fragment CRLF");
+            return -1;
+          }
+
+          u_ctx->pending_fragments.clear();
+          u_ctx->flag &= ~PNT_FLAG_HTTP_STREAM_PENDING;
+        }
+        return 0;
+      }
+
+      if (lws_add_http_common_headers(wsi, HTTP_STATUS_NOT_IMPLEMENTED,
+                                      "text/plain", 0, &p, end) ||
+          lws_finalize_write_http_header(wsi, start, &p, end) ||
+          lws_http_transaction_completed(wsi)) {
+        LOG_ERROR("lws error sending not implemented");
+      };
+      return -1;
+    }
+    break;
+
+  case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
+    LOG_DDEBUG("LWS_CALLBACK_HTTP_DROP_PROTOCOL ip:" << client_ip
+                                                     << ", id:" << u_ctx->id);
+    u_ctx->~user_ctx();
+    break;
+
+  default:
+    break;
+  }
+
+  return 0;
+}
+
+void WS::start() {
+  stop_requested.store(false, std::memory_order_relaxed);
+  char *ip = NULL;
+
+  // create websocket authentication token and write it into /run/prudynt/
+  // only websocket connect with token parameter accepted
+  // ws://<ip>:<port>/?token=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+  memset(token, 0, sizeof(token));
+
+  // Check if user has configured a specific token (not "auto" or empty)
+  if (cfg->websocket.token && strcmp(cfg->websocket.token, "auto") != 0 &&
+      strcmp(cfg->websocket.token, "") != 0 &&
+      strlen(cfg->websocket.token) == WEBSOCKET_TOKEN_LENGTH) {
+    memcpy(token, cfg->websocket.token, WEBSOCKET_TOKEN_LENGTH);
+    LOG_DEBUG("Using configured token: '"
+              << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+  } else {
+    // Token is "auto" or empty, use boot-session persistent token
+    // Create /run/prudynt directory if it doesn't exist
+    std::filesystem::create_directories("/run/prudynt");
+
+    const char *tokenFile = "/run/prudynt/websocket_token";
+    std::ifstream inFile(tokenFile);
+
+    if (inFile.is_open() && inFile.good()) {
+      // Try to read existing boot-session token
+      inFile.read(token, WEBSOCKET_TOKEN_LENGTH);
+      if (inFile.gcount() == WEBSOCKET_TOKEN_LENGTH) {
+        LOG_DEBUG("Reusing boot-session token: '"
+                  << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+      } else {
+        // File exists but is invalid, generate new token for this boot session
+        const char *generatedToken = generateToken();
+        memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
+        LOG_DEBUG("Invalid boot-session token, generated new: '"
+                  << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+      }
+      inFile.close();
+    } else {
+      // No existing token file, generate new token for this boot session
+      const char *generatedToken = generateToken();
+      memcpy(token, generatedToken, WEBSOCKET_TOKEN_LENGTH);
+      LOG_DEBUG("No boot-session token, generated new: '"
+                << std::string(token, WEBSOCKET_TOKEN_LENGTH) << "'");
+    }
+
+    // Save the token for this boot session (survives app restart, not reboot)
+    std::ofstream outFile(tokenFile);
+    if (outFile.is_open()) {
+      outFile.write(token, WEBSOCKET_TOKEN_LENGTH);
+      outFile.close();
+    }
+  }
+
+  // Hook libwebsockets logging into our logger for visibility
+  auto lws_emit = [](int /*level*/, const char *line) {
+    Logger::log(Logger::DEBUG, FILENAME,
+                LogMsg() << "[lws] " << std::string(line ? line : ""));
+  };
+
+  uint32_t lmask = LLL_ERR;
+  switch (Logger::level) {
+  case Logger::DEBUG:
+    lmask = 0x7FFFFFFF; // everything compiled in
+    break;
+  case Logger::INFO:
+    lmask = LLL_ERR | LLL_WARN | LLL_NOTICE | LLL_INFO;
+    break;
+  case Logger::NOTICE:
+    lmask = LLL_ERR | LLL_WARN | LLL_NOTICE;
+    break;
+  case Logger::WARN:
+    lmask = LLL_ERR | LLL_WARN;
+    break;
+  default:
+    lmask = LLL_ERR;
+    break;
+  }
+  lws_set_log_level(lmask, lws_emit);
+  LOG_INFO("libwebsockets version: " << lws_get_library_version());
+
+  protocols.name = cfg->websocket.name;
+  protocols.callback = ws_callback;
+  protocols.per_session_data_size = sizeof(user_ctx);
+  protocols.rx_buffer_size = 65536;
+
+  memset(&info, 0, sizeof(info));
+  info.port = cfg->websocket.port;
+  info.iface = ip; // null = all interfaces
+  info.protocols = &protocols;
+  info.gid = -1;
+  info.uid = -1;
+
+  // Dump context info before creation
+  LOG_INFO("WS context: port=" << info.port << " iface="
+                               << (info.iface ? info.iface : (char *)"<any>"));
+
+  context = lws_create_context(&info);
+
+  if (!context) {
+    LOG_ERROR("lws init failed (errno=" << errno << ")");
+    return; // do not claim started; exit thread
+  }
+
+  LOG_INFO("Server started on port " << cfg->websocket.port);
+
+  while (!global_shutdown_requested.load(std::memory_order_relaxed) &&
+         !stop_requested.load(std::memory_order_relaxed)) {
+    lws_service(context, 50);
+  }
+
+  LOG_INFO("Server stopped.");
+
+  lws_context_destroy(context);
+  context = nullptr;
+}
+
+void WS::stop() {
+  stop_requested.store(true, std::memory_order_relaxed);
+  if (context) {
+    LOG_DEBUG("WS::stop: cancelling libwebsockets service loop");
+    lws_cancel_service(context);
+  }
+}
+
+void *WS::run(void *arg) {
+  ((WS *)arg)->start();
+  return nullptr;
+}
+
+#endif // WEBSOCKET_ENABLED

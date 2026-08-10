@@ -1,16 +1,16 @@
-# AGENTS.md — prudynt-t
+# AGENTS.md -- prudynt-t
 
 prudynt-t is a C++20 video streaming server for Ingenic MIPS (mipsel) SoCs,
 cross-compiled from x86_64. It targets Thingino firmware cameras and ships two
 binaries: `prudynt` (the server) and `prudyntctl` (a Unix-socket client for
 `/run/prudynt/prudynt.sock`).
 
-This is a **build-by-overlay** checkout — it lives under
+This is a **build-by-overlay** checkout -- it lives under
 `firmware/overrides/prudynt-t` of the Thingino builder image and is consumed
 both standalone (Docker/`build.sh`) and via the buildroot package
 (`buildroot_dev.sh`).
 
-## Build — read this before invoking make directly
+## Build -- read this before invoking make directly
 
 Don't call `make` blindly. The Makefile expects a fully-set cross environment
 (`CROSS_COMPILE`, `-DPLATFORM_<SOC>`, `-DBINARY_*`, libc define, `-isystem`
@@ -50,7 +50,7 @@ don't expect `3rdparty/` to survive across runs of this script.
 
 ### Direct make (only if you know what you're doing)
 
-`make` alone won't link — you must replicate the env that `build.sh prudynt`
+`make` alone won't link -- you must replicate the env that `build.sh prudynt`
 passes: `CROSS_COMPILE`, `CFLAGS` with `-DPLATFORM_<SOC>` + `-DBINARY_*` +
 `-DLIBC_UCLIBC` (or nothing for musl) + `-isystem 3rdparty/install/include/...`,
 `LDFLAGS=-L./3rdparty/install/lib`, and `PKG_CONFIG_PATH` pointing at
@@ -66,41 +66,43 @@ libexecinfo). All default to `1` except `USE_EXECINFO`. These map to
 
 ### Clean
 
-- `make clean` — removes `obj/` and the generated `include/<SOC>/<ver>/<lang>/version.hpp`
-- `make distclean` — also removes `bin/`
-- `rm -rf 3rdparty` (manual) — needed when switching SOC/libc/build type or
+- `make clean` -- removes `obj/` and the generated `include/<SOC>/<ver>/<lang>/version.hpp`
+- `make distclean` -- also removes `bin/`
+- `rm -rf 3rdparty` (manual) -- needed when switching SOC/libc/build type or
   after `--clean-all` of `build.sh deps`.
 
 ## Layout
 
-- `src/` — server sources (`main.cpp` entry) plus `prudyntctl.cpp` (separate
+- `src/` -- server sources (`main.cpp` entry) plus `prudyntctl.cpp` (separate
   binary, no link against IMP/codec libs).
-- `src/simple-rtsp/` — custom RTSP server (replaces live555); built as part of
+- `src/simple-rtsp/` -- custom RTSP server (replaces live555); built as part of
   the main target, see `docs/rtsp.md`.
-- `include/` — **git submodule** (`gtxaspec/ingenic-headers`). Per-platform SDK
+- `include/` -- **git submodule** (`gtxaspec/ingenic-headers`). Per-platform SDK
   headers live under `include/<SOC>/<SDK_VERSION>/<lang>/` (lang is `en` for
   T31/C100, `zh` otherwise). `version.hpp` is generated here from
-  `src/version.tpl.hpp`. **Do not edit files under `include/` here** — they
+  `src/version.tpl.hpp`. **Do not edit files under `include/` here** -- they
   come from the submodule.
-- `3rdparty/` — gitignored; populated by `build.sh deps`. Holds libimp,
+- `3rdparty/` -- gitignored; populated by `build.sh deps`. Holds libimp,
   libhelix-aac/mp3, libflac-lite, libwebsockets, opus, faac, jct, libschrift,
   curl, and the musl/uclibc shim. Read `build.sh` `deps()` for the canonical
   versions and patch flow (local patches live in `res/<lib>/*.patch`).
-- `res/` — runtime config (`prudynt.json`), per-lib patches, OSD/color/IRCUT/
+- `res/` -- runtime config (`prudynt.json`), per-lib patches, OSD/color/IRCUT/
   IRLED/daynight assets, `imp-control` JSON definitions.
-- `tests/` — ad-hoc, no harness. Each test is self-contained and built by
+- `tests/` -- ad-hoc, no harness. Each test is self-contained and built by
   hand (compile commands are in the file headers, e.g.
   `g++ -std=c++17 test_daynight_algo.cpp -o ...`). `test_shared_rotation.c`
   is a device-only integration probe against IMP, not a unit test.
-- `docs/` — design notes per subsystem (rtsp, audio, video, osd, mp4-control,
+- `docs/` -- design notes per subsystem (rtsp, audio, video, osd, mp4-control,
   prebuffer, webrtc, metrics, HAL platform matrix). Treat these as the
   authoritative architecture reference.
-- `.github/workflows/pru.yaml` — CI matrix: T10/T20/T21/T23/T30/T31/C100 ×
+- `.github/workflows/pru.yaml` -- CI matrix: T10/T20/T21/T23/T30/T31/C100 ×
   static/dynamic/hybrid using musl gcc14 toolchain. Releases go under tag
   `release`.
 
 ## Code style / conventions
 
+- Only ASCII code, no emojis, no unicode characters. E.g. replace en- and em-dash
+  with double- and tripple- hyphens.
 - `.clang-format` is `BasedOnStyle: LLVM`; keep new code formatted with it.
   No `ColumnLimit` is set (header comment is commented out).
 - C++20 (`-std=c++20`); C and C++ both compiled with `-Wall -Wextra
@@ -114,7 +116,7 @@ libexecinfo). All default to `1` except `USE_EXECINFO`. These map to
 - Backchannel / two-way audio path lives across `IMPBackchannel`,
   `BackchannelWorker`, `AudioOutputWorker`, `AudioReframer`, `Opus`,
   `AACEncoder`. Much of recent history is backchannel/SDP fix work; PRs here
-  tend to be reverted/relitigated — check `git log` before changing SDP or
+  tend to be reverted/relitigated -- check `git log` before changing SDP or
   PLAY/SETUP handling in `simple-rtsp`.
 
 ## Verification
@@ -125,7 +127,7 @@ done:
 1. `./build.sh prudynt <SOC>` succeeds end-to-end (run `./build.sh deps` first
    if `3rdparty/` is empty or the SOC/libc/binary-type changed).
 2. Optionally `clang-format --dry-run -Werror` on changed C/C++ files.
-3. For runtime behaviour changes, smoke-test on a camera — see the project
+3. For runtime behaviour changes, smoke-test on a camera -- see the project
    skills (`device-smoke-cycle`, `nfs-dev-deploy`, `build-and-ota`,
    `collect-diagnostics`) for the safe workflow.
 
@@ -139,7 +141,7 @@ done:
   `make clean` ran, the next build regenerates it. Don't commit it (it's
   gitignored).
 - T40/T41 are XBurst2 with kernel-4.x SDKs and use different
-  `IMP_ISP_Tuning_*` signatures than T10–T31/C100 — see
+  `IMP_ISP_Tuning_*` signatures than T10-T31/C100 -- see
   `docs/HAL_PLATFORM_SUPPORT.md` before touching `imp_hal.cpp` / `imp_control.cpp`.
 - `buildroot_dev.sh` rebuilds from a **musl** buildroot sysroot regardless of
   the `--libc-*` flag used in `build.sh`; don't mix its `3rdparty/` with one

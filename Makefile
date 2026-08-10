@@ -307,26 +307,29 @@ LIBIMP_INC_DIR          = ./include/$(LIBIMP_PLATFORM)/$(LIBIMP_SDK_VERSION)/$(L
 # Directory Structure
 # ===================
 SRC_DIR                 = ./src
-SIMPLE_RTSP_DIR          = $(SRC_DIR)/simple-rtsp
 OBJ_DIR                 = ./obj
 BIN_DIR                 = ./bin
 
-# Source and Object Files
-# =======================
-PRUDYNTCTL_SOURCE       = $(SRC_DIR)/prudyntctl.cpp
-MAIN_SOURCES_CPP        = $(filter-out $(PRUDYNTCTL_SOURCE),$(wildcard $(SRC_DIR)/*.cpp))
-SIMPLE_RTSP_SOURCES     = $(wildcard $(SIMPLE_RTSP_DIR)/*.cpp)
-SOURCES_C               = $(wildcard $(SRC_DIR)/*.c)
+# Source subdirectories
+SRC_SUBDIRS := core config stream video audio audio/playback audio/codec \
+               isp network network/rtsp recording util
 
-SOURCES                 = $(MAIN_SOURCES_CPP) $(SIMPLE_RTSP_SOURCES) $(SOURCES_C)
+# Collect all .cpp sources from all subdirectories (except prudyntctl)
+MAIN_SOURCES_CPP        := $(filter-out %/prudyntctl.cpp,$(foreach d,$(SRC_SUBDIRS),$(wildcard $(SRC_DIR)/$(d)/*.cpp)))
+SOURCES_C               := $(foreach d,$(SRC_SUBDIRS),$(wildcard $(SRC_DIR)/$(d)/*.c))
 
-OBJECTS                 = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(MAIN_SOURCES_CPP)) \
-                          $(patsubst $(SIMPLE_RTSP_DIR)/%.cpp,$(OBJ_DIR)/simple-rtsp/%.o,$(SIMPLE_RTSP_SOURCES)) \
-                          $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SOURCES_C))
+SOURCES                 := $(MAIN_SOURCES_CPP) $(SOURCES_C)
 
-PRUDYNTCTL_OBJECTS      = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(PRUDYNTCTL_SOURCE))
+# Object files mirror source tree under obj/
+OBJECTS                 := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(MAIN_SOURCES_CPP)) \
+                           $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SOURCES_C))
 
-$(info Building objects: $(OBJECTS))
+# prudyntctl is a separate binary
+PRUDYNTCTL_SOURCE       := $(SRC_DIR)/prudyntctl.cpp
+PRUDYNTCTL_OBJECTS      := $(OBJ_DIR)/prudyntctl.o
+
+$(info Sources: $(SOURCES))
+$(info Objects: $(OBJECTS))
 
 # Target Configuration
 # ====================
@@ -362,9 +365,9 @@ endif
 
 # Version File Generation
 # -----------------------
-$(VERSION_FILE): $(SRC_DIR)/version.tpl.hpp FORCE
+$(VERSION_FILE): $(SRC_DIR)/util/version.tpl.hpp FORCE
 	@mkdir -p $(dir $(VERSION_FILE))
-	@new_ver=$$(sed 's/COMMIT_TAG/"$(commit_tag)"/g' $(SRC_DIR)/version.tpl.hpp); \
+	@new_ver=$$(sed 's/COMMIT_TAG/"$(commit_tag)"/g' $(SRC_DIR)/util/version.tpl.hpp); \
 	if [ ! -f $(VERSION_FILE) ] || ! echo "$$new_ver" | cmp -s $(VERSION_FILE) -; then \
 		echo "Updating $(VERSION_FILE) to $(commit_tag)"; \
 		echo "$$new_ver" > $(VERSION_FILE); \
@@ -376,46 +379,35 @@ $(CXXFLAGS_FILE): FORCE
 	@mkdir -p $(@D)
 	@[ -f "$@" ] && [ "$$(cat '$@')" = "$(CXXFLAGS)" ] || printf '%s' "$(CXXFLAGS)" > '$@'
 
-# C++ Object Compilation
+# Include paths common to all compilations
+INCLUDES := -I$(SRC_DIR) \
+            -I$(LIBIMP_INC_DIR) \
+            -I$(LIBIMP_INC_DIR)/imp \
+            -I$(LIBIMP_INC_DIR)/sysutils \
+            -isystem $(THIRDPARTY_INC_DIR)
+
+# C++ Object Compilation (handles all subdirectories via pattern rule)
 # ----------------------
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(VERSION_FILE) $(CXXFLAGS_FILE)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) \
-		-I$(SRC_DIR) \
-		-I$(LIBIMP_INC_DIR) \
-		-I$(LIBIMP_INC_DIR)/imp \
-		-I$(LIBIMP_INC_DIR)/sysutils \
-		-isystem $(THIRDPARTY_INC_DIR) \
-		-c $< -o $@
-
-# Simple-RTSP subdirectory objects
-# --------------------------------
-$(OBJ_DIR)/simple-rtsp/%.o: $(SIMPLE_RTSP_DIR)/%.cpp $(VERSION_FILE) $(CXXFLAGS_FILE)
-	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) \
-		-I$(SRC_DIR) \
-		-I$(LIBIMP_INC_DIR) \
-		-I$(LIBIMP_INC_DIR)/imp \
-		-I$(LIBIMP_INC_DIR)/sysutils \
-		-isystem $(THIRDPARTY_INC_DIR) \
-		-c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 # C Object Compilation
 # --------------------
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(VERSION_FILE) $(CXXFLAGS_FILE)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) \
-		-I$(LIBIMP_INC_DIR) \
-		-I$(LIBIMP_INC_DIR)/imp \
-		-I$(LIBIMP_INC_DIR)/sysutils \
-		-isystem $(THIRDPARTY_INC_DIR) \
-		-c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 # Final Binary Linking
 # --------------------
 $(TARGET): $(OBJECTS) $(VERSION_FILE)
 	@mkdir -p $(@D)
 	$(CCACHE) $(CXX) -o $@ $(OBJECTS) $(LDFLAGS) $(LIBS) $(STRIP_FLAG)
+
+# prudyntctl compilation (separate binary, no subdirectory)
+$(OBJ_DIR)/prudyntctl.o: $(SRC_DIR)/prudyntctl.cpp $(VERSION_FILE) $(CXXFLAGS_FILE)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 $(PRUDYNTCTL_TARGET): $(PRUDYNTCTL_OBJECTS)
 	@mkdir -p $(@D)

@@ -1,0 +1,362 @@
+#ifndef GLOBALS_HPP
+#define GLOBALS_HPP
+
+#include "audio/IMPAudio.hpp"
+#include "audio/IMPAudioOutput.hpp"
+#include "audio/IMPBackchannel.hpp"
+#include "video/IMPEncoder.hpp"
+#include "video/IMPFramesource.hpp"
+#include "recording/MP4Recorder.hpp"
+#include "stream/binary_semaphore.hpp"
+#include "stream/MsgChannel.hpp"
+#include "stream/nalu_pool.hpp"
+#ifdef PREBUFFER_ENABLED
+#include "recording/PreTriggerBuffer.hpp"
+#endif
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <functional>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#define MSG_CHANNEL_SIZE 400
+#define BACKCHANNEL_QUEUE_SIZE 200
+#define AUDIO_OUTPUT_QUEUE_SIZE 64
+#define NUM_AUDIO_CHANNELS 1
+#define NUM_VIDEO_CHANNELS 2
+#define NUM_JPEG_CHANNELS 2
+
+using namespace std::chrono;
+
+extern std::mutex
+    mutex_main; // protects global_restart_rtsp and global_restart_video
+
+struct AudioFrame {
+  std::vector<uint8_t> data;
+  struct timeval time;
+};
+
+struct H264NALUnit {
+  std::vector<uint8_t> data;
+
+  // Frame boundary tracking (detect incomplete frames)
+  bool is_frame_start = false; // First NAL unit of frame
+  bool is_frame_end = false;   // Last NAL unit of frame
+  uint32_t frame_id = 0;       // Unique per video frame
+  uint32_t packet_index = 0;   // Position within frame (0-based)
+  uint32_t packet_count = 0;   // Total NAL units in frame
+
+  struct timeval time{0, 0};
+  // Encoder timestamp in microseconds (from IMP encoder, monotonic)
+  int64_t imp_ts = 0;
+  // True for IDR frames and parameter sets (SPS/PPS/VPS) --- safe to drop the
+  // rest under congestion
+  bool is_keyframe = false;
+};
+
+struct BackchannelFrame {
+  std::vector<uint8_t> payload;
+  IMPBackchannelFormat format;
+  unsigned int clientSessionId;
+  bool isShutdownSentinel{false};
+};
+
+struct VideoTapEntry {
+  uint64_t id{0};
+  std::weak_ptr<MsgChannel<H264NALUnit>> queue;
+  std::function<void(void)> notify;
+};
+
+struct AudioTapEntry {
+  uint64_t id{0};
+  std::weak_ptr<MsgChannel<AudioFrame>> queue;
+  std::function<void(void)> notify;
+};
+
+enum class AudioPlaybackJobType { PCM, CLEAR, STOP, WAIT, RECONFIGURE };
+
+struct AudioPlaybackJob {
+  AudioPlaybackJobType type{AudioPlaybackJobType::PCM};
+  std::vector<int16_t> samples;
+  /// Desired AO sample rate for RECONFIGURE jobs, or 0 to keep current.
+  int sampleRate{0};
+  bool hasVolume{false};
+  int volume{0};
+  bool hasGain{false};
+  int gain{0};
+  bool hasMute{false};
+  bool mute{false};
+  int wait_ms{0};
+  bool flush_after_wait{false};
+  int silence_ms{0};
+  std::shared_ptr<std::promise<void>> completion;
+};
+
+struct jpeg_stream {
+  int encChn;
+  int streamChn;
+  _stream *stream;
+  std::atomic<bool> running; // set to false to make jpeg_grabber thread exit
+  std::atomic<bool> active{false};
+  pthread_t thread;
+  IMPEncoder *imp_encoder;
+  std::condition_variable should_grab_frames;
+  binary_semaphore_compat is_activated{0};
+
+  // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when
+  // updated
+  std::vector<unsigned char> snapshot_buf;
+  // Per-request JPEG quality override (1..100, -1 = none)
+  std::atomic<int> quality_override{-1};
+
+  // Dynamic reconfiguration requests (applied by JPEGWorker)
+  // Sequential frame counter for TRACE diagnostics (32-bit to avoid 64-bit
+  // atomics)
+  std::atomic<uint32_t> frame_seq{0};
+  std::atomic<int> req_width{-1};
+  std::atomic<int> req_height{-1};
+  std::atomic<int> req_fps{-1};
+  std::atomic<bool> reconfig{false};
+
+  steady_clock::time_point last_image;
+  steady_clock::time_point last_subscriber;
+
+  void request() {
+    auto now = steady_clock::now();
+    {
+      std::unique_lock lck(mutex_main);
+      last_subscriber = now;
+    }
+    // Wake JPEG worker if it's sleeping
+    should_grab_frames.notify_one();
+  }
+
+  bool request_or_overrun() {
+    return duration_cast<milliseconds>(steady_clock::now() - last_subscriber)
+               .count() < 1000;
+  }
+
+  jpeg_stream(int encChn, _stream *stream)
+      : encChn(encChn), streamChn(stream ? stream->jpeg_channel : 0),
+        stream(stream), running(false), imp_encoder(nullptr) {
+  }
+};
+
+struct audio_stream {
+  int devId;
+  int aiChn;
+  int aeChn;
+  bool running;
+  bool active{false};
+  pthread_t thread;
+  IMPAudio *imp_audio;
+  std::shared_ptr<MsgChannel<AudioFrame>> msgChannel;
+  std::function<void(void)> onDataCallback;
+  /* Check whether onDataCallback is not null in a data race free manner.
+   * Use only for optimizations, i.e., to skip work if no data callback
+   * is registered right now.
+   */
+  std::atomic<bool> hasDataCallback;
+  std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
+  std::condition_variable should_grab_frames;
+  binary_semaphore_compat is_activated{0};
+
+  std::mutex tap_mutex;
+  std::vector<AudioTapEntry> audio_taps;
+
+  audio_stream(int devId, int aiChn, int aeChn)
+      : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false),
+        imp_audio(nullptr), msgChannel(nullptr), onDataCallback{nullptr},
+        hasDataCallback{false} {
+  }
+};
+
+struct video_stream {
+  int encChn;
+  _stream *stream;
+  const char *name;
+  bool running;
+  pthread_t thread;
+  bool idr;
+  int idr_fix;
+  bool active{false};
+  IMPEncoder *imp_encoder;
+  IMPFramesource *imp_framesource;
+  std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
+  std::function<void(void)> onDataCallback;
+  bool run_for_jpeg; // see comment in audio_stream
+  std::atomic<bool> bootstrap_requested{false};
+  std::atomic<bool> hasDataCallback; // see comment in audio_stream
+  std::atomic<bool> mp4_waiting_for_idr;
+  std::atomic<int64_t> mp4_required_idr_ts_us;
+  std::atomic<int64_t> mp4_last_idr_ts_us;
+  std::atomic<uint64_t> mp4_last_idr_request_ms;
+  std::atomic<int64_t>
+      mp4_prebuffer_offset_ms; // Offset for live frames when prebuffer is used
+  std::atomic<bool>
+      mp4_prebuffer_flushing; // True while prebuffer frames are being written
+  std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
+  std::condition_variable should_grab_frames;
+  binary_semaphore_compat is_activated{0};
+  std::mutex codec_config_mutex;
+  std::vector<uint8_t> latest_vps;
+  std::vector<uint8_t> latest_sps;
+  std::vector<uint8_t> latest_pps;
+  bool have_vps;
+  bool have_sps;
+  bool have_pps;
+  std::mutex tap_mutex;
+  std::vector<VideoTapEntry> video_taps;
+  std::atomic<bool> privacy_requested{false};
+  // Cached black IDR frame for privacy mode (Annex B: start_code + SPS + PPS + IDR)
+  int privacy_osd_handle{-1};  // OSD cover region handle for privacy
+
+#ifdef PREBUFFER_ENABLED
+  // Pre-trigger buffer for MP4 recording
+  std::unique_ptr<PreTriggerBuffer> prebuffer;
+#endif
+
+  video_stream(int encChn, _stream *stream, const char *name)
+      : encChn(encChn), stream(stream), name(name), running(false), idr(false),
+        idr_fix(0), imp_encoder(nullptr), imp_framesource(nullptr),
+        msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
+        onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
+        mp4_waiting_for_idr{false}, mp4_required_idr_ts_us{-1},
+        mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0},
+        mp4_prebuffer_offset_ms{0}, mp4_prebuffer_flushing{false},
+        have_vps(false), have_sps(false), have_pps(false) {
+  }
+};
+
+struct backchannel_stream {
+  std::shared_ptr<MsgChannel<BackchannelFrame>> inputQueue;
+  IMPBackchannel *imp_backchannel;
+  bool running;
+  pthread_t thread;
+  std::mutex mutex;
+  std::condition_variable should_grab_frames;
+  std::atomic<unsigned int> is_sending{0};
+
+  backchannel_stream()
+      : inputQueue(std::make_shared<MsgChannel<BackchannelFrame>>(
+            BACKCHANNEL_QUEUE_SIZE)),
+        imp_backchannel(nullptr), running(false) {
+  }
+};
+
+struct audio_output_stream {
+  std::shared_ptr<MsgChannel<AudioPlaybackJob>> jobQueue;
+  std::atomic<bool> running{false};
+  pthread_t thread;
+  std::unique_ptr<class IMPAudioOutput> imp_audio_output;
+  std::mutex control_mutex;
+  int current_volume{0};
+  int current_gain{0};
+  bool current_mute{false};
+  /// Actual hardware sample rate after IMP_AO_GetPubAttr. May differ from
+  /// the configured output_sample_rate on platforms where the CODEC clock
+  /// is shared between AI and AO (T10/T20/T21).
+  std::atomic<int> hardwareSampleRate{0};
+
+  audio_output_stream()
+      : jobQueue(std::make_shared<MsgChannel<AudioPlaybackJob>>(
+            AUDIO_OUTPUT_QUEUE_SIZE)) {
+  }
+};
+
+extern std::condition_variable global_cv_worker_restart;
+
+extern bool global_restart;
+extern bool global_restart_rtsp;
+extern bool global_restart_video;
+extern bool global_restart_audio;
+
+extern bool global_osd_thread_signal;
+extern bool global_reload_osd;
+extern bool global_main_thread_signal;
+extern bool global_motion_thread_signal;
+extern std::atomic<char> global_rtsp_thread_signal;
+extern std::atomic<int> global_rtsp_clients;
+
+extern std::shared_ptr<jpeg_stream> global_jpeg[NUM_JPEG_CHANNELS];
+extern std::shared_ptr<audio_stream> global_audio[NUM_AUDIO_CHANNELS];
+extern std::shared_ptr<video_stream> global_video[NUM_VIDEO_CHANNELS];
+extern std::shared_ptr<backchannel_stream> global_backchannel;
+extern std::shared_ptr<audio_output_stream> global_audio_output;
+
+extern std::array<MP4Recorder, NUM_VIDEO_CHANNELS> global_mp4_recorders;
+extern std::atomic<int> global_mp4_active_recorders;
+extern std::atomic<bool> global_shutdown_requested;
+
+/* DayNightHistory moved to daynightd --- photosensing delegated.
+ * See /run/thingino/daynight_history for ring buffer data. */
+
+// When true, video workers should keep polling/grabbing frames even if
+// there is no RTSP/WS client attached. This is used by the MP4 recorder
+// so that a START command over the control FIFO does not require an
+// external streaming client.
+extern std::atomic<bool> global_force_video_active;
+
+inline VideoTapEntry
+register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
+                   std::function<void(void)> notify = {}) {
+  static std::atomic<uint64_t> video_tap_seq{0};
+  VideoTapEntry entry;
+  entry.id = ++video_tap_seq;
+  entry.queue = queue;
+  entry.notify = std::move(notify);
+  if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS) {
+    std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+    global_video[encChn]->video_taps.push_back(entry);
+  }
+  return entry;
+}
+
+inline void unregister_video_tap(int encChn, uint64_t tap_id) {
+  if (encChn < 0 || encChn >= NUM_VIDEO_CHANNELS) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+  auto &taps = global_video[encChn]->video_taps;
+  taps.erase(
+      std::remove_if(taps.begin(), taps.end(),
+                     [&](const VideoTapEntry &v) { return v.id == tap_id; }),
+      taps.end());
+}
+
+inline AudioTapEntry
+register_audio_tap(int encChn, std::shared_ptr<MsgChannel<AudioFrame>> queue,
+                   std::function<void(void)> notify = {}) {
+  static std::atomic<uint64_t> audio_tap_seq{0};
+  AudioTapEntry entry;
+  entry.id = ++audio_tap_seq;
+  entry.queue = queue;
+  entry.notify = std::move(notify);
+  if (encChn >= 0 && encChn < NUM_AUDIO_CHANNELS) {
+    std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+    global_audio[encChn]->audio_taps.push_back(entry);
+  }
+  return entry;
+}
+
+inline void unregister_audio_tap(int encChn, uint64_t tap_id) {
+  if (encChn < 0 || encChn >= NUM_AUDIO_CHANNELS) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+  auto &taps = global_audio[encChn]->audio_taps;
+  taps.erase(
+      std::remove_if(taps.begin(), taps.end(),
+                     [&](const AudioTapEntry &v) { return v.id == tap_id; }),
+      taps.end());
+}
+
+#endif // GLOBALS_HPP
