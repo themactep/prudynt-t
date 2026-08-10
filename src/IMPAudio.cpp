@@ -93,7 +93,7 @@ int IMPAudio::init() {
 #if defined(USE_AAC) && USE_AAC
     format = IMPAudioFormat::AAC;
     bitrate = cfg->audio.mic_bitrate_kbps();
-    // All Ingenic SoCs support 48kHz natively — capture at native rate
+    // All Ingenic SoCs support 48kHz natively --- capture at native rate
     // instead of a lower rate + software resample.
     ioattr.samplerate = AUDIO_SAMPLE_RATE_48000;
     encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);

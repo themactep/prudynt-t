@@ -37,7 +37,7 @@
 
 namespace simple_rtsp {
 
-// ── Crash handler ──────────────────────────────────────────────────────────
+// -- Crash handler ----------------------------------------------------------
 
 static void crashHandler(int sig) {
     fprintf(stderr, "\n!!! CRASH signal %d !!!\n", sig);
@@ -49,9 +49,9 @@ __attribute__((constructor)) static void installCrashHandler() {
     signal(SIGBUS, crashHandler);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 // Internal Session
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 
 struct Session {
     int fd = -1;
@@ -111,7 +111,7 @@ struct Session {
     std::shared_ptr<MsgChannel<AudioFrame>> audioTap;
     uint64_t audioTapId = 0;
 
-    // Subtitle (OSD text) — no tap, text is pulled from OSD each second
+    // Subtitle (OSD text) --- no tap, text is pulled from OSD each second
     bool hasSubtitles = false;
     bool subtitleTcp = false;
     char subtitleSetupUrl[256]{};
@@ -192,7 +192,7 @@ struct Session {
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }
 
-    // Multi-packet send queue.  Non-blocking sends — queued when EAGAIN.
+    // Multi-packet send queue.  Non-blocking sends --- queued when EAGAIN.
     // Queue is never capped (memory is the only limit) so NALs are never dropped.
     std::deque<std::vector<uint8_t>> sendQueue;
     size_t sendQueueBytes = 0;
@@ -204,9 +204,9 @@ struct Session {
     size_t pendingRespOff = 0;  // bytes already sent from pendingResp
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 // Static helper: non-blocking socket
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 
 static bool setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -214,9 +214,9 @@ static bool setNonBlocking(int fd) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 // RtspServer implementation
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 
 RtspServer::RtspServer() {
     // seed SSRCs
@@ -270,7 +270,7 @@ void RtspServer::addSubtitleStream(const SubtitleStreamConfig &config) {
              << " pt=" << config.payloadType);
 }
 
-// ── Start / Stop ───────────────────────────────────────────────────────────
+// -- Start / Stop -----------------------------------------------------------
 
 bool RtspServer::start(int port) {
     port_ = port > 0 ? port : 554;
@@ -333,7 +333,7 @@ void *RtspServer::run(void *arg) {
     return nullptr;
 }
 
-// ── Event loop ─────────────────────────────────────────────────────────────
+// -- Event loop -------------------------------------------------------------
 
 void RtspServer::eventLoop() {
     struct pollfd fds[MAX_CLIENTS + 1];
@@ -373,12 +373,12 @@ void RtspServer::eventLoop() {
             break;
         }
 
-        // ── Accept new connections ──────────────────────────────────────
+        // -- Accept new connections --------------------------------------
         if (fds[0].revents & POLLIN) {
             acceptClient();
         }
 
-        // ── Handle client I/O ───────────────────────────────────────────
+        // -- Handle client I/O -------------------------------------------
         for (int i = 1; i < nfds; i++) {
             if (fds[i].revents & (POLLIN | POLLERR | POLLHUP)) {
                 Session *s = sessionMap[i];
@@ -395,7 +395,7 @@ void RtspServer::eventLoop() {
             }
         }
 
-        // ── Drain taps for playing sessions ─────────────────────────────
+        // -- Drain taps for playing sessions -----------------------------
         for (auto &s : sessions_) {
             if (!s || !s->playing) continue;
             if (s->videoChn < 0 && !s->audioOnly && !s->backchannel) continue;
@@ -418,10 +418,10 @@ void RtspServer::eventLoop() {
                     closeClient(s->sessionsIndex);
                     continue;
                 }
-                // EAGAIN — will retry next cycle (non-blocking poll loop)
+                // EAGAIN --- will retry next cycle (non-blocking poll loop)
             }
 
-            // Drain send queue first — send as many queued packets as socket accepts.
+            // Drain send queue first --- send as many queued packets as socket accepts.
             while (!s->sendQueue.empty()) {
                 ssize_t n = send(s->fd,
                                  s->sendQueue.front().data(),
@@ -439,11 +439,11 @@ void RtspServer::eventLoop() {
                     closeClient(s->sessionsIndex);
                     continue; // socket broken
                 } else {
-                    break; // EAGAIN — socket full
+                    break; // EAGAIN --- socket full
                 }
             }
 
-            // Drain video tap — up to 30 NALs per cycle.  On backpressure
+            // Drain video tap --- up to 30 NALs per cycle.  On backpressure
             // the NAL is dropped (destructive MsgChannel::read).
             if (s->videoTap) {
                 H264NALUnit nal;
@@ -461,7 +461,7 @@ void RtspServer::eventLoop() {
                 }
             }
 
-            // Drain audio tap — skip if video hit backpressure
+            // Drain audio tap --- skip if video hit backpressure
             if (!backpressure && s->audioTap) {
                 AudioFrame af;
                 int drained = 0;
@@ -475,7 +475,7 @@ void RtspServer::eventLoop() {
                     LOG_DDEBUG("audio drain " << drained << " frames");
             }
 
-            // ── Send subtitle update once per second ──────────────────
+            // -- Send subtitle update once per second ------------------
             if (s->hasSubtitles && s->videoChn >= 0 &&
                 s->videoChn < NUM_VIDEO_CHANNELS &&
                 global_video[s->videoChn] &&
@@ -494,7 +494,7 @@ void RtspServer::eventLoop() {
                 }
             }
 
-            // Drain orphaned main channels (always — keep encoder flowing)
+            // Drain orphaned main channels (always --- keep encoder flowing)
             if (s->videoChn >= 0 && s->videoChn < NUM_VIDEO_CHANNELS &&
                 global_video[s->videoChn] &&
                 global_video[s->videoChn]->msgChannel) {
@@ -506,7 +506,7 @@ void RtspServer::eventLoop() {
                 while (global_audio[0]->msgChannel->read(&dummy)) {}
             }
 
-            // ── Receive backchannel RTP (client → camera audio) ───────
+            // -- Receive backchannel RTP (client -> camera audio) -------
             if (s->backchannel && s->backchannelRtpSock >= 0 &&
                 global_backchannel && global_backchannel->inputQueue) {
                 uint8_t rtpBuf[2048];
@@ -574,7 +574,7 @@ void RtspServer::eventLoop() {
             }
         }
 
-        // ── RTCP Sender Report every 5s ──────────────────────────────────
+        // -- RTCP Sender Report every 5s ----------------------------------
         static time_t lastRtcpSr = 0;
         time_t nowT = time(nullptr);
         if (nowT - lastRtcpSr >= 5) {
@@ -584,9 +584,9 @@ void RtspServer::eventLoop() {
             }
         }
 
-        // ── Session timeouts ────────────────────────────────────────────
+        // -- Session timeouts --------------------------------------------
 
-        // ── Session timeouts ────────────────────────────────────────────
+        // -- Session timeouts --------------------------------------------
         checkSessionTimeouts();
     }
 
@@ -594,7 +594,7 @@ void RtspServer::eventLoop() {
     LOG_INFO("Event loop ended");
 }
 
-// ── Accept ─────────────────────────────────────────────────────────────────
+// -- Accept -----------------------------------------------------------------
 
 void RtspServer::acceptClient() {
     struct sockaddr_in addr;
@@ -684,7 +684,7 @@ void RtspServer::acceptClient() {
             << ntohs(addr.sin_port));
 }
 
-// ── Close ──────────────────────────────────────────────────────────────────
+// -- Close ------------------------------------------------------------------
 
 void RtspServer::closeClient(int idx) {
     if (idx < 0 || idx >= static_cast<int>(sessions_.size())) return;
@@ -779,7 +779,7 @@ void RtspServer::cleanupAllSessions() {
     sessions_.clear();
 }
 
-// ── Base64 decode helper ───────────────────────────────────────────────────
+// -- Base64 decode helper ---------------------------------------------------
 
 static std::string base64Decode(const char *in, size_t len) {
     static const signed char kDecodeTable[256] = {
@@ -809,7 +809,7 @@ static std::string base64Decode(const char *in, size_t len) {
     return out;
 }
 
-// ── Authentication check ───────────────────────────────────────────────────
+// -- Authentication check ---------------------------------------------------
 
 bool RtspServer::checkAuth(Session &s, const char *headers) {
     if (!authRequired_) return true;
@@ -851,7 +851,7 @@ bool RtspServer::checkAuth(Session &s, const char *headers) {
     return false;
 }
 
-// ── Request handling ───────────────────────────────────────────────────────
+// -- Request handling -------------------------------------------------------
 
 void RtspServer::handleRequest(int idx) {
     auto &s = sessions_[idx];
@@ -870,7 +870,7 @@ void RtspServer::handleRequest(int idx) {
 
     // Append to read buffer
     if (s->readOff + n >= RTSP_BUF_SIZE) {
-        // Copy remote address immediately — inet_ntoa returns a static
+        // Copy remote address immediately --- inet_ntoa returns a static
         // buffer that the camera-IP lookup below will overwrite.
         char remoteIp[64];
         {
@@ -970,7 +970,7 @@ void RtspServer::handleRequest(int idx) {
 
     // Strip all consecutive interleaved data frames prefixed with '$'
     while (s->readOff > 0 && s->readBuf[0] == '$') {
-        if (s->readOff < 4) return; // incomplete header — wait for more
+        if (s->readOff < 4) return; // incomplete header --- wait for more
         uint16_t frameLen = (static_cast<uint8_t>(s->readBuf[2]) << 8)
                           |  static_cast<uint8_t>(s->readBuf[3]);
         size_t total = 4 + frameLen;
@@ -1010,7 +1010,7 @@ void RtspServer::handleRequest(int idx) {
     if (s->readOff == 0) return; // nothing left to parse
 
     // Check for complete request (ends with \r\n\r\n).
-    // Use a NUL-safe scan — strstr() stops at the first 0x00 byte,
+    // Use a NUL-safe scan --- strstr() stops at the first 0x00 byte,
     // which breaks when buggy clients (LibVLC 2.0.3 / LIVE555) send
     // raw RTCP on the control socket (RTCP is full of NULs).
     //
@@ -1049,14 +1049,14 @@ void RtspServer::handleRequest(int idx) {
             }
         }
 
-        // Try to parse the request line — reject if it doesn't look
+        // Try to parse the request line --- reject if it doesn't look
         // like RTSP (garbage bytes coincidentally matching \r\n\r\n).
         parsed = sscanf(reqStart, "%63s %255s %63s", methodStr, uri, version);
         if (parsed >= 2) {
             Method m = parseMethod(methodStr);
             bool isResponse = (strncmp(methodStr, "RTSP/", 5) == 0);
             if (m != Method::UNKNOWN || isResponse) {
-                // Valid request (or echoed response) — accept.
+                // Valid request (or echoed response) --- accept.
                 // Strip garbage before reqStart.
                 if (reqStart > s->readBuf) {
                     ptrdiff_t shift = reqStart - s->readBuf;
@@ -1070,7 +1070,7 @@ void RtspServer::handleRequest(int idx) {
             }
         }
 
-        // Candidate was garbage — skip past it and try the next.
+        // Candidate was garbage --- skip past it and try the next.
         size_t skip = static_cast<size_t>(end - s->readBuf) + 4;
         s->readOff -= static_cast<int>(skip);
         memmove(s->readBuf, s->readBuf + skip,
@@ -1082,13 +1082,13 @@ void RtspServer::handleRequest(int idx) {
         return;
     }
 
-    // Sanity check: method must not start with "RTSP/" — that's a server
+    // Sanity check: method must not start with "RTSP/" --- that's a server
     // response line, not a client request.  Some clients (ffmpeg) echo
     // response text when their state machine gets confused by backpressure.
     // Instead of closing (which truncates in-flight RTP data), just clear
     // the buffer and let the client recover on its next poll cycle.
     if (strncmp(methodStr, "RTSP/", 5) == 0) {
-        LOG_WARN("Client sent RTSP response line — clearing buffer");
+        LOG_WARN("Client sent RTSP response line --- clearing buffer");
         s->readOff = 0;
         s->readBuf[0] = '\0';
         return;
@@ -1096,7 +1096,7 @@ void RtspServer::handleRequest(int idx) {
 
     Method method = parseMethod(methodStr);
 
-    // Find headers — skip the request line and any blank lines that follow.
+    // Find headers --- skip the request line and any blank lines that follow.
     char *headersStart = strstr(s->readBuf, "\r\n");
     if (!headersStart) headersStart = strstr(s->readBuf, "\n");
     if (headersStart) {
@@ -1137,7 +1137,7 @@ void RtspServer::handleRequest(int idx) {
     LOG_INFO("RTSP " << methodToString(method) << " " << uri
              << " CSeq=" << cseq);
 
-    // ── Authentication ──────────────────────────────────────────────────
+    // -- Authentication --------------------------------------------------
     if (!checkAuth(*s, headersStart)) {
         sendResponse(*s, Status::UNAUTHORIZED, cseq,
                      "WWW-Authenticate: Basic realm=\"thingino\"\r\n",
@@ -1162,7 +1162,7 @@ void RtspServer::handleRequest(int idx) {
         return;
     }
 
-    // ── Dispatch ────────────────────────────────────────────────────────
+    // -- Dispatch --------------------------------------------------------
     switch (method) {
     case Method::OPTIONS:       handleOptions(idx, cseq);        break;
     case Method::DESCRIBE:      handleDescribe(idx, cseq, uri, headersStart);  break;
@@ -1170,7 +1170,7 @@ void RtspServer::handleRequest(int idx) {
     case Method::PLAY:          handlePlay(idx, cseq, uri, headersStart);  break;
     case Method::TEARDOWN:      handleTeardown(idx, cseq, headersStart);   break;
     case Method::PAUSE:
-        // Pause is a no-op for live streams — acknowledge silently.
+        // Pause is a no-op for live streams --- acknowledge silently.
         sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
         break;
     case Method::ANNOUNCE:
@@ -1210,7 +1210,7 @@ void RtspServer::handleRequest(int idx) {
     }
 }
 
-// ── OPTIONS ────────────────────────────────────────────────────────────────
+// -- OPTIONS ----------------------------------------------------------------
 
 void RtspServer::handleOptions(int idx, int cseq) {
     auto &s = sessions_[idx];
@@ -1220,7 +1220,7 @@ void RtspServer::handleOptions(int idx, int cseq) {
                  nullptr);
 }
 
-// ── DESCRIBE ───────────────────────────────────────────────────────────────
+// -- DESCRIBE ---------------------------------------------------------------
 
 void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
                                const char *headers) {
@@ -1231,7 +1231,7 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
         headers && stristr(headers, "Require:") &&
         stristr(headers, "www.onvif.org/ver20/backchannel");
 
-    // ── Check audio-only endpoints first ──────────────────────────────
+    // -- Check audio-only endpoints first ------------------------------
     for (size_t i = 0; i < audioOnlyStreams_.size(); i++) {
         const auto &acfg = audioOnlyStreams_[i].config;
         if (!acfg.endpoint.empty() && strstr(uri, acfg.endpoint.c_str())) {
@@ -1251,7 +1251,7 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
         }
     }
 
-    // ── Backchannel probe (e.g. /backchannel) ────────────────────────
+    // -- Backchannel probe (e.g. /backchannel) ------------------------
     if (strstr(uri, "backchannel")) {
         struct sockaddr_in localAddr;
         socklen_t len = sizeof(localAddr);
@@ -1259,7 +1259,7 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
         if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
             inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
 
-        // Always return backchannel SDP — never fall through to video.
+        // Always return backchannel SDP --- never fall through to video.
         // When disabled, the generator falls back to a basic PCMU track.
         std::vector<BackchannelConfig> fmts;
         if (backchannelEnabled_)
@@ -1336,13 +1336,13 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
     sendResponse(*s, Status::OK, cseq, hdr, sdp.c_str());
 }
 
-// ── SETUP ──────────────────────────────────────────────────────────────────
+// -- SETUP ------------------------------------------------------------------
 
 void RtspServer::handleSetup(int idx, int cseq, const char *uri,
                              const char *headers) {
     auto &s = sessions_[idx];
 
-    // ── Detect stream type from URI first ──────────────────────────────
+    // -- Detect stream type from URI first ------------------------------
     // Check audio-only endpoints (/mic, etc.)
     bool isAudioOnlyEndpoint = false;
     for (const auto &entry : audioOnlyStreams_) {
@@ -1407,7 +1407,7 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
         }
     }
 
-    // ── Parse transport ────────────────────────────────────────────────
+    // -- Parse transport ------------------------------------------------
     const char *t = stristr(headers, "Transport:");
     if (t && stristr(t, "RTP/AVP/TCP")) {
         s->tcpInterleaved = true;
@@ -1491,7 +1491,7 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
         }
     }
 
-    // ── Assign stream ──────────────────────────────────────────────────
+    // -- Assign stream --------------------------------------------------
     if (isVideo) {
         strncpy(s->videoSetupUrl, uri, sizeof(s->videoSetupUrl) - 1);
         int vIdx = -1;
@@ -1528,7 +1528,7 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
                  static_cast<unsigned>(rand()));
     }
 
-    // Build transport response — per-track interleaved channels
+    // Build transport response --- per-track interleaved channels
     char hdr[512];
     if (s->tcpInterleaved) {
         int rtpCh  = isVideo ? s->videoInterleavedRtp  : s->audioInterleavedRtp;
@@ -1559,7 +1559,7 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
-// ── PLAY ───────────────────────────────────────────────────────────────────
+// -- PLAY -------------------------------------------------------------------
 
 void RtspServer::handlePlay(int idx, int cseq, const char *uri,
                             const char *headers) {
@@ -1578,7 +1578,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         return;
     }
 
-    // ── Set up video tap ────────────────────────────────────────────────
+    // -- Set up video tap ------------------------------------------------
     if (s->videoChn >= 0 && !s->videoTap) {
         s->videoTap = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
         s->videoTapId = register_video_tap(
@@ -1587,7 +1587,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
             []() {})
             .id;
 
-        // Ensure video frames flow — set hasDataCallback
+        // Ensure video frames flow --- set hasDataCallback
         if (s->videoChn < NUM_VIDEO_CHANNELS && global_video[s->videoChn]) {
             global_video[s->videoChn]->hasDataCallback.store(
                 true, std::memory_order_relaxed);
@@ -1613,7 +1613,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
             activePlayers_[s->videoChn]++;
     }
 
-    // ── Set up audio tap ────────────────────────────────────────────────
+    // -- Set up audio tap ------------------------------------------------
     if (s->hasAudio && !s->audioTap && global_audio[0]) {
         s->audioTap = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3);
         s->audioTapId = register_audio_tap(
@@ -1635,7 +1635,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
              << " hasSubtitles=" << s->hasSubtitles
              << " players=" << (s->videoChn >= 0 ? activePlayers_[s->videoChn] : 0));
 
-    // ── Activate backchannel on PLAY (ONVIF Streaming Spec §5.3) ────
+    // -- Activate backchannel on PLAY (ONVIF Streaming Spec S5.3) ----
     // go2rtc sends PLAY to start the backchannel, not RECORD.
     // Guard per-session (not on the global count) so that multiple
     // concurrent backchannel sessions each pair one increment with one
@@ -1647,7 +1647,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         LOG_INFO("Backchannel activated via PLAY");
     }
 
-    // ── Send RTSP response ─────────────────────────────────────────────
+    // -- Send RTSP response ---------------------------------------------
     char hdr[1024];
     // Single-stream RTP-Info: dual-stream RTP-Info blocks ffmpeg >=7
     // even when no audio data is sent.
@@ -1672,7 +1672,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
     // precedes RTP data).  For UDP transport the SR travels on a separate
     // socket from RTP data; the burst compensates for UDP's lack of
     // ordering and occasional packet loss.  Receivers that see duplicate
-    // SRs will simply update their NTP→RTP mapping to the same values.
+    // SRs will simply update their NTP->RTP mapping to the same values.
     sendRtcpSr(*s);
     usleep(5000);
     sendRtcpSr(*s);
@@ -1680,7 +1680,7 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
     sendRtcpSr(*s);
 }
 
-// ── TEARDOWN ───────────────────────────────────────────────────────────────
+// -- TEARDOWN ---------------------------------------------------------------
 
 void RtspServer::handleTeardown(int idx, int cseq, const char *headers) {
     auto &s = sessions_[idx];
@@ -1693,7 +1693,7 @@ void RtspServer::handleTeardown(int idx, int cseq, const char *headers) {
     closeClient(idx);
 }
 
-// ── ANNOUNCE (backchannel SDP from client) ─────────────────────────────────
+// -- ANNOUNCE (backchannel SDP from client) ---------------------------------
 
 void RtspServer::handleAnnounce(int idx, int cseq, const char *,
                                 const char *, const char *body) {
@@ -1746,7 +1746,7 @@ void RtspServer::handleAnnounce(int idx, int cseq, const char *,
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
-// ── RECORD (start backchannel) ──────────────────────────────────────────
+// -- RECORD (start backchannel) ------------------------------------------
 
 void RtspServer::handleRecord(int idx, int cseq, const char *) {
     auto &s = sessions_[idx];
@@ -1767,11 +1767,11 @@ void RtspServer::handleRecord(int idx, int cseq, const char *) {
     sendResponse(*s, Status::OK, cseq, nullptr, nullptr);
 }
 
-// ── Backchannel SETUP ──────────────────────────────────────────────────
+// -- Backchannel SETUP --------------------------------------------------
 
 void RtspServer::handleSubtitleSetup(Session &s, const char *headers,
                                      const char *uri) {
-    // Extract video channel from URI (e.g. /ch0/track4 → chn=0)
+    // Extract video channel from URI (e.g. /ch0/track4 -> chn=0)
     if (s.videoChn < 0 && uri) {
         const char *ch = strstr(uri, "/ch");
         if (ch) {
@@ -1808,7 +1808,7 @@ void RtspServer::handleSubtitleSetup(Session &s, const char *headers,
         s.subtitleClientRtpPort  = static_cast<uint16_t>(clientRtpPort  > 0 ? clientRtpPort  : 5008);
         s.subtitleClientRtcpPort = static_cast<uint16_t>(clientRtcpPort > 0 ? clientRtcpPort : 5009);
 
-        // Save client address for sendto — without this, subtitle
+        // Save client address for sendto --- without this, subtitle
         // packets go to 0.0.0.0 and are silently dropped.
         socklen_t alen = sizeof(s.clientAddr);
         if (getpeername(s.fd, (sockaddr *)&s.clientAddr, &alen) == 0)
@@ -1914,7 +1914,7 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
     }
 
     // Mark the session as a backchannel receiver so that PLAY activates
-    // it (ONVIF §5.3) and the event loop reads the UDP socket.  The TCP
+    // it (ONVIF S5.3) and the event loop reads the UDP socket.  The TCP
     // interleaved branch above does the same; without this, UDP clients
     // that activate via PLAY were silently ignored.
     s->backchannel = true;
@@ -1938,7 +1938,7 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
     sendResponse(*s, Status::OK, cseq, hdr, nullptr);
 }
 
-// ── Response sending ───────────────────────────────────────────────────────
+// -- Response sending -------------------------------------------------------
 
 void RtspServer::sendResponse(Session &s, Status status, int cseq,
                                const char *extraHeaders, const char *body) {
@@ -1969,7 +1969,7 @@ void RtspServer::sendResponse(Session &s, Status status, int cseq,
 
     ssize_t sent = send(s.fd, buf, static_cast<size_t>(len), MSG_DONTWAIT | MSG_NOSIGNAL);
     if (sent >= 0) {
-        // Partial send — buffer the remainder for retry
+        // Partial send --- buffer the remainder for retry
         size_t written = static_cast<size_t>(sent);
         if (written < static_cast<size_t>(len)) {
             size_t remain = static_cast<size_t>(len) - written;
@@ -1980,8 +1980,8 @@ void RtspServer::sendResponse(Session &s, Status status, int cseq,
             s.pendingRespOff = 0;
         }
     } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        // Full send failed — buffer entire response for retry
-        LOG_WARN("sendResponse EAGAIN — deferring");
+        // Full send failed --- buffer entire response for retry
+        LOG_WARN("sendResponse EAGAIN --- deferring");
         size_t copy = static_cast<size_t>(len);
         if (copy > sizeof(s.pendingResp)) copy = sizeof(s.pendingResp);
         memcpy(s.pendingResp, buf, copy);
@@ -1991,7 +1991,7 @@ void RtspServer::sendResponse(Session &s, Status status, int cseq,
     // Other errors: silently drop (client will timeout and reconnect)
 }
 
-// ── RTP sending (video) ────────────────────────────────────────────────────
+// -- RTP sending (video) ----------------------------------------------------
 
 bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     if (s.fd < 0) return false;
@@ -2014,7 +2014,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     size_t nalLen = rawLen - offset;
     if (nalLen == 0) return false;
 
-    // ── Determine codec from the registered stream ───────────────────
+    // -- Determine codec from the registered stream -------------------
     bool isH265 = false;
     uint8_t pt = 96;
     for (auto &ve : videoStreams_) {
@@ -2024,7 +2024,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         }
     }
 
-    // ── Timestamp ── encoder monotonic clock (90 kHz RTP) ────────────
+    // -- Timestamp -- encoder monotonic clock (90 kHz RTP) ------------
     // Use imp_ts (microseconds from encoder, smoothed by VideoWorker)
     // anchored to the first picture-bearing frame of the session.
     // This produces RTP timestamps that match the actual frame cadence,
@@ -2090,7 +2090,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
             // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
             uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
             // Guard against forward timestamp jumps (e.g. IMP encoder
-            // timestamp domain transition from 0→real-time, which VideoWorker
+            // timestamp domain transition from 0->real-time, which VideoWorker
             // cannot prevent when ts_last_frame_us is still 0).  Cap the step
             // to ~500 ms of video; larger jumps are clamped to a smooth
             // increment from the last RTP timestamp.
@@ -2163,7 +2163,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                         LOG_WARN("UDP send buffer stalled >500ms, "
                                  "aborting NAL to avoid mid-frame corruption"
                                  " (ch=" << static_cast<int>(chan) << ")");
-                    return false; // clean NAL abort — receiver gets IDR soon
+                    return false; // clean NAL abort --- receiver gets IDR soon
                 }
             }
             if (n < 0 || static_cast<size_t>(n) != len) {
@@ -2185,7 +2185,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
 
         // TCP interleaved: non-blocking send with queue.
         // Packets that can't be sent immediately are queued for retry.
-        // Always returns true — the drain loop retries queued packets.
+        // Always returns true --- the drain loop retries queued packets.
         // Only returns false if client is disconnected.
         //
         // Ordering invariant: once any bytes are queued for a session, every
@@ -2234,7 +2234,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
         size_t remain = total - sent;
         if (sen->sendQueueBytes + remain > 1024 * 1024) { // 1MB cap
-            // Queue full — client too slow, disconnect it
+            // Queue full --- client too slow, disconnect it
             closeClient(sen->sessionsIndex);
             return false;
         }
@@ -2246,7 +2246,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         return true;
     };
 
-    // ── Prepend SPS/PPS before first non-config NAL ───────────────────
+    // -- Prepend SPS/PPS before first non-config NAL -------------------
     if (s.videoChn >= 0 &&
         s.videoChn < NUM_VIDEO_CHANNELS && global_video[s.videoChn]) {
         auto &vs = global_video[s.videoChn];
@@ -2281,7 +2281,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         // Inline SPS/PPS: update our tracking so we know config changed.
         // Only flag as a reconfigure when we've already seen a full codec
         // config for this session.  On the initial connection spsHash and
-        // ppsHash are both zero — that's the session learning the codec,
+        // ppsHash are both zero --- that's the session learning the codec,
         // not a mid-stream reconfiguration that would invalidate the SDP.
         //
         // NOTE: we intentionally do NOT set codecConfigSent here.
@@ -2297,7 +2297,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
             }
             s.spsHash = curSpsHash;
             s.ppsHash = curPpsHash;
-            // codecConfigSent intentionally not set here — see comment above
+            // codecConfigSent intentionally not set here --- see comment above
         }
 
         bool configChanged = (!s.codecConfigSent) || s.spsChanged;
@@ -2341,7 +2341,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         }
     }
 
-    // ── Keyframe gate: after codec config is sent on a new session,
+    // -- Keyframe gate: after codec config is sent on a new session,
     // drop non-keyframe NALs until the first IDR arrives.  This prevents
     // stale non-IDR frames (accumulated in the tap buffer before the
     // encoder flush) from reaching the client without reference pictures.
@@ -2350,7 +2350,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     if (nal.is_keyframe)
         s.waitingForKeyframe = false;
 
-    // ── Packetize ──────────────────────────────────────────────────────
+    // -- Packetize ------------------------------------------------------
     bool ok;
     if (isH265) {
         ok = packetizeH265(nalData, nalLen,
@@ -2362,9 +2362,9 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                            pt, s.videoRtp, output);
     }
 
-    // ── Initial burst pacing ───────────────────────────────────────────
+    // -- Initial burst pacing -------------------------------------------
     // The first few frames after PLAY arrive in a tight burst (SPS/PPS
-    // at ts≈0, IDR at ts≈1, P-frames at ts≈2-8).  Without pacing, the
+    // at tsapprox0, IDR at tsapprox1, P-frames at tsapprox2-8).  Without pacing, the
     // client's jitter buffer overflows and ffmpeg reports "max delay
     // reached" followed by "RTP: missed N packets".  A 20 ms inter-frame
     // gap for the first 8 frames spreads the startup burst over ~160 ms,
@@ -2375,7 +2375,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     return ok;
 }
 
-// ── RTP sending (audio) ────────────────────────────────────────────────────
+// -- RTP sending (audio) ----------------------------------------------------
 
 bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
     if (s.fd < 0 || af.data.empty()) return true;
@@ -2393,7 +2393,7 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
     // Skip frames with zero timestamp: the IMP audio driver may produce
     // frames with timeStamp=0 for the first few captures after enable.
     // Using such a frame as the timestamp anchor causes a catastrophic
-    // RTP timestamp jump (0 → millions of units) when the driver later
+    // RTP timestamp jump (0 -> millions of units) when the driver later
     // delivers frames with real timestamps, which triggers DTS
     // discontinuity errors and buffering resets in clients like mpv.
     if (af.time.tv_sec == 0 && af.time.tv_usec == 0) {
@@ -2446,7 +2446,7 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         uint32_t new_ts = static_cast<uint32_t>(
             dtUs * static_cast<int64_t>(sampleRate) / 1000000LL);
         // Guard against forward timestamp jumps (e.g. IMP driver timestamp
-        // domain transition from 0→real-time).  Cap the step to 500 ms of
+        // domain transition from 0->real-time).  Cap the step to 500 ms of
         // audio; larger jumps are treated as a discontinuity and the RTP
         // timestamp is clamped to a smooth increment from the last value.
         if (s.hasAudioRtpTs) {
@@ -2461,7 +2461,7 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         s.audioRtp.timestamp = new_ts;
         s.hasAudioRtpTs = true;
 
-        // Use CLOCK_MONOTONIC for RTCP SR consistency — audio capture
+        // Use CLOCK_MONOTONIC for RTCP SR consistency --- audio capture
         // timestamps (af.time) may not be rebased by the IMP driver to
         // the same clock domain as video imp_ts, so derive the RTCP SR
         // reference from the monotonic clock directly.
@@ -2502,7 +2502,7 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
                     }
                 }
                 if (!sent)
-                    return false; // drop frame — audio is best-effort
+                    return false; // drop frame --- audio is best-effort
             }
             if (n < 0 || static_cast<size_t>(n) != len)
                 return false; // hard error
@@ -2568,13 +2568,13 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         return packetizeL16(be.data(), be.size(), sampleBytes,
                             pt, s.audioRtp, output);
     } else {
-        // PCMU, PCMA, OPUS — raw payload
+        // PCMU, PCMA, OPUS --- raw payload
         return sendOne(af.data.data(), af.data.size(), pt,
                        /*marker*/ true, s.audioRtp, output);
     }
 }
 
-// ── TCP interleaved framing ────────────────────────────────────────────────
+// -- TCP interleaved framing ------------------------------------------------
 
 void RtspServer::sendInterleaved(int fd, uint8_t channel,
                                  const uint8_t *data, size_t len) {
@@ -2597,7 +2597,7 @@ void RtspServer::sendInterleaved(int fd, uint8_t channel,
     sendmsg(fd, &msg, MSG_DONTWAIT | MSG_NOSIGNAL);
 }
 
-// ── Subtitle text RTP sender ───────────────────────────────────────────────
+// -- Subtitle text RTP sender -----------------------------------------------
 
 static void sendSubtitleRtp(Session &s,
                             const SubtitleStreamConfig &cfg,
@@ -2691,7 +2691,7 @@ bool RtspServer::sendSubtitleText(Session &s, const std::string &text) {
     return true;
 }
 
-// ── RTCP Sender Report ──────────────────────────────────────────────────────
+// -- RTCP Sender Report ------------------------------------------------------
 
 void RtspServer::sendRtcpSr(Session &s) {
     if (s.fd < 0) return;
@@ -2794,7 +2794,7 @@ void RtspServer::sendRtcpSr(Session &s) {
     }
 }
 
-// ── Session timeouts ───────────────────────────────────────────────────────
+// -- Session timeouts -------------------------------------------------------
 
 void RtspServer::checkSessionTimeouts() {
     time_t now = time(nullptr);

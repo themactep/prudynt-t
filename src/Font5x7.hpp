@@ -1,5 +1,5 @@
 #pragma once
-// ── embedded 5×7 bitmap font for burned-in video overlay ─────────────
+// -- embedded 5x7 bitmap font for burned-in video overlay -------------
 // Each row is stored in the low 5 bits; the leftmost pixel is bit 4 (0x10).
 // Covers ASCII 0x20-0x5F: space, digits, symbols, and uppercase A-Z.
 //
@@ -17,7 +17,7 @@ namespace font5x7 {
 constexpr int WIDTH = 5;
 constexpr int HEIGHT = 7;
 
-// ── digits 0-9 ──────────────────────────────────────────────────────
+// -- digits 0-9 ------------------------------------------------------
 constexpr uint8_t D_0[HEIGHT] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
 constexpr uint8_t D_1[HEIGHT] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
 constexpr uint8_t D_2[HEIGHT] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F};
@@ -33,7 +33,7 @@ constexpr const uint8_t *DIGITS[10] = {
     D_0, D_1, D_2, D_3, D_4, D_5, D_6, D_7, D_8, D_9,
 };
 
-// ── symbols ──────────────────────────────────────────────────────────
+// -- symbols ----------------------------------------------------------
 constexpr uint8_t SYM_DASH[HEIGHT]  = {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}; // '-'
 constexpr uint8_t SYM_COLON[HEIGHT] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00}; // ':'
 constexpr uint8_t SYM_PLUS[HEIGHT]  = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}; // '+'
@@ -42,7 +42,7 @@ constexpr uint8_t SYM_SLASH[HEIGHT] = {0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10}
 constexpr uint8_t SYM_AT[HEIGHT]    = {0x0E, 0x11, 0x17, 0x15, 0x17, 0x10, 0x0E}; // '@'
 constexpr uint8_t SYM_SPACE[HEIGHT] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // ' '
 
-// ── uppercase A-Z ────────────────────────────────────────────────────
+// -- uppercase A-Z ----------------------------------------------------
 constexpr uint8_t A[HEIGHT] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
 constexpr uint8_t B[HEIGHT] = {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E};
 constexpr uint8_t C[HEIGHT] = {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E};
@@ -70,9 +70,9 @@ constexpr uint8_t X[HEIGHT] = {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11};
 constexpr uint8_t Y[HEIGHT] = {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04};
 constexpr uint8_t Z[HEIGHT] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F};
 
-// ── glyph lookup ─────────────────────────────────────────────────────
+// -- glyph lookup -----------------------------------------------------
 // Returns a pointer to 7 rows (FONT_H bytes), or nullptr for unsupported
-// characters (renders as a blank advance — same width, no pixels).
+// characters (renders as a blank advance --- same width, no pixels).
 inline const uint8_t *glyphFor(char c) {
   if (c >= '0' && c <= '9')
     return DIGITS[c - '0'];

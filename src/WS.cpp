@@ -1351,7 +1351,7 @@ signed char WS::osd_callback(struct lejp_ctx *ctx, char reason) {
         cfg->set<bool>(u_ctx->path, false);
       add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
     } else {
-      // elements — pass through as raw JSON
+      // elements --- pass through as raw JSON
       add_json_str(u_ctx->message, "{}");
     }
   } else if (reason == LEJPCB_OBJECT_END) {

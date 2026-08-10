@@ -70,7 +70,7 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
                                     IMPBackchannelFormat format,
                                     std::vector<int16_t> &outPcmBuffer) {
 #if defined(USE_OPUS) && USE_OPUS
-  // Software Opus decode — IMP hardware decoder doesn't support Opus.
+  // Software Opus decode --- IMP hardware decoder doesn't support Opus.
   if (format == IMPBackchannelFormat::OPUS) {
     int error = 0;
     OpusDecoder *dec = opus_decoder_create(48000, 1, &error);
@@ -160,7 +160,7 @@ bool BackchannelWorker::processFrame(const BackchannelFrame &frame) {
   }
 
   // Resample only if necessary.  Use the actual hardware rate published
-  // by AudioOutputWorker — on platforms with a shared CODEC clock
+  // by AudioOutputWorker --- on platforms with a shared CODEC clock
   // (T10/T20/T21) the hardware may run at a different rate than the
   // configured output_sample_rate.
   int input_rate = IMPBackchannel::getFormatFrequency(frame.format);
@@ -214,9 +214,9 @@ void BackchannelWorker::run() {
     BackchannelFrame frame = global_backchannel->inputQueue->wait_read();
 
     if (frame.isShutdownSentinel) {
-      LOG_DEBUG("Received shutdown sentinel — resetting for next session");
+      LOG_DEBUG("Received shutdown sentinel --- resetting for next session");
       currentSessionId = 0;
-      // Let the audio output queue drain naturally — any queued PCM
+      // Let the audio output queue drain naturally --- any queued PCM
       // will play out in due time.  No flush, no artificial silence.
       continue;
     }

@@ -19,7 +19,7 @@ public:
     // Configure and start a stream (replaces addSubsession)
     void addSubsession(int chnNr, _stream &stream);
 
-    // Start the RTSP server (blocking — runs event loop)
+    // Start the RTSP server (blocking --- runs event loop)
     void start();
 
     // pthread entry point

@@ -730,19 +730,19 @@ bool CFG::readConfig() {
   jsonConfig = load_config(configPath.c_str());
   if (!jsonConfig) {
     LOG_ERROR("JSON parse error: Failed to parse " + configPath +
-              " — config file is corrupted");
+              " --- config file is corrupted");
     config_corrupted = true;
     return false;
   }
 
-  // Migrate old osd.enabled / osd.elements → osd.sei.enabled / osd.sei.entries
+  // Migrate old osd.enabled / osd.elements -> osd.sei.enabled / osd.sei.entries
   JsonValue *osd = get_nested_item(jsonConfig, "osd");
   if (osd && osd->type == JSON_OBJECT) {
     JsonValue *oldEntries = get_nested_item(osd, "elements");
     JsonValue *oldEnabled = get_nested_item(osd, "enabled");
     JsonValue *sei = get_nested_item(osd, "sei");
     if ((oldEntries || oldEnabled) && !sei) {
-      LOG_INFO("Migrating osd.enabled / osd.elements → osd.sei.enabled / osd.sei.entries");
+      LOG_INFO("Migrating osd.enabled / osd.elements -> osd.sei.enabled / osd.sei.entries");
       sei = create_json_value(JSON_OBJECT);
       add_to_object(osd, "sei", sei);
       if (oldEnabled) {

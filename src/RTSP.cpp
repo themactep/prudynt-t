@@ -21,7 +21,7 @@ RTSP::~RTSP() {
 }
 
 void RTSP::addSubsession(int chnNr, _stream &stream) {
-    // ── Video stream ───────────────────────────────────────────────────
+    // -- Video stream ---------------------------------------------------
     simple_rtsp::VideoStreamConfig vcfg;
     vcfg.name     = std::to_string(chnNr);
     vcfg.endpoint = stream.rtsp_endpoint;
@@ -74,7 +74,7 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 
     server_->addVideoStream(chnNr, vcfg, global_video[chnNr]);
 
-    // ── Audio stream ──────────────────────────────────────────────────
+    // -- Audio stream --------------------------------------------------
     if (!audioConfigured_ && cfg->audio.input_enabled && stream.audio_enabled
         && global_audio[0] && global_audio[0]->imp_audio) {
         simple_rtsp::AudioStreamConfig acfg;
@@ -107,7 +107,7 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
             break;
         case IMPAudioFormat::PCM:
         default:
-            // 16-bit LE PCM → L16 (network byte order requires swap)
+            // 16-bit LE PCM -> L16 (network byte order requires swap)
             acfg.codec = "L16";
             acfg.payloadType = 97;
             break;
@@ -120,7 +120,7 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 }
 
 void RTSP::start() {
-    // ── Configure server ───────────────────────────────────────────────
+    // -- Configure server -----------------------------------------------
     std::string streamName = std::string(cfg->rtsp.name) + " (" + BUILD_COMMIT + ")";
     server_->setStreamName(streamName);
     server_->setStreamInfo("stream0");
@@ -131,7 +131,7 @@ void RTSP::start() {
         server_->setAuthCredentials(cfg->rtsp.username, cfg->rtsp.password);
     }
 
-    // ── Enable backchannel (talkback) ──────────────────────────────────
+    // -- Enable backchannel (talkback) ----------------------------------
     // Backchannel is negotiated via ANNOUNCE (client sends SDP), not
     // advertised in DESCRIBE.  This keeps player clients (mpv, ffplay)
     // from trying to SETUP recvonly tracks.
@@ -149,7 +149,7 @@ void RTSP::start() {
         addSubsession(1, cfg->stream1);
     }
 
-    // ── Audio-only endpoint (e.g. /mic) ──────────────────────────────
+    // -- Audio-only endpoint (e.g. /mic) ------------------------------
     if (cfg->rtsp.audio_only_enabled && cfg->audio.input_enabled
         && global_audio[0] && global_audio[0]->imp_audio) {
         simple_rtsp::AudioStreamConfig acfg;
@@ -191,7 +191,7 @@ void RTSP::start() {
                  << " (" << acfg.codec << " " << acfg.sampleRate << "Hz)");
     }
 
-    // ── Subtitle stream (OSD text via ASS over RTP) ─────────────────
+    // -- Subtitle stream (OSD text via ASS over RTP) -----------------
     if (cfg->osd.sei.enabled) {
         simple_rtsp::SubtitleStreamConfig scfg;
         scfg.codec = "t140";
@@ -201,10 +201,10 @@ void RTSP::start() {
         LOG_INFO("Subtitle stream registered: x-ass payload=98");
     }
 
-    // ── Set up the signal so main.cpp can stop us ──────────────────────
+    // -- Set up the signal so main.cpp can stop us ----------------------
     global_rtsp_thread_signal = 0; // signal running
 
-    // ── Run the event loop (blocks until stop()) ───────────────────────
+    // -- Run the event loop (blocks until stop()) -----------------------
     if (!server_->start(cfg->rtsp.port)) {
         LOG_ERROR("Failed to start SimpleRTSP server");
         global_rtsp_thread_signal = 1;

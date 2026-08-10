@@ -611,7 +611,7 @@ void VideoWorker::run() {
             }
 
             // Guard against IMP encoder timestamp domain transitions
-            // (relative→rebased) which cause large forward jumps.
+            // (relative->rebased) which cause large forward jumps.
             if (ts_last_frame_us > 0 && frame_ts_us > ts_last_frame_us) {
               int64_t fwd_step = frame_ts_us - ts_last_frame_us;
               if (fwd_step > 2 * nominal_frame_step_us) {
@@ -1032,7 +1032,7 @@ void VideoWorker::run() {
               if (!taps_copy.empty()) {
                 for (auto &tap : taps_copy) {
                   if (auto queue = tap.queue.lock()) {
-                    // Reuse same pooled buffer — copy for each tap consumer
+                    // Reuse same pooled buffer --- copy for each tap consumer
                     H264NALUnit tap_nalu;
                     tap_nalu.data = nalu_buf;
                     tap_nalu.imp_ts = rtsp_ts_us;
@@ -1207,7 +1207,7 @@ void VideoWorker::run() {
         if (poll_timeout_streak >= 10) {
           poll_timeout_streak = 0;
           LOG_WARN("Encoder ch" << encChn << ": 10 consecutive polling "
-                   "timeouts — force-cycling encoder to recover");
+                   "timeouts --- force-cycling encoder to recover");
           IMP_Encoder_StopRecvPic(encChn);
           IMP_FrameSource_DisableChn(encChn);
           IMP_FrameSource_EnableChn(encChn);
@@ -1366,7 +1366,6 @@ void *VideoWorker::thread_entry(void *arg) {
       global_video[encChn]->imp_encoder = nullptr;
     }
   }
-
 
 #ifdef PREBUFFER_ENABLED
   // Cleanup prebuffer

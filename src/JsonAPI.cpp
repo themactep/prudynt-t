@@ -342,7 +342,7 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
       cfg->set<int>("image.running_mode", mode);
       // Apply running_mode to the ISP for night/day switching
       // (monochrome/color, AE strategy, IRCUT, etc.).  Framerate is
-      // not changed — the sensor and encoder stay at the configured rate.
+      // not changed --- the sensor and encoder stay at the configured rate.
       hal::isp::set_running_mode(cfg->image.running_mode);
     }
     add_key(out, s2, "running_mode");
@@ -424,7 +424,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
         if (en->type == JSON_BOOL)
           cfg->set<bool>(base + "enabled", en->value.boolean != 0);
       }
-      // entries — stored in JSON config file directly, not in struct
+      // entries --- stored in JSON config file directly, not in struct
       if (JsonValue *elems = obj_get(node, "entries");
           elems && elems->type == JSON_OBJECT) {
         del_nested_item(cfg->jsonConfig, "osd.sei.entries");
@@ -679,7 +679,6 @@ void handle_audio(JsonValue *obj, std::string &out, bool &sep) {
   }
 #endif
 
-
   if (!wrote) {
     out.erase(out.size() - 1);
     return;
@@ -903,7 +902,6 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
   add_strk("loglevel", "daynight.loglevel", true);
   add_strk("script_path", "daynight.script_path");
 
-
   // Controls (hardware toggles)
   if (JsonValue *controls_obj = obj_get(obj, "controls")) {
     if (controls_obj->type == JSON_OBJECT) {
@@ -1031,7 +1029,7 @@ void handle_daynight(JsonValue *obj, std::string &out, bool &sep) {
     }
   }
 
-  // ── Live sensor telemetry ──────────────────────────────────────
+  // -- Live sensor telemetry --------------------------------------
   // Photosensing is delegated to daynightd.
   // Individual sensor queries relay data from /run/thingino/daynight_sensors.
   // The "status" and "history" keys source from daynightd's JSON files.

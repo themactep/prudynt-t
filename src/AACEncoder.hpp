@@ -11,7 +11,7 @@
 
 // Generic sample FIFO: accumulates interleaved int16 samples and feeds
 // exactly frameSamples per encode call, regardless of HAL chunk size.
-// Codec-agnostic — works for AAC-LC (1024), HE-AAC (2048), Opus (960), etc.
+// Codec-agnostic --- works for AAC-LC (1024), HE-AAC (2048), Opus (960), etc.
 class SampleFifo {
 public:
   explicit SampleFifo(int channels) : numChn(channels) {}
@@ -100,7 +100,7 @@ private:
   uint8_t asc[8] = {};
   uint32_t ascLen = 0;
 
-  // Sample FIFO — accumulates PCM, feeds encoder in exact frame-sized chunks
+  // Sample FIFO --- accumulates PCM, feeds encoder in exact frame-sized chunks
   std::unique_ptr<SampleFifo> fifo;
 
   // Heap-allocated output buffer (avoids MIPS stack overflow from 16KB on stack)

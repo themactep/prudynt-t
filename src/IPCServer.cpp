@@ -199,7 +199,7 @@ void IPCServer::http_loop() {
 
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
-  // Bind to all interfaces — API key auth secures external access
+  // Bind to all interfaces --- API key auth secures external access
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
   addr.sin_port = htons(static_cast<uint16_t>(http_port_));
   if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
@@ -656,8 +656,8 @@ int IPCServer::handle_client(int fd) {
       return 0;
     }
 
-    // Limit concurrent MJPEG connections – close silently so the
-    // CGI pipeline (prudyntctl → uhttpd → browser) tears down cleanly
+    // Limit concurrent MJPEG connections -- close silently so the
+    // CGI pipeline (prudyntctl -> uhttpd -> browser) tears down cleanly
     int current = active_mjpeg_clients_.fetch_add(1);
     if (current >= kMaxMjpegClients) {
       active_mjpeg_clients_.fetch_sub(1);
@@ -798,7 +798,7 @@ int IPCServer::handle_client(int fd) {
           fclose(sf);
           if (sr > 0) {
             sbuf[sr] = '\0';
-            /* Simple JSON value extraction — avoids linking a full parser */
+            /* Simple JSON value extraction --- avoids linking a full parser */
             auto js_int = [&](const char *key, int def) -> int {
               char search[64];
               snprintf(search, sizeof(search), "\"%s\":", key);
@@ -848,7 +848,7 @@ int IPCServer::handle_client(int fd) {
       }
 
       /* Use cached values for the SSE payload.
-       * Only emit fields with distinct, useful data — no duplicates. */
+       * Only emit fields with distinct, useful data --- no duplicates. */
       int live_brightness = cached_brightness;
       const char *mode = cached_mode;
       long now = static_cast<long>(time(NULL));
@@ -906,7 +906,7 @@ int IPCServer::handle_client(int fd) {
              (unsigned)cfg->stream2.stats.bps);
     write(fd, line, strlen(line));
 
-    // Day/Night live — sourced from daynightd files
+    // Day/Night live --- sourced from daynightd files
     int live_brightness_pct = -1;
     int live_ev_val = -1;
     int live_gb_val = -1;

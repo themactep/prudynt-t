@@ -4,7 +4,7 @@
 
 namespace simple_rtsp {
 
-// ── RTP header builder ──────────────────────────────────────────────────────
+// -- RTP header builder ------------------------------------------------------
 
 int buildRtpHeader(uint8_t *buf, size_t bufSize,
                    uint8_t payloadType, bool marker,
@@ -26,7 +26,7 @@ int buildRtpHeader(uint8_t *buf, size_t bufSize,
     return 12;
 }
 
-// ── Internal: send one RTP packet ───────────────────────────────────────────
+// -- Internal: send one RTP packet -------------------------------------------
 
 bool sendOne(const uint8_t *payload, size_t payloadLen,
              uint8_t pt, bool marker,
@@ -43,7 +43,7 @@ bool sendOne(const uint8_t *payload, size_t payloadLen,
     return true;
 }
 
-// ── H.264 packetization (RFC 6184) ──────────────────────────────────────────
+// -- H.264 packetization (RFC 6184) ------------------------------------------
 
 bool packetizeH264(const uint8_t *nalData, size_t nalLen,
                    bool /*isFirstFrame*/, bool isLastFrame,
@@ -60,7 +60,7 @@ bool packetizeH264(const uint8_t *nalData, size_t nalLen,
         return sendOne(nalData, nalLen, payloadType, marker, state, output);
     }
 
-    // ── FU-A fragmentation ────────────────────────────────────────────
+    // -- FU-A fragmentation --------------------------------------------
     const uint8_t *fragData = nalData + 1;  // skip NAL header
     size_t fragLen = nalLen - 1;
 
@@ -89,7 +89,7 @@ bool packetizeH264(const uint8_t *nalData, size_t nalLen,
     return true;
 }
 
-// ── H.265 packetization (RFC 7798) ──────────────────────────────────────────
+// -- H.265 packetization (RFC 7798) ------------------------------------------
 
 bool packetizeH265(const uint8_t *nalData, size_t nalLen,
                    bool /*isFirstFrame*/, bool isLastFrame,
@@ -104,7 +104,7 @@ bool packetizeH265(const uint8_t *nalData, size_t nalLen,
         return sendOne(nalData, nalLen, payloadType, marker, state, output);
     }
 
-    // ── FU fragmentation ──────────────────────────────────────────────
+    // -- FU fragmentation ----------------------------------------------
     const uint8_t *fragData = nalData + 2;
     size_t fragLen = nalLen - 2;
     uint8_t fuIndicator = (nalData[0] & 0x81) | (49 << 1);
@@ -131,7 +131,7 @@ bool packetizeH265(const uint8_t *nalData, size_t nalLen,
     return true;
 }
 
-// ── L16 packetization (RFC 3551 §4.5.10) ─────────────────────────────────────
+// -- L16 packetization (RFC 3551 S4.5.10) -------------------------------------
 
 bool packetizeL16(const uint8_t *pcmData, size_t pcmLen,
                   int sampleBytes,
@@ -156,7 +156,7 @@ bool packetizeL16(const uint8_t *pcmData, size_t pcmLen,
     return true;
 }
 
-// ── AAC packetization (RFC 3640 / 6416) ─────────────────────────────────────
+// -- AAC packetization (RFC 3640 / 6416) -------------------------------------
 
 bool packetizeAAC(const uint8_t *auData, size_t auLen,
                   int64_t /*ptsUs*/, int /*sampleRate*/,

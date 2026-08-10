@@ -19,7 +19,7 @@ public:
     RtspServer();
     ~RtspServer();
 
-    // ── Configuration (must be called before start()) ───────────────────
+    // -- Configuration (must be called before start()) -------------------
 
     void setAuthCredentials(const std::string &user, const std::string &pass);
     void setSendBufferSize(int bytes);
@@ -27,7 +27,7 @@ public:
     void setStreamName(const std::string &name);
     void setStreamInfo(const std::string &info);
 
-    // ── Stream registration ─────────────────────────────────────────────
+    // -- Stream registration ---------------------------------------------
 
     // Register a video stream.  The server will create taps on the
     // video_state's msgChannel per client.
@@ -46,18 +46,18 @@ public:
     // Register a subtitle (OSD text) stream.
     void addSubtitleStream(const SubtitleStreamConfig &config);
 
-    // Enable backchannel (talkback) — client can send audio to the camera.
+    // Enable backchannel (talkback) --- client can send audio to the camera.
     // Formats are auto-detected from IMPBackchannel capabilities.
     void enableBackchannel();
 
-    // ── Lifecycle ───────────────────────────────────────────────────────
+    // -- Lifecycle -------------------------------------------------------
 
     bool start(int port);
     void stop();
 
     bool isRunning() const { return running_.load(std::memory_order_relaxed); }
 
-    // ── Thread entry (compatible with existing main.cpp) ─────────────────
+    // -- Thread entry (compatible with existing main.cpp) -----------------
     static void *run(void *arg);
 
 private:
@@ -73,7 +73,7 @@ private:
     // Authentication
     bool checkAuth(Session &s, const char *headers);
 
-    // Per-method handlers – return the CSeq from the request
+    // Per-method handlers -- return the CSeq from the request
     void handleOptions(int clientIdx, int cseq);
     void handleDescribe(int clientIdx, int cseq, const char *uri,
                         const char *headers);
@@ -107,7 +107,7 @@ private:
     void checkSessionTimeouts();
     void cleanupAllSessions();
 
-    // ── State ───────────────────────────────────────────────────────────
+    // -- State -----------------------------------------------------------
 
     int serverFd_ = -1;
     int port_      = 554;

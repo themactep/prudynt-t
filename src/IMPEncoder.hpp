@@ -60,7 +60,6 @@ private:
   bool chn_registered{false};
   bool fs_to_enc_bound{false};
 
-
   _stream *stream{};
   int encChn{};
   int encGrp{};

@@ -4,7 +4,6 @@
 #include "BackchannelWorker.hpp"
 #include "Config.hpp"
 #include "ConfigWatcher.hpp"
-/* DayNightWorker removed — photosensing delegated to daynightd */
 #include "IMPBackchannel.hpp"
 #include "IMPSystem.hpp"
 #include "ImagingControl.hpp"
@@ -168,7 +167,7 @@ struct InstanceLockGuard {
 namespace {
 sigset_t shutdown_signal_set;
 
-// Text segment bounds (defined by the linker) — used to identify likely
+// Text segment bounds (defined by the linker) - used to identify likely
 // return addresses when scanning the stack in the crash handler.
 extern "C" {
 extern char __executable_start[] __attribute__((weak));
@@ -414,7 +413,7 @@ void crash_signal_handler_extended(int sig, siginfo_t *info, void *context) {
     }
 
     // Poor-man's backtrace: scan 2KB of stack for words pointing into
-    // .text — saved return addresses / function pointers. Feed these to
+    // .text - saved return addresses / function pointers. Feed these to
     // addr2line on an unstripped binary of the same build.
     unsigned long text_lo = (unsigned long)__executable_start;
     unsigned long text_hi = (unsigned long)etext;
@@ -605,7 +604,7 @@ void start_video(int encChn) {
   sh.has_started.acquire();
 }
 
-// ── TEMP DIAGNOSTIC: GOT corruption watchdog ────────────────────────────
+// -- TEMP DIAGNOSTIC: GOT corruption watchdog ----------------------------
 // Two SIGSEGV-at-PC=0 crashes showed the static binary's GOT slot for
 // std::condition_variable::notify_all() reading as 0 at runtime while the
 // on-disk image holds a valid address. This snapshots the .got section at
@@ -727,7 +726,7 @@ int main(int argc, const char *argv[]) {
   pthread_t backchannel_thread;
   pthread_t audio_output_thread;
   pthread_t signal_thread;
-  /* daynight_thread removed — photosensing delegated to daynightd */
+  /* daynight_thread removed - photosensing delegated to daynightd */
   bool signal_thread_started = false;
 
   bool http_mjpeg_started = false;
@@ -787,7 +786,7 @@ int main(int argc, const char *argv[]) {
 
   cfg = std::make_shared<CFG>();
 
-  // Refuse to start with a corrupted config — bare defaults are only
+  // Refuse to start with a corrupted config - bare defaults are only
   // acceptable when there is no config file at all.
   if (cfg->config_corrupted) {
     LOG_ERROR("Configuration file is corrupted.  Restore a valid"
@@ -949,7 +948,7 @@ int main(int argc, const char *argv[]) {
         LOG_DEBUG_OR_ERROR(ret, "create motion thread");
       }
 
-      /* daynight photosensing thread removed — use daynightd daemon */
+      /* daynight photosensing thread removed - use daynightd daemon */
     }
 
     // Apply persisted privacy state on first startup (before RTSP goes live)
@@ -1076,7 +1075,7 @@ int main(int argc, const char *argv[]) {
 
   join_signal_thread(false);
 
-  /* daynight thread join removed — photosensing delegated to daynightd */
+  /* daynight thread join removed - photosensing delegated to daynightd */
 
 #if defined(WEBSOCKET_ENABLED)
   if (cfg->websocket.enabled) {

@@ -51,7 +51,7 @@ int IMPFramesource::init() {
   long ram_budget = get_total_ram_bytes() * 15 / 100;
   int mem_cap = static_cast<int>(ram_budget / frame_bytes);
   int min_bufs;
-  // T23 encoder requires ≥2 buffers; large frames (>4 MB) also need ≥2
+  // T23 encoder requires >=2 buffers; large frames (>4 MB) also need >=2
   // to prevent ISP/encoder read-write collisions that corrupt macroblocks.
 #if defined(PLATFORM_T23)
   min_bufs = 2;
@@ -103,7 +103,7 @@ int IMPFramesource::init() {
 #if !defined(KERNEL_VERSION_4)
 #if defined(PLATFORM_T31) && !defined(PLATFORM_C100)
 
-  // Rotation handled client-side via SEI metadata — skip IMP rotation.
+  // Rotation handled client-side via SEI metadata --- skip IMP rotation.
   if (false && stream->rotation != 0) {
     // Validate 64-bit alignment requirement
     // if (stream->width % 64 != 0 || stream->height % 64 != 0) {
@@ -131,8 +131,8 @@ int IMPFramesource::init() {
 
     // Convert degree values to IMP rotation values
     // 0 degrees = 0 (no rotation)
-    // 90 degrees = 1 (90° counterclockwise)
-    // 270 degrees = 2 (90° clockwise, equivalent to 270° counterclockwise)
+    // 90 degrees = 1 (90 deg counterclockwise)
+    // 270 degrees = 2 (90 deg clockwise, equivalent to 270 deg counterclockwise)
     int imp_rotation = 0;
     if (stream->rotation == 90) {
       imp_rotation = 1;

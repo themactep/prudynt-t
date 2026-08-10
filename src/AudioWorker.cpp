@@ -194,7 +194,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   AudioFrame af;
   // Use the IMP driver's capture timestamp (microseconds, monotonic)
   // instead of clock_gettime().  When a loud noise burst causes the AAC
-  // encoder to fall behind, CLOCK_MONOTONIC would show a processing gap —
+  // encoder to fall behind, CLOCK_MONOTONIC would show a processing gap ---
   // but the driver timestamp reflects when the audio was actually
   // captured, keeping RTP timestamps gap-free.
   af.time.tv_sec = static_cast<time_t>(frame.timeStamp / 1000000);
@@ -220,7 +220,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   IMPAudioStream stream;
   bool got_stream = false;
   if (global_audio[encChn]->imp_audio->directEncode) {
-    // Direct encoding — bypass IMP_AENC to avoid its heap corruption bug
+    // Direct encoding --- bypass IMP_AENC to avoid its heap corruption bug
     int outLen = 0;
     if (IMPAudio::encodeDirect(&frame, directEncBuf.data(), &outLen) == 0 &&
         outLen > 0) {
@@ -233,7 +233,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
         frame_samples = IMPAudio::getAACFrameSamples();
       }
     } else if (IMPAudio::isAACEncoder()) {
-      // Encoder is accumulating — no output frame yet.
+      // Encoder is accumulating --- no output frame yet.
       start = end = nullptr;
     }
   } else if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM) {

@@ -167,7 +167,7 @@ void JPEGWorker::run() {
                                new_h != global_jpeg[jpgChn]->stream->height));
 
           if (size_change) {
-            // Size change requires encoder reinit — this steals ISP frames
+            // Size change requires encoder reinit --- this steals ISP frames
             // and may cause H.264 decode errors on the RTSP stream.
             if (global_jpeg[jpgChn]->imp_encoder) {
               global_jpeg[jpgChn]->imp_encoder->deinit();
@@ -180,7 +180,7 @@ void JPEGWorker::run() {
             IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
           }
           // FPS change: update stream->fps for the worker's polling logic.
-          // No encoder reinit needed — the JPEG encoder handles fps changes
+          // No encoder reinit needed --- the JPEG encoder handles fps changes
           // by adjusting the poll interval.
           if (new_fps > 0 && new_fps != global_jpeg[jpgChn]->stream->fps) {
             global_jpeg[jpgChn]->stream->fps = new_fps;

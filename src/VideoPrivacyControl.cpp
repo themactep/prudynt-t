@@ -110,7 +110,7 @@ void applyPrivacyToAllChannels(bool enabled) {
     auto &vs = global_video[ch];
 
     if (enabled) {
-      // ── Enable: create hardware OSD cover ─────────────────────────
+      // -- Enable: create hardware OSD cover -------------------------
       vs->privacy_requested.store(true, std::memory_order_release);
 
       // Flush any buffered frames
@@ -168,12 +168,12 @@ void applyPrivacyToAllChannels(bool enabled) {
         continue;
       }
 
-      // Pin the cover's layer explicitly via SetGrpRgnAttr — RegisterRgn does
+      // Pin the cover's layer explicitly via SetGrpRgnAttr --- RegisterRgn does
       // not reliably apply it. Higher layer = nearer the front, so keeping the
       // cover one below the burned-in OSD timestamp (layer 2) lets the
       // timestamp composite on top while the cover still fully obscures the
       // video (it is opaque and full-frame, so no scene leaks). Only the
-      // relative order matters — these are the only two drawn regions.
+      // relative order matters --- these are the only two drawn regions.
       grpAttr.layer = 1;
       ret = IMP_OSD_SetGrpRgnAttr(handle, encGrp, &grpAttr);
       if (ret != 0) {
@@ -200,7 +200,7 @@ void applyPrivacyToAllChannels(bool enabled) {
       LOG_INFO("VideoPrivacyControl: OSD cover enabled on ch" << ch
                << " (" << sw << "x" << sh << ")");
     } else {
-      // ── Disable: destroy OSD cover ────────────────────────────────
+      // -- Disable: destroy OSD cover --------------------------------
       vs->privacy_requested.store(false, std::memory_order_release);
 
       if (vs->privacy_osd_handle >= 0) {
@@ -365,7 +365,7 @@ void VideoPrivacyControl::applyStartupState() {
   // with encoder group init in the video worker threads.
   //
   // The FIFO thread may still be blocked on open(O_RDONLY) waiting for a
-  // writer — retry non-blocking until the channel is established.
+  // writer --- retry non-blocking until the channel is established.
   const char *cmd = "PRIVACY value=on\n";
   for (int attempt = 0; attempt < 50; ++attempt) {
     LOG_DEBUG("VideoPrivacyControl::applyStartupState attempt " << (attempt + 1));

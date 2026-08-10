@@ -113,7 +113,7 @@ int AACEncoder::encode(IMPAudioFrame *data, unsigned char *outbuf,
     if (data->timeStamp != 0) {
       nextOutTsMs = (uint32_t)(data->timeStamp / 1000);
     } else {
-      // HAL timestamps unavailable (e.g. T10) — use monotonic wall clock
+      // HAL timestamps unavailable (e.g. T10) --- use monotonic wall clock
       struct timespec mono;
       clock_gettime(CLOCK_MONOTONIC, &mono);
       nextOutTsMs = (uint32_t)(mono.tv_sec * 1000 + mono.tv_nsec / 1000000);

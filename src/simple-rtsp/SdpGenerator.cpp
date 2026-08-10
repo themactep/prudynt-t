@@ -79,8 +79,8 @@ std::string generateSdp(const VideoStreamConfig &video,
     char buf[SDP_BUF_SIZE];
     int off = 0;
 
-    // ── Session description ─────────────────────────────────────────────
-    // Bandwidth hint (session-level, RFC 4566 §5: b= before a=)
+    // -- Session description ---------------------------------------------
+    // Bandwidth hint (session-level, RFC 4566 S5: b= before a=)
     char bws[32] = "";
     if (video.bitrate > 0) {
         snprintf(bws, sizeof(bws), "b=AS:%d\r\n", video.bitrate);
@@ -100,7 +100,7 @@ std::string generateSdp(const VideoStreamConfig &video,
         streamName,
         bws);
 
-    // ── Video media ────────────────────────────────────────────────────
+    // -- Video media ----------------------------------------------------
     bool isH265 = (video.codec == "H265");
     const char *rtpFmt = isH265 ? "H265" : "H264";
     int pt = video.payloadType;
@@ -118,7 +118,7 @@ std::string generateSdp(const VideoStreamConfig &video,
 
     if (video.haveCodecConfig && !video.sps.empty()) {
         if (isH265) {
-            // H.265: fmtp with profile-tier-level (RFC 7798 §7.1 mandatory)
+            // H.265: fmtp with profile-tier-level (RFC 7798 S7.1 mandatory)
             // followed by sprop-vps, sprop-sps, sprop-pps
             int profSpace = 0, tierFlag = 0, profIdc = 1, levelIdc = 90;
             if (!video.vps.empty())
@@ -169,7 +169,7 @@ std::string generateSdp(const VideoStreamConfig &video,
         }
     }
 
-    // ── Audio media ────────────────────────────────────────────────────
+    // -- Audio media ----------------------------------------------------
     if (audio) {
         const char *encName = "mpeg4-generic";
         int audioClk = audio->sampleRate;
@@ -213,7 +213,7 @@ std::string generateSdp(const VideoStreamConfig &video,
         }
     }
 
-    // ── Subtitle media (OSD text) ────────────────────────────────────
+    // -- Subtitle media (OSD text) ------------------------------------
     if (subtitle) {
         off += snprintf(buf + off, sizeof(buf) - off,
             "m=text 0 RTP/AVP %d\r\n"
@@ -226,11 +226,11 @@ std::string generateSdp(const VideoStreamConfig &video,
             subtitle->clockRate);
     }
 
-    // ── Backchannel (talkback) — announced in main SDP so go2rtc
+    // -- Backchannel (talkback) --- announced in main SDP so go2rtc
     // discovers it via the same RTSP session.  Clients that don't
     // support talkback simply ignore the sendonly track.
-    // Per ONVIF Streaming Spec §5.3, backchannel tracks use
-    // a=sendonly (client→server direction), matching the legacy
+    // Per ONVIF Streaming Spec S5.3, backchannel tracks use
+    // a=sendonly (client->server direction), matching the legacy
     // live555 server behaviour that go2rtc expects.
     if (backchannel && !backchannel->empty()) {
         off += snprintf(buf + off, sizeof(buf) - off, "m=audio 0 RTP/AVP");

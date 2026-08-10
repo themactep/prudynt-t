@@ -403,7 +403,7 @@ void HTTPMJPEG::handle_client(int cfd) {
     return;
   }
 
-  // Handle SEI OSD metadata endpoint (no auth required — read-only, non-sensitive)
+  // Handle SEI OSD metadata endpoint (no auth required --- read-only, non-sensitive)
   if (api_enabled_ && path == "/api/v1/osd-sei") {
     if (method != "GET") {
       send_response(405, "text/plain", "method not allowed\n");
@@ -442,7 +442,7 @@ void HTTPMJPEG::handle_client(int cfd) {
       return;
     }
     std::string json_path = path.substr(strlen(cfg_prefix));
-    // Replace / with . for nested paths: e.g. osd/sei → osd.sei
+    // Replace / with . for nested paths: e.g. osd/sei -> osd.sei
     for (auto &c : json_path)
       if (c == '/') c = '.';
 

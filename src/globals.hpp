@@ -82,7 +82,7 @@ struct H264NALUnit {
   struct timeval time{0, 0};
   // Encoder timestamp in microseconds (from IMP encoder, monotonic)
   int64_t imp_ts = 0;
-  // True for IDR frames and parameter sets (SPS/PPS/VPS) — safe to drop the
+  // True for IDR frames and parameter sets (SPS/PPS/VPS) --- safe to drop the
   // rest under congestion
   bool is_keyframe = false;
 };
@@ -93,7 +93,6 @@ struct BackchannelFrame {
   unsigned int clientSessionId;
   bool isShutdownSentinel{false};
 };
-
 
 struct VideoTapEntry {
   uint64_t id{0};
@@ -322,10 +321,10 @@ extern std::array<MP4Recorder, NUM_VIDEO_CHANNELS> global_mp4_recorders;
 extern std::atomic<int> global_mp4_active_recorders;
 extern std::atomic<bool> global_shutdown_requested;
 
-/* DayNightHistory moved to daynightd — photosensing delegated.
+/* DayNightHistory moved to daynightd --- photosensing delegated.
  * See /run/thingino/daynight_history for ring buffer data. */
 
-// NALU buffer pool — avoids per-NAL heap allocations in the hot video path.
+// NALU buffer pool --- avoids per-NAL heap allocations in the hot video path.
 // Buffers are reused across frames: borrow() returns an empty vector with
 // pre-allocated capacity, return() puts it back for the next borrow().
 class NaluPool {

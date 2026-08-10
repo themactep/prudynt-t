@@ -10,7 +10,7 @@
 
 namespace simple_rtsp {
 
-// ── Portable case-insensitive strstr (no _GNU_SOURCE needed) ────────────────
+// -- Portable case-insensitive strstr (no _GNU_SOURCE needed) ----------------
 inline const char *stristr(const char *haystack, const char *needle) {
     if (!haystack || !needle || !*needle) return haystack;
     size_t nlen = std::strlen(needle);
@@ -26,7 +26,7 @@ inline const char *stristr(const char *haystack, const char *needle) {
     return nullptr;
 }
 
-// ── Constants ───────────────────────────────────────────────────────────────
+// -- Constants ---------------------------------------------------------------
 
 constexpr int MAX_CLIENTS   = 8;
 constexpr int RTSP_BUF_SIZE  = 16384;
@@ -35,7 +35,7 @@ constexpr int RTP_MAX_PAYLOAD = 1200;  // stay under typical path MTU to avoid
                                         // (fragment loss desyncs the decoder)
 constexpr int SDP_BUF_SIZE   = 4096;
 
-// ── RTSP Methods / Status ───────────────────────────────────────────────────
+// -- RTSP Methods / Status ---------------------------------------------------
 
 enum class Method {
     OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN,
@@ -59,7 +59,7 @@ const char *statusToString(Status s);
 Method parseMethod(const char *s);
 int parseCSeq(const char *headers);
 
-// ── RTP state per stream ────────────────────────────────────────────────────
+// -- RTP state per stream ----------------------------------------------------
 
 struct RtpState {
     uint16_t seq       = 0;   // wraps naturally at 16 bits
@@ -67,7 +67,7 @@ struct RtpState {
     uint32_t ssrc      = 0;   // random per session
 };
 
-// ── Stream descriptors for SDP ──────────────────────────────────────────────
+// -- Stream descriptors for SDP ----------------------------------------------
 
 struct VideoStreamConfig {
     std::string name;            // "ch0", "ch1"
@@ -101,18 +101,18 @@ struct BackchannelConfig {
     int payloadType;
 };
 
-// Subtitle stream — ASS-formatted overlay events.
+// Subtitle stream --- ASS-formatted overlay events.
 struct SubtitleStreamConfig {
     std::string codec = "t140";
     int payloadType = 98;
     int clockRate = 90000;
 };
 
-// ── Base-64 helper (RFC 4648) for SDP ───────────────────────────────────────
+// -- Base-64 helper (RFC 4648) for SDP ---------------------------------------
 
 std::string base64Encode(const uint8_t *data, size_t len);
 
-// ── NTP timestamp helper ────────────────────────────────────────────────────
+// -- NTP timestamp helper ----------------------------------------------------
 
 uint64_t ntpTimestamp();
 

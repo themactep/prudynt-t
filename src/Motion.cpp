@@ -278,7 +278,7 @@ int Motion::init() {
   if (monitor_stream_cfg && monitor_stream_cfg->rotation != 0) {
     std::swap(motion_width, motion_height);
     LOG_DEBUG("Motion detection dimensions adjusted for "
-              << monitor_stream_cfg->rotation << "° rotation: " << motion_width
+              << monitor_stream_cfg->rotation << " deg rotation: " << motion_width
               << "x" << motion_height);
   }
 

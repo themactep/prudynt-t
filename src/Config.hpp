@@ -61,7 +61,7 @@ struct _stream_stats { // has to be before _osd
   struct timeval ts;
 };
 struct _audio {
-  // All Ingenic SoCs support 48kHz natively — capture rate is fixed.
+  // All Ingenic SoCs support 48kHz natively --- capture rate is fixed.
   int mic_sample_rate() const { return mic_hq ? 48000 : 16000; }
 
   // Default encoding bitrate for AAC/Opus (kbps).
@@ -128,7 +128,7 @@ struct _daynight {
   // Manual mode override (set by user via JSON API)
   std::atomic<const char *> force_mode{nullptr};
 
-  /* Live telemetry moved to daynightd — see /run/thingino/daynight_sensors */
+  /* Live telemetry moved to daynightd --- see /run/thingino/daynight_sensors */
 };
 struct _general {
   const char *loglevel;

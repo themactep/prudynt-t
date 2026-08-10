@@ -1,4 +1,4 @@
-// Minimal test: one rotated FrameSource → two Encoders
+// Minimal test: one rotated FrameSource -> two Encoders
 // Tests if IMP supports binding multiple encoder groups to one rotated FS channel.
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +49,7 @@ static int init_fs_rotated() {
     if (ret) { fprintf(stderr, "CreateChn FS failed: %d\n", ret); return ret; }
 
     if (set_rot) {
-        ret = set_rot(FS_CHN, 2, SENSOR_W, SENSOR_H);  // 270°
+        ret = set_rot(FS_CHN, 2, SENSOR_W, SENSOR_H);  // 270 deg
         fprintf(stderr, "SetChnRotate(0, 2, %d, %d) = %d\n", SENSOR_W, SENSOR_H, ret);
     } else {
         fprintf(stderr, "SetChnRotate not found\n");
@@ -84,7 +84,7 @@ int main() {
     memset(&sysAttr, 0, sizeof(sysAttr));
     IMP_System_Init(&sysAttr);
 
-    // Init ISP (simplified — assumes sensor already set up)
+    // Init ISP (simplified --- assumes sensor already set up)
     IMP_ISP_Open();
     // ... sensor init skipped for minimal test ...
 
@@ -105,20 +105,20 @@ int main() {
     IMP_OSD_CreateGroup(ENC_GRP0);
     IMP_OSD_CreateGroup(ENC_GRP1);
 
-    // Bind FS → OSD0 → ENC0
+    // Bind FS -> OSD0 -> ENC0
     int ret = IMP_System_Bind(&fs, &osd0);
-    fprintf(stderr, "Bind FS→OSD0 = %d\n", ret);
+    fprintf(stderr, "Bind FS->OSD0 = %d\n", ret);
     ret = IMP_System_Bind(&osd0, &enc0);
-    fprintf(stderr, "Bind OSD0→ENC0 = %d\n", ret);
+    fprintf(stderr, "Bind OSD0->ENC0 = %d\n", ret);
 
     // Encoder 1: also bound to FS channel 0, encode at lower res
     init_encoder(ENC_CH1, ENC_GRP1, 384, 576, "ch1");
 
-    // Bind FS → OSD1 → ENC1 (same FS, different encoder group)
+    // Bind FS -> OSD1 -> ENC1 (same FS, different encoder group)
     ret = IMP_System_Bind(&fs, &osd1);
-    fprintf(stderr, "Bind FS→OSD1 = %d (0=OK, -1=FAIL)\n", ret);
+    fprintf(stderr, "Bind FS->OSD1 = %d (0=OK, -1=FAIL)\n", ret);
     ret = IMP_System_Bind(&osd1, &enc1);
-    fprintf(stderr, "Bind OSD1→ENC1 = %d (0=OK, -1=FAIL)\n", ret);
+    fprintf(stderr, "Bind OSD1->ENC1 = %d (0=OK, -1=FAIL)\n", ret);
 
     // Start encoders
     IMP_Encoder_StartRecvPic(ENC_CH0);

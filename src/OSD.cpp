@@ -27,10 +27,9 @@ constexpr float MAX_DIGITAL_GAIN = 80.0f;
 constexpr float DEFAULT_DAY_BRIGHTNESS = 70.0f;
 constexpr float DEFAULT_NIGHT_BRIGHTNESS = 25.0f;
 
-
 } // namespace
 
-// ── helpers ──────────────────────────────────────────────────────────
+// -- helpers ----------------------------------------------------------
 
 static unsigned long getSystemUptime() {
   struct sysinfo info;
@@ -56,7 +55,7 @@ static int getIp(char *addressBuffer) {
   return 0;
 }
 
-// ── BrightnessMeter ──────────────────────────────────────────────────
+// -- BrightnessMeter --------------------------------------------------
 
 OSD::BrightnessMeter::BrightnessMeter()
     : history{}, historyIndex(0), historyFilled(false), lastReadFailed(false) {
@@ -244,7 +243,7 @@ void OSD::updateBrightnessText() {
   lastBrightnessText = text;
 }
 
-// ── element loading from JSON ────────────────────────────────────────
+// -- element loading from JSON ----------------------------------------
 
 void OSD::loadElements() {
   elements_.clear();
@@ -286,7 +285,7 @@ void OSD::loadElements() {
 
 }
 
-// ── text generation per element ──────────────────────────────────────
+// -- text generation per element --------------------------------------
 
 void OSD::updateElementText() {
   char buf[64];
@@ -315,7 +314,7 @@ void OSD::updateElementText() {
   }
 }
 
-// ── burned-in timestamp overlay ──────────────────────────────────────
+// -- burned-in timestamp overlay --------------------------------------
 #ifdef OSD_BURN_TIMESTAMP
 
 // Parse a hex color string "#RRGGBBAA" (or "RRGGBBAA") into BGRA bytes.
@@ -388,7 +387,7 @@ void OSD::renderTimestamp(const char *text) {
       parseHexColor(cfg->osd.burnin.outline_color, outline_color);
   }
 
-  // Stamp a solid scale×scale block at a destination top-left position
+  // Stamp a solid scalexscale block at a destination top-left position
   // with source-over alpha blending.
   auto putBlock = [&](int dx, int dy, const uint8_t *color) {
     int sa = color[3];
@@ -433,7 +432,7 @@ void OSD::renderTimestamp(const char *text) {
     }
   };
 
-  // Pass 1: outline halo — dilate each set pixel by `outline` px (circular).
+  // Pass 1: outline halo --- dilate each set pixel by `outline` px (circular).
   // Skip if outline alpha is zero.
   if (outline_color[3] != 0) {
     forEachGlyphPixel([&](int bx, int by) {
@@ -490,7 +489,7 @@ void OSD::updateTimestampOverlay() {
   snprintf(text, sizeof(text), "%s%s", base,
            privacy_active ? " PRIVACY" : "");
 
-  // Runtime scale update — read from config so changes take effect
+  // Runtime scale update --- read from config so changes take effect
   // immediately after saving, no restart required.
   int new_scale = ts_scale_;
   if (cfg && cfg->osd.burnin.scale > 0)
@@ -566,7 +565,7 @@ void OSD::updateTimestampOverlay() {
 
 #endif // OSD_BURN_TIMESTAMP
 
-// ── lifecycle ────────────────────────────────────────────────────────
+// -- lifecycle --------------------------------------------------------
 
 OSD *OSD::createNew(_osd &osd, int osdGrp, int encChn, const char *parent) {
   return new OSD(osd, osdGrp, encChn, parent);
@@ -584,7 +583,7 @@ void OSD::init() {
   // Scale the burned-in timestamp glyphs to the stream resolution so the
   // overlay stays readable on both the main and sub streams.
   // Config override osd.burnin.scale (1-10) takes precedence; 0 = auto.
-  // Capped at kBurninMaxScale — higher scales may exceed the IPU OSD per-region
+  // Capped at kBurninMaxScale --- higher scales may exceed the IPU OSD per-region
   // buffer limit (~32-64 KB depending on SoC).
   if (cfg && cfg->osd.burnin.scale > 0)
     ts_scale_ = std::clamp(cfg->osd.burnin.scale, 1, kBurninMaxScale);
@@ -632,7 +631,7 @@ int OSD::exit() {
   return 0;
 }
 
-// ── periodic update ──────────────────────────────────────────────────
+// -- periodic update --------------------------------------------------
 
 extern bool global_reload_osd;
 
@@ -672,7 +671,7 @@ void OSD::updateDisplayEverySecond() {
 #endif
 }
 
-// ── SEI / subtitle output ────────────────────────────────────────────
+// -- SEI / subtitle output --------------------------------------------
 
 std::string OSD::getSEIJson() {
   std::lock_guard<std::mutex> lock(stateMutex_);
@@ -727,7 +726,7 @@ std::string OSD::getPlaintextInfo() {
   return text;
 }
 
-// ── thread ───────────────────────────────────────────────────────────
+// -- thread -----------------------------------------------------------
 
 void *OSD::thread_entry(void *arg) {
   LOG_DEBUG("start osd update thread.");

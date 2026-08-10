@@ -111,7 +111,7 @@ void IMPEncoder::initProfile() {
     return;
   } else {
     // H.264: honor stream->profile (0=Baseline, 1=Main, 2=High).
-    // Default to Baseline for WebRTC browser compatibility — most
+    // Default to Baseline for WebRTC browser compatibility --- most
     // WebRTC implementations only support Constrained Baseline.
     switch (stream->profile) {
     case 0:
@@ -368,7 +368,7 @@ int IMPEncoder::init() {
 
   // Size the encoder bitstream buffers to avoid truncation at high
   // resolutions.  The SDK default is ~512 KB which is too small for
-  // 1440p / 4K IDR frames — the encoder silently truncates, causing
+  // 1440p / 4K IDR frames --- the encoder silently truncates, causing
   // "bytestream -X" and "left block unavailable" decode errors.
   // Must be called before IMP_Encoder_CreateChn.
   //
@@ -378,7 +378,7 @@ int IMPEncoder::init() {
 #if 0
   if (!is_jpeg) {
     int pixels = stream->width * stream->height;
-    // SetStreamBufSize: T31 (≥1.1.4), T40, T41, C100
+    // SetStreamBufSize: T31 (>=1.1.4), T40, T41, C100
 #if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || defined(PLATFORM_C100)
     uint32_t bufSize;
     if (pixels > 3840 * 2160)      bufSize = 8 * 1024 * 1024;
@@ -387,7 +387,7 @@ int IMPEncoder::init() {
     IMP_Encoder_SetStreamBufSize(encChn, bufSize);
     LOG_DEBUG("Encoder stream buffer: " << bufSize / 1024 / 1024 << "MB");
 #endif
-    // SetMaxStreamCnt: available on all Ingenic SoCs (T10–T41, C100)
+    // SetMaxStreamCnt: available on all Ingenic SoCs (T10--T41, C100)
     IMP_Encoder_SetMaxStreamCnt(encChn, 6);
   }
 #endif
@@ -476,14 +476,14 @@ int IMPEncoder::init() {
     fs = {DEV_ID_FS, fsChn, 0};
     enc = {DEV_ID_ENC, encGrp, 0};
     if (!ownsGroupResources()) {
-      // OSD is fully soft (SEI + subtitle) — no IPU hardware needed,
+      // OSD is fully soft (SEI + subtitle) --- no IPU hardware needed,
       // so per-stream OSD works even with shared encoder groups.
       return ret;
     }
 
     if (cfg->osd.sei.enabled || cfg->osd.burnin.enabled) {
       LOG_INFO("stream " << name
-               << ": binding FS→OSD→ENC, OSD via hardware + SEI");
+               << ": binding FS->OSD->ENC, OSD via hardware + SEI");
       osd = OSD::createNew(cfg->osd, encGrp, encChn, name);
     }
 

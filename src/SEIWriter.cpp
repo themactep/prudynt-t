@@ -1,6 +1,6 @@
 #include "SEIWriter.hpp"
 
-// Thingino OSD SEI UUID — version 4 compatible.
+// Thingino OSD SEI UUID --- version 4 compatible.
 // Clients match against this to identify Thingino metadata SEI messages.
 const uint8_t SEIWriter::THINGINO_SEI_UUID[16] = {
     0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x47, 0x80,
@@ -31,7 +31,7 @@ SEIWriter::applyEmulationPrevention(const std::vector<uint8_t> &rbsp) {
 
 std::vector<uint8_t> SEIWriter::buildSEI(bool is_h265,
                                          const std::string &json) {
-  // ── 1. Build the SEI RBSP ──────────────────────────────────────
+  // -- 1. Build the SEI RBSP --------------------------------------
 
   std::vector<uint8_t> rbsp;
 
@@ -56,11 +56,11 @@ std::vector<uint8_t> SEIWriter::buildSEI(bool is_h265,
   // RBSP trailing bits: rbsp_stop_one_bit + zero-pad to byte.
   rbsp.push_back(0x80);
 
-  // ── 2. Apply emulation prevention ───────────────────────────────
+  // -- 2. Apply emulation prevention -------------------------------
 
   std::vector<uint8_t> epb = applyEmulationPrevention(rbsp);
 
-  // ── 3. Assemble NAL unit ────────────────────────────────────────
+  // -- 3. Assemble NAL unit ----------------------------------------
 
   std::vector<uint8_t> nal;
   nal.reserve(4 + 2 + epb.size()); // start code + header + RBSP

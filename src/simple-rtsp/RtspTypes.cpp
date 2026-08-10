@@ -7,7 +7,7 @@
 
 namespace simple_rtsp {
 
-// ── Method / Status helpers ─────────────────────────────────────────────────
+// -- Method / Status helpers -------------------------------------------------
 
 const char *methodToString(Method m) {
     switch (m) {
@@ -68,7 +68,7 @@ int parseCSeq(const char *headers) {
     return atoi(p);
 }
 
-// ── Base-64 ─────────────────────────────────────────────────────────────────
+// -- Base-64 -----------------------------------------------------------------
 
 static const char kB64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -88,12 +88,12 @@ std::string base64Encode(const uint8_t *data, size_t len) {
     return out;
 }
 
-// ── NTP timestamp (1900 epoch, seconds << 32 | fractional) ──────────────────
+// -- NTP timestamp (1900 epoch, seconds << 32 | fractional) ------------------
 
 uint64_t ntpTimestamp() {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
-    // NTP epoch = 1900-01-01, Unix epoch = 1970-01-01 → offset = 2208988800 s
+    // NTP epoch = 1900-01-01, Unix epoch = 1970-01-01 -> offset = 2208988800 s
     constexpr uint64_t kNtpEpochOffset = 2208988800ULL;
     uint64_t sec  = static_cast<uint64_t>(tv.tv_sec) + kNtpEpochOffset;
     uint64_t frac = static_cast<uint64_t>(tv.tv_usec) * 4294967296ULL / 1000000ULL;
