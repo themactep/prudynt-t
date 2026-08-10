@@ -2121,6 +2121,7 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
 
     int clientIdx = s.sessionsIndex;
     uint8_t chan  = s.videoInterleavedRtp;
+    int fragCount = 0;  // UDP burst pacing counter
     auto output = [&, this, clientIdx, chan](const uint8_t *pkt, size_t len) -> bool {
         auto *sen = sessions_[clientIdx].get();
         if (!sen || sen->fd < 0) return false;
@@ -2134,28 +2135,51 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
                                (sockaddr *)&target, sizeof(target));
             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
                 // Send buffer full: the IDR burst is outpacing the client's
-                // drain rate. UDP has no flow control, so blindly firing the
-                // rest of the burst overflows the client's receive buffer and
-                // drops packets. Poll with a short timeout to pace to the
-                // client's consumption rate.
-                struct pollfd pfd;
-                pfd.fd = sen->videoRtpSock;
-                pfd.events = POLLOUT;
-                if (poll(&pfd, 1, 250) > 0) {
-                    n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
-                               (sockaddr *)&target, sizeof(target));
+                // drain rate.  Retry with paced polls (up to 500 ms total)
+                // so the burst self-throttles to the client's consumption
+                // rate.  If the buffer stays full, abort the NAL cleanly:
+                // returning false stops the FU-A chain immediately, so the
+                // receiver sees a clean sequence break (followed by an IDR)
+                // instead of a mid-NAL gap that causes decode corruption.
+                bool sent = false;
+                for (int retry = 0; retry < 10; retry++) {
+                    struct pollfd pfd;
+                    pfd.fd = sen->videoRtpSock;
+                    pfd.events = POLLOUT;
+                    if (poll(&pfd, 1, 50) > 0) {
+                        n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
+                                   (sockaddr *)&target, sizeof(target));
+                        if (n > 0 && static_cast<size_t>(n) == len) {
+                            sent = true;
+                            break;
+                        }
+                        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+                            break; // hard error
+                    }
+                }
+                if (!sent) {
+                    static int udp_stall_count = 0;
+                    if (udp_stall_count++ < 3)
+                        LOG_WARN("UDP send buffer stalled >500ms, "
+                                 "aborting NAL to avoid mid-frame corruption"
+                                 " (ch=" << static_cast<int>(chan) << ")");
+                    return false; // clean NAL abort — receiver gets IDR soon
                 }
             }
-            // Always return true for UDP: a dropped datagram advances the
-            // RTP sequence number (creating a gap the receiver can detect
-            // and handle) rather than aborting the entire FU-A chain and
-            // corrupting the rest of the frame.
-            if (static_cast<size_t>(n) != len) {
-                static int udp_drop_count = 0;
-                if (udp_drop_count++ < 3)
-                    LOG_WARN("UDP RTP send failed: dropped packet (ch="
-                             << static_cast<int>(chan) << ")");
+            if (n < 0 || static_cast<size_t>(n) != len) {
+                static int udp_err_count = 0;
+                if (udp_err_count++ < 3)
+                    LOG_ERROR("UDP RTP send error (ch="
+                              << static_cast<int>(chan) << "): "
+                              << strerror(errno));
+                return false; // hard error, abort NAL
             }
+            // Pace UDP bursts: every 8th fragment, sleep 1ms so the
+            // client's WiFi receive buffer doesn't overflow during large
+            // IDR bursts (VBR mode can produce 130+ fragments).
+            fragCount++;
+            if ((fragCount & 7) == 0)  // every 8 fragments
+                usleep(1000);
             return true;
         }
 
@@ -2450,16 +2474,28 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
             ssize_t n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
                                (sockaddr *)&target, sizeof(target));
             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                struct pollfd pfd;
-                pfd.fd = sen->audioRtpSock;
-                pfd.events = POLLOUT;
-                if (poll(&pfd, 1, 250) > 0) {
-                    n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
-                               (sockaddr *)&target, sizeof(target));
+                // Pace to client consumption rate (same pattern as video).
+                bool sent = false;
+                for (int retry = 0; retry < 10; retry++) {
+                    struct pollfd pfd;
+                    pfd.fd = sen->audioRtpSock;
+                    pfd.events = POLLOUT;
+                    if (poll(&pfd, 1, 50) > 0) {
+                        n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
+                                   (sockaddr *)&target, sizeof(target));
+                        if (n > 0 && static_cast<size_t>(n) == len) {
+                            sent = true;
+                            break;
+                        }
+                        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+                            break;
+                    }
                 }
+                if (!sent)
+                    return false; // drop frame — audio is best-effort
             }
-            // Always return true for UDP: a dropped datagram creates a
-            // recoverable sequence gap rather than aborting the stream.
+            if (n < 0 || static_cast<size_t>(n) != len)
+                return false; // hard error
             return true;
         }
         // TCP interleaved: non-blocking send with queue.
@@ -2712,15 +2748,30 @@ void RtspServer::sendRtcpSr(Session &s) {
                    (sockaddr *)&target, sizeof(target));
         }
     } else {
-        // TCP interleaved
-        uint8_t vhdr[4] = { '$', s.videoInterleavedRtcp, 0, 28 };
-        struct iovec viov[2];
-        viov[0].iov_base = vhdr; viov[0].iov_len = 4;
-        viov[1].iov_base = rtcp; viov[1].iov_len = 28;
-        struct msghdr vmsg{};
-        vmsg.msg_iov = viov; vmsg.msg_iovlen = 2;
-        sendmsg(s.fd, &vmsg, MSG_DONTWAIT | MSG_NOSIGNAL);
-
+        // TCP interleaved: queue through same path as RTP data so
+        // EAGAIN is handled by the drain loop instead of silently
+        // dropping the SR.  Each RTCP frame is 32 bytes (4+28).
+        auto queueTc = [&](uint8_t ch, const uint8_t *data, size_t len) {
+            uint8_t buf[1504];
+            buf[0] = '$';
+            buf[1] = ch;
+            buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+            buf[3] = static_cast<uint8_t>(len & 0xFF);
+            memcpy(buf + 4, data, len);
+            size_t total = len + 4;
+            ssize_t sn = send(s.fd, buf, total,
+                             MSG_DONTWAIT | MSG_NOSIGNAL);
+            if (sn == static_cast<ssize_t>(total)) return;
+            // Partial or EAGAIN: enqueue for retry
+            size_t sent = (sn > 0) ? static_cast<size_t>(sn) : 0;
+            size_t remain = total - sent;
+            if (s.sendQueueBytes + remain > 1024 * 1024) return; // drop
+            std::vector<uint8_t> pkt(remain);
+            memcpy(pkt.data(), buf + sent, remain);
+            s.sendQueue.push_back(std::move(pkt));
+            s.sendQueueBytes += remain;
+        };
+        queueTc(s.videoInterleavedRtcp, rtcp, 28);
         if (s.hasAudio) {
             uint32_t asrc = htonl(s.audioRtp.ssrc);
             memcpy(rtcp + 4, &asrc, 4);
@@ -2728,13 +2779,7 @@ void RtspServer::sendRtcpSr(Session &s) {
             memcpy(rtcp + 12, &antpLsw, 4);
             uint32_t ats = htonl(s.audioRtp.timestamp);
             memcpy(rtcp + 16, &ats, 4);
-            uint8_t ahdr[4] = { '$', s.audioInterleavedRtcp, 0, 28 };
-            struct iovec aiov[2];
-            aiov[0].iov_base = ahdr; aiov[0].iov_len = 4;
-            aiov[1].iov_base = rtcp; aiov[1].iov_len = 28;
-            struct msghdr amsg{};
-            amsg.msg_iov = aiov; amsg.msg_iovlen = 2;
-            sendmsg(s.fd, &amsg, MSG_DONTWAIT | MSG_NOSIGNAL);
+            queueTc(s.audioInterleavedRtcp, rtcp, 28);
         }
     }
 }
