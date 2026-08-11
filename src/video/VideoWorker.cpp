@@ -1354,6 +1354,8 @@ void *VideoWorker::thread_entry(void *arg) {
   VideoWorker worker(encChn);
   worker.run();
 
+  LOG_DEBUG("VideoWorker ch" << encChn << " run loop exited, cleaning up...");
+
 #if defined(PLATFORM_T23)
   if (global_shutdown_requested.load(std::memory_order_relaxed)) {
     LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
@@ -1362,7 +1364,7 @@ void *VideoWorker::thread_entry(void *arg) {
 #endif
 
   ret = IMP_Encoder_StopRecvPic(encChn);
-  LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
+  LOG_DEBUG("IMP_Encoder_StopRecvPic(" << encChn << ") = " << ret);
 
   if (global_video[encChn]->imp_framesource) {
     global_video[encChn]->imp_framesource->disable();
@@ -1382,5 +1384,6 @@ void *VideoWorker::thread_entry(void *arg) {
   }
 #endif
 
+  LOG_DEBUG("VideoWorker ch" << encChn << " thread exiting");
   return 0;
 }
