@@ -306,7 +306,8 @@ void JPEGWorker::run() {
       std::unique_lock<std::mutex> lock_stream{mutex_main};
       global_jpeg[jpgChn]->active = false;
       global_video[global_jpeg[jpgChn]->streamChn]->run_for_jpeg = false;
-      while (!global_jpeg[jpgChn]->request_or_overrun() &&
+      while (global_jpeg[jpgChn]->running &&
+             !global_jpeg[jpgChn]->request_or_overrun() &&
              !global_restart_video)
         global_jpeg[jpgChn]->should_grab_frames.wait(lock_stream);
 
