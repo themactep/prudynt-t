@@ -705,8 +705,9 @@ int main(int argc, const char *argv[]) {
     if (global_audio[0]->imp_audio && global_restart_audio) {
       global_audio[0]->running = false;
       global_audio[0]->should_grab_frames.notify_one();
+      LOG_DEBUG("waiting for audio thread to exit...");
       int ret = pthread_join(global_audio[0]->thread, NULL);
-      LOG_DEBUG_OR_ERROR(ret, "join audio thread");
+      LOG_DEBUG("join audio done, ret=" << ret);
     }
 
     if (global_audio_output && global_audio_output->running &&
