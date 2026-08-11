@@ -510,7 +510,7 @@ int IMPEncoder::init() {
   return ret;
 }
 
-int IMPEncoder::deinit() {
+int IMPEncoder::deinit(bool skipStopRecvPic) {
   LOG_DEBUG("IMPEncoder::deinit(" << encChn << ", " << encGrp << ")");
 
   int ret = 0;
@@ -532,7 +532,7 @@ int IMPEncoder::deinit() {
     }
   }
 
-  if (chn_created) {
+  if (chn_created && !skipStopRecvPic) {
     ret = IMP_Encoder_StopRecvPic(encChn);
     LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
   }

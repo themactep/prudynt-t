@@ -38,7 +38,7 @@ public:
   };
 
   int init();
-  int deinit();
+  int deinit(bool skipStopRecvPic = false);
   int destroy();
   static void flush(int encChn);
 

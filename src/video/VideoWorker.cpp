@@ -1379,7 +1379,7 @@ void *VideoWorker::thread_entry(void *arg) {
     global_video[encChn]->imp_framesource->disable();
 
     if (global_video[encChn]->imp_encoder) {
-      global_video[encChn]->imp_encoder->deinit();
+      global_video[encChn]->imp_encoder->deinit(shutting_down);
       delete global_video[encChn]->imp_encoder;
       global_video[encChn]->imp_encoder = nullptr;
     }
