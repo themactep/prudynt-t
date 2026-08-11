@@ -6,6 +6,7 @@
 #include "network/rtsp/RtspServer.hpp"
 #include "network/rtsp/RtpPacketizer.hpp"
 #include "network/rtsp/SdpGenerator.hpp"
+#include "network/rtsp/RtspUtils.hpp"
 #include "util/Logger.hpp"
 #include "stream/globals.hpp"
 #include "audio/IMPBackchannel.hpp"
@@ -37,182 +38,9 @@
 
 namespace simple_rtsp {
 
-// -- Crash handler ----------------------------------------------------------
+// Crash handler + Session moved to headers
 
-static void crashHandler(int sig) {
-    fprintf(stderr, "\n!!! CRASH signal %d !!!\n", sig);
-    _exit(1);
-}
-
-__attribute__((constructor)) static void installCrashHandler() {
-    signal(SIGSEGV, crashHandler);
-    signal(SIGBUS, crashHandler);
-}
-
-// ===========================================================================
-// Internal Session
-// ===========================================================================
-
-struct Session {
-    int fd = -1;
-    int sessionsIndex = -1;   // index in server's sessions_ vector
-    char readBuf[RTSP_BUF_SIZE];
-    int  readOff = 0;
-
-    char sessionId[32]{};
-    char videoSetupUrl[256]{};
-    char audioSetupUrl[256]{};
-    bool playing     = false;
-    int  videoChn    = -1;   // encoder channel index, -1 = audio-only
-    bool hasAudio    = false;
-    bool audioOnly   = false; // true for /mic-style standalone audio
-    bool backchannel = false; // receiving audio from client (talkback)
-    bool backchannelActive = false; // this session incremented is_sending
-    int  backchannelPayloadType = -1; // negotiated PT from ANNOUNCE
-
-    // Transport
-    bool    tcpInterleaved     = true;
-    uint8_t videoInterleavedRtp  = 0;
-    uint8_t videoInterleavedRtcp = 1;
-    uint8_t audioInterleavedRtp  = 2;
-    uint8_t audioInterleavedRtcp = 3;
-
-    // UDP transport: server-side sockets and client target address
-    int     videoRtpSock    = -1;
-    int     videoRtcpSock   = -1;
-    int     audioRtpSock    = -1;
-    int     audioRtcpSock   = -1;
-    // Server-side bound ports (reported in SETUP response as server_port)
-    uint16_t videoServerRtpPort  = 0;
-    uint16_t videoServerRtcpPort = 0;
-    uint16_t audioServerRtpPort  = 0;
-    uint16_t audioServerRtcpPort = 0;
-    // Client-side ports (from SETUP request client_port, where we send to)
-    uint16_t videoClientRtpPort  = 0;
-    uint16_t videoClientRtcpPort = 0;
-    uint16_t audioClientRtpPort  = 0;
-    uint16_t audioClientRtcpPort = 0;
-    // Backchannel: client-to-server RTP socket (we receive from client)
-    int     backchannelRtpSock  = -1;
-    uint16_t backchannelServerRtpPort = 0;
-    uint16_t backchannelClientRtpPort = 0;
-    // Backchannel TCP interleaved channels (separate from video/audio
-    // so that backchannel SETUP does not corrupt video transport).
-    uint8_t backchannelInterleavedRtp  = 0;
-    uint8_t backchannelInterleavedRtcp = 1;
-    sockaddr_in clientAddr  = {};
-    socklen_t clientAddrLen = 0;
-
-    // Video tap
-    std::shared_ptr<MsgChannel<H264NALUnit>> videoTap;
-    uint64_t videoTapId = 0;
-
-    // Audio tap
-    std::shared_ptr<MsgChannel<AudioFrame>> audioTap;
-    uint64_t audioTapId = 0;
-
-    // Subtitle (OSD text) --- no tap, text is pulled from OSD each second
-    bool hasSubtitles = false;
-    bool subtitleTcp = false;
-    char subtitleSetupUrl[256]{};
-    uint8_t subtitleInterleavedRtp  = 6;
-    uint8_t subtitleInterleavedRtcp = 7;
-    // UDP subtitle transport
-    int     subtitleRtpSock   = -1;
-    int     subtitleRtcpSock  = -1;
-    uint16_t subtitleServerRtpPort  = 0;
-    uint16_t subtitleServerRtcpPort = 0;
-    uint16_t subtitleClientRtpPort  = 0;
-    uint16_t subtitleClientRtcpPort = 0;
-    time_t  lastSubtitleSent = 0;
-    std::string lastSubtitleText;
-
-    // RTP state
-    RtpState videoRtp;
-    RtpState audioRtp;
-    RtpState subtitleRtp;
-
-    bool    codecConfigSent    = false; // SPS/PPS prepended for this session
-    bool    waitingForKeyframe = false; // drop non-IDR until first keyframe arrives
-
-    // Audio uses the IMP driver's capture timestamp (microseconds).
-    struct timeval startAnchor{0, 0};
-
-    // Video uses encoder monotonic clock (imp_ts, microseconds).
-    // Anchored to the first frame's imp_ts for the session so RTP
-    // timestamps track the actual frame cadence.
-    int64_t videoStartAnchorUs = -1;
-
-    // Offset between imp_ts and CLOCK_MONOTONIC, computed once at
-    // session start.  Adding this to imp_ts yields an approximate
-    // CLOCK_MONOTONIC value, keeping the RTCP SR NTP anchor on the
-    // same clock domain even when IMP_System_RebaseTimeStamp is not
-    // in effect (e.g. on T31).
-    int64_t videoTsToMonoOffset = 0;
-
-    // Track last-sent SPS/PPS fingerprint to detect reconfiguration
-    // (e.g. after day/night switch when fps changes and encoder re-emits
-    // new codec config).
-    uint32_t spsHash = 0;
-    uint32_t ppsHash = 0;
-    bool     spsChanged = false;  // set when we detect new SPS, cleared after prepend
-
-    // Frame counter for RTP timestamp generation.  RTP timestamps now
-    // use encoder imp_ts (real cadence) instead of a synthetic clock.
-    // videoFrameCount is kept for diagnostics / SDP stats only.
-    uint32_t videoFrameCount = 0;
-
-    // Previous frame-start RTP timestamp, used for monotonicity guard.
-    // Stored separately from videoRtp.timestamp because the RtpState
-    // struct may be read from other contexts (RTCP SR, PLAY response)
-    // that must not interfere with the monotonicity check.
-    uint32_t lastFrameRtpTs = 0;
-    bool     hasFrameRtpTs = false;
-
-    // Audio monotonicity guard (simpler: audio frames are whole, no
-    // fragmentation, so compare directly against audioRtp.timestamp).
-    bool     hasAudioRtpTs = false;
-
-    // RTCP SR clock mapping.  The wall-clock NTP time is captured ONCE
-    // per session and paired with a CLOCK_MONOTONIC reference; all
-    // subsequent SR NTP values are derived from the monotonic-domain
-    // media timestamps (imp_ts / af.time, both rebased to
-    // CLOCK_MONOTONIC by IMPSystem).  Using gettimeofday() directly in
-    // each SR breaks the NTP<->RTP mapping whenever ntpd steps or slews
-    // the system clock: receivers (ffmpeg/Frigate) recompute all PTS
-    // from the SR pair and every stream jumps by the step size
-    // ("Non-monotonic DTS" floods, watchdog restarts).
-    uint64_t ntpAnchor = 0;        // NTP 32.32 (1900 epoch) at anchor
-    int64_t  ntpAnchorMonoUs = -1; // CLOCK_MONOTONIC us at anchor
-    int64_t  lastVideoTsUs = -1;   // monotonic us of last video frame start
-    int64_t  lastAudioTsUs = -1;   // monotonic us of last audio frame
-
-    time_t lastActivity = 0;
-    bool   authenticated = false;
-
-    bool hasValidSession() const { return sessionId[0] != '\0'; }
-
-    // Multi-packet send queue.  Non-blocking sends --- queued when EAGAIN.
-    // Queue is never capped (memory is the only limit) so NALs are never dropped.
-    std::deque<std::vector<uint8_t>> sendQueue;
-    size_t sendQueueBytes = 0;
-
-    // Deferred RTSP response (EAGAIN/partial send fallback).  Retried before
-    // drain.  Must be large enough for DESCRIBE responses with SDP bodies.
-    uint8_t pendingResp[RTSP_BUF_SIZE];
-    size_t pendingRespLen = 0;
-    size_t pendingRespOff = 0;  // bytes already sent from pendingResp
-};
-
-// ===========================================================================
-// Static helper: non-blocking socket
-// ===========================================================================
-
-static bool setNonBlocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) return false;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
-}
+// Static helpers moved to RtspUtils.hpp
 
 // ===========================================================================
 // RtspServer implementation
@@ -779,35 +607,7 @@ void RtspServer::cleanupAllSessions() {
     sessions_.clear();
 }
 
-// -- Base64 decode helper ---------------------------------------------------
-
-static std::string base64Decode(const char *in, size_t len) {
-    static const signed char kDecodeTable[256] = {
-        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
-        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
-        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
-        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
-        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
-        41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
-    };
-    std::string out;
-    out.reserve((len * 3) / 4 + 2);
-    int val = 0, valb = -8;
-    for (size_t i = 0; i < len; i++) {
-        unsigned char c = static_cast<unsigned char>(in[i]);
-        if (c == '=' || c == '\r' || c == '\n') break;
-        if (c > 127 || kDecodeTable[c] < 0) continue;
-        val = (val << 6) + kDecodeTable[c];
-        valb += 6;
-        if (valb >= 0) {
-            out.push_back(static_cast<char>((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return out;
-}
+// base64Decode moved to RtspUtils.hpp
 
 // -- Authentication check ---------------------------------------------------
 

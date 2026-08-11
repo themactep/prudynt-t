@@ -1,5 +1,6 @@
 #pragma once
 
+#include "network/rtsp/RtspSession.hpp"
 #include "network/rtsp/RtspTypes.hpp"
 #include <atomic>
 #include <memory>
@@ -11,8 +12,6 @@
 #include "stream/globals.hpp"
 
 namespace simple_rtsp {
-
-struct Session;
 
 class RtspServer {
 public:
