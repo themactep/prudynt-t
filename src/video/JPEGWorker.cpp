@@ -199,9 +199,6 @@ void JPEGWorker::run() {
         if (IMP_Encoder_PollingStream(global_jpeg[jpgChn]->encChn,
                                       cfg->general.imp_polling_timeout_ms) ==
             0) {
-          if (!global_jpeg[jpgChn]->running)
-            break;
-
           IMPEncoderStream stream{};
           if (IMP_Encoder_GetStream(global_jpeg[jpgChn]->encChn, &stream,
                                     GET_STREAM_BLOCKING) == 0) {
