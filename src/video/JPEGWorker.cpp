@@ -27,6 +27,9 @@ bool JPEGWorker::ensure_running(int jpgChn) {
   static std::mutex start_mutex;
   std::lock_guard<std::mutex> start_lock(start_mutex);
 
+  if (global_shutdown_requested.load(std::memory_order_relaxed))
+    return false;
+
   if (jpgChn < 0 || jpgChn >= NUM_JPEG_CHANNELS || !global_jpeg[jpgChn]) {
     return false;
   }

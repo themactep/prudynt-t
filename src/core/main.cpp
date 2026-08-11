@@ -255,6 +255,9 @@ bool timesync_wait() {
 }
 
 void start_video(int encChn) {
+  if (global_shutdown_requested.load(std::memory_order_relaxed))
+    return;
+
   StartHelper sh{encChn};
   int ret = pthread_create(&global_video[encChn]->thread, nullptr,
                            VideoWorker::thread_entry, static_cast<void *>(&sh));
@@ -683,7 +686,26 @@ int main(int argc, const char *argv[]) {
         LOG_DEBUG_OR_ERROR(ret, "join osd thread");
       }
 
-      // stop jpeg
+      // Stop video streams BEFORE JPEG --- encoder channels share frame
+      // source groups; stopping JPEG first can stall video GetStream().
+
+      // stop stream0
+      if (global_video[0]->imp_encoder) {
+        global_video[0]->running = false;
+        global_video[0]->should_grab_frames.notify_one();
+        int ret = pthread_join(global_video[0]->thread, NULL);
+        LOG_DEBUG_OR_ERROR(ret, "join stream0 thread");
+      }
+
+      // stop stream1
+      if (global_video[1]->imp_encoder) {
+        global_video[1]->running = false;
+        global_video[1]->should_grab_frames.notify_one();
+        int ret = pthread_join(global_video[1]->thread, NULL);
+        LOG_DEBUG_OR_ERROR(ret, "join stream1 thread");
+      }
+
+      // stop jpeg (after video --- safe to disable framesource now)
       if (global_jpeg[0]->imp_encoder) {
         global_jpeg[0]->running = false;
         global_jpeg[0]->should_grab_frames.notify_one();
@@ -696,22 +718,6 @@ int main(int argc, const char *argv[]) {
         global_jpeg[1]->should_grab_frames.notify_one();
         int ret = pthread_join(global_jpeg[1]->thread, NULL);
         LOG_DEBUG_OR_ERROR(ret, "join jpeg thread 2");
-      }
-
-      // stop stream1
-      if (global_video[1]->imp_encoder) {
-        global_video[1]->running = false;
-        global_video[1]->should_grab_frames.notify_one();
-        int ret = pthread_join(global_video[1]->thread, NULL);
-        LOG_DEBUG_OR_ERROR(ret, "join stream1 thread");
-      }
-
-      // stop stream0
-      if (global_video[0]->imp_encoder) {
-        global_video[0]->running = false;
-        global_video[0]->should_grab_frames.notify_one();
-        int ret = pthread_join(global_video[0]->thread, NULL);
-        LOG_DEBUG_OR_ERROR(ret, "join stream0 thread");
       }
     }
 
