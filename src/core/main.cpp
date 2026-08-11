@@ -696,8 +696,9 @@ int main(int argc, const char *argv[]) {
       if (global_jpeg[1]->imp_encoder) {
         global_jpeg[1]->running = false;
         global_jpeg[1]->should_grab_frames.notify_one();
+        LOG_DEBUG("waiting for jpeg[1] thread to exit...");
         int ret = pthread_join(global_jpeg[1]->thread, NULL);
-        LOG_DEBUG_OR_ERROR(ret, "join jpeg thread 2");
+        LOG_DEBUG("join jpeg[1] done, ret=" << ret);
       }
     }
 
