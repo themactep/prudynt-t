@@ -115,7 +115,8 @@ void JPEGWorker::run() {
     bool request_or_overrun = global_jpeg[jpgChn]->request_or_overrun();
     lck.unlock();
 
-    if (request_or_overrun || targetFps) {
+    if (global_jpeg[jpgChn]->running &&
+        (request_or_overrun || targetFps)) {
       auto diff_last_image =
           duration_cast<milliseconds>(now - global_jpeg[jpgChn]->last_image)
               .count();
