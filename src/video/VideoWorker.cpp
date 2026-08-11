@@ -496,6 +496,13 @@ void VideoWorker::run() {
       if (IMP_Encoder_PollingStream(encChn,
                                     cfg->general.imp_polling_timeout_ms) == 0) {
         poll_timeout_streak = 0;  // reset watchdog on success
+
+        // Guard against blocking GetStream during shutdown: if running
+        // was cleared while we were in PollingStream, exit immediately
+        // instead of entering GET_STREAM_BLOCKING which would hang.
+        if (!global_video[encChn]->running)
+          break;
+
         IMPEncoderStream stream;
         memset(&stream, 0, sizeof(stream));
         if (IMP_Encoder_GetStream(encChn, &stream, GET_STREAM_BLOCKING) != 0) {
