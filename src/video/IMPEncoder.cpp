@@ -510,10 +510,8 @@ int IMPEncoder::init() {
   return ret;
 }
 
-int IMPEncoder::deinit(bool skipStopRecvPic) {
-  LOG_DEBUG("IMPEncoder::deinit(" << encChn << ", " << encGrp
-                            << (skipStopRecvPic ? ", skipStop" : "")
-                            << ")");
+int IMPEncoder::deinit() {
+  LOG_DEBUG("IMPEncoder::deinit(" << encChn << ", " << encGrp << ")");
 
   int ret = 0;
 
@@ -534,7 +532,7 @@ int IMPEncoder::deinit(bool skipStopRecvPic) {
     }
   }
 
-  if (chn_created && !skipStopRecvPic) {
+  if (chn_created) {
     ret = IMP_Encoder_StopRecvPic(encChn);
     LOG_DEBUG_OR_ERROR(ret, "IMP_Encoder_StopRecvPic(" << encChn << ")");
   }
@@ -546,15 +544,11 @@ int IMPEncoder::deinit(bool skipStopRecvPic) {
     chn_registered = false;
   }
 
-  // During shutdown, skip DestroyChn --- it may block if the encoder
-  // pipeline was already compromised by prior teardown steps.
-  if (chn_created && !skipStopRecvPic) {
+  if (chn_created) {
     ret = IMP_Encoder_DestroyChn(encChn);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
                                 "IMP_Encoder_DestroyChn(" << encChn << ")");
     chn_created = false;
-  } else if (skipStopRecvPic) {
-    LOG_DEBUG("IMP_Encoder_DestroyChn(" << encChn << ") skipped (shutdown)");
   }
 
   return ret;

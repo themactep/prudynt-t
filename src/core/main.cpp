@@ -647,30 +647,11 @@ int main(int argc, const char *argv[]) {
       }
     }
 
-    // stop audio
-    if (global_audio[0]->imp_audio && global_restart_audio) {
-      global_audio[0]->running = false;
-      global_audio[0]->should_grab_frames.notify_one();
-      int ret = pthread_join(global_audio[0]->thread, NULL);
-      LOG_DEBUG_OR_ERROR(ret, "join audio thread");
-    }
-
-    if (global_audio_output && global_audio_output->running &&
-        global_restart_audio) {
-      AudioOutputWorker::signalShutdown();
-      int ret = pthread_join(audio_output_thread, NULL);
-      LOG_DEBUG_OR_ERROR(ret, "join audio output thread");
-    }
-
-    // stop backchannel
-    if (global_backchannel->imp_backchannel && global_restart_audio) {
-      global_backchannel->running = false;
-      BackchannelWorker::signalShutdown();
-      global_backchannel->should_grab_frames.notify_one();
-      int ret = pthread_join(backchannel_thread, NULL);
-      LOG_DEBUG_OR_ERROR(ret, "join backchannel thread");
-    }
-
+    // Stop video/encoder BEFORE audio --- the encoder pipeline must be
+    // healthy when we call StopRecvPic/DestroyChn.  Audio teardown (AI)
+    // shares hardware resources with the encoder; tearing down audio
+    // first corrupts encoder state and causes subsequent IMP calls to
+    // block indefinitely.
     if (global_restart_video) {
       // stop motion thread
       if (global_motion_thread_signal) {
@@ -685,9 +666,6 @@ int main(int argc, const char *argv[]) {
         int ret = pthread_join(osd_thread, NULL);
         LOG_DEBUG_OR_ERROR(ret, "join osd thread");
       }
-
-      // Stop video streams BEFORE JPEG --- encoder channels share frame
-      // source groups; stopping JPEG first can stall video GetStream().
 
       // stop stream0
       if (global_video[0]->imp_encoder) {
@@ -721,6 +699,30 @@ int main(int argc, const char *argv[]) {
         int ret = pthread_join(global_jpeg[1]->thread, NULL);
         LOG_DEBUG_OR_ERROR(ret, "join jpeg thread 2");
       }
+    }
+
+    // stop audio (after video --- encoder pipeline is now clean)
+    if (global_audio[0]->imp_audio && global_restart_audio) {
+      global_audio[0]->running = false;
+      global_audio[0]->should_grab_frames.notify_one();
+      int ret = pthread_join(global_audio[0]->thread, NULL);
+      LOG_DEBUG_OR_ERROR(ret, "join audio thread");
+    }
+
+    if (global_audio_output && global_audio_output->running &&
+        global_restart_audio) {
+      AudioOutputWorker::signalShutdown();
+      int ret = pthread_join(audio_output_thread, NULL);
+      LOG_DEBUG_OR_ERROR(ret, "join audio output thread");
+    }
+
+    // stop backchannel
+    if (global_backchannel->imp_backchannel && global_restart_audio) {
+      global_backchannel->running = false;
+      BackchannelWorker::signalShutdown();
+      global_backchannel->should_grab_frames.notify_one();
+      int ret = pthread_join(backchannel_thread, NULL);
+      LOG_DEBUG_OR_ERROR(ret, "join backchannel thread");
     }
 
     if (global_shutdown_requested.load(std::memory_order_relaxed)) {

@@ -374,9 +374,7 @@ void *JPEGWorker::thread_entry(void *arg) {
   worker.run();
 
   if (global_jpeg[jpgChn]->imp_encoder) {
-    bool shutting_down =
-        global_shutdown_requested.load(std::memory_order_relaxed);
-    global_jpeg[jpgChn]->imp_encoder->deinit(shutting_down);
+    global_jpeg[jpgChn]->imp_encoder->deinit();
 
     delete global_jpeg[jpgChn]->imp_encoder;
     global_jpeg[jpgChn]->imp_encoder = nullptr;
