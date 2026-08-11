@@ -3,7 +3,6 @@
 #include "audio/AudioWorker.hpp"
 #include "audio/BackchannelWorker.hpp"
 #include "config/Config.hpp"
-#include "config/ConfigWatcher.hpp"
 #include "core/crash_handler.hpp"
 #include "audio/IMPBackchannel.hpp"
 #include "isp/IMPSystem.hpp"
@@ -379,7 +378,6 @@ int main(int argc, const char *argv[]) {
 
   InstanceLockGuard instance_lock;
 
-  pthread_t cw_thread;
 #if defined(WEBSOCKET_ENABLED)
   pthread_t ws_thread;
 #endif
@@ -503,7 +501,6 @@ int main(int argc, const char *argv[]) {
   global_backchannel = std::make_shared<backchannel_stream>();
   global_audio_output = std::make_shared<audio_output_stream>();
 
-  pthread_create(&cw_thread, nullptr, ConfigWatcher::thread_entry, nullptr);
 
 #if defined(WEBSOCKET_ENABLED)
   pthread_create(&ws_thread, nullptr, WS::run, &ws);
@@ -743,9 +740,6 @@ int main(int argc, const char *argv[]) {
     LOG_DEBUG_OR_ERROR(ret, "join websocket thread");
   }
 #endif
-
-  int ret = pthread_join(cw_thread, nullptr);
-  LOG_DEBUG_OR_ERROR(ret, "join config watcher thread");
 
   if (http_mjpeg_started) {
     http_mjpeg.stop();
