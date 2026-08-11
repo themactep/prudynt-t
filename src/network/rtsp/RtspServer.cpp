@@ -1791,6 +1791,171 @@ void RtspServer::sendResponse(Session &s, Status status, int cseq,
     // Other errors: silently drop (client will timeout and reconnect)
 }
 
+// -- Shared RTP packet send (used by video and audio output lambdas) --------
+
+bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
+                                const uint8_t *pkt, size_t len,
+                                int rtpSock, uint16_t clientRtpPort,
+                                int *fragCount) {
+    if (!s.tcpInterleaved) {
+        // UDP: send to client via UDP socket
+        if (rtpSock < 0) return false;
+        sockaddr_in target = s.clientAddr;
+        target.sin_port = htons(clientRtpPort);
+        ssize_t n = sendto(rtpSock, pkt, len, MSG_DONTWAIT,
+                           (sockaddr *)&target, sizeof(target));
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            bool sent = false;
+            for (int retry = 0; retry < 10; retry++) {
+                struct pollfd pfd;
+                pfd.fd = rtpSock;
+                pfd.events = POLLOUT;
+                if (poll(&pfd, 1, 50) > 0) {
+                    n = sendto(rtpSock, pkt, len, MSG_DONTWAIT,
+                               (sockaddr *)&target, sizeof(target));
+                    if (n > 0 && static_cast<size_t>(n) == len) {
+                        sent = true;
+                        break;
+                    }
+                    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+                        break;
+                }
+            }
+            if (!sent) {
+                static int udp_stall_count = 0;
+                if (udp_stall_count++ < 3)
+                    LOG_WARN("UDP send buffer stalled >500ms, "
+                             "aborting NAL to avoid mid-frame corruption"
+                             " (ch=" << static_cast<int>(chan) << ")");
+                return false;
+            }
+        }
+        if (n < 0 || static_cast<size_t>(n) != len) {
+            static int udp_err_count = 0;
+            if (udp_err_count++ < 3)
+                LOG_ERROR("UDP RTP send error (ch="
+                          << static_cast<int>(chan) << "): "
+                          << strerror(errno));
+            return false;
+        }
+        // UDP burst pacing: every 8th fragment, sleep 1ms
+        if (fragCount) {
+            (*fragCount)++;
+            if ((*fragCount & 7) == 0)
+                usleep(1000);
+        }
+        return true;
+    }
+
+    // TCP interleaved: non-blocking send with queue.
+    if (!s.sendQueue.empty()) {
+        uint8_t buf[1504];
+        size_t total = len + 4;
+        if (total > sizeof(buf)) return false;
+        buf[0] = '$';
+        buf[1] = chan;
+        buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+        buf[3] = static_cast<uint8_t>(len & 0xFF);
+        memcpy(buf + 4, pkt, len);
+        if (s.sendQueueBytes + total > 1024 * 1024)
+            return false;
+        std::vector<uint8_t> pktBuf(buf, buf + total);
+        s.sendQueue.push_back(std::move(pktBuf));
+        s.sendQueueBytes += total;
+        return true;
+    }
+
+    uint8_t buf[1504];
+    size_t total = len + 4;
+    buf[0] = '$';
+    buf[1] = chan;
+    buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+    buf[3] = static_cast<uint8_t>(len & 0xFF);
+    memcpy(buf + 4, pkt, len);
+
+    ssize_t n = send(s.fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+    if (static_cast<size_t>(n) == total) return true;
+
+    size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
+    size_t remain = total - sent;
+    if (s.sendQueueBytes + remain > 1024 * 1024)
+        return false;
+    std::vector<uint8_t> pktBuf(remain);
+    memcpy(pktBuf.data(), buf + sent, remain);
+    s.sendQueue.push_back(std::move(pktBuf));
+    s.sendQueueBytes += remain;
+    return true;
+}
+
+// -- Video timestamp update (extracted from sendVideoNal) ------------------
+
+void RtspServer::updateVideoTimestamp(Session &s, const H264NALUnit &nal,
+                                       const uint8_t *nalData, size_t nalLen,
+                                       bool isH265) {
+    if (!nal.is_frame_start)
+        return;
+
+    int64_t ts_us = nal.imp_ts;
+
+    // Determine whether this NAL carries picture data (VCL).
+    // SPS/PPS/VPS/SEI/AUD are non-VCL and should not anchor.
+    bool isPictureNal = true;
+    if (nalLen > 0) {
+        if (isH265 && nalLen >= 2) {
+            uint8_t t = (nalData[0] >> 1) & 0x3F;
+            isPictureNal = (t <= 31);
+        } else {
+            uint8_t t = nalData[0] & 0x1F;
+            isPictureNal = (t == 1 || t == 5);
+        }
+    }
+
+    // Defer anchor when this is a config-only NAL and we haven't
+    // anchored yet.
+    if (s.videoStartAnchorUs < 0 && !isPictureNal) {
+        if (s.hasFrameRtpTs)
+            s.videoRtp.timestamp = s.lastFrameRtpTs + 1;
+        s.lastFrameRtpTs = s.videoRtp.timestamp;
+        s.hasFrameRtpTs = true;
+        struct timespec mono;
+        clock_gettime(CLOCK_MONOTONIC, &mono);
+        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
+    } else {
+        if (s.videoStartAnchorUs < 0) {
+            s.videoStartAnchorUs = ts_us;
+            struct timespec mono;
+            clock_gettime(CLOCK_MONOTONIC, &mono);
+            s.videoTsToMonoOffset =
+                static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                static_cast<int64_t>(mono.tv_nsec) / 1000LL - ts_us;
+        }
+        int64_t rel_us = ts_us - s.videoStartAnchorUs;
+        if (rel_us < 0) rel_us = 0;
+        uint32_t new_ts = static_cast<uint32_t>(
+            (static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
+
+        if (s.hasFrameRtpTs) {
+            static const uint32_t kMaxVideoRtpStep = 45000;
+            int64_t diff = static_cast<int64_t>(new_ts) -
+                           static_cast<int64_t>(s.lastFrameRtpTs);
+            if (diff > kMaxVideoRtpStep)
+                new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
+            else if (diff <= 0)
+                new_ts = s.lastFrameRtpTs + 1;
+        }
+        s.lastFrameRtpTs = new_ts;
+        s.hasFrameRtpTs = true;
+        s.videoRtp.timestamp = new_ts;
+        s.videoFrameCount++;
+
+        struct timespec mono;
+        clock_gettime(CLOCK_MONOTONIC, &mono);
+        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
+    }
+}
+
 // -- RTP sending (video) ----------------------------------------------------
 
 bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
@@ -1824,226 +1989,17 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
         }
     }
 
-    // -- Timestamp -- encoder monotonic clock (90 kHz RTP) ------------
-    // Use imp_ts (microseconds from encoder, smoothed by VideoWorker)
-    // anchored to the first picture-bearing frame of the session.
-    // This produces RTP timestamps that match the actual frame cadence,
-    // so a client's jitter buffer never starves when the encoder falls
-    // below the configured framerate (e.g. 12 fps actual vs 30 fps
-    // configured).  The old frame-counter approach always ticked at the
-    // *configured* fps, causing mpv to consume buffered frames at 30
-    // fps and then enter buffering.
-    //
-    // Anchoring is deferred past config-only NALs (SPS/PPS/VPS/SEI).
-    // The IMP encoder may emit SPS+PPS as a separate frame-start
-    // boundary before the IDR, and if the anchor is consumed on the
-    // config NALs the entire initial burst shares ts=0, overflowing
-    // the client jitter buffer and yielding "No video PTS" in mpv.
-    if (nal.is_frame_start) {
-        int64_t ts_us = nal.imp_ts;
-
-        // Determine whether this NAL carries picture data (VCL).
-        // SPS/PPS/VPS/SEI/AUD are non-VCL and should not anchor.
-        bool isPictureNal = true;
-        if (nalLen > 0) {
-            if (isH265 && nalLen >= 2) {
-                uint8_t t = (nalData[0] >> 1) & 0x3F;
-                isPictureNal = (t <= 31);  // H.265 VCL: types 0-31
-            } else {
-                uint8_t t = nalData[0] & 0x1F;
-                isPictureNal = (t == 1 || t == 5);  // H.264: non-IDR / IDR slice
-            }
-        }
-
-        // Defer anchor when this is a config-only NAL and we haven't
-        // anchored yet.  Advance the timestamp by a minimal amount
-        // so the RTP clock stays monotonic across the config burst.
-        if (s.videoStartAnchorUs < 0 && !isPictureNal) {
-            if (s.hasFrameRtpTs) {
-                s.videoRtp.timestamp = s.lastFrameRtpTs + 1;
-            }
-            s.lastFrameRtpTs = s.videoRtp.timestamp;
-            s.hasFrameRtpTs = true;
-
-            // Update RTCP SR clock reference but do not consume
-            // the session anchor.
-            struct timespec mono;
-            clock_gettime(CLOCK_MONOTONIC, &mono);
-            s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                              static_cast<int64_t>(mono.tv_nsec) / 1000LL;
-        } else {
-            if (s.videoStartAnchorUs < 0) {
-                s.videoStartAnchorUs = ts_us;
-                // Compute imp_ts -> CLOCK_MONOTONIC offset once.
-                // imp_ts may start from 0 (encoder init) while mono
-                // starts from boot; the offset corrects the base so
-                // ntpAt() receives an approximate monotonic value.
-                struct timespec mono;
-                clock_gettime(CLOCK_MONOTONIC, &mono);
-                s.videoTsToMonoOffset =
-                    static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                    static_cast<int64_t>(mono.tv_nsec) / 1000LL
-                    - ts_us;
-            }
-            int64_t rel_us = ts_us - s.videoStartAnchorUs;
-            if (rel_us < 0) rel_us = 0;
-            // 90 kHz RTP clock: multiply by 9, divide by 100 (90000/1000000)
-            uint32_t new_ts = static_cast<uint32_t>((static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
-            // Guard against forward timestamp jumps (e.g. IMP encoder
-            // timestamp domain transition from 0->real-time, which VideoWorker
-            // cannot prevent when ts_last_frame_us is still 0).  Cap the step
-            // to ~500 ms of video; larger jumps are clamped to a smooth
-            // increment from the last RTP timestamp.
-            if (s.hasFrameRtpTs) {
-                static const uint32_t kMaxVideoRtpStep = 45000; // 500 ms at 90 kHz
-                int64_t diff = static_cast<int64_t>(new_ts) - static_cast<int64_t>(s.lastFrameRtpTs);
-                if (diff > kMaxVideoRtpStep) {
-                    new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
-                } else if (diff <= 0) {
-                    new_ts = s.lastFrameRtpTs + 1;
-                }
-            }
-            s.lastFrameRtpTs = new_ts;
-            s.hasFrameRtpTs = true;
-            s.videoRtp.timestamp = new_ts;
-            s.videoFrameCount++;
-
-            // Capture CLOCK_MONOTONIC for RTCP SR NTP mapping.
-            // Use real monotonic clock (not imp_ts + offset) because
-            // imp_ts and CLOCK_MONOTONIC are different hardware clocks
-            // on T31 and will drift apart over time, causing A-V desync.
-            struct timespec mono;
-            clock_gettime(CLOCK_MONOTONIC, &mono);
-            s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                              static_cast<int64_t>(mono.tv_nsec) / 1000LL;
-        }
-    }
+    // -- Timestamp -- delegated to updateVideoTimestamp()
+    updateVideoTimestamp(s, nal, nalData, nalLen, isH265);
 
     int clientIdx = s.sessionsIndex;
     uint8_t chan  = s.videoInterleavedRtp;
     int fragCount = 0;  // UDP burst pacing counter
     auto output = [&, this, clientIdx, chan](const uint8_t *pkt, size_t len) -> bool {
-        auto *sen = sessions_[clientIdx].get();
-        if (!sen || sen->fd < 0) return false;
-
-        if (!sen->tcpInterleaved) {
-            // UDP: send to client via UDP socket
-            if (sen->videoRtpSock < 0) return false;
-            sockaddr_in target = sen->clientAddr;
-            target.sin_port = htons(sen->videoClientRtpPort);
-            ssize_t n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
-                               (sockaddr *)&target, sizeof(target));
-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                // Send buffer full: the IDR burst is outpacing the client's
-                // drain rate.  Retry with paced polls (up to 500 ms total)
-                // so the burst self-throttles to the client's consumption
-                // rate.  If the buffer stays full, abort the NAL cleanly:
-                // returning false stops the FU-A chain immediately, so the
-                // receiver sees a clean sequence break (followed by an IDR)
-                // instead of a mid-NAL gap that causes decode corruption.
-                bool sent = false;
-                for (int retry = 0; retry < 10; retry++) {
-                    struct pollfd pfd;
-                    pfd.fd = sen->videoRtpSock;
-                    pfd.events = POLLOUT;
-                    if (poll(&pfd, 1, 50) > 0) {
-                        n = sendto(sen->videoRtpSock, pkt, len, MSG_DONTWAIT,
-                                   (sockaddr *)&target, sizeof(target));
-                        if (n > 0 && static_cast<size_t>(n) == len) {
-                            sent = true;
-                            break;
-                        }
-                        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-                            break; // hard error
-                    }
-                }
-                if (!sent) {
-                    static int udp_stall_count = 0;
-                    if (udp_stall_count++ < 3)
-                        LOG_WARN("UDP send buffer stalled >500ms, "
-                                 "aborting NAL to avoid mid-frame corruption"
-                                 " (ch=" << static_cast<int>(chan) << ")");
-                    return false; // clean NAL abort --- receiver gets IDR soon
-                }
-            }
-            if (n < 0 || static_cast<size_t>(n) != len) {
-                static int udp_err_count = 0;
-                if (udp_err_count++ < 3)
-                    LOG_ERROR("UDP RTP send error (ch="
-                              << static_cast<int>(chan) << "): "
-                              << strerror(errno));
-                return false; // hard error, abort NAL
-            }
-            // Pace UDP bursts: every 8th fragment, sleep 1ms so the
-            // client's WiFi receive buffer doesn't overflow during large
-            // IDR bursts (VBR mode can produce 130+ fragments).
-            fragCount++;
-            if ((fragCount & 7) == 0)  // every 8 fragments
-                usleep(1000);
-            return true;
-        }
-
-        // TCP interleaved: non-blocking send with queue.
-        // Packets that can't be sent immediately are queued for retry.
-        // Always returns true --- the drain loop retries queued packets.
-        // Only returns false if client is disconnected.
-        //
-        // Ordering invariant: once any bytes are queued for a session, every
-        // subsequent packet must be appended to the queue rather than sent
-        // directly.  Otherwise a partially-written packet's queued tail would
-        // be re-ordered AFTER the next packet(s) sent in the same drain loop
-        // (the queue is only flushed at the start of the next iteration),
-        // corrupting the interleaved bitstream.  The drain loop empties the
-        // queue first each iteration, so direct sends resume once it drains.
-        if (!sen->sendQueue.empty()) {
-            uint8_t buf[1504];
-            size_t total = len + 4;
-            if (total > sizeof(buf)) {
-                closeClient(sen->sessionsIndex);
-                return false;
-            }
-            buf[0] = '$';
-            buf[1] = chan;
-            buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
-            buf[3] = static_cast<uint8_t>(len & 0xFF);
-            memcpy(buf + 4, pkt, len);
-            if (sen->sendQueueBytes + total > 1024 * 1024) { // 1MB cap
-                closeClient(sen->sessionsIndex);
-                return false;
-            }
-            std::vector<uint8_t> pktBuf(buf, buf + total);
-            sen->sendQueue.push_back(std::move(pktBuf));
-            sen->sendQueueBytes += total;
-            return true;
-        }
-
-        uint8_t buf[1504];
-        size_t total = len + 4;
-        buf[0] = '$';
-        buf[1] = chan;
-        buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
-        buf[3] = static_cast<uint8_t>(len & 0xFF);
-        memcpy(buf + 4, pkt, len);
-
-        ssize_t n = send(sen->fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (static_cast<size_t>(n) == total) return true;
-
-        // Partial or EAGAIN: enqueue the remainder.  From now on this
-        // session's output appends to the queue (see guard above) until the
-        // drain loop flushes it, preserving interleaved ordering.
-        size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
-        size_t remain = total - sent;
-        if (sen->sendQueueBytes + remain > 1024 * 1024) { // 1MB cap
-            // Queue full --- client too slow, disconnect it
-            closeClient(sen->sessionsIndex);
-            return false;
-        }
-        std::vector<uint8_t> pktBuf(remain);
-        memcpy(pktBuf.data(), buf + sent, remain);
-        sen->sendQueue.push_back(std::move(pktBuf));
-        sen->sendQueueBytes += remain;
-
-        return true;
+        return sendRtpPacket(*sessions_[clientIdx], chan, pkt, len,
+                             sessions_[clientIdx]->videoRtpSock,
+                             sessions_[clientIdx]->videoClientRtpPort,
+                             &fragCount);
     };
 
     // -- Prepend SPS/PPS before first non-config NAL -------------------
@@ -2274,83 +2230,10 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
     int clientIdx = s.sessionsIndex;
     uint8_t chan  = s.audioInterleavedRtp;
     auto output = [&, this, clientIdx, chan](const uint8_t *pkt, size_t len) -> bool {
-        auto *sen = sessions_[clientIdx].get();
-        if (!sen || sen->fd < 0) return false;
-        if (!sen->tcpInterleaved) {
-            // UDP: send to client via UDP socket
-            if (sen->audioRtpSock < 0) return false;
-            sockaddr_in target = sen->clientAddr;
-            target.sin_port = htons(sen->audioClientRtpPort);
-            ssize_t n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
-                               (sockaddr *)&target, sizeof(target));
-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                // Pace to client consumption rate (same pattern as video).
-                bool sent = false;
-                for (int retry = 0; retry < 10; retry++) {
-                    struct pollfd pfd;
-                    pfd.fd = sen->audioRtpSock;
-                    pfd.events = POLLOUT;
-                    if (poll(&pfd, 1, 50) > 0) {
-                        n = sendto(sen->audioRtpSock, pkt, len, MSG_DONTWAIT,
-                                   (sockaddr *)&target, sizeof(target));
-                        if (n > 0 && static_cast<size_t>(n) == len) {
-                            sent = true;
-                            break;
-                        }
-                        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-                            break;
-                    }
-                }
-                if (!sent)
-                    return false; // drop frame --- audio is best-effort
-            }
-            if (n < 0 || static_cast<size_t>(n) != len)
-                return false; // hard error
-            return true;
-        }
-        // TCP interleaved: non-blocking send with queue.
-        // Same ordering invariant as the video path: once any bytes are
-        // queued, append subsequent packets to the queue so a queued tail
-        // is never re-ordered after later packets on the shared fd.
-        if (!sen->sendQueue.empty()) {
-            uint8_t buf[1504];
-            size_t total = len + 4;
-            if (total > sizeof(buf)) return false;
-            buf[0] = '$';
-            buf[1] = chan;
-            buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
-            buf[3] = static_cast<uint8_t>(len & 0xFF);
-            memcpy(buf + 4, pkt, len);
-            if (sen->sendQueueBytes + total > 1024 * 1024) {
-                closeClient(sen->sessionsIndex);
-                return false;
-            }
-            std::vector<uint8_t> pktBuf(buf, buf + total);
-            sen->sendQueue.push_back(std::move(pktBuf));
-            sen->sendQueueBytes += total;
-            return true;
-        }
-        uint8_t buf[1504];
-        size_t total = len + 4;
-        buf[0] = '$';
-        buf[1] = chan;
-        buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
-        buf[3] = static_cast<uint8_t>(len & 0xFF);
-        memcpy(buf + 4, pkt, len);
-        ssize_t s = send(sen->fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (s == static_cast<ssize_t>(total)) return true;
-        // Partial or EAGAIN: enqueue for retry
-        size_t sent = (s > 0) ? static_cast<size_t>(s) : 0;
-        size_t remain = total - sent;
-        if (sen->sendQueueBytes + remain > 1024 * 1024) {
-            closeClient(sen->sessionsIndex);
-            return false;
-        }
-        std::vector<uint8_t> pktBuf(remain);
-        memcpy(pktBuf.data(), buf + sent, remain);
-        sen->sendQueue.push_back(std::move(pktBuf));
-        sen->sendQueueBytes += remain;
-        return true;
+        return sendRtpPacket(*sessions_[clientIdx], chan, pkt, len,
+                             sessions_[clientIdx]->audioRtpSock,
+                             sessions_[clientIdx]->audioClientRtpPort,
+                             nullptr);  // no UDP pacing for audio
     };
 
     if (codec == "AAC") {

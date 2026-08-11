@@ -99,6 +99,20 @@ private:
     bool sendAudioFrame(Session &s, const AudioFrame &af);
     bool sendSubtitleText(Session &s, const std::string &text);
 
+    // Shared RTP packet send (TCP interleaved + UDP, used by video & audio)
+    bool sendRtpPacket(Session &s, uint8_t chan,
+                       const uint8_t *pkt, size_t len,
+                       int rtpSock, uint16_t clientRtpPort,
+                       int *fragCount);
+
+    // Video NAL sending sub-steps (extracted from sendVideoNal)
+    void updateVideoTimestamp(Session &s, const H264NALUnit &nal,
+                              const uint8_t *nalData, size_t nalLen,
+                              bool isH265);
+    bool prependCodecConfig(Session &s,
+                            const uint8_t *nalData, size_t nalLen,
+                            bool isH265, uint8_t pt);
+
     // RTCP
     void sendRtcpSr(Session &s);
 
