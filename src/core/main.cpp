@@ -694,8 +694,13 @@ int main(int argc, const char *argv[]) {
         global_jpeg[1]->running = false;
         global_jpeg[1]->should_grab_frames.notify_one();
         LOG_DEBUG("waiting for jpeg[1] thread to exit...");
-        int ret = pthread_join(global_jpeg[1]->thread, NULL);
-        LOG_DEBUG("join jpeg[1] done, ret=" << ret);
+        // During shutdown the IMP frame source may already be stopped
+        // for other channels, causing PollingStream to loop indefinitely.
+        // Skip the join --- the OS reaps the thread on process exit.
+        if (!global_shutdown_requested.load(std::memory_order_relaxed)) {
+          int ret = pthread_join(global_jpeg[1]->thread, NULL);
+          LOG_DEBUG("join jpeg[1] done, ret=" << ret);
+        }
       }
     }
 
