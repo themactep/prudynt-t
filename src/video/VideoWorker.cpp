@@ -1356,15 +1356,24 @@ void *VideoWorker::thread_entry(void *arg) {
 
   LOG_DEBUG("VideoWorker ch" << encChn << " run loop exited, cleaning up...");
 
+  // During shutdown, skip IMP_Encoder_StopRecvPic --- the encoder pipeline
+  // may already be compromised by audio/framesource teardown, causing the
+  // call to block indefinitely.  IMP_Encoder_DestroyChn (called from deinit())
+  // is sufficient to free encoder resources without a prior StopRecvPic.
+  bool shutting_down =
+      global_shutdown_requested.load(std::memory_order_relaxed);
+
 #if defined(PLATFORM_T23)
-  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+  if (shutting_down) {
     LOG_WARN("T23 shutdown: skipping video teardown for channel " << encChn);
     return 0;
   }
 #endif
 
-  ret = IMP_Encoder_StopRecvPic(encChn);
-  LOG_DEBUG("IMP_Encoder_StopRecvPic(" << encChn << ") = " << ret);
+  if (!shutting_down) {
+    ret = IMP_Encoder_StopRecvPic(encChn);
+    LOG_DEBUG("IMP_Encoder_StopRecvPic(" << encChn << ") = " << ret);
+  }
 
   if (global_video[encChn]->imp_framesource) {
     global_video[encChn]->imp_framesource->disable();
