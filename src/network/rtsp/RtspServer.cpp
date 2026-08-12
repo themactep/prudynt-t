@@ -2427,9 +2427,11 @@ void RtspServer::sendRtcpSr(Session &s) {
     if (!s.tcpInterleaved) {
         // UDP: send via UDP sockets
         sockaddr_in target = s.clientAddr;
-        target.sin_port = htons(s.videoClientRtcpPort);
-        sendto(s.videoRtcpSock, rtcp, sizeof(rtcp), MSG_DONTWAIT,
-               (sockaddr *)&target, sizeof(target));
+        if (s.videoSetupUrl[0] != '\0') {
+            target.sin_port = htons(s.videoClientRtcpPort);
+            sendto(s.videoRtcpSock, rtcp, sizeof(rtcp), MSG_DONTWAIT,
+                   (sockaddr *)&target, sizeof(target));
+        }
         if (s.hasAudio) {
             uint32_t asrc = htonl(s.audioRtp.ssrc);
             memcpy(rtcp + 4, &asrc, 4);
@@ -2465,7 +2467,8 @@ void RtspServer::sendRtcpSr(Session &s) {
             s.sendQueue.push_back(std::move(pkt));
             s.sendQueueBytes += remain;
         };
-        queueTc(s.videoInterleavedRtcp, rtcp, 28);
+        if (s.videoSetupUrl[0] != '\0')
+            queueTc(s.videoInterleavedRtcp, rtcp, 28);
         if (s.hasAudio) {
             uint32_t asrc = htonl(s.audioRtp.ssrc);
             memcpy(rtcp + 4, &asrc, 4);
