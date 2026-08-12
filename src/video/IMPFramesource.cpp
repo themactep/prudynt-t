@@ -201,6 +201,41 @@ int IMPFramesource::enable() {
   int ret;
 
   ret = IMP_FrameSource_EnableChn(chnNr);
+
+  // On low-RAM devices (36MB T31L, etc.) the DMA pool may be exhausted
+  // after encoder + OSD + other channel allocations.  Fall back to a
+  // single buffer when double-buffering fails --- one buffer is
+  // suboptimal (sensor/encoder may collide), but it's far better than
+  // zero frames.
+  if (ret != 0) {
+    IMPFSChnAttr curAttr;
+    memset(&curAttr, 0, sizeof(curAttr));
+    int getRet = IMP_FrameSource_GetChnAttr(chnNr, &curAttr);
+    if (getRet == 0 && curAttr.nrVBs > 1) {
+      LOG_WARN("IMP_FrameSource_EnableChn(" << chnNr << ") with "
+               << curAttr.nrVBs << " buffers failed (DMA exhausted? "
+               << "ret=" << ret << "), retrying with 1 buffer");
+
+      curAttr.nrVBs = 1;
+      ret = IMP_FrameSource_SetChnAttr(chnNr, &curAttr);
+      if (ret != 0) {
+        LOG_ERROR("IMP_FrameSource_SetChnAttr(" << chnNr
+                  << ", nrVBs=1) retry failed: " << ret);
+        return ret;
+      }
+
+      ret = IMP_FrameSource_EnableChn(chnNr);
+      if (ret != 0) {
+        LOG_ERROR("IMP_FrameSource_EnableChn(" << chnNr
+                  << ") retry with nrVBs=1 also failed: " << ret);
+        return ret;
+      }
+      LOG_INFO("IMP_FrameSource_EnableChn(" << chnNr
+               << ") succeeded with nrVBs=1 fallback");
+      return 0;
+    }
+  }
+
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret,
                               "IMP_FrameSource_EnableChn(" << chnNr << ")");
 
