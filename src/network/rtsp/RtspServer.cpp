@@ -226,7 +226,8 @@ void RtspServer::eventLoop() {
         // -- Drain taps for playing sessions -----------------------------
         for (auto &s : sessions_) {
             if (!s || !s->playing) continue;
-            if (s->videoChn < 0 && !s->audioOnly && !s->backchannel) continue;
+            if (s->videoChn < 0 && !s->hasAudio && !s->audioOnly &&
+                !s->backchannel && !s->hasSubtitles) continue;
 
             bool backpressure = false;
 
