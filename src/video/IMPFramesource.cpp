@@ -49,7 +49,7 @@ int IMPFramesource::init() {
   long frame_bytes =
       static_cast<long>(stream->width) * stream->height * 3 / 2; // NV12
   long ram_budget = get_total_ram_bytes() * 15 / 100;
-  int mem_cap = static_cast<int>(ram_budget / frame_bytes);
+  int mem_cap = std::max(2, static_cast<int>(ram_budget / frame_bytes));
   int min_bufs;
   // T23 encoder requires >=2 buffers; large frames (>4 MB) also need >=2
   // to prevent ISP/encoder read-write collisions that corrupt macroblocks.
