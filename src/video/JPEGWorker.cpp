@@ -34,6 +34,15 @@ bool JPEGWorker::ensure_running(int jpgChn) {
     return false;
   }
 
+  // Respect the config enable flag: a snapshot/MJPEG request must not spawn a
+  // worker for a stream the user has disabled.
+  if (!global_jpeg[jpgChn]->stream ||
+      !global_jpeg[jpgChn]->stream->enabled) {
+    LOG_DEBUG("JPEG channel " << jpgChn << " disabled by config, "
+              "refusing lazy start");
+    return false;
+  }
+
   if (global_jpeg[jpgChn]->imp_encoder ||
       global_jpeg[jpgChn]->running.load(std::memory_order_relaxed)) {
     return true;
