@@ -10,7 +10,7 @@
     "mic_gain": 25,
     "mic_high_pass_filter": false,
     "mic_is_digital": false,
-    "mic_hq": true,
+    "mic_hq": false,
     "mic_noise_suppression": 0,
     "mic_vol": 80,
     "spk_enabled": true,
@@ -113,7 +113,8 @@
       }
     },
     "privacy": {
-      "enabled": true
+      "enabled": false,
+      "save_state": false
     },
     "burnin": {
       "enabled": true,
