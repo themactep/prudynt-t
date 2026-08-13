@@ -59,7 +59,7 @@ set_toolchain_for_soc() {
 	local soc="$1"
 	local xburst=$(get_xburst_generation "$soc")
 
-	TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_${xburst}_${LIBC_TYPE}_gcc15-linux-mipsel.tar.gz"
+	TOOLCHAIN_ARCHIVE="thingino-toolchain-x86_64_${xburst}_${LIBC_TYPE}_gcc16-linux-mipsel.tar.gz"
 	TOOLCHAIN_URL="https://github.com/themactep/thingino-firmware/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
 	TOOLCHAIN_SDK="${TOP}/toolchain/${xburst}-${LIBC_TYPE}/mipsel-thingino-linux-${LIBC_TYPE}_sdk-buildroot"
 }

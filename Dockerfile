@@ -11,7 +11,7 @@ RUN apt-get update && \
     ca-certificates cmake && \
     rm -rf /var/lib/apt/lists/*
 
-ENV TOOLCHAIN_URL=https://github.com/themactep/thingino-firmware/releases/download/toolchain-x86_64/thingino-toolchain-x86_64_xburst1_4_4_musl_gcc15-linux-mipsel.tar.gz
+ENV TOOLCHAIN_URL=https://github.com/themactep/thingino-firmware/releases/download/toolchain-x86_64/thingino-toolchain-x86_64_xburst1_musl_gcc16-linux-mipsel.tar.gz
 ENV TOOLCHAIN_DIR=/opt/mipsel-thingino-linux-musl_sdk-buildroot
 
 RUN mkdir -p /opt && \
