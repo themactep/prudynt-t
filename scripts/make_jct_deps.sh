@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 JCT_REPO="https://github.com/themactep/jct"
 JCT_DIR="${BUILD_DIR}/jct"
-JCT_VER="v1.0.0" # matches buildroot package/thingino-jct
+JCT_VER="v1.2.0" # matches buildroot package/thingino-jct
 INSTALL_DIR="${BUILD_DIR}/install"
 
 # Determine if building static or shared library
