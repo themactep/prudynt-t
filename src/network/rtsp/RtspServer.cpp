@@ -277,13 +277,43 @@ void RtspServer::eventLoop() {
             if (s->videoTap) {
                 H264NALUnit nal;
                 int drained = 0;
+                uint32_t skipped = 0;
+
+                // Detect congestion: if the tap queue is more than 25% full
+                // this client's socket is falling behind (slow link, shrunk
+                // TCP window).  Consume but skip non-keyframe NALs so the
+                // backlog drains and the client can re-sync cleanly on the
+                // next IDR, instead of losing keyframes to whole-frame
+                // eviction in MsgChannel.  Keyframes are always delivered.
+                size_t depth = s->videoTap->size();
+                size_t cap   = s->videoTap->capacity();
+                bool congested = (cap > 0 && depth * 4 > cap);
+
                 while (!backpressure && drained < 30 && s->videoTap->read(&nal)) {
+                    if (congested && !nal.is_keyframe) {
+                        skipped++;
+                        continue;
+                    }
                     if (!this->sendVideoNal(*s, nal)) {
                         backpressure = true;
                         break;
                     }
                     drained++;
                 }
+
+                if (skipped > 0) {
+                    s->congestionSkippedNals += skipped;
+                    time_t now = time(nullptr);
+                    if (now - s->lastCongestionWarn >= 5) {
+                        LOG_WARN("ch" << s->videoChn << " RTSP queue " << depth
+                                 << "/" << cap << " — congested, dropped "
+                                 << s->congestionSkippedNals
+                                 << " non-keyframes in last 5s");
+                        s->congestionSkippedNals = 0;
+                        s->lastCongestionWarn = now;
+                    }
+                }
+
                 if (drained > 0) {
                     LOG_DDEBUG("video drain " << drained << " NALs, ch="
                               << s->videoChn << " seq=" << s->videoRtp.seq);

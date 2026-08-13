@@ -110,6 +110,11 @@ struct Session {
     std::deque<std::vector<uint8_t>> sendQueue;
     size_t sendQueueBytes = 0;
 
+    // Congestion mitigation: non-keyframe NALs skipped when the client's
+    // socket falls behind (rate-limited warning state)
+    uint32_t congestionSkippedNals = 0;
+    time_t   lastCongestionWarn = 0;
+
     // Deferred RTSP response (EAGAIN/partial send fallback)
     uint8_t pendingResp[RTSP_BUF_SIZE];
     size_t pendingRespLen = 0;
