@@ -88,6 +88,30 @@ void RtspServer::enableBackchannel() {
     backchannelFormats_.push_back({NameString, Frequency, PayloadType});
     X_FOREACH_BACKCHANNEL_FORMAT(ADD_BC)
 #undef ADD_BC
+
+    // Reorder per audio.backchannel_codec_order.  Clients commonly
+    // pick the first compatible codec, so the first entry effectively
+    // becomes the negotiated default.  Codecs missing from the list
+    // keep their compile-time relative order after the listed ones.
+    if (!cfg->audio.backchannel_codec_order.empty()) {
+        std::vector<BackchannelConfig> ordered;
+        ordered.reserve(backchannelFormats_.size());
+        for (const char *want : cfg->audio.backchannel_codec_order) {
+            for (auto it = backchannelFormats_.begin();
+                 it != backchannelFormats_.end(); ++it) {
+                if (it->codec == want) {
+                    ordered.push_back(*it);
+                    backchannelFormats_.erase(it);
+                    break;
+                }
+            }
+        }
+        ordered.insert(ordered.end(), backchannelFormats_.begin(),
+                       backchannelFormats_.end());
+        backchannelFormats_ = std::move(ordered);
+        LOG_INFO("Backchannel codec order overridden by config");
+    }
+
     backchannelEnabled_ = true;
     LOG_INFO("Backchannel enabled: " << backchannelFormats_.size() << " codecs");
 }

@@ -1,4 +1,5 @@
 #include "config/Config.hpp"
+#include "audio/IMPBackchannel.hpp"
 #include "util/Logger.hpp"
 #include "isp/imp_hal.hpp"
 #include <algorithm>
@@ -1154,6 +1155,36 @@ void CFG::load() {
     for (auto &item : floatItems)
       handleConfigItem(jsonConfig, item);
     LOG_DEBUG("CFG::load() - Finished processing config items");
+
+    // -- audio.backchannel_codec_order --------------------------------
+    // Optional string array controlling the order in which backchannel
+    // codecs are offered in the SDP.  Clients commonly pick the first
+    // compatible codec, so the first entry becomes the negotiated
+    // default.  Unknown names and codecs disabled at compile time are
+    // skipped with a warning; empty/missing keeps compile-time order.
+    {
+      JsonValue *orderVal = getNestedValue(jsonConfig, "audio.backchannel_codec_order");
+      if (orderVal && orderVal->type == JSON_ARRAY) {
+        audio.backchannel_codec_order.clear();
+        for (JsonArrayItem *it = orderVal->value.array_head; it;
+             it = it->next) {
+          JsonValue *entry = it->value;
+          if (!entry || entry->type != JSON_STRING || !entry->value.string) continue;
+          // validate against the compile-time codec set
+          bool known = false;
+#define CHECK_BC(EnumName, NameString, PayloadType, Frequency, MimeType)      \
+          if (strcmp(entry->value.string, NameString) == 0) known = true;
+          X_FOREACH_BACKCHANNEL_FORMAT(CHECK_BC)
+#undef CHECK_BC
+          if (known) {
+            audio.backchannel_codec_order.push_back(strdup(entry->value.string));
+          } else {
+            LOG_WARN("audio.backchannel_codec_order: unknown codec \""
+                     << entry->value.string << "\", skipping");
+          }
+        }
+      }
+    }
   }
 
   if (!daynight.loglevel || daynight.loglevel[0] == '\0') {
