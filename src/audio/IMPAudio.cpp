@@ -93,9 +93,6 @@ int IMPAudio::init() {
 #if defined(USE_AAC) && USE_AAC
     format = IMPAudioFormat::AAC;
     bitrate = cfg->audio.mic_bitrate_kbps();
-    // All Ingenic SoCs support 48kHz natively --- capture at native rate
-    // instead of a lower rate + software resample.
-    ioattr.samplerate = AUDIO_SAMPLE_RATE_48000;
     encoder = AACEncoder::createNew(ioattr.samplerate, outChnCnt);
 #else
     LOG_ERROR("AAC input_format requested but AAC support is disabled at build "
@@ -135,11 +132,15 @@ int IMPAudio::init() {
     LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
   }
 
-  // AAC at 48kHz: use 20ms frames so HAL delivery closely matches FAAC's
-  // 1024-sample encode window.  With 40ms frames (1920 samples), FAAC
-  // alternates between 1 and 2 frames per delivery, causing irregular timing.
+  // FAAC encodes fixed 1024-sample frames.  The HAL requires numPerFrm to be
+  // a multiple of 10 ms of audio, so pick the 10 ms multiple closest to the
+  // 1024-sample window: 960 samples (20 ms @ 48 kHz, 60 ms @ 16 kHz) keeps
+  // delivery timing regular at whatever rate mic_hq selects.
   if (format == IMPAudioFormat::AAC)
-    frameDuration = 0.020;
+    frameDuration =
+        0.010f * static_cast<int>(1024.0f / (0.010f * static_cast<float>(
+                                                     ioattr.samplerate)) +
+                                  0.5f);
 
   ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
   ret = IMP_AI_SetPubAttr(devId, &ioattr);
