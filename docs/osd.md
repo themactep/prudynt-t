@@ -25,6 +25,7 @@ All keys under `osd.burnin`:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `false` | Enable burn-in overlay |
+| `substream_disabled` | bool | `false` | Suppress burn-in on the sub stream (stream1) even when `enabled` is true. Config-only; not exposed in the web UI |
 | `format` | string | `"%F %T"` | `strftime` format string |
 | `scale` | int | `0` (auto) | Font scale 1–10; 0 = auto from stream width |
 | `background_color` | string | `"#00000080"` | Background box color `#RRGGBBAA` |

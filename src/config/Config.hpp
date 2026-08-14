@@ -209,6 +209,7 @@ struct _osd {
   } sei;
   struct {
     bool enabled;
+    bool substream_disabled;
     const char *format;
     const char *background_color;
     int scale;

@@ -118,6 +118,7 @@
     },
     "burnin": {
       "enabled": true,
+      "substream_disabled": false,
       "format": "%F %T"
     }
   },

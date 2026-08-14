@@ -324,6 +324,8 @@ std::vector<ConfigItem<bool>> CFG::getBoolItems() {
       {"osd.sei.enabled", osd.sei.enabled, true, validateBool},
 
       {"osd.burnin.enabled", osd.burnin.enabled, true, validateBool},
+      {"osd.burnin.substream_disabled", osd.burnin.substream_disabled, false,
+       validateBool},
       {"stream1.audio_enabled", stream1.audio_enabled, true, validateBool},
       {"stream1.enabled", stream1.enabled, true, validateBool},
       {"stream1.allow_shared", stream1.allow_shared, true, validateBool},

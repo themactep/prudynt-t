@@ -101,6 +101,7 @@ private:
   uint16_t stream_width;
   uint16_t stream_height;
   int stream_rotation{0};
+  bool is_substream_{false}; // stream1 (sub stream)
 
   time_t current;
   struct tm *ltime;

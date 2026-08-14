@@ -597,6 +597,11 @@ void OSD::init() {
   else if (strcmp(parent, "stream1") == 0)
     stream_rotation = cfg->stream1.rotation;
 
+  // The sub stream (stream1) may suppress the burn-in timestamp via
+  // osd.burnin.substream_disabled while the global osd.burnin.enabled
+  // stays on for the main stream.
+  is_substream_ = (strcmp(parent, "stream1") == 0);
+
   LOG_DEBUG("OSD: " << stream_width << "x" << stream_height
             << " rotation=" << stream_rotation);
 
@@ -662,7 +667,11 @@ void OSD::updateDisplayEverySecond() {
 #ifdef OSD_BURN_TIMESTAMP
   // Burn the timestamp into the video via a hardware OSD region.
   // Runtime toggle via osd.burnin.enabled in prudynt.json.
-  if (cfg && cfg->osd.burnin.enabled) {
+  // osd.burnin.substream_disabled forces the overlay off on the sub stream
+  // regardless of the global osd.burnin.enabled status.
+  bool burnin_enabled = cfg && cfg->osd.burnin.enabled &&
+                        !(is_substream_ && cfg->osd.burnin.substream_disabled);
+  if (burnin_enabled) {
     updateTimestampOverlay();
   } else if (ts_region_created_) {
     IMP_OSD_ShowRgn(ts_rgn_, osdGrp, 0);
