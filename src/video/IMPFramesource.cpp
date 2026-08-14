@@ -89,17 +89,26 @@ int IMPFramesource::init() {
   chnAttr.picHeight = stream->height;
 
 #if defined(PLATFORM_T31)
-  // T31(L) tx-isp: the non-scaled full-res physical channel (no scaler ---
-  // the main stream when it matches the sensor's native resolution) only
-  // supports a single-buffer schedule.  Requesting the usual 2+ ring buffers
-  // is silently accepted by IMP_FrameSource_CreateChn/SetChnAttr/EnableChn,
-  // but the kernel driver then rejects the schedule ("one buffer schedule only
-  // support nrvbs = 1", visible only in dmesg) and the channel never produces
+  // Low-RAM T31 variants (T31L/T31LC/T31N/T31ZL - 64MB DRAM, MemTotal
+  // ~36MB) cannot double-buffer the non-scaled full-res physical channel.
+  // Requesting the usual 2+ ring buffers is silently accepted by
+  // IMP_FrameSource_CreateChn/SetChnAttr/EnableChn, but the kernel driver
+  // then rejects the schedule ("one buffer schedule only support
+  // nrvbs = 1", visible only in dmesg) and the channel never produces
   // a frame --- PollingStream spins at rc=-1 forever with no error surfaced
-  // above the kernel log.  The scaled sub-stream path uses the normal
-  // multi-buffer ring and is unaffected.  Only auto-clamp the default; an
-  // explicit "buffers" value in the config is trusted as-is.
-  if (!scale && chnAttr.nrVBs > 1) {
+  // above the kernel log.
+  //
+  // 128MB parts (T31X/T31A/T31AL/T31ZX - MemTotal ~93MB) double-buffer
+  // fine.  Forcing nrVBs=1 there is a regression: the single-buffer
+  // schedule collides with the sensor DMA when audio capture is enabled
+  // and the main stream stalls periodically (25fps collapses to
+  // ~12-19fps).  Gate the clamp on usable RAM, not the family macro.
+  //
+  // The scaled sub-stream path uses the normal multi-buffer ring and is
+  // unaffected.  Only auto-clamp the default; an explicit "buffers" value
+  // in the config is trusted as-is.
+  const bool low_ram_t31 = get_total_ram_bytes() <= 64L * 1024 * 1024;
+  if (!scale && low_ram_t31 && chnAttr.nrVBs > 1) {
     if (stream->buffers > 0) {
       LOG_WARN("Channel " << chnNr << ": non-scaled T31 channel with explicit "
                "buffers=" << chnAttr.nrVBs << " overrides the known nrVBs=1 "
