@@ -113,6 +113,8 @@ prudynt() {
 	BIN_TYPE=""
 	DEBUG_BUILD=0
 	OSD_BURNIN=0
+	OSD_FONT8X8=0
+	OSD_FONT_UNIFONT=0
 	for arg in "$@"; do
 		if [ "$arg" = "-static" ]; then
 			BIN_TYPE="-DBINARY_STATIC"
@@ -127,6 +129,12 @@ prudynt() {
 		elif [ "$arg" = "--osd-burnin" ]; then
 			# Restore the burned-in OSD timestamp overlay (off by default)
 			OSD_BURNIN=1
+		elif [ "$arg" = "--osd-font8x8" ]; then
+			# Use the 8x8 full-ASCII font for the burn-in overlay
+			OSD_FONT8X8=1
+		elif [ "$arg" = "--osd-font-unifont" ]; then
+			# Use the Unifont 8x16 font (ASCII + Cyrillic)
+			OSD_FONT_UNIFONT=1
 		fi
 	done
 	# If no explicit flag provided, default to dynamic (no flag needed in Makefile)
@@ -155,6 +163,8 @@ prudynt() {
 	/usr/bin/make -j$(nproc) \
 	ARCH= CROSS_COMPILE="${PRUDYNT_CROSS}" \
 	USE_OSD_BURNIN=$OSD_BURNIN \
+	USE_OSD_FONT8X8=$OSD_FONT8X8 \
+	USE_OSD_FONT_UNIFONT=$OSD_FONT_UNIFONT \
 	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include" \
 	LDFLAGS=" -L./3rdparty/install/lib" \

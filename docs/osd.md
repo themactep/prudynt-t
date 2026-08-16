@@ -13,7 +13,7 @@ Burn-in Timestamp Overlay
 --------------------------
 
 A hardware-rendered timestamp burned directly into each video frame. Uses an
-embedded 5×7 bitmap font — no external dependencies.
+embedded monochrome bitmap font — no external dependencies.
 
 Enable with `osd.burnin.enabled` in `prudynt.json` and rebuild with
 `USE_OSD_BURNIN=1` (set via `BR2_PACKAGE_PRUDYNT_T_OSD_BURNIN` in Buildroot).
@@ -51,18 +51,37 @@ The excluded rectangle is computed from the format string length and font
 scale — no manual configuration needed. Toggling burn-in on/off takes effect
 on the next Prudynt restart.
 
-### Embedded 5×7 Font
+### Embedded font
 
-Defined in `src/Font5x7.hpp` (namespace `font5x7`). Covers:
+The overlay font is selected at build time (`util/OSDFont.hpp`, used via the
+`osdfont::` alias):
 
-- Digits `0`–`9`
-- Symbols `-` `:` `+` (space)
-- Uppercase `A`–`Z`
+- **5×7** (default): `util/Font5x7.hpp`. Uppercase A–Z, digits, `-` `:` `+`
+  space. Each glyph is 5px wide × 7px tall, stored as 7 bytes where bit 4
+  (0x10) is the leftmost pixel.
+- **8×8**: `util/Font8x8.hpp`. Full ASCII — lowercase, digits, all
+  punctuation — from the public-domain dhepper/font8x8 table. 8px wide ×
+  8px tall, LSB is the leftmost pixel.
+- **8×16 Unifont**: `util/FontUnifont.hpp`. GNU Unifont 17.0.05 (SIL
+  OFL-1.1 / GPLv2+ with font embedding exception, used under OFL). Full
+  ASCII plus the Cyrillic block U+0400–U+045F and en/em dash, ellipsis,
+  middle dot. 16px tall, MSB is the leftmost pixel.
 
-Each glyph is 5 pixels wide × 7 pixels tall, stored as 7 bytes where bit 4
-(0x10) is the leftmost pixel. Glyphs are rendered with integer nearest-neighbor
-scaling — pixel-perfect at any scale. A circular dilation outline provides a
-soft halo around each glyph; thickness is `max(1, scale / 2)` output pixels.
+Select with `make USE_OSD_BURNIN=1 USE_OSD_FONT8X8=1` or `USE_OSD_FONT_UNIFONT=1`
+(or `build.sh --osd-burnin --osd-font8x8` / `--osd-font-unifont`); in
+Buildroot set `BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8` or
+`BR2_PACKAGE_PRUDYNT_T_OSD_FONT_UNIFONT`. All fonts share the same renderer
+contract — `WIDTH`, `HEIGHT`, `columnMask(rx)` (bit mask for column `rx`,
+0 = leftmost), and `glyphForCp(cp)` (UTF-8 decoded by the renderer) — so
+the render path is font-agnostic. Unifont takes precedence over 8×8 if
+both are enabled.
+
+Glyphs are rendered with integer nearest-neighbor scaling — pixel-perfect
+at any scale. A circular dilation outline provides a soft halo around each
+glyph; thickness is `max(1, scale / 2)` output pixels.
+
+The 8×8 glyphs are ~60% wider, so the overlay region is larger at the same
+scale and the IPU OSD region buffer budget is consumed sooner.
 
 ### Color format
 

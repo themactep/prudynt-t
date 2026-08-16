@@ -17,6 +17,11 @@ namespace font5x7 {
 constexpr int WIDTH = 5;
 constexpr int HEIGHT = 7;
 
+// Bit mask for column rx (0 = leftmost). The leftmost pixel is bit 4
+// (0x10); column rx tests bit (WIDTH - 1 - rx). Shared renderer contract
+// with Font8x8.hpp -- see util/OSDFont.hpp.
+constexpr uint8_t columnMask(int rx) { return (uint8_t)(1u << (WIDTH - 1 - rx)); }
+
 // -- digits 0-9 ------------------------------------------------------
 constexpr uint8_t D_0[HEIGHT] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
 constexpr uint8_t D_1[HEIGHT] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
@@ -95,6 +100,13 @@ inline const uint8_t *glyphFor(char c) {
   case '@': return SYM_AT;
   default:  return nullptr;
   }
+}
+
+// Codepoint lookup (UTF-8 already decoded by the caller).  This font is
+// ASCII-only, so anything above U+007F renders as a blank advance.
+inline const uint8_t *glyphForCp(uint32_t cp) {
+  if (cp > 0x7F) return nullptr;
+  return glyphFor((char)cp);
 }
 
 } // namespace font5x7

@@ -50,6 +50,19 @@ USE_OSD_BURNIN         ?= 0
 
 ifeq ($(USE_OSD_BURNIN),1)
 override CFLAGS        += -DOSD_BURN_TIMESTAMP
+
+# OSD burn-in font: 5x7 (default), 8x8 (full ASCII), or Unifont 8x16
+# (full ASCII + Cyrillic).  Select with `make USE_OSD_BURNIN=1
+# USE_OSD_FONT8X8=1` or `USE_OSD_FONT_UNIFONT=1`.
+# Only meaningful together with the burn-in overlay above.
+USE_OSD_FONT8X8         ?= 0
+ifeq ($(USE_OSD_FONT8X8),1)
+override CFLAGS        += -DUSE_OSD_FONT_8X8
+endif
+USE_OSD_FONT_UNIFONT    ?= 0
+ifeq ($(USE_OSD_FONT_UNIFONT),1)
+override CFLAGS        += -DUSE_OSD_FONT_UNIFONT
+endif
 endif
 
 # Optional FLAC support

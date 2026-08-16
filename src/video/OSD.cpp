@@ -1,6 +1,6 @@
 #include "video/OSD.hpp"
 #include "config/Config.hpp"
-#include "util/Font5x7.hpp"
+#include "util/OSDFont.hpp"
 #include "util/Logger.hpp"
 #include "stream/globals.hpp"
 #include "isp/imp_hal.hpp"
@@ -344,15 +344,40 @@ static bool parseHexColor(const char *hex, uint8_t bgra[4]) {
 void OSD::renderTimestamp(const char *text) {
   const int scale = ts_scale_;
   const int pad = scale * 2;
-  const int cell = (font5x7::WIDTH + 1) * scale; // glyph width + 1 column spacing
+  const int cell = (osdfont::WIDTH + 1) * scale; // glyph width + 1 column spacing
 
-  int n = (int)strlen(text);
+  // Decode UTF-8 into codepoints so multi-byte text (e.g. Cyrillic in
+  // the format string) renders one glyph per character and the width
+  // math counts glyphs, not bytes.
+  std::vector<uint32_t> cps;
+  for (const char *p = text; *p;) {
+    unsigned char c = (unsigned char)*p;
+    if (c < 0x80) {
+      cps.push_back(c);
+      ++p;
+    } else if ((c & 0xE0) == 0xC0 && p[1]) {
+      cps.push_back(((uint32_t)(c & 0x1F) << 6) | (uint32_t)(p[1] & 0x3F));
+      p += 2;
+    } else if ((c & 0xF0) == 0xE0 && p[1] && p[2]) {
+      cps.push_back(((uint32_t)(c & 0x0F) << 12) | ((uint32_t)(p[1] & 0x3F) << 6) |
+                    (uint32_t)(p[2] & 0x3F));
+      p += 3;
+    } else if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) {
+      cps.push_back(((uint32_t)(c & 0x07) << 18) | ((uint32_t)(p[1] & 0x3F) << 12) |
+                    ((uint32_t)(p[2] & 0x3F) << 6) | (uint32_t)(p[3] & 0x3F));
+      p += 4;
+    } else {
+      ++p; // malformed or truncated sequence: skip the lead byte
+    }
+  }
+
+  int n = (int)cps.size();
   int textW = n * cell;
   if (textW > 0)
     textW -= scale; // trailing char has no spacing
 
   int w = textW + pad * 2;
-  int h = font5x7::HEIGHT * scale + pad * 2;
+  int h = osdfont::HEIGHT * scale + pad * 2;
   if (w & 1)
     ++w; // IMP regions expect an even width
 
@@ -417,13 +442,13 @@ void OSD::renderTimestamp(const char *text) {
   // Iterate every set glyph pixel of the whole string, applying `fn`.
   auto forEachGlyphPixel = [&](const std::function<void(int, int)> &fn) {
     int penX = pad;
-    for (const char *p = text; *p; ++p) {
-      const uint8_t *g = font5x7::glyphFor(*p);
+    for (uint32_t cp : cps) {
+      const uint8_t *g = osdfont::glyphForCp(cp);
       if (g) {
-        for (int ry = 0; ry < font5x7::HEIGHT; ++ry) {
+        for (int ry = 0; ry < osdfont::HEIGHT; ++ry) {
           uint8_t bits = g[ry];
-          for (int rx = 0; rx < font5x7::WIDTH; ++rx) {
-            if (bits & (1 << (font5x7::WIDTH - 1 - rx)))
+          for (int rx = 0; rx < osdfont::WIDTH; ++rx) {
+            if (bits & osdfont::columnMask(rx))
               fn(penX + rx * scale, pad + ry * scale);
           }
         }
