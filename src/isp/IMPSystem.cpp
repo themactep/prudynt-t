@@ -25,29 +25,40 @@ bool read_int_from_file(const char *path, int &value_out) {
   return true;
 }
 
-bool wait_for_sensor_resolution(int max_retries = 10, int delay_ms = 50) {
+// Wait for the sensor's procfs properties (resolution and max_fps) to become
+// available after enable_sensor().  max_fps is required because it is the
+// physical upper limit that every stream fps must be clamped against; until the
+// driver has published it the value read from procfs is 0 and the stream fps
+// would silently keep its configured (possibly bogus) value.
+bool wait_for_sensor_resolution(int max_retries = 20, int delay_ms = 50) {
   constexpr const char *kSensorWidthPath = "/proc/jz/sensor/width";
   constexpr const char *kSensorHeightPath = "/proc/jz/sensor/height";
+  constexpr const char *kSensorMaxFpsPath = "/proc/jz/sensor/max_fps";
 
   for (int i = 0; i < max_retries; ++i) {
-    int width = 0, height = 0;
-    if (read_int_from_file(kSensorWidthPath, width) &&
-        read_int_from_file(kSensorHeightPath, height) && width > 0 &&
-        height > 0) {
-      LOG_DEBUG("Sensor resolution detected: "
-                << width << "x" << height << " (attempt " << (i + 1) << ")");
+    int width = 0, height = 0, max_fps = 0;
+    bool have_res = read_int_from_file(kSensorWidthPath, width) &&
+                    read_int_from_file(kSensorHeightPath, height) &&
+                    width > 0 && height > 0;
+    bool have_fps = read_int_from_file(kSensorMaxFpsPath, max_fps) &&
+                    max_fps > 0;
+    if (have_res && have_fps) {
+      LOG_DEBUG("Sensor procfs ready: " << width << "x" << height << " @ "
+                                         << max_fps << " fps (attempt "
+                                         << (i + 1) << ")");
       return true;
     }
 
     if (i < max_retries - 1) {
-      LOG_DEBUG("Waiting for sensor resolution to be available (attempt "
-                << (i + 1) << "/" << max_retries << ")");
+      LOG_DEBUG("Waiting for sensor procfs to be available (attempt "
+                << (i + 1) << "/" << max_retries << "; res=" << have_res
+                << " fps=" << have_fps << ")");
       usleep(delay_ms * 1000); // usleep takes microseconds
     }
   }
 
-  LOG_ERROR("Sensor resolution not detected after " << max_retries
-                                                    << " attempts");
+  LOG_ERROR("Sensor procfs (resolution and max_fps) not detected after "
+            << max_retries << " attempts");
   return false;
 }
 
