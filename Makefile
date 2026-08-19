@@ -63,6 +63,24 @@ USE_OSD_FONT_UNIFONT    ?= 0
 ifeq ($(USE_OSD_FONT_UNIFONT),1)
 override CFLAGS        += -DUSE_OSD_FONT_UNIFONT
 endif
+
+# Antialiased TrueType rendering via libschrift instead of a fixed bitmap
+# font (mutually exclusive with the two flags above). Needs
+# /usr/share/fonts/default.ttf present on the camera at runtime.
+USE_OSD_FONT_LIBSCHRIFT ?= 0
+ifeq ($(USE_OSD_FONT_LIBSCHRIFT),1)
+override CFLAGS        += -DUSE_OSD_FONT_LIBSCHRIFT
+endif
+endif
+
+ifeq ($(USE_OSD_FONT_LIBSCHRIFT),1)
+OSD_SCHRIFT_LIB_STATIC_LINE  = -l:libschrift.a
+OSD_SCHRIFT_LIB_HYBRID_LINE  = -lschrift
+OSD_SCHRIFT_LIB_DYNAMIC_LINE = -lschrift
+else
+OSD_SCHRIFT_LIB_STATIC_LINE  =
+OSD_SCHRIFT_LIB_HYBRID_LINE  =
+OSD_SCHRIFT_LIB_DYNAMIC_LINE =
 endif
 
 # Optional FLAC support
@@ -181,6 +199,7 @@ LIBS                    = -Wl,--start-group \
                           -l:libsysutils.a \
                           -Wl,--end-group \
                           $(WEBSOCKET_LIB_STATIC_LINE) \
+                          $(OSD_SCHRIFT_LIB_STATIC_LINE) \
                           $(OPUS_LIB_STATIC_LINE) \
                           $(FAAC_LIB_STATIC_LINE) \
                           $(AAC_LIB_STATIC_LINE) \
@@ -209,6 +228,7 @@ LIBS                    = -Wl,-Bdynamic \
                           -l:libaudioProcess.so \
                           $(WEBSOCKET_LIB_HYBRID_LINE) \
                           -Wl,-Bdynamic \
+                          $(OSD_SCHRIFT_LIB_HYBRID_LINE) \
                           $(OPUS_LIB_HYBRID_LINE) \
                           $(FAAC_LIB_HYBRID_LINE) \
                           $(AAC_LIB_HYBRID_LINE) \
@@ -236,6 +256,7 @@ LIBS                    = -limp \
                           -laudioProcess \
                           -lsysutils \
                           $(WEBSOCKET_LIB_DYNAMIC_LINE) \
+                          $(OSD_SCHRIFT_LIB_DYNAMIC_LINE) \
                           $(OPUS_LIB_DYNAMIC_LINE) \
                           $(FAAC_LIB_DYNAMIC_LINE) \
                           $(AAC_LIB_DYNAMIC_LINE) \

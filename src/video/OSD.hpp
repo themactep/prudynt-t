@@ -16,6 +16,11 @@
 #include <sys/sysinfo.h>
 #include <vector>
 
+#if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
+#include "schrift.h"
+#include <unordered_map>
+#endif
+
 struct OSDElement {
   std::string name;
   std::string type;      // "timestamp", "hostname", "uptime", "gain", "text"
@@ -32,6 +37,15 @@ public:
       : osd(osd), osdGrp(osdGrp), encChn(encChn), parent(parent) {
     init();
   }
+#if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
+  // Backstop for the libschrift font/glyph state: normal teardown goes
+  // through exit() (called explicitly by the owner before delete), but
+  // shutdownTimestampFont() is idempotent, so this guarantees the font
+  // is freed even if a future caller deletes an OSD without calling
+  // exit() first. Declared only here (not for the other font builds) so
+  // it doesn't cost a real destructor when there's nothing for it to do.
+  ~OSD();
+#endif
   void init();
   int exit();
   int start();
@@ -116,8 +130,20 @@ private:
   // first update because IMPEncoder creates/binds the OSD group only after
   // this OSD object is constructed. Compile-time opt-in via -DOSD_BURN_TIMESTAMP
   // (make USE_OSD_BURNIN=1 / build.sh --osd-burnin).
+  //
+  // Glyph rasterization is pluggable at build time: the default renders a
+  // fixed bitmap font (see util/OSDFont.hpp); -DUSE_OSD_FONT_LIBSCHRIFT
+  // (make USE_OSD_FONT_LIBSCHRIFT=1 / build.sh --osd-font-libschrift)
+  // switches renderTimestamp() to antialiased TrueType rendering via
+  // libschrift instead, reading /usr/share/fonts/default.ttf on the
+  // camera. initTimestampFont()/shutdownTimestampFont() are the load/free
+  // hooks for that -- no-ops under the bitmap-font build.
   void updateTimestampOverlay();
   void renderTimestamp(const char *text);
+#ifdef USE_OSD_FONT_LIBSCHRIFT
+  void initTimestampFont();
+  void shutdownTimestampFont();
+#endif
 
   IMPRgnHandle ts_rgn_{INVHANDLE};
   IMPOSDRgnAttr ts_attr_{};
@@ -129,6 +155,29 @@ private:
   bool ts_region_created_{false};
   bool osd_group_started_{false};
   std::string last_ts_text_;
+
+#ifdef USE_OSD_FONT_LIBSCHRIFT
+  // Antialiased glyph bitmap, rasterized once per character and cached
+  // until ts_scale_ changes (osd.burnin.scale takes effect live).
+  struct Glyph {
+    int width{0};
+    int height{0};
+    std::vector<uint8_t> bitmap; // one alpha byte per pixel (coverage)
+    int advance{0};
+    int xmin{0};
+    int ymin{0};
+  };
+  int libschriftRenderGlyph(const char *characters);
+
+  std::unordered_map<char, Glyph> glyphs_;
+  SFT *sft_{nullptr};
+  // sft_loadmem() does not copy the font bytes -- it stores this pointer
+  // and parses tables from it on every lookup/render call. Must outlive
+  // sft_->font, so it's a member, not a local in initTimestampFont().
+  std::vector<uint8_t> fontData_;
+  bool textRenderingAvailable_{false};
+  int lastFontSize_{0};
+#endif
 #endif
 
   mutable std::mutex stateMutex_;

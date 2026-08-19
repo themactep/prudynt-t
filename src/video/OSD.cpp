@@ -8,16 +8,22 @@
 #include <array>
 #include <cctype>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
 #include <json_config.h>
+#include <memory>
 #include <pthread.h>
 #include <sstream>
 #include <unistd.h>
 #include <vector>
+
+#ifdef USE_OSD_FONT_LIBSCHRIFT
+#include "schrift.h"
+#endif
 
 namespace {
 constexpr const char *PRIMARY_ISP_STATS = "/proc/jz/isp/isp-m0";
@@ -341,6 +347,258 @@ static bool parseHexColor(const char *hex, uint8_t bgra[4]) {
   return true;
 }
 
+#ifdef USE_OSD_FONT_LIBSCHRIFT
+
+namespace {
+constexpr const char *kBurninFontPath = "/usr/share/fonts/default.ttf";
+// Sanity bound on a single rasterized glyph's dimensions, well above
+// anything kBurninMaxScale can produce -- guards the malloc size against
+// a corrupt font reporting a huge or negative minWidth/minHeight.
+constexpr int kMaxGlyphDim = 2048;
+
+void schriftSetPixel(uint8_t *image, int x, int y, const uint8_t *color,
+                     uint8_t alpha, int width, int height) {
+  if (x < 0 || x >= width || y < 0 || y >= height) return;
+  int idx = (y * width + x) * 4;
+  uint8_t beta = 255 - alpha;
+  image[idx + 0] = (uint8_t)(((color[0] * alpha) / 255) + ((image[idx + 0] * beta) / 255));
+  image[idx + 1] = (uint8_t)(((color[1] * alpha) / 255) + ((image[idx + 1] * beta) / 255));
+  image[idx + 2] = (uint8_t)(((color[2] * alpha) / 255) + ((image[idx + 2] * beta) / 255));
+  image[idx + 3] = (uint8_t)(alpha + ((image[idx + 3] * beta) / 255));
+}
+
+void schriftSetPixelIfEmpty(uint8_t *image, int x, int y, const uint8_t *color,
+                            int width, int height) {
+  if (x < 0 || x >= width || y < 0 || y >= height) return;
+  int idx = (y * width + x) * 4;
+  if (image[idx + 3] != 0) return;
+  image[idx + 0] = color[0];
+  image[idx + 1] = color[1];
+  image[idx + 2] = color[2];
+  image[idx + 3] = color[3];
+}
+} // namespace
+
+void OSD::initTimestampFont() {
+  textRenderingAvailable_ = false;
+
+  if (access(kBurninFontPath, R_OK) != 0) {
+    LOG_ERROR("OSD: burn-in font missing or unreadable: " << kBurninFontPath);
+    return;
+  }
+  std::ifstream fontFile(kBurninFontPath, std::ios::binary | std::ios::ate);
+  if (!fontFile.is_open()) {
+    LOG_ERROR("OSD: unable to open burn-in font: " << kBurninFontPath);
+    return;
+  }
+  size_t fileSize = (size_t)fontFile.tellg();
+  fontData_.assign(fileSize, 0);
+  fontFile.seekg(0, std::ios::beg);
+  fontFile.read(reinterpret_cast<char *>(fontData_.data()), (std::streamsize)fileSize);
+  fontFile.close();
+
+  sft_ = new SFT();
+  sft_->flags = SFT_DOWNWARD_Y;
+  sft_->font = sft_loadmem(fontData_.data(), fontData_.size());
+  if (!sft_->font) {
+    LOG_ERROR("OSD: unable to parse burn-in font: " << kBurninFontPath);
+    delete sft_;
+    sft_ = nullptr;
+    fontData_.clear();
+    fontData_.shrink_to_fit();
+    return;
+  }
+
+  // Actual xScale/yScale/yOffset are set per-render from ts_scale_ (see
+  // renderTimestamp() below) so osd.burnin.scale takes effect live without
+  // a restart, same as the bitmap-font build.
+  textRenderingAvailable_ = true;
+}
+
+void OSD::shutdownTimestampFont() {
+  glyphs_.clear();
+  if (sft_) {
+    if (sft_->font)
+      sft_freefont(sft_->font);
+    delete sft_;
+    sft_ = nullptr;
+  }
+  // Free only after sft_freefont(), which may still read the backing bytes.
+  fontData_.clear();
+  fontData_.shrink_to_fit();
+  textRenderingAvailable_ = false;
+}
+
+// Rasterizes and caches any not-yet-seen glyphs in `characters` at the
+// current sft_->xScale/yScale. No-op for characters already cached (the
+// common case -- most of a timestamp's glyphs repeat every second).
+//
+// Every character seen gets a cache entry, even on lookup failure or a
+// zero-size raster (e.g. space): leaving it uncached would make the
+// caller retry sft_lookup()/sft_gmetrics() on every single render for
+// that character forever, and -- for a real but invisible glyph like
+// space -- would drop it from the rendered text entirely, since only
+// cached glyphs contribute their advance width to the layout.
+int OSD::libschriftRenderGlyph(const char *characters) {
+  if (!sft_ || !textRenderingAvailable_ || !characters)
+    return -1;
+
+  while (*characters) {
+    char c = *characters;
+    if (glyphs_.count(c)) {
+      ++characters;
+      continue;
+    }
+
+    Glyph g;
+    SFT_GMetrics gmetrics;
+    SFT_Glyph glyph;
+    if (sft_lookup(sft_, (unsigned char)c, &glyph) == 0 &&
+        sft_gmetrics(sft_, glyph, &gmetrics) == 0) {
+      g.advance = (int)gmetrics.advanceWidth;
+      g.xmin = (int)gmetrics.leftSideBearing;
+      g.ymin = gmetrics.yOffset;
+
+      // Zero-size glyphs (space) need no raster -- skip straight past the
+      // malloc, whose return value for a 0-byte request is implementation
+      // defined, rather than relying on it to signal "nothing to draw".
+      if (gmetrics.minWidth > 0 && gmetrics.minHeight > 0 &&
+          gmetrics.minWidth <= kMaxGlyphDim && gmetrics.minHeight <= kMaxGlyphDim) {
+        SFT_Image imageBuffer;
+        imageBuffer.width = gmetrics.minWidth;
+        imageBuffer.height = gmetrics.minHeight;
+        std::unique_ptr<void, decltype(&free)> pixels(
+            malloc((size_t)imageBuffer.width * imageBuffer.height), &free);
+        imageBuffer.pixels = pixels.get();
+
+        if (imageBuffer.pixels && sft_render(sft_, glyph, imageBuffer) == 0) {
+          g.width = imageBuffer.width;
+          g.height = imageBuffer.height;
+          const uint8_t *px = (const uint8_t *)imageBuffer.pixels;
+          g.bitmap.assign(px, px + (size_t)g.width * g.height);
+        }
+        // pixels frees itself here regardless of how the block above exits.
+      }
+    }
+    // Lookup/gmetrics failure leaves g at its defaults (zero advance) --
+    // same effect as the old uncached-miss behavior, just cached now.
+    glyphs_[c] = std::move(g);
+    ++characters;
+  }
+  return 0;
+}
+
+void OSD::renderTimestamp(const char *text) {
+  if (!textRenderingAvailable_ || !sft_) {
+    // Font failed to load at startup; leave the region empty rather than
+    // draw garbage. updateTimestampOverlay() still runs normally.
+    ts_width_ = 0;
+    ts_height_ = 0;
+    ts_buf_.clear();
+    return;
+  }
+
+  const int scale = ts_scale_;
+  // Map the same osd.burnin.scale/auto-scale integer the bitmap fonts use
+  // to a libschrift pixel size, roughly matching their on-screen height
+  // (an 8px-tall bitmap glyph at scale N is N*8px tall).
+  const int fontSize = scale * 8;
+  if (fontSize != lastFontSize_) {
+    glyphs_.clear();
+    sft_->xScale = fontSize;
+    sft_->yScale = fontSize;
+    int yoff = (int)std::round((float)fontSize * 0.1f);
+    sft_->yOffset = yoff < 1 ? 1 : yoff;
+    lastFontSize_ = fontSize;
+  }
+
+  // Covers the strftime() output plus " PRIVACY"; unlike a fixed bitmap
+  // font, any codepoint the loaded TTF has works here, not just a
+  // preloaded set -- so custom osd.burnin.format strings (weekday/month
+  // names, etc.) render correctly too.
+  libschriftRenderGlyph(text);
+
+  const int outline = std::max(1, scale / 2);
+  uint8_t fill_color[4] = {255, 255, 255, 255};
+  uint8_t outline_color[4] = {0, 0, 0, 255};
+  if (cfg) {
+    if (cfg->osd.burnin.fill_color && cfg->osd.burnin.fill_color[0])
+      parseHexColor(cfg->osd.burnin.fill_color, fill_color);
+    if (cfg->osd.burnin.outline_color && cfg->osd.burnin.outline_color[0])
+      parseHexColor(cfg->osd.burnin.outline_color, outline_color);
+  }
+
+  int textW = 0, textH = 0;
+  for (const char *p = text; *p; ++p) {
+    auto it = glyphs_.find(*p);
+    if (it != glyphs_.end()) {
+      textW += it->second.advance;
+      textH = std::max(textH, it->second.height);
+    }
+  }
+  textH += (int)sft_->yScale;
+
+  const int pad = scale * 2;
+  int w = textW + pad * 2 + outline * 2;
+  int h = textH + pad * 2;
+  if (w & 1)
+    ++w; // IMP regions expect an even width
+
+  ts_width_ = (uint16_t)w;
+  ts_height_ = (uint16_t)h;
+  ts_buf_.assign((size_t)w * h * 4, 0);
+  uint8_t *img = ts_buf_.data();
+
+  if (cfg && cfg->osd.burnin.background_color && cfg->osd.burnin.background_color[0]) {
+    uint8_t bg[4] = {0, 0, 0, 110};
+    parseHexColor(cfg->osd.burnin.background_color, bg);
+    if (bg[3] != 0) {
+      for (int i = 0; i < w * h; ++i) {
+        img[i * 4 + 0] = bg[0];
+        img[i * 4 + 1] = bg[1];
+        img[i * 4 + 2] = bg[2];
+        img[i * 4 + 3] = bg[3];
+      }
+    }
+  }
+
+  int penX = pad + outline;
+  int penY = pad;
+  for (const char *p = text; *p; ++p) {
+    auto it = glyphs_.find(*p);
+    if (it == glyphs_.end())
+      continue;
+    const Glyph &g = it->second;
+    int x = penX + g.xmin;
+    int y = penY + (int)sft_->yScale + g.ymin;
+
+    if (outline_color[3] != 0 && outline > 0) {
+      for (int j = -outline; j <= outline; ++j) {
+        for (int i = -outline; i <= outline; ++i) {
+          if (i * i + j * j > outline * outline)
+            continue;
+          for (int gy = 0; gy < g.height; ++gy)
+            for (int gx = 0; gx < g.width; ++gx)
+              if (g.bitmap[gy * g.width + gx] & 0x80)
+                schriftSetPixelIfEmpty(img, x + gx + i, y + gy + j, outline_color, w, h);
+        }
+      }
+    }
+    if (fill_color[3] != 0) {
+      for (int gy = 0; gy < g.height; ++gy) {
+        for (int gx = 0; gx < g.width; ++gx) {
+          uint8_t a = g.bitmap[gy * g.width + gx];
+          if (a)
+            schriftSetPixel(img, x + gx, y + gy, fill_color, a, w, h);
+        }
+      }
+    }
+    penX += g.advance;
+  }
+}
+
+#else // !USE_OSD_FONT_LIBSCHRIFT -- fixed bitmap font (default)
+
 void OSD::renderTimestamp(const char *text) {
   const int scale = ts_scale_;
   const int pad = scale * 2;
@@ -475,6 +733,8 @@ void OSD::renderTimestamp(const char *text) {
   }
 }
 
+#endif // USE_OSD_FONT_LIBSCHRIFT
+
 void OSD::updateTimestampOverlay() {
   char base[64];
   const char *fmt = (cfg && cfg->osd.burnin.format && cfg->osd.burnin.format[0])
@@ -596,6 +856,12 @@ OSD *OSD::createNew(_osd &osd, int osdGrp, int encChn, const char *parent) {
   return new OSD(osd, osdGrp, encChn, parent);
 }
 
+#if defined(OSD_BURN_TIMESTAMP) && defined(USE_OSD_FONT_LIBSCHRIFT)
+OSD::~OSD() {
+  shutdownTimestampFont();
+}
+#endif
+
 void OSD::init() {
   int ret = IMP_Encoder_GetChnAttr(osdGrp, &channelAttributes);
   if (ret < 0)
@@ -614,6 +880,10 @@ void OSD::init() {
     ts_scale_ = std::clamp(cfg->osd.burnin.scale, 1, kBurninMaxScale);
   else
     ts_scale_ = std::clamp(stream_width / 480, 1, kBurninMaxScale);
+
+#ifdef USE_OSD_FONT_LIBSCHRIFT
+  initTimestampFont();
+#endif
 #endif
 
   // stream rotation from whichever stream we're attached to
@@ -657,6 +927,9 @@ int OSD::exit() {
     ts_rgn_ = INVHANDLE;
     ts_region_created_ = false;
   }
+#ifdef USE_OSD_FONT_LIBSCHRIFT
+  shutdownTimestampFont();
+#endif
 #endif
   return 0;
 }
