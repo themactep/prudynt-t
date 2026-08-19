@@ -52,6 +52,24 @@ ifeq ($(USE_RTSP_IPV6),1)
 override CFLAGS        += -DRTSP_IPV6
 endif
 
+# In-camera (ISP) rotation -- T31 only
+# -------------------------------------
+# By default, rotation is a client-side-only SEI metadata hint; this adds
+# the ISP-side IMP_FrameSource_SetChnRotate path plus the matching encoder/
+# SDP dimension swaps for consumers that don't apply that hint. Opt-in, off
+# by default; enable with `make USE_ISP_ROTATION=1` or build.sh
+# --isp-rotation.
+#
+# T31 only: IMP_FrameSource_SetChnRotate doesn't exist in any other
+# platform's SDK (checked C100/T10/T20/T21/T23/T30/T40/T41). Enabling this
+# for a non-T31 build is a hard Makefile error (see the platform check
+# below, once LIBIMP_PLATFORM is known).
+USE_ISP_ROTATION        ?= 0
+
+ifeq ($(USE_ISP_ROTATION),1)
+override CFLAGS        += -DUSE_ISP_ROTATION
+endif
+
 # Burned-in OSD timestamp overlay
 # -------------------------------
 # Draws the camera date/time directly into the encoded video via a hardware
@@ -348,6 +366,17 @@ ifeq ($(LIBIMP_SDK_VERSION),)
 endif
 
 LIBIMP_INC_DIR          = ./include/$(LIBIMP_PLATFORM)/$(LIBIMP_SDK_VERSION)/$(LIBIMP_LANG)
+
+# USE_ISP_ROTATION calls IMP_FrameSource_SetChnRotate, which only exists in
+# Ingenic's T31 SDK -- absent from every other platform's libimp.so (verified
+# against C100/T10/T20/T21/T23/T30/T40/T41 SDK builds). Fail loudly instead
+# of silently linking a no-op or a missing symbol on any other platform.
+ifeq ($(USE_ISP_ROTATION),1)
+ifneq ($(LIBIMP_PLATFORM),T31)
+$(error USE_ISP_ROTATION is only supported on T31 -- IMP_FrameSource_SetChnRotate \
+does not exist in the $(LIBIMP_PLATFORM) SDK)
+endif
+endif
 
 # Directory Structure
 # ===================

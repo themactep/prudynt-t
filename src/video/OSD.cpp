@@ -879,11 +879,16 @@ void OSD::init() {
 #endif
 #endif
 
-  // stream rotation from whichever stream we're attached to
+  // Stream rotation from whichever stream we're attached to, reported to
+  // clients via the SEI rotation hint below. Left at 0 under
+  // USE_ISP_ROTATION: the frame is already physically rotated by the ISP,
+  // so a client applying this hint too would double-rotate it.
+#ifndef USE_ISP_ROTATION
   if (strcmp(parent, "stream0") == 0)
     stream_rotation = cfg->stream0.rotation;
   else if (strcmp(parent, "stream1") == 0)
     stream_rotation = cfg->stream1.rotation;
+#endif
 
   // The sub stream (stream1) may suppress the burn-in timestamp via
   // osd.burnin.substream_disabled while the global osd.burnin.enabled

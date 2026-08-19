@@ -117,6 +117,7 @@ prudynt() {
 	OSD_FONT_UNIFONT=0
 	RTSP_IPV6=0
 	OSD_FONT_LIBSCHRIFT=0
+	ISP_ROTATION=0
 	for arg in "$@"; do
 		if [ "$arg" = "-static" ]; then
 			BIN_TYPE="-DBINARY_STATIC"
@@ -145,6 +146,11 @@ prudynt() {
 			# Use antialiased TrueType rendering via libschrift instead of
 			# a fixed bitmap font (needs /usr/share/fonts/default.ttf)
 			OSD_FONT_LIBSCHRIFT=1
+		elif [ "$arg" = "--isp-rotation" ]; then
+			# Use in-camera (ISP) rotation instead of client-side-only
+			# SEI metadata (off by default). T31 only -- the Makefile
+			# hard-fails if this is set for any other platform.
+			ISP_ROTATION=1
 		fi
 	done
 	# If no explicit flag provided, default to dynamic (no flag needed in Makefile)
@@ -177,6 +183,7 @@ prudynt() {
 	USE_OSD_FONT_UNIFONT=$OSD_FONT_UNIFONT \
 	USE_RTSP_IPV6=$RTSP_IPV6 \
 	USE_OSD_FONT_LIBSCHRIFT=$OSD_FONT_LIBSCHRIFT \
+	USE_ISP_ROTATION=$ISP_ROTATION \
 	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include" \
 	LDFLAGS=" -L./3rdparty/install/lib" \
