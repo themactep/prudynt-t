@@ -191,34 +191,30 @@ static const char *const image_keys[] = {"brightness",
 
 /* AUDIO */
 enum {
-  PNT_AUDIO_INPUT_ENABLED = 1,
-  PNT_AUDIO_INPUT_AGC_ENABLED,
-  PNT_AUDIO_INPUT_HIGH_PASS_FILTER,
-  PNT_AUDIO_INPUT_VOL,
-  PNT_AUDIO_INPUT_GAIN,
-  PNT_AUDIO_INPUT_ALC_GAIN,
-  PNT_AUDIO_INPUT_NOISE_SUPPRESSION,
-  PNT_AUDIO_INPUT_AGC_TARGET_LEVEL_DBFS,
-  PNT_AUDIO_INPUT_AGC_COMPRESSION_GAIN_DB,
-  PNT_AUDIO_INPUT_BITRATE,
-  PNT_AUDIO_INPUT_FORMAT,
-  PNT_AUDIO_INPUT_SAMPLE_RATE,
-  PNT_AUDIO_OUTPUT_ENABLED,
-  PNT_AUDIO_OUTPUT_SAMPLE_RATE
+  PNT_AUDIO_MIC_ENABLED = 1,
+  PNT_AUDIO_MIC_AGC_ENABLED,
+  PNT_AUDIO_MIC_HIGH_PASS_FILTER,
+  PNT_AUDIO_MIC_VOL,
+  PNT_AUDIO_MIC_GAIN,
+  PNT_AUDIO_MIC_ALC_GAIN,
+  PNT_AUDIO_MIC_NOISE_SUPPRESSION,
+  PNT_AUDIO_MIC_AGC_TARGET_LEVEL_DBFS,
+  PNT_AUDIO_MIC_AGC_COMPRESSION_GAIN_DB,
+  PNT_AUDIO_MIC_FORMAT,
+  PNT_AUDIO_SPK_ENABLED
 };
 
-static const char *const audio_keys[] = {"input_enabled",
-                                         "input_agc_enabled",
-                                         "input_high_pass_filter",
-                                         "input_vol",
-                                         "input_gain",
-                                         "input_alc_gain",
-                                         "input_noise_suppression",
-                                         "input_agc_target_level_dbfs",
-                                         "input_agc_compression_gain_db",
-                                          "input_format",
-                                         "output_enabled",
-                                         "output_sample_rate"};
+static const char *const audio_keys[] = {"mic_enabled",
+                                         "mic_agc_enabled",
+                                         "mic_high_pass_filter",
+                                         "mic_vol",
+                                         "mic_gain",
+                                         "mic_alc_gain",
+                                         "mic_noise_suppression",
+                                         "mic_agc_target_level_dbfs",
+                                         "mic_agc_compression_gain_db",
+                                         "mic_format",
+                                         "spk_enabled"};
 
 /* STREAM */
 enum {
@@ -1051,7 +1047,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
 
     u_ctx->flag |= PNT_FLAG_SEPARATOR;
 
-    if (ctx->path_match == PNT_AUDIO_INPUT_HIGH_PASS_FILTER) {
+    if (ctx->path_match == PNT_AUDIO_MIC_HIGH_PASS_FILTER) {
       IMPAudioIOAttr ioattr;
       int ret = IMP_AI_GetPubAttr(u_ctx->value, &ioattr);
       if (ret == 0) {
@@ -1068,17 +1064,14 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
       add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
     }
     // integer values
-    else if (ctx->path_match == PNT_AUDIO_INPUT_NOISE_SUPPRESSION ||
-             ctx->path_match == PNT_AUDIO_INPUT_SAMPLE_RATE ||
-             ctx->path_match == PNT_AUDIO_INPUT_BITRATE ||
-             ctx->path_match == PNT_AUDIO_OUTPUT_SAMPLE_RATE) {
+    else if (ctx->path_match == PNT_AUDIO_MIC_NOISE_SUPPRESSION) {
       if (reason == LEJPCB_VAL_NUM_INT) {
         if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
           global_restart_audio = true;
         }
       }
       add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
-    } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_ENABLED) {
+    } else if (ctx->path_match == PNT_AUDIO_MIC_AGC_ENABLED) {
       if (!hal::caps().has_audio_agc) {
         add_json_null(u_ctx->message);
       } else {
@@ -1097,8 +1090,8 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
       }
-    } else if (ctx->path_match == PNT_AUDIO_INPUT_AGC_TARGET_LEVEL_DBFS ||
-               ctx->path_match == PNT_AUDIO_INPUT_AGC_COMPRESSION_GAIN_DB) {
+    } else if (ctx->path_match == PNT_AUDIO_MIC_AGC_TARGET_LEVEL_DBFS ||
+               ctx->path_match == PNT_AUDIO_MIC_AGC_COMPRESSION_GAIN_DB) {
       if (!hal::caps().has_audio_agc) {
         add_json_null(u_ctx->message);
       } else {
@@ -1111,7 +1104,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
       }
     } else {
       switch (ctx->path_match) {
-      case PNT_AUDIO_OUTPUT_ENABLED:
+      case PNT_AUDIO_SPK_ENABLED:
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
             global_restart_audio = true;
@@ -1125,7 +1118,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
         break;
-      case PNT_AUDIO_INPUT_ENABLED:
+      case PNT_AUDIO_MIC_ENABLED:
         if (reason == LEJPCB_VAL_TRUE) {
           if (cfg->set<bool>(u_ctx->path, true)) {
             IMP_AI_Enable(u_ctx->value);
@@ -1137,7 +1130,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
         add_json_bool(u_ctx->message, cfg->get<bool>(u_ctx->path));
         break;
-      case PNT_AUDIO_INPUT_VOL:
+      case PNT_AUDIO_MIC_VOL:
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             IMP_AI_SetVol(u_ctx->value, global_audio[u_ctx->value]->aiChn,
@@ -1146,7 +1139,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
-      case PNT_AUDIO_INPUT_GAIN:
+      case PNT_AUDIO_MIC_GAIN:
         if (reason == LEJPCB_VAL_NUM_INT) {
           if (cfg->set<int>(u_ctx->path, atoi(ctx->buf))) {
             IMP_AI_SetGain(u_ctx->value, global_audio[u_ctx->value]->aiChn,
@@ -1155,7 +1148,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
         }
         add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         break;
-      case PNT_AUDIO_INPUT_ALC_GAIN:
+      case PNT_AUDIO_MIC_ALC_GAIN:
         if (!hal::caps().has_audio_alc) {
           add_json_str(u_ctx->message, pnt_ws_msg[PNT_WS_MSG_UNSUPPORTED]);
         } else {
@@ -1167,7 +1160,7 @@ signed char WS::audio_callback(struct lejp_ctx *ctx, char reason) {
           add_json_num(u_ctx->message, cfg->get<int>(u_ctx->path));
         }
         break;
-      case PNT_AUDIO_INPUT_FORMAT:
+      case PNT_AUDIO_MIC_FORMAT:
         if (reason == LEJPCB_VAL_STR_END)
           cfg->set<const char *>(u_ctx->path, strdup(ctx->buf));
         add_json_str(u_ctx->message, cfg->get<const char *>(u_ctx->path));

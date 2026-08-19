@@ -23,9 +23,13 @@ All audio parameters have been renamed to match the config schema:
 | `input_agc_target_level_dbfs` | `mic_agc_target_level_dbfs` | AGC target level |
 | `input_agc_compression_gain_db` | `mic_agc_compression_gain_db` | AGC compression gain |
 | `output_enabled` | `spk_enabled` | Enable/disable speaker output |
-| `output_sample_rate` | `spk_sample_rate` | Speaker sample rate |
 | `output_vol` | `spk_vol` | Speaker volume |
 | `output_gain` | `spk_gain` | Speaker analog gain |
+
+> **Note:** There is no `output_sample_rate` / `spk_sample_rate` parameter — the
+> sample rate is not settable through the JSON API. Both the microphone and
+> speaker rates are derived from `mic_hq` (48 kHz when enabled, 16 kHz
+> otherwise), so playback always matches the capture rate.
 
 ### 2. Real-Time Parameter Application
 
@@ -78,7 +82,8 @@ The following parameters still require an audio subsystem restart as they affect
 - `mic_agc_compression_gain_db` - AGC compression gain (0-90)
 - `force_stereo` - Force stereo mode
 - `spk_enabled` - Enable/disable speaker (restart audio + RTSP)
-- `spk_sample_rate` - Speaker sample rate
+- `mic_hq` - High-quality 48 kHz audio mode; also selects the speaker
+  playback rate (restart audio)
 
 ## Implementation Details
 
