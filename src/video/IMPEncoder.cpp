@@ -148,24 +148,30 @@ void IMPEncoder::initProfile() {
                               eff_height, stream->fps, 1, stream->gop, 2,
                               -1, stream->bitrate);
 
+  /* Bitrate is set by IMP_Encoder_SetDefaultParam() above (kbps).  The
+   * RC attr struct fields (attrCbr.uTargetBitRate etc.) use a different
+   * unit (bit/s, see imp_encoder.h: "unit: bit/s") — writing the raw kbps
+   * value here made the encoder target ~1000x less than configured and
+   * it floored out around 700-1000 kbps regardless of the setting.
+   * Only QP/delta tuning is applied here; bitrate stays with the SDK
+   * defaults from SetDefaultParam. */
   switch (rcMode) {
   case IMP_ENC_RC_MODE_FIXQP:
     rcAttr->attrRcMode.attrFixQp.iInitialQP = 38;
     break;
   case IMP_ENC_RC_MODE_CBR:
-    rcAttr->attrRcMode.attrCbr.uTargetBitRate = stream->bitrate;
     rcAttr->attrRcMode.attrCbr.iInitialQP = -1;
-    rcAttr->attrRcMode.attrCbr.iMinQP = 34;
-    rcAttr->attrRcMode.attrCbr.iMaxQP = 51;
+    /* Keep the same QP bounds as the old-SDK path: minQP=15 lets the
+     * rate control raise the bitrate to the target (minQP=34 capped it
+     * around 700 kbps regardless of the configured bitrate). */
+    rcAttr->attrRcMode.attrCbr.iMinQP = 15;
+    rcAttr->attrRcMode.attrCbr.iMaxQP = 45;
     rcAttr->attrRcMode.attrCbr.iIPDelta = -1;
     rcAttr->attrRcMode.attrCbr.iPBDelta = -1;
     // rcAttr->attrRcMode.attrCbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES |
     // IMP_ENC_RC_OPT_SC_PREVENTION;
-    rcAttr->attrRcMode.attrCbr.uMaxPictureSize = stream->bitrate;
     break;
   case IMP_ENC_RC_MODE_VBR:
-    rcAttr->attrRcMode.attrVbr.uTargetBitRate = stream->bitrate;
-    rcAttr->attrRcMode.attrVbr.uMaxBitRate = stream->bitrate;
     rcAttr->attrRcMode.attrVbr.iInitialQP = -1;
     rcAttr->attrRcMode.attrVbr.iMinQP = 20;
     rcAttr->attrRcMode.attrVbr.iMaxQP = 45;
@@ -173,11 +179,8 @@ void IMPEncoder::initProfile() {
     rcAttr->attrRcMode.attrVbr.iPBDelta = 3;
     // rcAttr->attrRcMode.attrVbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES |
     // IMP_ENC_RC_OPT_SC_PREVENTION;
-    rcAttr->attrRcMode.attrVbr.uMaxPictureSize = stream->bitrate;
     break;
   case IMP_ENC_RC_MODE_CAPPED_VBR:
-    rcAttr->attrRcMode.attrCappedVbr.uTargetBitRate = stream->bitrate;
-    rcAttr->attrRcMode.attrCappedVbr.uMaxBitRate = stream->bitrate;
     rcAttr->attrRcMode.attrCappedVbr.iInitialQP = -1;
     rcAttr->attrRcMode.attrCappedVbr.iMinQP = 20;
     rcAttr->attrRcMode.attrCappedVbr.iMaxQP = 45;
@@ -185,12 +188,9 @@ void IMPEncoder::initProfile() {
     rcAttr->attrRcMode.attrCappedVbr.iPBDelta = 3;
     // rcAttr->attrRcMode.attrCappedVbr.eRcOptions = IMP_ENC_RC_SCN_CHG_RES |
     // IMP_ENC_RC_OPT_SC_PREVENTION;
-    rcAttr->attrRcMode.attrCappedVbr.uMaxPictureSize = stream->bitrate;
     rcAttr->attrRcMode.attrCappedVbr.uMaxPSNR = 42;
     break;
   case IMP_ENC_RC_MODE_CAPPED_QUALITY:
-    rcAttr->attrRcMode.attrCappedQuality.uTargetBitRate = stream->bitrate;
-    rcAttr->attrRcMode.attrCappedQuality.uMaxBitRate = stream->bitrate;
     rcAttr->attrRcMode.attrCappedQuality.iInitialQP = -1;
     rcAttr->attrRcMode.attrCappedQuality.iMinQP = 20;
     rcAttr->attrRcMode.attrCappedQuality.iMaxQP = 45;
@@ -198,7 +198,6 @@ void IMPEncoder::initProfile() {
     rcAttr->attrRcMode.attrCappedQuality.iPBDelta = 4;
     // rcAttr->attrRcMode.attrCappedQuality.eRcOptions = IMP_ENC_RC_SCN_CHG_RES
     // | IMP_ENC_RC_OPT_SC_PREVENTION;
-    rcAttr->attrRcMode.attrCappedQuality.uMaxPictureSize = stream->bitrate;
     rcAttr->attrRcMode.attrCappedQuality.uMaxPSNR = 42;
     break;
   case IMP_ENC_RC_MODE_INVALID:
