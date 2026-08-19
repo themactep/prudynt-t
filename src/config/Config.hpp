@@ -64,6 +64,10 @@ struct _audio {
   // All Ingenic SoCs support 48kHz natively --- capture rate is fixed.
   int mic_sample_rate() const { return mic_hq ? 48000 : 16000; }
 
+  // Playback follows the hq switch: 16k in, 16k out.
+  // AEC requires matched rates; AEC is off by default.
+  int output_sample_rate() const { return mic_hq ? 48000 : 16000; }
+
   // Default encoding bitrate for AAC/Opus (kbps).
   int mic_bitrate_kbps() const { return mic_hq ? 128 : 32; }
   // Speaker/playback AAC bitrate (kbps).
@@ -86,7 +90,6 @@ struct _audio {
   int input_agc_compression_gain_db;
   bool force_stereo;
   bool output_enabled;
-  int output_sample_rate = 48000;
   int output_vol;
   int output_gain;
 #endif

@@ -180,7 +180,7 @@ int defaultSampleRate() {
   if (!cfg) {
     return 16000;
   }
-  int sr = cfg->audio.output_sample_rate;
+  int sr = cfg->audio.output_sample_rate();
   return (sr > 0) ? sr : 16000;
 }
 

@@ -39,7 +39,7 @@
 // https://www.rfc-editor.org/rfc/rfc3640.html
 #if defined(USE_AAC) && USE_AAC
 #define X_FOREACH_BACKCHANNEL_FORMAT(X)                                        \
-  X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate,                   \
+  X(AAC, "mpeg4-generic", 97, cfg->audio.output_sample_rate(),                  \
     "audio/mpeg4-generic")                                                     \
   X(OPUS, "OPUS", 102, 48000, "audio/opus")                                    \
   X(PCMU, "PCMU", 0, 8000, "audio/PCMU")                                       \

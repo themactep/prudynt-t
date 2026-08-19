@@ -164,7 +164,7 @@ bool BackchannelWorker::processFrame(const BackchannelFrame &frame) {
   // (T10/T20/T21) the hardware may run at a different rate than the
   // configured output_sample_rate.
   int input_rate = IMPBackchannel::getFormatFrequency(frame.format);
-  int target_rate = cfg->audio.output_sample_rate;
+  int target_rate = cfg->audio.output_sample_rate();
   if (global_audio_output) {
     int hw =
         global_audio_output->hardwareSampleRate.load(std::memory_order_acquire);

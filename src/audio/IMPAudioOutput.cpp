@@ -241,7 +241,7 @@ bool IMPAudioOutput::flush() {
 }
 
 int IMPAudioOutput::samplerateFromConfig() const {
-  int requestedRate = cfg->audio.output_sample_rate;
+  int requestedRate = cfg->audio.output_sample_rate();
   if (requestedRate <= 0) {
     requestedRate = 16000;
   }
