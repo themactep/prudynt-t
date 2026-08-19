@@ -115,6 +115,12 @@ struct Session {
     uint32_t congestionSkippedNals = 0;
     time_t   lastCongestionWarn = 0;
 
+    // Whole-NAL drops when the send queue is backed up (see
+    // sendVideoNal).  Rate-limited warning state, parallel to the
+    // congestion counters above.
+    uint32_t nonKeyframeDrops = 0;
+    time_t   lastNonKeyframeDropLog = 0;
+
     // Deferred RTSP response (EAGAIN/partial send fallback)
     uint8_t pendingResp[RTSP_BUF_SIZE];
     size_t pendingRespLen = 0;

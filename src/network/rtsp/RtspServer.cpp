@@ -36,6 +36,15 @@
 #undef MODULE
 #define MODULE "SIMPLE-RTSP"
 
+// Send-queue watermark for whole-NAL drops (see sendVideoNal): when a
+// client's pending TCP bytes exceed this, non-keyframes are dropped whole
+// instead of risking a mid-NAL abort that corrupts the bitstream.  Roughly
+// 1.5s of a 4Mbps stream.  The hard queue cap below (4MB) is only a
+// dead-client memory guard; a live client never reaches it because
+// non-keyframes are dropped first.
+constexpr size_t SEND_QUEUE_HIGH_WATERMARK = 768 * 1024;
+constexpr size_t SEND_QUEUE_HARD_CAP = 4 * 1024 * 1024;
+
 namespace simple_rtsp {
 
 // Crash handler + Session moved to headers
@@ -1888,7 +1897,7 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
         buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
         buf[3] = static_cast<uint8_t>(len & 0xFF);
         memcpy(buf + 4, pkt, len);
-        if (s.sendQueueBytes + total > 1024 * 1024)
+        if (s.sendQueueBytes + total > SEND_QUEUE_HARD_CAP)
             return false;
         std::vector<uint8_t> pktBuf(buf, buf + total);
         s.sendQueue.push_back(std::move(pktBuf));
@@ -1909,7 +1918,7 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
 
     size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
     size_t remain = total - sent;
-    if (s.sendQueueBytes + remain > 1024 * 1024)
+    if (s.sendQueueBytes + remain > SEND_QUEUE_HARD_CAP)
         return false;
     std::vector<uint8_t> pktBuf(remain);
     memcpy(pktBuf.data(), buf + sent, remain);
@@ -1992,6 +2001,31 @@ void RtspServer::updateVideoTimestamp(Session &s, const H264NALUnit &nal,
 bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     if (s.fd < 0) return false;
     if (nal.data.empty()) return false;
+
+    // Drop whole NALs while this client's send queue is backed up,
+    // BEFORE sending any of their bytes.  A partial NAL (the old
+    // behaviour: sendRtpPacket bailed at the queue cap mid-NAL)
+    // corrupts the client's bitstream until the next IDR; dropping a
+    // whole frame only glitches until the next IDR.  Keyframes are
+    // dropped too when the queue is deep: a client that cannot drain
+    // the stream would otherwise accumulate one ~800KB IDR per GOP in
+    // the queue forever (unbounded latency and memory).  Dropping
+    // everything bounds the queue at the watermark + one NAL, and the
+    // client re-syncs on the first IDR that fits after its socket
+    // drains.  Rate-limited WARN reports queue depth and drops.
+    if (s.sendQueueBytes > SEND_QUEUE_HIGH_WATERMARK) {
+        s.nonKeyframeDrops++;
+        time_t now = time(nullptr);
+        if (now - s.lastNonKeyframeDropLog >= 5) {
+            LOG_WARN("ch" << s.videoChn << " RTSP send queue "
+                     << s.sendQueueBytes << "B -- client falling behind, "
+                     << s.nonKeyframeDrops
+                     << " frames dropped in last 5s");
+            s.nonKeyframeDrops = 0;
+            s.lastNonKeyframeDropLog = now;
+        }
+        return true;
+    }
 
     // Strip start code if present.  Regular encoder NALs have no start code
     // (VideoWorker strips them), but injected SEI NALs include 4-byte start
