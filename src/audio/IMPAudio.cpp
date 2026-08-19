@@ -151,8 +151,11 @@ int IMPAudio::init() {
   LOG_DEBUG_OR_ERROR(ret, "IMP_AI_GetPubAttr(" << devId << ")");
 
   // After GetPubAttr, the HAL may have adjusted the sample rate.  Update
-  // numPerFrm and the encoder's input rate so FAAC uses the correct rate.
+  // numPerFrm, the encoder's input rate and our own sample_rate so the SDP
+  // clock, AAC ASC, MP4 PTS and tap file all use the actual HAL rate.
   ioattr.numPerFrm = (int)ioattr.samplerate * frameDuration;
+  if (ioattr.samplerate > 0)
+    sample_rate = ioattr.samplerate;
   if (encoder) {
     int actualRate = static_cast<int>(ioattr.samplerate);
     LOG_DEBUG("Actual HAL sample rate: " << actualRate << " Hz");
