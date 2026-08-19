@@ -208,6 +208,8 @@ void VideoWorker::run() {
   uint32_t bps = 0;
   uint32_t fps = 0;
   int poll_timeout_streak = 0; // Encoder watchdog: consecutive timeouts
+  uint64_t total_frames = 0; // frames produced since this loop started
+  bool fs_fallback_done = false; // nrVBs=1 framesource fallback attempted
   unsigned long long ms = 0;
   bool run_for_jpeg = false;
   auto video_state = global_video[encChn];
@@ -554,6 +556,7 @@ void VideoWorker::run() {
           }
 
           fps++;
+          total_frames++;
           bps += stream.pack[i].length;
 
           // Use get_pack_slices so ring-buffer wrap-around on T31/T40/T41/C100
@@ -1206,17 +1209,41 @@ void VideoWorker::run() {
         poll_timeout_streak++;
         if (poll_timeout_streak >= 10) {
           poll_timeout_streak = 0;
-          LOG_WARN("Encoder ch" << encChn << ": 10 consecutive polling "
-                   "timeouts --- force-cycling encoder to recover");
-          IMP_Encoder_StopRecvPic(encChn);
-          IMP_FrameSource_DisableChn(encChn);
-          IMP_FrameSource_EnableChn(encChn);
-          if (IMP_Encoder_StartRecvPic(encChn) == 0) {
-            IMP_Encoder_RequestIDR(encChn);
-            LOG_INFO("Encoder ch" << encChn << ": recovery cycle complete");
+          // A channel that has never produced a frame was likely rejected
+          // by an old tx-isp driver's single-buffer-only schedule: nrVBs=2
+          // is accepted by CreateChn/EnableChn but the kernel never starts
+          // the schedule.  Re-attribute the framesource with nrVBs=1 once;
+          // otherwise do the normal force-cycle (covers stalls where the
+          // channel produced frames before dying).
+          if (total_frames == 0 && !fs_fallback_done &&
+              global_video[encChn]->imp_framesource &&
+              global_video[encChn]->imp_framesource->canFallbackToSingleBuffer()) {
+            fs_fallback_done = true;
+            LOG_WARN("Encoder ch" << encChn << ": no frames since start --- "
+                     "retrying framesource with nrVBs=1 (old tx-isp driver?)");
+            IMP_Encoder_StopRecvPic(encChn);
+            int fret = global_video[encChn]->imp_framesource
+                           ->fallbackToSingleBuffer();
+            if (fret == 0 && IMP_Encoder_StartRecvPic(encChn) == 0) {
+              IMP_Encoder_RequestIDR(encChn);
+              LOG_INFO("Encoder ch" << encChn << ": nrVBs=1 fallback complete");
+            } else {
+              LOG_ERROR("Encoder ch" << encChn
+                       << ": nrVBs=1 fallback failed (ret=" << fret << ")");
+            }
           } else {
-            LOG_ERROR("Encoder ch" << encChn << ": StartRecvPic failed "
-                      "during recovery");
+            LOG_WARN("Encoder ch" << encChn << ": 10 consecutive polling "
+                     "timeouts --- force-cycling encoder to recover");
+            IMP_Encoder_StopRecvPic(encChn);
+            IMP_FrameSource_DisableChn(encChn);
+            IMP_FrameSource_EnableChn(encChn);
+            if (IMP_Encoder_StartRecvPic(encChn) == 0) {
+              IMP_Encoder_RequestIDR(encChn);
+              LOG_INFO("Encoder ch" << encChn << ": recovery cycle complete");
+            } else {
+              LOG_ERROR("Encoder ch" << encChn << ": StartRecvPic failed "
+                        "during recovery");
+            }
           }
         }
       }
