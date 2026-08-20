@@ -74,12 +74,10 @@ Logger::Level Logger::level = Logger::INFO;
 std::mutex Logger::log_mtx;
 
 bool Logger::init(std::string logLevel) {
+  // Syslog is on by default on every platform; PRUDYNT_ENABLE_SYSLOG=0
+  // opts out (console-only logging).
   const char *syslog_env = std::getenv("PRUDYNT_ENABLE_SYSLOG");
-#if defined(PLATFORM_T23)
-  g_syslog_enabled = (syslog_env && std::strcmp(syslog_env, "1") == 0);
-#else
   g_syslog_enabled = !(syslog_env && std::strcmp(syslog_env, "0") == 0);
-#endif
 
   if (g_syslog_enabled) {
     openlog("prudynt", LOG_PID | LOG_NDELAY, LOG_USER);
@@ -143,23 +141,9 @@ void Logger::log(Level lvl, std::string module, LogMsg msg) {
   }
 
   // Log to console
-#if defined(PLATFORM_T23)
-  std::string line;
-  line.reserve(64 + module.size() + msg.log_str.size());
-  line.append(timestamp);
-  line.append(" [");
-  line.append(text_levels[lvl]);
-  line.append(":");
-  line.append(module);
-  line.append("]: ");
-  line.append(msg.log_str);
-  line.push_back('\n');
-  (void)write(STDOUT_FILENO, line.c_str(), line.size());
-#else
   std::fprintf(stdout, "%s [%s:%s]: %s\n", timestamp, text_levels[lvl],
                module.c_str(), msg.log_str.c_str());
   std::fflush(stdout);
-#endif
 }
 
 // Remember to close the syslog
