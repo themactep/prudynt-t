@@ -1,4 +1,5 @@
 #include "network/rtsp/SdpGenerator.hpp"
+#include "network/rtsp/RtspAddr.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -91,12 +92,12 @@ std::string generateSdp(const VideoStreamConfig &video,
 
     off += snprintf(buf + off, sizeof(buf) - off,
         "v=0\r\n"
-        "o=- %d 1 IN IP4 %s\r\n"
+        "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
         "t=0 0\r\n"
         "%s"
         "a=control:*\r\n",
-        rand(), serverIp,
+        rand(), kSdpAddrType, serverIp,
         streamName,
         bws);
 
@@ -276,11 +277,11 @@ std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
 
     off += snprintf(buf + off, sizeof(buf) - off,
         "v=0\r\n"
-        "o=- %d 1 IN IP4 %s\r\n"
+        "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
         "t=0 0\r\n"
         "a=control:*\r\n",
-        rand(), serverIp,
+        rand(), kSdpAddrType, serverIp,
         streamName);
 
     const char *encName = "mpeg4-generic";
@@ -333,11 +334,11 @@ std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats
 
     off += snprintf(buf + off, sizeof(buf) - off,
         "v=0\r\n"
-        "o=- %d 1 IN IP4 %s\r\n"
+        "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
         "t=0 0\r\n"
         "a=control:*\r\n",
-        rand(), serverIp,
+        rand(), kSdpAddrType, serverIp,
         streamName);
 
     if (formats.empty()) {

@@ -5,6 +5,7 @@
 
 #include "network/rtsp/RtspServer.hpp"
 #include "network/rtsp/RtpPacketizer.hpp"
+#include "network/rtsp/RtspAddr.hpp"
 #include "network/rtsp/SdpGenerator.hpp"
 #include "network/rtsp/RtspUtils.hpp"
 #include "util/Logger.hpp"
@@ -112,7 +113,7 @@ void RtspServer::addSubtitleStream(const SubtitleStreamConfig &config) {
 bool RtspServer::start(int port) {
     port_ = port > 0 ? port : 554;
 
-    serverFd_ = socket(AF_INET, SOCK_STREAM, 0);
+    serverFd_ = socket(kAddrFamily, SOCK_STREAM, 0);
     if (serverFd_ < 0) {
         LOG_ERROR("socket() failed: " << strerror(errno));
         return false;
@@ -122,10 +123,8 @@ bool RtspServer::start(int port) {
     setsockopt(serverFd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     setsockopt(serverFd_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
-    struct sockaddr_in addr{};
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port        = htons(static_cast<uint16_t>(port_));
+    SockAddr addr{};
+    initAnyAddr(addr, static_cast<uint16_t>(port_));
 
     if (bind(serverFd_, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         LOG_ERROR("bind() failed: " << strerror(errno));
@@ -378,7 +377,7 @@ void RtspServer::eventLoop() {
             if (s->backchannel && s->backchannelRtpSock >= 0 &&
                 global_backchannel && global_backchannel->inputQueue) {
                 uint8_t rtpBuf[2048];
-                sockaddr_in fromAddr{};
+                SockAddr fromAddr{};
                 socklen_t fromLen = sizeof(fromAddr);
                 ssize_t nr = recvfrom(s->backchannelRtpSock,
                                       rtpBuf, sizeof(rtpBuf), MSG_DONTWAIT,
@@ -465,7 +464,7 @@ void RtspServer::eventLoop() {
 // -- Accept -----------------------------------------------------------------
 
 void RtspServer::acceptClient() {
-    struct sockaddr_in addr;
+    SockAddr addr{};
     socklen_t addrLen = sizeof(addr);
     int fd = accept(serverFd_, (struct sockaddr *)&addr, &addrLen);
     if (fd < 0) {
@@ -473,6 +472,10 @@ void RtspServer::acceptClient() {
             LOG_ERROR("accept() failed: " << strerror(errno));
         return;
     }
+
+    char ipStr[kAddrStrLen] = "unknown";
+    addrToStr(addr, ipStr, sizeof(ipStr));
+    uint16_t port = addrPort(addr);
 
     // Find a free session slot
     int slot = -1;
@@ -487,7 +490,7 @@ void RtspServer::acceptClient() {
         sessions_.resize(slot + 1);
     }
     if (slot < 0) {
-        LOG_WARN("Max clients reached, rejecting " << inet_ntoa(addr.sin_addr));
+        LOG_WARN("Max clients reached, rejecting " << ipStr);
         close(fd);
         return;
     }
@@ -548,8 +551,7 @@ void RtspServer::acceptClient() {
 
     s->clientAddr = addr;
 
-    LOG_INFO("Client connected: " << inet_ntoa(addr.sin_addr) << ":"
-            << ntohs(addr.sin_port));
+    LOG_INFO("Client connected: " << ipStr << ":" << port);
 }
 
 // -- Close ------------------------------------------------------------------
@@ -710,14 +712,9 @@ void RtspServer::handleRequest(int idx) {
 
     // Append to read buffer
     if (s->readOff + n >= RTSP_BUF_SIZE) {
-        // Copy remote address immediately --- inet_ntoa returns a static
-        // buffer that the camera-IP lookup below will overwrite.
-        char remoteIp[64];
-        {
-            const char *p = inet_ntoa(s->clientAddr.sin_addr);
-            strncpy(remoteIp, p ? p : "0.0.0.0", sizeof(remoteIp) - 1);
-        }
-        int remotePort = ntohs(s->clientAddr.sin_port);
+        char remoteIp[64] = "unknown";
+        addrToStr(s->clientAddr, remoteIp, sizeof(remoteIp));
+        int remotePort = addrPort(s->clientAddr);
 
         // Dump the full accumulated buffer + new data for offline diagnosis.
         const char *dumpBase = cfg ? cfg->general.debug_dump_path : nullptr;
@@ -725,15 +722,12 @@ void RtspServer::handleRequest(int idx) {
         if (dumpBase && dumpBase[0] != '\0') {
             char cameraIp[64] = "unknown";
             {
-                sockaddr_in localAddr{};
+                SockAddr localAddr{};
                 socklen_t addrLen = sizeof(localAddr);
                 if (getsockname(s->fd,
                                 reinterpret_cast<sockaddr *>(&localAddr),
                                 &addrLen) == 0) {
-                    const char *lip = inet_ntoa(localAddr.sin_addr);
-                    if (lip) {
-                        strncpy(cameraIp, lip, sizeof(cameraIp) - 1);
-                    }
+                    addrToStr(localAddr, cameraIp, sizeof(cameraIp));
                 }
             }
 
@@ -1075,11 +1069,11 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
     for (size_t i = 0; i < audioOnlyStreams_.size(); i++) {
         const auto &acfg = audioOnlyStreams_[i].config;
         if (!acfg.endpoint.empty() && strstr(uri, acfg.endpoint.c_str())) {
-            struct sockaddr_in localAddr;
+            SockAddr localAddr;
             socklen_t len = sizeof(localAddr);
-            char serverIp[64] = "0.0.0.0";
+            char serverIp[64] = "unknown";
             if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
-                inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
+                addrToStr(localAddr, serverIp, sizeof(serverIp));
 
             std::string sdp = generateAudioOnlySdp(acfg, serverIp, streamName_.c_str());
             char hdr[256];
@@ -1093,11 +1087,11 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
 
     // -- Backchannel probe (e.g. /backchannel) ------------------------
     if (strstr(uri, "backchannel")) {
-        struct sockaddr_in localAddr;
+        SockAddr localAddr;
         socklen_t len = sizeof(localAddr);
-        char serverIp[64] = "0.0.0.0";
+        char serverIp[64] = "unknown";
         if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
-            inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
+            addrToStr(localAddr, serverIp, sizeof(serverIp));
 
         // Always return backchannel SDP --- never fall through to video.
         // When disabled, the generator falls back to a basic PCMU track.
@@ -1152,11 +1146,11 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
     }
 
     // Get server IP from the socket
-    struct sockaddr_in localAddr;
+    SockAddr localAddr;
     socklen_t len = sizeof(localAddr);
-    char serverIp[64] = "0.0.0.0";
+    char serverIp[64] = "unknown";
     if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0) {
-        inet_ntop(AF_INET, &localAddr.sin_addr, serverIp, sizeof(serverIp));
+        addrToStr(localAddr, serverIp, sizeof(serverIp));
     }
 
     const std::vector<BackchannelConfig> *bcfg =
@@ -1287,18 +1281,16 @@ void RtspServer::handleSetup(int idx, int cseq, const char *uri,
 
         // Create and bind server UDP sockets (any available port)
         auto createUdpSocket = [](uint16_t &outPort) -> int {
-            int sock = socket(AF_INET, SOCK_DGRAM, 0);
+            int sock = socket(kAddrFamily, SOCK_DGRAM, 0);
             if (sock >= 0) {
                 setNonBlocking(sock);
-                sockaddr_in addr{};
-                addr.sin_family      = AF_INET;
-                addr.sin_addr.s_addr = htonl(INADDR_ANY);
-                addr.sin_port        = 0; // let kernel pick
+                SockAddr addr{};
+                initAnyAddr(addr, 0); // let kernel pick the port
                 bind(sock, (sockaddr *)&addr, sizeof(addr));
                 socklen_t slen = sizeof(addr);
-                sockaddr_in bound{};
+                SockAddr bound{};
                 getsockname(sock, (sockaddr *)&bound, &slen);
-                outPort = ntohs(bound.sin_port);
+                outPort = addrPort(bound);
             }
             return sock;
         };
@@ -1655,18 +1647,16 @@ void RtspServer::handleSubtitleSetup(Session &s, const char *headers,
             s.clientAddrLen = alen;
 
         auto createUdpSocket = [](uint16_t &outPort) -> int {
-            int sock = socket(AF_INET, SOCK_DGRAM, 0);
+            int sock = socket(kAddrFamily, SOCK_DGRAM, 0);
             if (sock >= 0) {
                 setNonBlocking(sock);
-                sockaddr_in addr{};
-                addr.sin_family      = AF_INET;
-                addr.sin_addr.s_addr = htonl(INADDR_ANY);
-                addr.sin_port        = 0;
+                SockAddr addr{};
+                initAnyAddr(addr, 0);
                 bind(sock, (sockaddr *)&addr, sizeof(addr));
                 socklen_t slen = sizeof(addr);
-                sockaddr_in bound{};
+                SockAddr bound{};
                 getsockname(sock, (sockaddr *)&bound, &slen);
-                outPort = ntohs(bound.sin_port);
+                outPort = addrPort(bound);
             }
             return sock;
         };
@@ -1733,18 +1723,16 @@ void RtspServer::handleBackchannelSetup(int idx, int cseq,
         s->clientAddrLen = alen;
 
     // Create UDP socket to receive backchannel RTP
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    int sock = socket(kAddrFamily, SOCK_DGRAM, 0);
     if (sock >= 0) {
         setNonBlocking(sock);
-        sockaddr_in addr{};
-        addr.sin_family      = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        addr.sin_port        = 0;
+        SockAddr addr{};
+        initAnyAddr(addr, 0);
         bind(sock, (sockaddr *)&addr, sizeof(addr));
         socklen_t slen = sizeof(addr);
-        sockaddr_in bound{};
+        SockAddr bound{};
         getsockname(sock, (sockaddr *)&bound, &slen);
-        s->backchannelServerRtpPort = ntohs(bound.sin_port);
+        s->backchannelServerRtpPort = addrPort(bound);
         s->backchannelRtpSock = sock;
     }
 
@@ -1840,8 +1828,8 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
     if (!s.tcpInterleaved) {
         // UDP: send to client via UDP socket
         if (rtpSock < 0) return false;
-        sockaddr_in target = s.clientAddr;
-        target.sin_port = htons(clientRtpPort);
+        SockAddr target = s.clientAddr;
+        setAddrPort(target, clientRtpPort);
         ssize_t n = sendto(rtpSock, pkt, len, MSG_DONTWAIT,
                            (sockaddr *)&target, sizeof(target));
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -2387,8 +2375,8 @@ static void sendSubtitleRtp(Session &s,
             LOG_WARN("sendSubtitleRtp: send failed fd=" << s.fd << " err=" << errno);
     } else {
         if (s.subtitleRtpSock >= 0) {
-            sockaddr_in target = s.clientAddr;
-            target.sin_port = htons(s.subtitleClientRtpPort);
+            SockAddr target = s.clientAddr;
+            setAddrPort(target, s.subtitleClientRtpPort);
             ssize_t sent = sendto(s.subtitleRtpSock, rtp.data(), rtp.size(),
                                   MSG_DONTWAIT, (sockaddr *)&target,
                                   sizeof(target));
@@ -2490,9 +2478,9 @@ void RtspServer::sendRtcpSr(Session &s) {
 
     if (!s.tcpInterleaved) {
         // UDP: send via UDP sockets
-        sockaddr_in target = s.clientAddr;
+        SockAddr target = s.clientAddr;
         if (s.videoSetupUrl[0] != '\0') {
-            target.sin_port = htons(s.videoClientRtcpPort);
+            setAddrPort(target, s.videoClientRtcpPort);
             sendto(s.videoRtcpSock, rtcp, sizeof(rtcp), MSG_DONTWAIT,
                    (sockaddr *)&target, sizeof(target));
         }
@@ -2503,7 +2491,7 @@ void RtspServer::sendRtcpSr(Session &s) {
             memcpy(rtcp + 12, &antpLsw, 4);
             uint32_t ats = htonl(s.audioRtp.timestamp);
             memcpy(rtcp + 16, &ats, 4);
-            target.sin_port = htons(s.audioClientRtcpPort);
+            setAddrPort(target, s.audioClientRtcpPort);
             sendto(s.audioRtcpSock, rtcp, sizeof(rtcp), MSG_DONTWAIT,
                    (sockaddr *)&target, sizeof(target));
         }

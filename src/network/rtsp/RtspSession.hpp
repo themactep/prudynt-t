@@ -1,6 +1,7 @@
 #pragma once
 
 #include "network/rtsp/RtpPacketizer.hpp"
+#include "network/rtsp/RtspAddr.hpp"
 #include "network/rtsp/RtspTypes.hpp"
 #include "stream/globals.hpp"
 
@@ -53,7 +54,7 @@ struct Session {
     uint16_t backchannelClientRtpPort = 0;
     uint8_t backchannelInterleavedRtp  = 0;
     uint8_t backchannelInterleavedRtcp = 1;
-    sockaddr_in clientAddr  = {};
+    SockAddr clientAddr  = {};
     socklen_t clientAddrLen = 0;
 
     // Taps
