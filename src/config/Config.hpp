@@ -92,6 +92,9 @@ struct _audio {
   bool output_enabled;
   int output_vol;
   int output_gain;
+  // Preferred order of backchannel codecs advertised in the SDP.
+  // Empty = compile-time order from X_FOREACH_BACKCHANNEL_FORMAT.
+  std::vector<const char *> backchannel_codec_order;
 #endif
 
 };
