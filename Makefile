@@ -41,6 +41,17 @@ ifeq ($(USE_PREBUFFER),1)
 override CFLAGS        += -DPREBUFFER_ENABLED
 endif
 
+# RTSP server address family
+# ---------------------------
+# The RTSP server and SDP generator are single-stack, not dual-stack: pick
+# one address family at build time. Defaults to IPv4; enable with
+# `make USE_RTSP_IPV6=1` or build.sh --rtsp-ipv6 for an IPv6-only server.
+USE_RTSP_IPV6           ?= 0
+
+ifeq ($(USE_RTSP_IPV6),1)
+override CFLAGS        += -DRTSP_IPV6
+endif
+
 # Burned-in OSD timestamp overlay
 # -------------------------------
 # Draws the camera date/time directly into the encoded video via a hardware

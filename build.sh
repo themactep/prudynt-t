@@ -115,6 +115,7 @@ prudynt() {
 	OSD_BURNIN=0
 	OSD_FONT8X8=0
 	OSD_FONT_UNIFONT=0
+	RTSP_IPV6=0
 	for arg in "$@"; do
 		if [ "$arg" = "-static" ]; then
 			BIN_TYPE="-DBINARY_STATIC"
@@ -135,6 +136,10 @@ prudynt() {
 		elif [ "$arg" = "--osd-font-unifont" ]; then
 			# Use the Unifont 8x16 font (ASCII + Cyrillic)
 			OSD_FONT_UNIFONT=1
+		elif [ "$arg" = "--rtsp-ipv6" ]; then
+			# Build an IPv6-only RTSP server/SDP generator instead of the
+			# default IPv4-only one (no dual-stack mode)
+			RTSP_IPV6=1
 		fi
 	done
 	# If no explicit flag provided, default to dynamic (no flag needed in Makefile)
@@ -165,6 +170,7 @@ prudynt() {
 	USE_OSD_BURNIN=$OSD_BURNIN \
 	USE_OSD_FONT8X8=$OSD_FONT8X8 \
 	USE_OSD_FONT_UNIFONT=$OSD_FONT_UNIFONT \
+	USE_RTSP_IPV6=$RTSP_IPV6 \
 	CFLAGS="-DPLATFORM_${soc} $BIN_TYPE $LIBC_DEFINE $LIBC_EXTRA_CFLAGS $OPTIMIZATION $DEBUG_FLAGS -DNO_OPENSSL=1 \
 	-isystem ./3rdparty/install/include" \
 	LDFLAGS=" -L./3rdparty/install/lib" \
