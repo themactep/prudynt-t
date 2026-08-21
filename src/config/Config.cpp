@@ -606,7 +606,9 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       {"sensor.gpio_reset", sensor.gpio_reset, -1,
        [](const int &v) { return v >= -1; }, false,
        "/proc/jz/sensor/reset_gpio"},
-      {"stream0.bitrate", stream0.bitrate, 3000, validateIntGe0},
+      {"stream0.bitrate", stream0.bitrate, 0, validateIntGe0},
+      // 0 = auto: resolved from the sensor resolution (~1 Mbps per
+      // megapixel) in IMPSystem::init() once the sensor geometry is known.
       // Rate control advanced (defaults -1/0 mean use encoder defaults)
       {"stream0.qp_init", stream0.qp_init, -1,
        [](const int &v) { return (v >= -1 && v <= 51); }},
@@ -634,7 +636,9 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
       // TODO: set default width to the maximum supported by the SoC via HAL
       {"stream0.width", stream0.width, 0, validateIntGe0},
       {"stream0.profile", stream0.profile, 1, validateInt2},
-      {"stream1.bitrate", stream1.bitrate, 1000, validateIntGe0},
+      {"stream1.bitrate", stream1.bitrate, 0, validateIntGe0},
+      // 0 = auto: resolved from the sensor resolution (~1 Mbps per
+      // megapixel) in IMPSystem::init() once the sensor geometry is known.
       // Rate control advanced (defaults -1/0 mean use encoder defaults)
       {"stream1.qp_init", stream1.qp_init, -1,
        [](const int &v) { return (v >= -1 && v <= 51); }},

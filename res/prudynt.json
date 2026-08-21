@@ -151,7 +151,7 @@
   "stream0": {
     "allow_shared": true,
     "audio_enabled": true,
-    "bitrate": 4000,
+    "bitrate": 0,
     "buffers": -1,
     "enabled": true,
     "format": "H264",
@@ -175,7 +175,7 @@
   "stream1": {
     "allow_shared": true,
     "audio_enabled": true,
-    "bitrate": 1000,
+    "bitrate": 0,
     "buffers": -1,
     "enabled": true,
     "format": "H264",

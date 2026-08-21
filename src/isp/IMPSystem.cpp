@@ -202,6 +202,43 @@ void clamp_streams_to_sensor_limits() {
   clamp_stream_to_sensor_limits("stream3", cfg->stream3);
 }
 
+// Streams with bitrate 0 (= auto) get a default derived from the encoded
+// resolution: roughly 1 Mbps per megapixel, rounded to the nearest 100 kbps.
+// For the main stream the encoded size defaults to the sensor geometry, so
+// this is a sane starting point for any sensor; a substream scales with its
+// own size (640x360 -> ~200 kbps). An explicit bitrate in prudynt.json wins;
+// setting it back to 0 re-enables the automatic value. This must run after
+// the stream sizes are resolved (clamp_streams_to_sensor_limits()) but
+// before the encoders are created, so it is called from IMPSystem::init()
+// right alongside the clamping.
+static void apply_default_bitrate(const char *stream_name, _stream &stream,
+                                  int fallback_kbps) {
+  if (stream.bitrate != 0)
+    return; // explicit user value
+
+  int kbps = 0;
+  if (stream.width > 0 && stream.height > 0) {
+    kbps = ((stream.width * stream.height + 50000) / 100000) * 100;
+    LOG_INFO(stream_name << ": bitrate auto from " << stream.width << "x"
+                         << stream.height << " -> " << kbps << " kbps");
+  } else {
+    LOG_WARN(stream_name << ": bitrate auto requested but stream size "
+                            "unknown, using "
+                         << fallback_kbps << " kbps");
+    kbps = fallback_kbps;
+  }
+  stream.bitrate = kbps;
+}
+
+void apply_default_bitrates() {
+  if (!cfg) {
+    return;
+  }
+
+  apply_default_bitrate("stream0", cfg->stream0, 3000);
+  apply_default_bitrate("stream1", cfg->stream1, 1000);
+}
+
 int add_sensor_with_retry(IMPSensorInfo &sensor_info) {
   int ret = hal::isp::add_sensor(&sensor_info);
 #if defined(PLATFORM_T23)
@@ -332,6 +369,7 @@ int IMPSystem::init() {
 #else
   refresh_sensor_properties_from_proc();
   clamp_streams_to_sensor_limits();
+  apply_default_bitrates();
 #endif
 
   {
@@ -406,6 +444,7 @@ int IMPSystem::init() {
   // by the sensor driver
   refresh_sensor_properties_from_proc();
   clamp_streams_to_sensor_limits();
+  apply_default_bitrates();
 
   /* system */
   ret = IMP_System_Init();
