@@ -234,6 +234,18 @@ void VideoWorker::run() {
     bool is_keyframe;
   };
   std::vector<PendingFrame> pending_frames_during_flush;
+  // Hard cap on queued frames. The queue is only used while
+  // mp4_prebuffer_flushing is set; a full cap means the flush never
+  // completed (recorder start failed or hung) — drop oldest to protect RAM.
+  static constexpr size_t kMaxPendingFramesDuringFlush = 32;
+  auto enqueue_pending_frame = [&](PendingFrame &&pf) {
+    if (pending_frames_during_flush.size() >=
+        kMaxPendingFramesDuringFlush) {
+      pending_frames_during_flush.erase(
+          pending_frames_during_flush.begin());
+    }
+    pending_frames_during_flush.push_back(std::move(pf));
+  };
   auto compute_frame_switch_threshold = [](int fps_value) -> int64_t {
     int fps = fps_value > 0 ? fps_value : 25;
     int64_t frame_period = 1000000LL / fps;
@@ -315,7 +327,7 @@ void VideoWorker::run() {
       pf.data = std::move(mp4_sample);
       pf.timestamp_us = mp4_sample_ts_us;
       pf.is_keyframe = mp4_sample_is_key;
-      pending_frames_during_flush.push_back(std::move(pf));
+      enqueue_pending_frame(std::move(pf));
 
       reset_mp4_sample();
       mp4_sample_ts_base_us =

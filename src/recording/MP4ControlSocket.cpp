@@ -817,6 +817,14 @@ bool start_recording(const std::string &path, int target_channel) {
   } else {
     reset_wait_state();
     disable_force_if_idle();
+#ifdef PREBUFFER_ENABLED
+    // Recorder failed to start: unblock live frame writing. If the flag
+    // stays set, VideoWorker queues every incoming frame into
+    // pending_frames_during_flush without bound, exhausting RAM.
+    video->mp4_prebuffer_flushing.store(false, std::memory_order_release);
+    // Drop queued frames: there is no recorder to hand them to.
+    video->mp4_prebuffer_offset_ms.store(0, std::memory_order_relaxed);
+#endif
   }
   return ok;
 }
