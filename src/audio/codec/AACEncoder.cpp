@@ -32,6 +32,8 @@ int AACEncoder::open() {
   params.object_type = FAAC_OBJ_LOW;
   params.input_format = FAAC_INPUT_16BIT;
   params.output_format = FAAC_STREAM_RAW;
+  // Raw AUs, no ADTS (RFC 3640 mode=AAC-hbr); ASC goes out of band: RTSP
+  // config=, MP4 esds, WS header.  Backchannel playback still parses ADTS.
   params.bit_rate = cfg->audio.mic_bitrate_kbps() * 1000;
   params.bandwidth = 0;
   params.use_tns = false;

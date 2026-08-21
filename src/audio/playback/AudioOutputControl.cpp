@@ -481,6 +481,8 @@ bool decodeAacFile(const std::string &path, std::vector<int16_t> &samples,
   std::array<int16_t, kMaxDecodeSamples> decodeBuffer{};
   bool decodedAny = false;
 
+  // Backchannel audio from clients is ADTS-framed, unlike the mic encode
+  // path (AACEncoder), which emits raw AUs.  Keep both sides in sync.
   while (offset + 7 <= buffer.size()) {
     AdtsHeader header;
     if (!parseAdtsHeader(buffer.data() + offset, buffer.size() - offset,
