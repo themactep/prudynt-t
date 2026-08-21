@@ -366,17 +366,6 @@ void schriftSetPixel(uint8_t *image, int x, int y, const uint8_t *color,
   image[idx + 2] = (uint8_t)(((color[2] * alpha) / 255) + ((image[idx + 2] * beta) / 255));
   image[idx + 3] = (uint8_t)(alpha + ((image[idx + 3] * beta) / 255));
 }
-
-void schriftSetPixelIfEmpty(uint8_t *image, int x, int y, const uint8_t *color,
-                            int width, int height) {
-  if (x < 0 || x >= width || y < 0 || y >= height) return;
-  int idx = (y * width + x) * 4;
-  if (image[idx + 3] != 0) return;
-  image[idx + 0] = color[0];
-  image[idx + 1] = color[1];
-  image[idx + 2] = color[2];
-  image[idx + 3] = color[3];
-}
 } // namespace
 
 void OSD::initTimestampFont() {
@@ -444,6 +433,9 @@ int OSD::libschriftRenderGlyph(const char *characters) {
     return -1;
 
   while (*characters) {
+    // Single-byte (ASCII) text only: UTF-8 multibyte characters would be
+    // looked up per byte and render as garbage.  Use the Unifont bitmap
+    // build for Cyrillic and other non-ASCII formats.
     char c = *characters;
     if (glyphs_.count(c)) {
       ++characters;
@@ -580,7 +572,8 @@ void OSD::renderTimestamp(const char *text) {
           for (int gy = 0; gy < g.height; ++gy)
             for (int gx = 0; gx < g.width; ++gx)
               if (g.bitmap[gy * g.width + gx] & 0x80)
-                schriftSetPixelIfEmpty(img, x + gx + i, y + gy + j, outline_color, w, h);
+                schriftSetPixel(img, x + gx + i, y + gy + j, outline_color,
+                                outline_color[3], w, h);
         }
       }
     }
