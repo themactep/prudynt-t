@@ -1172,14 +1172,18 @@ void CFG::load() {
              it = it->next) {
           JsonValue *entry = it->value;
           if (!entry || entry->type != JSON_STRING || !entry->value.string) continue;
+          // User-facing alias: "AAC" is the RFC 3640 name "mpeg4-generic".
+          const char *name = (strcmp(entry->value.string, "AAC") == 0)
+                                 ? "mpeg4-generic"
+                                 : entry->value.string;
           // validate against the compile-time codec set
           bool known = false;
 #define CHECK_BC(EnumName, NameString, PayloadType, Frequency, MimeType)      \
-          if (strcmp(entry->value.string, NameString) == 0) known = true;
+          if (strcmp(name, NameString) == 0) known = true;
           X_FOREACH_BACKCHANNEL_FORMAT(CHECK_BC)
 #undef CHECK_BC
           if (known) {
-            audio.backchannel_codec_order.push_back(strdup(entry->value.string));
+            audio.backchannel_codec_order.push_back(strdup(name));
           } else {
             LOG_WARN("audio.backchannel_codec_order: unknown codec \""
                      << entry->value.string << "\", skipping");
