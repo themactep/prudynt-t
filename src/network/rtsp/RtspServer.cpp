@@ -122,6 +122,10 @@ bool RtspServer::start(int port) {
     int one = 1;
     setsockopt(serverFd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     setsockopt(serverFd_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+#ifdef RTSP_IPV6
+    // Single-stack build: reject IPv4-mapped connections.
+    setsockopt(serverFd_, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
+#endif
 
     SockAddr addr{};
     initAnyAddr(addr, static_cast<uint16_t>(port_));
@@ -1071,7 +1075,8 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
         if (!acfg.endpoint.empty() && strstr(uri, acfg.endpoint.c_str())) {
             SockAddr localAddr;
             socklen_t len = sizeof(localAddr);
-            char serverIp[64] = "unknown";
+            char serverIp[64];
+            snprintf(serverIp, sizeof(serverIp), "%s", kAnyAddrStr);
             if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
                 addrToStr(localAddr, serverIp, sizeof(serverIp));
 
@@ -1089,7 +1094,8 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
     if (strstr(uri, "backchannel")) {
         SockAddr localAddr;
         socklen_t len = sizeof(localAddr);
-        char serverIp[64] = "unknown";
+        char serverIp[64];
+        snprintf(serverIp, sizeof(serverIp), "%s", kAnyAddrStr);
         if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0)
             addrToStr(localAddr, serverIp, sizeof(serverIp));
 
@@ -1148,7 +1154,8 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
     // Get server IP from the socket
     SockAddr localAddr;
     socklen_t len = sizeof(localAddr);
-    char serverIp[64] = "unknown";
+    char serverIp[64];
+    snprintf(serverIp, sizeof(serverIp), "%s", kAnyAddrStr);
     if (getsockname(s->fd, (struct sockaddr *)&localAddr, &len) == 0) {
         addrToStr(localAddr, serverIp, sizeof(serverIp));
     }
