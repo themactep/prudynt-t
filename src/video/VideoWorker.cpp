@@ -76,9 +76,14 @@ struct BitReader {
         int zeros = 0;
         while (getBit() == 0 && zeros < 32) ++zeros;
         if (zeros == 0) return 0;
-        uint32_t v = (1u << zeros) - 1;
-        for (int i = 0; i < zeros; ++i) v = (v << 1) | getBit();
-        return v - 1;
+        // H.264 9.1.1: codeNum = 2^zeros - 1 + read_bits(zeros). The leading
+        // '1' is consumed by the loop above; read_bits(zeros) is the zeros
+        // bits after it. The previous form shifted the (2^zeros - 1) base
+        // left by zeros instead of adding, which corrupts every ue(v) >= 3
+        // (e.g. pic_width_in_mbs_minus1 = 79 decoded as 4047).
+        uint32_t low = 0;
+        for (int i = 0; i < zeros; ++i) low = (low << 1) | getBit();
+        return (1u << zeros) - 1 + low;
     }
     int getSE() {
         uint32_t k = getUE();
