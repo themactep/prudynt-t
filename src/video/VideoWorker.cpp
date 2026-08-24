@@ -9,6 +9,7 @@
 #include "video/IMPEncoder.hpp"
 #include "video/IMPFramesource.hpp"
 #include "video/H264SpsRewrite.hpp"
+#include "video/H265SpsRewrite.hpp"
 #include "util/Logger.hpp"
 #include "recording/PreTriggerBuffer.hpp"
 #include "video/SEIWriter.hpp"
@@ -796,10 +797,17 @@ void VideoWorker::run() {
               // Declare full-range luma + colour matrix in the SPS VUI so
               // players don't clip the near-full-range encoder output to
               // 16-235 (issue #1547).
-              if (!stream_is_h265 && !global_video[encChn]->latest_sps.empty())
-                global_video[encChn]->latest_sps =
-                    h264RewriteSpsVui(global_video[encChn]->latest_sps.data(),
-                                      global_video[encChn]->latest_sps.size());
+              if (!global_video[encChn]->latest_sps.empty()) {
+                if (stream_is_h265) {
+                  global_video[encChn]->latest_sps = h265RewriteSpsVui(
+                      global_video[encChn]->latest_sps.data(),
+                      global_video[encChn]->latest_sps.size());
+                } else {
+                  global_video[encChn]->latest_sps = h264RewriteSpsVui(
+                      global_video[encChn]->latest_sps.data(),
+                      global_video[encChn]->latest_sps.size());
+                }
+              }
               // Normalize nal_ref_idc to 3: many H.264 parsers (go2rtc,
               // browsers) expect 0x67, not 0x27, for SPS NAL header.
               // H.265 NAL header layout differs (F|Type(6)|LayerId(1)),
@@ -997,8 +1005,13 @@ void VideoWorker::run() {
 
               // Same VUI rewrite as latest_sps, applied to the in-band SPS
               // the RTSP tap forwards every GOP (issue #1547).
-              if (nal_is_sps && !stream_is_h265 && !nalu_buf.empty())
-                nalu_buf = h264RewriteSpsVui(nalu_buf.data(), nalu_buf.size());
+              if (nal_is_sps && !nalu_buf.empty()) {
+                if (stream_is_h265) {
+                  nalu_buf = h265RewriteSpsVui(nalu_buf.data(), nalu_buf.size());
+                } else {
+                  nalu_buf = h264RewriteSpsVui(nalu_buf.data(), nalu_buf.size());
+                }
+              }
 
               // Normalize nal_ref_idc to 3 for SPS/PPS in the in-band
               // stream (the RTP data that RTSP clients like go2rtc see).
