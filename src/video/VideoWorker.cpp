@@ -8,6 +8,7 @@
 #include "config/Config.hpp"
 #include "video/IMPEncoder.hpp"
 #include "video/IMPFramesource.hpp"
+#include "video/H264SpsRewrite.hpp"
 #include "util/Logger.hpp"
 #include "recording/PreTriggerBuffer.hpp"
 #include "video/SEIWriter.hpp"
@@ -792,6 +793,13 @@ void VideoWorker::run() {
               global_video[encChn]->have_vps = true;
             } else if (nal_is_sps) {
               global_video[encChn]->latest_sps.assign(start + 4, end);
+              // Declare full-range luma + colour matrix in the SPS VUI so
+              // players don't clip the near-full-range encoder output to
+              // 16-235 (issue #1547).
+              if (!stream_is_h265 && !global_video[encChn]->latest_sps.empty())
+                global_video[encChn]->latest_sps =
+                    h264RewriteSpsVui(global_video[encChn]->latest_sps.data(),
+                                      global_video[encChn]->latest_sps.size());
               // Normalize nal_ref_idc to 3: many H.264 parsers (go2rtc,
               // browsers) expect 0x67, not 0x27, for SPS NAL header.
               // H.265 NAL header layout differs (F|Type(6)|LayerId(1)),
@@ -986,6 +994,11 @@ void VideoWorker::run() {
               size_t payload_len_hint = static_cast<size_t>(end - start);
               auto nalu_buf = naluPool.borrow(payload_len_hint);
               nalu_buf.insert(nalu_buf.end(), start + 4, end);
+
+              // Same VUI rewrite as latest_sps, applied to the in-band SPS
+              // the RTSP tap forwards every GOP (issue #1547).
+              if (nal_is_sps && !stream_is_h265 && !nalu_buf.empty())
+                nalu_buf = h264RewriteSpsVui(nalu_buf.data(), nalu_buf.size());
 
               // Normalize nal_ref_idc to 3 for SPS/PPS in the in-band
               // stream (the RTP data that RTSP clients like go2rtc see).
