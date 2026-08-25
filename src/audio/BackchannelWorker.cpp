@@ -93,6 +93,7 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
   }
 #endif
 
+#if !defined(OPENIMP)
   IMPAudioStream stream_in;
   stream_in.stream = const_cast<uint8_t *>(payload);
   stream_in.len = static_cast<int>(payloadSize);
@@ -140,6 +141,13 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
   LOG_DEBUG("ADEC_GetStream succeeded but produced no data.");
   outPcmBuffer.clear();
   return true;
+#else
+  (void)payload;
+  (void)payloadSize;
+  (void)format;
+  outPcmBuffer.clear();
+  return false;
+#endif
 }
 
 bool BackchannelWorker::processFrame(const BackchannelFrame &frame) {

@@ -128,8 +128,14 @@ int IMPAudio::init() {
   sample_rate = ioattr.samplerate;
 
   if (encattr.type > IMPAudioPalyloadType::PT_PCM) {
+#if !defined(OPENIMP)
     ret = IMP_AENC_CreateChn(aeChn, &encattr);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_CreateChn(" << aeChn << ", &encattr)");
+#else
+    LOG_WARN("OpenIMP build: IMP AENC is unavailable; "
+             << cfg->audio.input_format
+             << " audio input will be captured as raw PCM");
+#endif
   }
 
   // FAAC encodes fixed 1024-sample frames.  The HAL requires numPerFrm to be
@@ -310,8 +316,10 @@ int IMPAudio::deinit() {
     if (directEncode) {
       encoder->close();
     } else {
+#if !defined(OPENIMP)
       ret = IMP_AENC_UnRegisterEncoder(&handle);
       LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_UnRegisterEncoder(&handle)");
+#endif
     }
 
     delete encoder;
@@ -320,8 +328,10 @@ int IMPAudio::deinit() {
   }
 
   if (!directEncode && format != IMPAudioFormat::PCM) {
+#if !defined(OPENIMP)
     ret = IMP_AENC_DestroyChn(aeChn);
     LOG_DEBUG_OR_ERROR(ret, "IMP_AENC_DestroyChn(" << aeChn << ")");
+#endif
   }
 
   ret = IMP_AI_DisableChn(devId, inChn);

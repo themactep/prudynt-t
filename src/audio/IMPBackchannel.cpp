@@ -146,6 +146,11 @@ IMPBackchannel *IMPBackchannel::createNew() {
 }
 
 int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
+#if defined(OPENIMP)
+  (void)format;
+  LOG_WARN("OpenIMP build: IMP ADEC unavailable; backchannel disabled");
+  return -1;
+#else
   int ret = 0;
   IMPAudioDecChnAttr adec_attr;
   adec_attr.mode = ADEC_MODE_PACK;
@@ -204,10 +209,15 @@ int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
   default:
     return -1;
   }
+#endif
 }
 
 int IMPBackchannel::init() {
   LOG_DEBUG("IMPBackchannel::init()");
+#if defined(OPENIMP)
+  LOG_INFO("OpenIMP build: skipping IMP ADEC channel setup");
+  return 0;
+#else
   int ret = 0;
 
 #if !defined(PLATFORM_T23)
@@ -268,12 +278,16 @@ int IMPBackchannel::init() {
 #endif
   }
 #endif
+#endif
 
   return 0;
 }
 
 void IMPBackchannel::deinit() {
   LOG_DEBUG("IMPBackchannel::deinit()");
+#if defined(OPENIMP)
+  return;
+#else
   int ret;
 
 #define DESTROY_ADEC(EnumName, NameString, PayloadType, Frequency, MimeType)   \
@@ -292,5 +306,6 @@ void IMPBackchannel::deinit() {
                                                           << ")");
     aacDecoderHandle = -1;
   }
+#endif
 #endif
 }

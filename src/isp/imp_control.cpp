@@ -415,7 +415,8 @@ const char *imp_control_get_channel_encoding_type(int channel) {
  */
 
 int imp_control_set_fisheye_status(int enable) {
-#if defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)
+#if (defined(PLATFORM_T31) || defined(PLATFORM_C100) || defined(PLATFORM_T40)) && \
+    !defined(OPENIMP)
   /* Fisheye control - channel 0 assumed */
   return IMP_Encoder_SetFisheyeEnableStatus(0, enable);
 #else

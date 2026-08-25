@@ -94,6 +94,17 @@ OSD_SCHRIFT_LIB_HYBRID_LINE  =
 OSD_SCHRIFT_LIB_DYNAMIC_LINE =
 endif
 
+# OpenIMP (open ISP userspace) build
+# ------------------------------------
+# OpenIMP's T31 libimp.so omits the IMP audio encode/decode (AENC/ADEC)
+# entry points and IMP_Encoder_SetFisheyeEnableStatus.  When linking
+# against OpenIMP, compile those call sites out.
+USE_OPENIMP            ?= 0
+
+ifeq ($(USE_OPENIMP),1)
+override CFLAGS        += -DOPENIMP
+endif
+
 # Optional FLAC support
 # ----------------------
 USE_FLAC               ?= 1

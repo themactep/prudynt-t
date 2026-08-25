@@ -217,7 +217,9 @@ void recover_stale_imp_state() {
   }
 
   for (int ch = 0; ch < 4; ++ch) {
+#if !defined(OPENIMP)
     IMP_ADEC_DestroyChn(ch);
+#endif
   }
 
   IMP_AO_DisableChn(0, 0);
