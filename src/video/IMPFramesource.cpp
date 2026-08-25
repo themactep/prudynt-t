@@ -116,72 +116,68 @@ int IMPFramesource::init() {
                      << " nrVBs=" << chnAttr.nrVBs
                      << " pixFmt=" << chnAttr.pixFmt);
 
-#if !defined(KERNEL_VERSION_4)
-#if defined(PLATFORM_T31) && !defined(PLATFORM_C100)
-
-  // Rotation handled client-side via SEI metadata --- skip IMP rotation.
-  if (false && stream->rotation != 0) {
-    // Validate 64-bit alignment requirement
-    // if (stream->width % 64 != 0 || stream->height % 64 != 0) {
-    //   LOG_ERROR(
-    //       "Rotation requires 64-bit aligned resolution. "
-    //       "Current: "
-    //       << stream->width << "x" << stream->height
-    //       << ". "
-    //          "Please use multiples of 64 (e.g., 1920x1080, 1280x720, 640x480)");
-    //   return -1;
-    // }
-
-    // Check for soft zoom conflict
-    // if (stream->scale_enabled) {
-    //   LOG_ERROR("Cannot enable rotation while soft zoom is active. Disable "
-    //             "scale_enabled or set rotation to 0");
-    //   return -1;
-    // }
-
-    // Warn about performance constraints
-    // if (stream->width > 1280 || stream->height > 704) {
-    //   LOG_WARN("Rotation above 1280x704 may impact performance. Recommended "
-    //            "<=1280x704 @ <=15fps");
-    // }
-
-    // Convert degree values to IMP rotation values
-    // 0 degrees = 0 (no rotation)
-    // 90 degrees = 1 (90 deg counterclockwise)
-    // 270 degrees = 2 (90 deg clockwise, equivalent to 270 deg counterclockwise)
-    int imp_rotation = 0;
-    if (stream->rotation == 90) {
-      imp_rotation = 1;
-    } else if (stream->rotation == 270) {
-      imp_rotation = 2;
+#ifdef USE_ISP_ROTATION
+  // Opt-in: ISP-side rotation, as an alternative to the client-side-only
+  // SEI metadata hint from c8be1a6 -- common RTSP/RTP clients (e.g.
+  // go2rtc, Frigate) don't apply that hint without a full re-encode.
+  if (stream->rotation != 0) {
+    // ISP rotation requires 64-pixel-aligned resolution; an unaligned
+    // stream disables rotation rather than failing the whole channel.
+    bool do_rotation = true;
+    if (stream->width % 64 != 0 || stream->height % 64 != 0) {
+      LOG_WARN("Rotation requires 64-pixel-aligned resolution, got "
+               << stream->width << "x" << stream->height
+               << " -- disabling rotation for this channel");
+      do_rotation = false;
     }
 
-    LOG_DEBUG("Setting video rotation "
-              << stream->rotation << " degrees (IMP value " << imp_rotation
-              << ")");
+    // ISP rotation and the soft-zoom scaler can't both be active.
+    if (do_rotation && scale) {
+      LOG_WARN("Rotation cannot be combined with soft zoom (output "
+               << stream->width << "x" << stream->height << " != sensor "
+               << sensor->width << "x" << sensor->height
+               << ") -- disabling rotation for this channel");
+      do_rotation = false;
+    }
 
-    typedef int (*pfn_fs_rotate)(int, int, int, int);
-    void *handle = dlopen(nullptr, RTLD_LAZY);
-    pfn_fs_rotate rotate_fn =
-        handle ? reinterpret_cast<pfn_fs_rotate>(
-                     dlsym(handle, "IMP_FrameSource_SetChnRotate"))
-               : nullptr;
-    if (rotate_fn) {
-      ret = rotate_fn(chnNr, imp_rotation, stream->width, stream->height);
-      if (ret != 0) {
-        LOG_ERROR("IMP_FrameSource_SetChnRotate failed ret=" << ret
-                  << ". Falling back to no rotation.");
-        chnAttr.scaler.enable = scale;
-      } else {
-        LOG_DEBUG("IMP_FrameSource_SetChnRotate OK");
+    if (do_rotation) {
+      // Convert degree values to IMP rotation values
+      // 0 degrees = 0 (no rotation)
+      // 90 degrees = 1 (90 deg counterclockwise)
+      // 270 degrees = 2 (90 deg clockwise, equivalent to 270 deg counterclockwise)
+      int imp_rotation = 0;
+      if (stream->rotation == 90) {
+        imp_rotation = 1;
+      } else if (stream->rotation == 270) {
+        imp_rotation = 2;
       }
-    } else {
-      LOG_DEBUG("IMP_FrameSource_SetChnRotate not available; skipping rotation");
-      ret = 0;
+
+      LOG_DEBUG("Setting video rotation "
+                << stream->rotation << " degrees (IMP value " << imp_rotation
+                << ")");
+
+      typedef int (*pfn_fs_rotate)(int, int, int, int);
+      void *handle = dlopen(nullptr, RTLD_LAZY);
+      pfn_fs_rotate rotate_fn =
+          handle ? reinterpret_cast<pfn_fs_rotate>(
+                       dlsym(handle, "IMP_FrameSource_SetChnRotate"))
+                 : nullptr;
+      if (rotate_fn) {
+        ret = rotate_fn(chnNr, imp_rotation, stream->width, stream->height);
+        if (ret != 0) {
+          LOG_ERROR("IMP_FrameSource_SetChnRotate failed ret=" << ret
+                    << ". Falling back to no rotation.");
+          chnAttr.scaler.enable = scale;
+        } else {
+          LOG_DEBUG("IMP_FrameSource_SetChnRotate OK");
+        }
+      } else {
+        LOG_DEBUG("IMP_FrameSource_SetChnRotate not available; skipping rotation");
+        ret = 0;
+      }
     }
   }
-#endif
-#endif
+#endif // USE_ISP_ROTATION
 
   ret = IMP_FrameSource_CreateChn(chnNr, &chnAttr);
   LOG_DEBUG_OR_ERROR(ret,
