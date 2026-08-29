@@ -6,6 +6,10 @@
 
 #define MODULE "IMP_FRAMESOURCE"
 
+#ifndef ISP_CH0_PRE_DEQUEUE_TIME
+#define ISP_CH0_PRE_DEQUEUE_TIME 0
+#endif
+
 // Returns total system RAM in bytes, read once from /proc/meminfo.
 static long get_total_ram_bytes() {
   static long cached = 0;
@@ -89,17 +93,19 @@ int IMPFramesource::init() {
   chnAttr.picHeight = stream->height;
 
 #if defined(PLATFORM_T31)
-  // Whether the kernel's tx-isp driver accepts 2+ ring buffers on the
-  // non-scaled physical channel is a property of the driver, not of RAM.
-  // Old drivers reject the schedule silently ("one buffer schedule only
-  // support nrvbs = 1" in dmesg, channel never produces a frame); new
-  // drivers accept it.  Forcing nrVBs=1 on RAM alone stalls new-driver
-  // cameras: the single-buffer schedule collides with the sensor DMA when
-  // audio capture is enabled and the main stream drops 25fps to ~12-19fps
-  // with periodic gaps.  Keep the natural multi-buffer count and let the
-  // VideoWorker watchdog fall back to nrVBs=1 at runtime when the channel
-  // produces no frames (old-driver rejection).  An explicit "buffers"
-  // value in the config is trusted as-is.
+  // tx-isp runs the non-scaled physical channel in a single-buffer
+  // schedule when isp_ch0_pre_dequeue_time is configured; requesting
+  // 2+ buffers then makes the driver reject the schedule and dump the
+  // stack ("one buffer schedule only support nrvbs = 1").  Clamp the
+  // auto buffer count to match.  An explicit "buffers" value in the
+  // config is trusted as-is.
+  if (!scale && stream->buffers <= 0 && ISP_CH0_PRE_DEQUEUE_TIME > 0 &&
+      chnAttr.nrVBs > 1) {
+    LOG_INFO("Channel " << chnNr
+                        << ": isp_ch0_pre_dequeue_time is set --- clamping "
+                           "non-scaled channel to nrVBs=1");
+    chnAttr.nrVBs = 1;
+  }
   fs_scale = (scale != 0);
   nrVBs_was_auto = (stream->buffers <= 0);
 #endif
