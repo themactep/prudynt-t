@@ -423,10 +423,14 @@ void RtspServer::eventLoop() {
                                     fmt = IMPBackchannelFormat::PCMU;
                                 else if (bc.codec == "PCMA")
                                     fmt = IMPBackchannelFormat::PCMA;
+#if defined(USE_AAC) && USE_AAC
                                 else if (bc.codec == "mpeg4-generic")
                                     fmt = IMPBackchannelFormat::AAC;
+#endif
+#if (defined(USE_AAC) && USE_AAC) || (defined(USE_OPUS) && USE_OPUS)
                                 else if (bc.codec == "OPUS")
                                     fmt = IMPBackchannelFormat::OPUS;
+#endif
                                 break;
                             }
                         }
@@ -434,6 +438,7 @@ void RtspServer::eventLoop() {
                             // For AAC, strip AU-header-length + AU-header
                             // (RFC 3640: 2 bytes + 2 bytes per AU)
                             const uint8_t *payload = rtpBuf + 12;
+#if defined(USE_AAC) && USE_AAC
                             if (fmt == IMPBackchannelFormat::AAC &&
                                 payloadLen >= 4) {
                                 uint16_t auHeaderLen =
@@ -446,6 +451,7 @@ void RtspServer::eventLoop() {
                                     payloadLen -= 2 + auHeaderBytes;
                                 }
                             }
+#endif
                             if (payloadLen > 0 && payloadLen < 2048) {
                                 BackchannelFrame frame;
                                 frame.payload.assign(payload,
@@ -851,8 +857,12 @@ void RtspServer::handleRequest(int idx) {
                 if (bc.payloadType == static_cast<int>(pt)) {
                     if (bc.codec == "PCMU") fmt = IMPBackchannelFormat::PCMU;
                     else if (bc.codec == "PCMA") fmt = IMPBackchannelFormat::PCMA;
+#if defined(USE_AAC) && USE_AAC
                     else if (bc.codec == "mpeg4-generic") fmt = IMPBackchannelFormat::AAC;
+#endif
+#if (defined(USE_AAC) && USE_AAC) || (defined(USE_OPUS) && USE_OPUS)
                     else if (bc.codec == "OPUS") fmt = IMPBackchannelFormat::OPUS;
+#endif
                     break;
                 }
             }
