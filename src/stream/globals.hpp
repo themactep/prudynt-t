@@ -114,8 +114,6 @@ struct jpeg_stream {
   // In-memory snapshot buffer (JPEG bytes only), guarded by mutex_main when
   // updated
   std::vector<unsigned char> snapshot_buf;
-  // Per-request JPEG quality override (1..100, -1 = none)
-  std::atomic<int> quality_override{-1};
 
   // Dynamic reconfiguration requests (applied by JPEGWorker)
   // Sequential frame counter for TRACE diagnostics (32-bit to avoid 64-bit
@@ -124,6 +122,7 @@ struct jpeg_stream {
   std::atomic<int> req_width{-1};
   std::atomic<int> req_height{-1};
   std::atomic<int> req_fps{-1};
+  std::atomic<int> req_quality{-1}; // 1..100, -1 = none
   std::atomic<bool> reconfig{false};
 
   steady_clock::time_point last_image;

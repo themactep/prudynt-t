@@ -599,12 +599,20 @@ void HTTPMJPEG::handle_client(int cfd) {
 
   auto *stream_cfg = global_jpeg[ch]->stream;
 
-  // Quantize w/h to multiples of 16 and cap to source size
-  if (w > 0 && h > 0) {
+  // Quantize w/h to multiples of 16 and cap to source size. If only one
+  // dimension is given, derive the other from the source aspect ratio so
+  // the encoder never stretches the image.
+  if (w > 0 || h > 0) {
     auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width
                                                    : cfg->stream1.width;
     auto src_h = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.height
                                                    : cfg->stream1.height;
+    if (src_w > 0 && src_h > 0) {
+      if (w > 0 && h <= 0)
+        h = (int)((long long)w * src_h / src_w);
+      else if (h > 0 && w <= 0)
+        w = (int)((long long)h * src_w / src_h);
+    }
     if (w > src_w)
       w = src_w;
     if (h > src_h)
@@ -613,15 +621,13 @@ void HTTPMJPEG::handle_client(int cfd) {
     h = (h + 15) & ~15;
   }
 
-  // Apply quality override and request reconfig
-  if (q >= 1 && q <= 100)
-    global_jpeg[ch]->quality_override = q;
-
   int orig_fps = stream_cfg->fps;
 
   bool size_change =
       (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
   bool fps_change = (fps > 0 && fps != stream_cfg->fps);
+  bool quality_change =
+      (q >= 1 && q <= 100 && q != stream_cfg->jpeg_quality);
 
   if (size_change) {
     global_jpeg[ch]->req_width = w;
@@ -629,6 +635,9 @@ void HTTPMJPEG::handle_client(int cfd) {
   }
   if (fps_change) {
     global_jpeg[ch]->req_fps = fps;
+  }
+  if (quality_change) {
+    global_jpeg[ch]->req_quality = q;
   }
 
   // Optional tuning: chunk size, sndbuf, tos
@@ -649,7 +658,7 @@ void HTTPMJPEG::handle_client(int cfd) {
       tos_override = -1;
   }
 
-  bool needs_reconfig = size_change || fps_change;
+  bool needs_reconfig = size_change || fps_change || quality_change;
   if (needs_reconfig) {
     global_jpeg[ch]->reconfig = true;
     global_jpeg[ch]->request();

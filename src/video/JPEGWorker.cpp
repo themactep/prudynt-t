@@ -162,35 +162,43 @@ void JPEGWorker::run() {
             targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
         }
 
-        // Apply per-request JPEG quality override if present
-        int q_override = global_jpeg[jpgChn]->quality_override.exchange(-1);
-        if (q_override > 0 && q_override <= 100) {
-          hal::set_jpeg_quality_qtable(global_jpeg[jpgChn]->encChn, q_override,
-                                       cfg->sysinfo.cpu);
-        }
-
         // Apply dynamic reconfiguration if requested
         if (global_jpeg[jpgChn]->reconfig.load()) {
           int new_w = global_jpeg[jpgChn]->req_width.load();
           int new_h = global_jpeg[jpgChn]->req_height.load();
           int new_fps = global_jpeg[jpgChn]->req_fps.load();
+          int new_q = global_jpeg[jpgChn]->req_quality.load();
 
           bool size_change = (new_w > 0 && new_h > 0 &&
                               (new_w != global_jpeg[jpgChn]->stream->width ||
                                new_h != global_jpeg[jpgChn]->stream->height));
+          bool quality_change = (new_q >= 1 && new_q <= 100 &&
+                                 new_q != global_jpeg[jpgChn]->stream->jpeg_quality);
 
-          if (size_change) {
-            // Size change requires encoder reinit --- this steals ISP frames
-            // and may cause H.264 decode errors on the RTSP stream.
+          if (size_change || quality_change) {
+            // Recreating the channel steals ISP frames from the H.264 encoder
+            // and can cause decode errors on the RTSP stream, so only do it
+            // when the output size or quality actually changed.
             if (global_jpeg[jpgChn]->imp_encoder) {
               global_jpeg[jpgChn]->imp_encoder->deinit();
             }
-            global_jpeg[jpgChn]->stream->width = new_w;
-            global_jpeg[jpgChn]->stream->height = new_h;
-            if (global_jpeg[jpgChn]->imp_encoder) {
-              global_jpeg[jpgChn]->imp_encoder->init();
+            if (size_change) {
+              global_jpeg[jpgChn]->stream->width = new_w;
+              global_jpeg[jpgChn]->stream->height = new_h;
             }
-            IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
+            if (quality_change) {
+              global_jpeg[jpgChn]->stream->jpeg_quality = new_q;
+            }
+            int init_ret = 0;
+            if (global_jpeg[jpgChn]->imp_encoder) {
+              init_ret = global_jpeg[jpgChn]->imp_encoder->init();
+            }
+            if (init_ret != 0) {
+              LOG_ERROR("JPEG reinit failed (ret=" << init_ret
+                                                   << "); channel may stall");
+            } else {
+              IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
+            }
           }
           // FPS change: update stream->fps for the worker's polling logic.
           // No encoder reinit needed --- the JPEG encoder handles fps changes
@@ -203,6 +211,7 @@ void JPEGWorker::run() {
           global_jpeg[jpgChn]->req_width.store(-1);
           global_jpeg[jpgChn]->req_height.store(-1);
           global_jpeg[jpgChn]->req_fps.store(-1);
+          global_jpeg[jpgChn]->req_quality.store(-1);
           global_jpeg[jpgChn]->reconfig.store(false);
         }
 

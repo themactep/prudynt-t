@@ -559,8 +559,10 @@ int IPCServer::handle_client(int fd) {
         write(fd, err, strlen(err));
         return 0;
       }
-      if (q >= 1 && q <= 100)
-        global_jpeg[ch]->quality_override = q;
+      if (q >= 1 && q <= 100) {
+        global_jpeg[ch]->req_quality = q;
+        global_jpeg[ch]->reconfig = true;
+      }
     }
     // Signal demand to speed up capture and wake JPEG worker if idle
     if (ch >= 0 && ch < NUM_VIDEO_CHANNELS && global_jpeg[ch]) {
@@ -664,12 +666,20 @@ int IPCServer::handle_client(int fd) {
       return 0;
     }
 
-    // Quantize w/h to multiples of 16 and cap to source size
-    if (w > 0 && h > 0) {
+    // Quantize w/h to multiples of 16 and cap to source size. If only one
+    // dimension is given, derive the other from the source aspect ratio so
+    // the encoder never stretches the image.
+    if (w > 0 || h > 0) {
       auto src_w = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.width
                                                      : cfg->stream1.width;
       auto src_h = (global_jpeg[ch]->streamChn == 0) ? cfg->stream0.height
                                                      : cfg->stream1.height;
+      if (src_w > 0 && src_h > 0) {
+        if (w > 0 && h <= 0)
+          h = (int)((long long)w * src_h / src_w);
+        else if (h > 0 && w <= 0)
+          w = (int)((long long)h * src_w / src_h);
+      }
       if (w > src_w)
         w = src_w;
       if (h > src_h)
@@ -688,15 +698,14 @@ int IPCServer::handle_client(int fd) {
       if (fps < 1)
         fps = 1;
     }
-    if (q >= 1 && q <= 100)
-      global_jpeg[ch]->quality_override = q;
-
     auto *stream_cfg = global_jpeg[ch]->stream;
     int orig_fps = stream_cfg->fps;
 
     bool size_change =
         (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
     bool fps_change = (fps > 0 && fps != stream_cfg->fps);
+    bool quality_change =
+        (q >= 1 && q <= 100 && q != stream_cfg->jpeg_quality);
 
     // Request reconfiguration and wake worker if something actually changes
     if (size_change) {
@@ -706,14 +715,15 @@ int IPCServer::handle_client(int fd) {
     if (fps_change) {
       global_jpeg[ch]->req_fps = fps;
     }
+    if (quality_change) {
+      global_jpeg[ch]->req_quality = q;
+    }
 
-    // Only trigger encoder reconfig on SIZE changes.  FPS changes are handled
-    // by the JPEG worker without deinit/init (it just adjusts polling rate).
-    // Reconfiguring the JPEG encoder (deinit/init) steals ISP frames from the
-    // H.264 encoder and causes decode errors on the RTSP stream.
-    // We still set reconfig=true for fps changes so the worker picks up the
-    // new fps value, but the worker only reinit on size changes.
-    if (size_change) {
+    // Size/quality changes require encoder deinit/init, which steals ISP
+    // frames from the H.264 encoder and can cause decode errors on the RTSP
+    // stream. FPS changes are handled by the JPEG worker without deinit/init
+    // (it just adjusts polling rate), so only the former wait for reconfig.
+    if (size_change || quality_change) {
       global_jpeg[ch]->reconfig = true;
       global_jpeg[ch]->request();
 

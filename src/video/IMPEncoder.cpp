@@ -407,6 +407,20 @@ int IMPEncoder::init() {
     ret = hal::maybe_enable_bufshare(encChn, encGrp, stream->allow_shared);
     LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "hal::maybe_enable_bufshare("
                                          << encChn << ", " << encGrp << ")");
+
+    // When the JPEG encoder scales below the framesource resolution it shares,
+    // the scaler needs rmem allocated or T31 silently falls back to a larger
+    // output size. Must be set before CreateChn.
+    int src_w = (fsChn == 0) ? cfg->stream0.width : cfg->stream1.width;
+    int src_h = (fsChn == 0) ? cfg->stream0.height : cfg->stream1.height;
+    if ((src_w > 0 && stream->width < src_w) ||
+        (src_h > 0 && stream->height < src_h)) {
+      int resize_ret = IMP_Encoder_SetChnResizeMode(encChn, 0);
+      if (resize_ret != 0) {
+        LOG_ERROR("IMP_Encoder_SetChnResizeMode(" << encChn << ", 0) = "
+                                                  << resize_ret);
+      }
+    }
   }
 
 #if defined(PLATFORM_T23)

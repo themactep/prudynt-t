@@ -136,8 +136,10 @@ static int cmd_mjpeg(int argc, char **argv) {
   // Optionals
   if (q >= 1 && q <= 100)
     n += snprintf(line + n, sizeof(line) - n, " q=%d", q);
-  if (w > 0 && h > 0)
-    n += snprintf(line + n, sizeof(line) - n, " w=%d h=%d", w, h);
+  if (w > 0)
+    n += snprintf(line + n, sizeof(line) - n, " w=%d", w);
+  if (h > 0)
+    n += snprintf(line + n, sizeof(line) - n, " h=%d", h);
   line[n++] = '\n';
   line[n] = '\0';
   (void)write(fd, line, strlen(line));
