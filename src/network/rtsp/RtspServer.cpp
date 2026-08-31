@@ -325,7 +325,12 @@ void RtspServer::eventLoop() {
                 size_t cap   = s->videoTap->capacity();
                 bool congested = (cap > 0 && depth * 4 > cap);
 
-                while (!backpressure && drained < 30 && s->videoTap->read(&nal)) {
+                // Drain up to 80 NALs per cycle. A 2304x1296 IDR frame at
+                // ~100 KB produces ~85 FU-A fragments; the old limit of 30
+                // required 3 poll cycles (30 ms) to flush one IDR, during which
+                // P-frames piled up in the tap and were dropped. 80 fits a
+                // full IDR burst in a single 10 ms drain pass.
+                while (!backpressure && drained < 80 && s->videoTap->read(&nal)) {
                     if (congested && !nal.is_keyframe) {
                         skipped++;
                         continue;
