@@ -278,8 +278,10 @@ void HTTPMJPEG::handle_client(int cfd) {
   ::setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
   int tos = 0x10; // IPTOS_LOWDELAY
   ::setsockopt(cfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
-  int sndbuf = 16 * 1024; // smaller to avoid kernel bursts
-  ::setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+   // 64 KB send buffer: JPEG frames at 2304x1296 are ~100 KB, so the old
+   // 16 KB buffer caused frequent stalls waiting for client reads on WiFi.
+   int sndbuf = 64 * 1024;
+   ::setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
   // Read request headers
   std::string req;
