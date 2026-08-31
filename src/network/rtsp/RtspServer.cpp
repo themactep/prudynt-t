@@ -1875,11 +1875,15 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
                            (sockaddr *)&target, sizeof(target));
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             bool sent = false;
-            for (int retry = 0; retry < 10; retry++) {
+            // Retry for up to ~100 ms (4 x 25 ms) before aborting the NAL.
+            // The old 500 ms window (10 x 50 ms) froze the single-threaded
+            // event loop too long on WiFi links with high retransmit rates,
+            // starving other clients and piling up softnet drops.
+            for (int retry = 0; retry < 4; retry++) {
                 struct pollfd pfd;
                 pfd.fd = rtpSock;
                 pfd.events = POLLOUT;
-                if (poll(&pfd, 1, 50) > 0) {
+                if (poll(&pfd, 1, 25) > 0) {
                     n = sendto(rtpSock, pkt, len, MSG_DONTWAIT,
                                (sockaddr *)&target, sizeof(target));
                     if (n > 0 && static_cast<size_t>(n) == len) {
@@ -1893,7 +1897,7 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
             if (!sent) {
                 static int udp_stall_count = 0;
                 if (udp_stall_count++ < 3)
-                    LOG_WARN("UDP send buffer stalled >500ms, "
+                    LOG_WARN("UDP send buffer stalled >=100ms, "
                              "aborting NAL to avoid mid-frame corruption"
                              " (ch=" << static_cast<int>(chan) << ")");
                 return false;
