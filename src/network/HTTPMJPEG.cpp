@@ -298,7 +298,7 @@ void HTTPMJPEG::handle_client(int cfd) {
   // Parse request line
   std::string method;
   int ch = 0, q = -1, fps = -1, w = -1, h = -1;
-  int chunk_sz = 1024;      // default paced chunk size (bytes)
+   int chunk_sz = 4096;       // default paced chunk size (bytes)
   int sndbuf_override = -1; // bytes; <=0 means use default
   int tos_override = -1;    // IP TOS override; <0 means default
   std::string boundary = "prudyntmjpegboundary";
