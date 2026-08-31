@@ -1907,12 +1907,12 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
                           << strerror(errno));
             return false;
         }
-        // UDP burst pacing: every 8th fragment, sleep 1ms
-        if (fragCount) {
-            (*fragCount)++;
-            if ((*fragCount & 7) == 0)
-                usleep(1000);
-        }
+        // UDP burst pacing removed: on WiFi links with high retransmission
+        // rates, spreading the burst over time widens the window for losses.
+        // The 1 MB send buffer (set above) absorbs burst variability; the
+        // stall-retry logic in sendRtpPacket handles EAGAIN when the kernel
+        // TX queue is full.
+        (void)fragCount; // retained for ABI; pacing is intentionally disabled
         return true;
     }
 
