@@ -410,7 +410,10 @@ int IMPEncoder::init() {
 
     // When the JPEG encoder scales below the framesource resolution it shares,
     // the scaler needs rmem allocated or T31 silently falls back to a larger
-    // output size. Must be set before CreateChn.
+    // output size. Must be set before CreateChn. SetChnResizeMode only exists
+    // on T31/T40/T41/C100 SDKs.
+#if defined(PLATFORM_T31) || defined(PLATFORM_T40) || defined(PLATFORM_T41) || \
+    defined(PLATFORM_C100)
     int src_w = (fsChn == 0) ? cfg->stream0.width : cfg->stream1.width;
     int src_h = (fsChn == 0) ? cfg->stream0.height : cfg->stream1.height;
     if ((src_w > 0 && stream->width < src_w) ||
@@ -421,6 +424,7 @@ int IMPEncoder::init() {
                                                   << resize_ret);
       }
     }
+#endif
   }
 
 #if defined(PLATFORM_T23)
