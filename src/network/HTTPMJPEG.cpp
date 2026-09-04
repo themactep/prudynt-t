@@ -613,12 +613,16 @@ void HTTPMJPEG::handle_client(int cfd) {
       else if (h > 0 && w <= 0)
         w = (int)((long long)h * src_w / src_h);
     }
+    // Round to the nearest multiple of 16 (not always up) so the derived
+    // dimension stays closest to the source aspect ratio.
+    w = (w + 8) & ~15;
+    h = (h + 8) & ~15;
+    // Cap after rounding so a non-16-aligned source (e.g. 1080p) is not
+    // exceeded.
     if (w > src_w)
       w = src_w;
     if (h > src_h)
       h = src_h;
-    w = (w + 15) & ~15;
-    h = (h + 15) & ~15;
   }
 
   int orig_fps = stream_cfg->fps;

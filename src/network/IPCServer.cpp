@@ -680,16 +680,20 @@ int IPCServer::handle_client(int fd) {
         else if (h > 0 && w <= 0)
           w = (int)((long long)h * src_w / src_h);
       }
+      // Round to the nearest multiple of 16 (not floor) so the derived
+      // dimension stays closest to the source aspect ratio.
+      w = ((w + 8) / 16) * 16;
+      if (w < 16)
+        w = 16;
+      h = ((h + 8) / 16) * 16;
+      if (h < 16)
+        h = 16;
+      // Cap after rounding so a non-16-aligned source (e.g. 1080p) is not
+      // exceeded.
       if (w > src_w)
         w = src_w;
       if (h > src_h)
         h = src_h;
-      w = (w / 16) * 16;
-      if (w < 16)
-        w = 16;
-      h = (h / 16) * 16;
-      if (h < 16)
-        h = 16;
     }
     if (fps > 0) {
       int max_fps = (cfg->sensor.fps > 0) ? cfg->sensor.fps : 30;
