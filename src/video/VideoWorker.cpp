@@ -300,8 +300,6 @@ void VideoWorker::run() {
   };
 #endif
 
-  NaluPool naluPool(32);
-
   auto reset_mp4_state = [&]() {
     reset_mp4_sample();
     mp4_sample_ts_base_us = -1;
@@ -986,9 +984,9 @@ void VideoWorker::run() {
             }
 
             if (global_video[encChn]->idr == true) {
-              // Borrow pooled buffer, fill once, copy to channel + taps
+              // Borrow pooled buffer, fill once, fan out to taps, move to channel
               size_t payload_len_hint = static_cast<size_t>(end - start);
-              auto nalu_buf = naluPool.borrow(payload_len_hint);
+              auto nalu_buf = video_state->nalu_pool->borrow(payload_len_hint);
               nalu_buf.insert(nalu_buf.end(), start + 4, end);
 
               // Same VUI rewrite as latest_sps, applied to the in-band SPS
@@ -1019,10 +1017,43 @@ void VideoWorker::run() {
               struct timeval nal_time;
               gettimeofday(&nal_time, nullptr);
 
+              // Fan out to taps first: each tap needs its own copy while
+              // nalu_buf is still intact. The main channel then takes
+              // nalu_buf by move and recycles it on the read side.
+              {
+                std::lock_guard<std::mutex> tap_lock(
+                    global_video[encChn]->tap_mutex);
+                taps_copy = global_video[encChn]->video_taps;
+              }
+              for (auto &tap : taps_copy) {
+                if (auto queue = tap.queue.lock()) {
+                  auto tap_buf =
+                      video_state->nalu_pool->borrow(nalu_buf.size());
+                  tap_buf.insert(tap_buf.end(), nalu_buf.begin(),
+                                 nalu_buf.end());
+                  H264NALUnit tap_nalu;
+                  tap_nalu.data = std::move(tap_buf);
+                  tap_nalu.imp_ts = rtsp_ts_us;
+                  tap_nalu.time = nal_time;
+                  tap_nalu.frame_id = current_frame_id;
+                  tap_nalu.packet_index = i;
+                  tap_nalu.packet_count = stream.packCount;
+                  tap_nalu.is_frame_start = frame_start;
+                  tap_nalu.is_frame_end = pack_is_frame_end;
+                  tap_nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                          nal_is_vps || nal_is_sps ||
+                                          nal_is_pps);
+                  queue->write(std::move(tap_nalu));
+                  if (tap.notify) {
+                    tap.notify();
+                  }
+                }
+              }
+
               bool delivered = false;
 
               H264NALUnit nalu;
-              nalu.data = nalu_buf; // copy: channel stores its own copy
+              nalu.data = std::move(nalu_buf); // channel takes ownership
               nalu.imp_ts = rtsp_ts_us;
               nalu.time = nal_time;
               nalu.frame_id = current_frame_id;
@@ -1047,38 +1078,6 @@ void VideoWorker::run() {
                 if (global_video[encChn]->onDataCallback)
                   global_video[encChn]->onDataCallback();
               }
-
-              {
-                std::lock_guard<std::mutex> tap_lock(
-                    global_video[encChn]->tap_mutex);
-                taps_copy = global_video[encChn]->video_taps;
-              }
-              if (!taps_copy.empty()) {
-                for (auto &tap : taps_copy) {
-                  if (auto queue = tap.queue.lock()) {
-                    // Reuse same pooled buffer --- copy for each tap consumer
-                    H264NALUnit tap_nalu;
-                    tap_nalu.data = nalu_buf;
-                    tap_nalu.imp_ts = rtsp_ts_us;
-                    tap_nalu.time = nal_time;
-                    tap_nalu.frame_id = current_frame_id;
-                    tap_nalu.packet_index = i;
-                    tap_nalu.packet_count = stream.packCount;
-                    tap_nalu.is_frame_start = frame_start;
-                    tap_nalu.is_frame_end = pack_is_frame_end;
-                    tap_nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
-                                            nal_is_vps || nal_is_sps ||
-                                            nal_is_pps);
-                    queue->write(std::move(tap_nalu));
-                    if (tap.notify) {
-                      tap.notify();
-                    }
-                  }
-                }
-              }
-
-              // Return pooled buffer after all consumers have copied it
-              naluPool.returnBuf(std::move(nalu_buf));
 
               if (!delivered) {
                 static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};

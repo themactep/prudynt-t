@@ -190,6 +190,7 @@ struct video_stream {
   IMPEncoder *imp_encoder;
   IMPFramesource *imp_framesource;
   std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
+  std::shared_ptr<NaluPool> nalu_pool;
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg; // see comment in audio_stream
   std::atomic<bool> bootstrap_requested{false};
@@ -227,11 +228,13 @@ struct video_stream {
       : encChn(encChn), stream(stream), name(name), running(false), idr(false),
         idr_fix(0), imp_encoder(nullptr), imp_framesource(nullptr),
         msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
+        nalu_pool(std::make_shared<NaluPool>(32)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
         mp4_waiting_for_idr{false}, mp4_required_idr_ts_us{-1},
         mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0},
         mp4_prebuffer_offset_ms{0}, mp4_prebuffer_flushing{false},
         have_vps(false), have_sps(false), have_pps(false) {
+    msgChannel->setPool(nalu_pool);
   }
 };
 
@@ -313,6 +316,7 @@ register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
   entry.queue = queue;
   entry.notify = std::move(notify);
   if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS) {
+    queue->setPool(global_video[encChn]->nalu_pool);
     std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
     global_video[encChn]->video_taps.push_back(entry);
   }
