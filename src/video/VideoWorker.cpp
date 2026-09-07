@@ -221,6 +221,8 @@ void VideoWorker::run() {
   bool run_for_jpeg = false;
   auto video_state = global_video[encChn];
   std::vector<uint8_t> mp4_sample;
+  std::vector<uint8_t> wrap_buf;        // persistent: avoid per-pack alloc
+  std::vector<VideoTapEntry> taps_copy; // persistent: avoid per-NAL alloc
   bool mp4_sample_is_key = false;
   int64_t mp4_sample_ts_us = -1;
   int64_t mp4_sample_ts_base_us = -1;
@@ -583,7 +585,6 @@ void VideoWorker::run() {
           // correctly. When the pack wraps, copy both slices into a contiguous
           // temporary buffer; the rest of the loop sees a plain [start, end).
           auto slices = hal::encoder::get_pack_slices(stream, i);
-          std::vector<uint8_t> wrap_buf;
           uint8_t *start;
           uint32_t length;
           if (slices.second_len > 0) {
@@ -742,13 +743,6 @@ void VideoWorker::run() {
             std::memcpy(dst + 4, src, len);
           };
 
-          auto append_length_prefixed_nal_vec =
-              [&](const std::vector<uint8_t> &nal) {
-                if (!nal.empty()) {
-                  append_length_prefixed_nal(nal.data(), nal.size());
-                }
-              };
-
           if (payload_len > 0) {
             if (stream_is_h265) {
               if (payload_len >= 2) {
@@ -879,22 +873,17 @@ void VideoWorker::run() {
                             : false;
             if (mp4_sample.empty() && waiting_for_idr_flag &&
                 !mp4_inserted_codec_config && video_state) {
-              std::vector<uint8_t> vps_copy;
-              std::vector<uint8_t> sps_copy;
-              std::vector<uint8_t> pps_copy;
-              {
-                std::lock_guard<std::mutex> lock(
-                    video_state->codec_config_mutex);
-                vps_copy = video_state->latest_vps;
-                sps_copy = video_state->latest_sps;
-                pps_copy = video_state->latest_pps;
-              }
+              std::lock_guard<std::mutex> lock(
+                  video_state->codec_config_mutex);
               // For H.265, prepend VPS before SPS
-              if (!vps_copy.empty()) {
-                append_length_prefixed_nal_vec(vps_copy);
+              if (!video_state->latest_vps.empty()) {
+                append_length_prefixed_nal(video_state->latest_vps.data(),
+                                           video_state->latest_vps.size());
               }
-              append_length_prefixed_nal_vec(sps_copy);
-              append_length_prefixed_nal_vec(pps_copy);
+              append_length_prefixed_nal(video_state->latest_sps.data(),
+                                         video_state->latest_sps.size());
+              append_length_prefixed_nal(video_state->latest_pps.data(),
+                                         video_state->latest_pps.size());
               mp4_inserted_codec_config = true;
             }
 
@@ -970,13 +959,12 @@ void VideoWorker::run() {
                     // Fan SEI NAL out to video taps so RTSP clients
                     // receive OSD metadata alongside the IDR frame.
                     {
-                      std::vector<VideoTapEntry> sei_taps_copy;
                       {
                         std::lock_guard<std::mutex> tap_lock(
                             global_video[encChn]->tap_mutex);
-                        sei_taps_copy = global_video[encChn]->video_taps;
+                        taps_copy = global_video[encChn]->video_taps;
                       }
-                      for (auto &tap : sei_taps_copy) {
+                      for (auto &tap : taps_copy) {
                         if (auto queue = tap.queue.lock()) {
                           H264NALUnit tap_sei;
                           tap_sei.data = sei_unit.data;
@@ -1060,7 +1048,6 @@ void VideoWorker::run() {
                   global_video[encChn]->onDataCallback();
               }
 
-              std::vector<VideoTapEntry> taps_copy;
               {
                 std::lock_guard<std::mutex> tap_lock(
                     global_video[encChn]->tap_mutex);
