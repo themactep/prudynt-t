@@ -323,6 +323,16 @@ void HTTPMJPEG::handle_client(int cfd) {
     }
   }
 
+  // TEMP diagnostic: log the client for JSON API requests
+  if (path.rfind("/api/v1/config", 0) == 0) {
+    sockaddr_in peer{};
+    socklen_t peerlen = sizeof(peer);
+    char ip[INET_ADDRSTRLEN] = "?";
+    if (getpeername(cfd, reinterpret_cast<sockaddr *>(&peer), &peerlen) == 0)
+      inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
+    LOG_WARN("HTTPMJPEG-API " << ip << " " << method << " " << path);
+  }
+
   auto send_response = [&](int code, const char *ctype,
                            const std::string &payload) {
     char hdr[512];
