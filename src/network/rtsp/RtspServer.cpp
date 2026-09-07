@@ -311,7 +311,6 @@ void RtspServer::eventLoop() {
             // Drain video tap --- up to 30 NALs per cycle.  On backpressure
             // the NAL is dropped (destructive MsgChannel::read).
             if (s->videoTap) {
-                H264NALUnit nal;
                 int drained = 0;
                 uint32_t skipped = 0;
 
@@ -330,12 +329,12 @@ void RtspServer::eventLoop() {
                 // required 3 poll cycles (30 ms) to flush one IDR, during which
                 // P-frames piled up in the tap and were dropped. 80 fits a
                 // full IDR burst in a single 10 ms drain pass.
-                while (!backpressure && drained < 80 && s->videoTap->read(&nal)) {
-                    if (congested && !nal.is_keyframe) {
+                while (!backpressure && drained < 80 && s->videoTap->read(&s->videoNal)) {
+                    if (congested && !s->videoNal.is_keyframe) {
                         skipped++;
                         continue;
                     }
-                    if (!this->sendVideoNal(*s, nal)) {
+                    if (!this->sendVideoNal(*s, s->videoNal)) {
                         backpressure = true;
                         break;
                     }
@@ -363,10 +362,9 @@ void RtspServer::eventLoop() {
 
             // Drain audio tap --- skip if video hit backpressure
             if (!backpressure && s->audioTap) {
-                AudioFrame af;
                 int drained = 0;
-                while (drained < 200 && s->audioTap->read(&af)) {
-                    if (!this->sendAudioFrame(*s, af)) {
+                while (drained < 200 && s->audioTap->read(&s->audioFrame)) {
+                    if (!this->sendAudioFrame(*s, s->audioFrame)) {
                         break;
                     }
                     drained++;
@@ -398,12 +396,10 @@ void RtspServer::eventLoop() {
             if (s->videoChn >= 0 && s->videoChn < NUM_VIDEO_CHANNELS &&
                 global_video[s->videoChn] &&
                 global_video[s->videoChn]->msgChannel) {
-                H264NALUnit dummy;
-                while (global_video[s->videoChn]->msgChannel->read(&dummy)) {}
+                while (global_video[s->videoChn]->msgChannel->read(&s->mainDummy)) {}
             }
             if (global_audio[0] && global_audio[0]->msgChannel) {
-                AudioFrame dummy;
-                while (global_audio[0]->msgChannel->read(&dummy)) {}
+                while (global_audio[0]->msgChannel->read(&s->audioDummy)) {}
             }
 
             // -- Receive backchannel RTP (client -> camera audio) -------

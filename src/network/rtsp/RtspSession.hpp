@@ -63,6 +63,12 @@ struct Session {
     std::shared_ptr<MsgChannel<AudioFrame>> audioTap;
     uint64_t audioTapId = 0;
 
+    // Reused drain buffers (avoid per-cycle allocation in the event loop)
+    H264NALUnit videoNal;
+    AudioFrame audioFrame;
+    H264NALUnit mainDummy;
+    AudioFrame audioDummy;
+
     // Subtitle (OSD text)
     bool hasSubtitles = false;
     bool subtitleTcp = false;
