@@ -113,9 +113,11 @@ struct Session {
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }
 
-    // Send queue (non-blocking, unbounded)
-    std::deque<std::vector<uint8_t>> sendQueue;
-    size_t sendQueueBytes = 0;
+    // Send queue (non-blocking): contiguous interleaved-RTP byte buffer,
+    // drained from the front. sendQueueOff is the first unsent byte.
+    std::vector<uint8_t> sendQueue;
+    size_t sendQueueOff = 0;
+    size_t sendQueueBytes() const { return sendQueue.size() - sendQueueOff; }
 
     // Congestion mitigation: non-keyframe NALs skipped when the client's
     // socket falls behind (rate-limited warning state)

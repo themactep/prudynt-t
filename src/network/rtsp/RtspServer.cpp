@@ -286,19 +286,19 @@ void RtspServer::eventLoop() {
                 // EAGAIN --- will retry next cycle (non-blocking poll loop)
             }
 
-            // Drain send queue first --- send as many queued packets as socket accepts.
-            while (!s->sendQueue.empty()) {
+            // Drain send queue first --- send as many queued bytes as the
+            // socket accepts.
+            while (s->sendQueueOff < s->sendQueue.size()) {
                 ssize_t n = send(s->fd,
-                                 s->sendQueue.front().data(),
-                                 s->sendQueue.front().size(),
+                                 s->sendQueue.data() + s->sendQueueOff,
+                                 s->sendQueue.size() - s->sendQueueOff,
                                  MSG_DONTWAIT | MSG_NOSIGNAL);
-                if (n > 0 && static_cast<size_t>(n) >= s->sendQueue.front().size()) {
-                    s->sendQueueBytes -= s->sendQueue.front().size();
-                    s->sendQueue.pop_front();
+                if (n > 0 && static_cast<size_t>(n) >=
+                                 s->sendQueue.size() - s->sendQueueOff) {
+                    s->sendQueue.clear();
+                    s->sendQueueOff = 0;
                 } else if (n > 0) {
-                    s->sendQueue.front().erase(
-                        s->sendQueue.front().begin(),
-                        s->sendQueue.front().begin() + static_cast<ptrdiff_t>(n));
+                    s->sendQueueOff += n;
                     break; // socket full for now
                 } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
                     closeClient(s->sessionsIndex);
@@ -306,6 +306,15 @@ void RtspServer::eventLoop() {
                 } else {
                     break; // EAGAIN --- socket full
                 }
+            }
+            // Compact the consumed prefix once at least half is drained, to
+            // bound the buffer without moving bytes on every cycle.
+            if (s->sendQueueOff > 0 &&
+                s->sendQueueOff * 2 >= s->sendQueue.size()) {
+                s->sendQueue.erase(
+                    s->sendQueue.begin(),
+                    s->sendQueue.begin() + static_cast<ptrdiff_t>(s->sendQueueOff));
+                s->sendQueueOff = 0;
             }
 
             // Drain video tap --- up to 30 NALs per cycle.  On backpressure
@@ -673,7 +682,7 @@ void RtspServer::closeClient(int idx) {
     s->sessionsIndex = -1;
     s->playing = false;
     s->sendQueue.clear();
-    s->sendQueueBytes = 0;
+    s->sendQueueOff = 0;
     s->pendingRespLen = 0;
     s->pendingRespOff = 0;
 }
@@ -1922,42 +1931,31 @@ bool RtspServer::sendRtpPacket(Session &s, uint8_t chan,
     }
 
     // TCP interleaved: non-blocking send with queue.
-    if (!s.sendQueue.empty()) {
-        uint8_t buf[1504];
-        size_t total = len + 4;
-        if (total > sizeof(buf)) return false;
-        buf[0] = '$';
-        buf[1] = chan;
-        buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
-        buf[3] = static_cast<uint8_t>(len & 0xFF);
-        memcpy(buf + 4, pkt, len);
-        if (s.sendQueueBytes + total > SEND_QUEUE_HARD_CAP)
-            return false;
-        std::vector<uint8_t> pktBuf(buf, buf + total);
-        s.sendQueue.push_back(std::move(pktBuf));
-        s.sendQueueBytes += total;
-        return true;
-    }
-
     uint8_t buf[1504];
     size_t total = len + 4;
+    if (total > sizeof(buf)) return false;
     buf[0] = '$';
     buf[1] = chan;
     buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
     buf[3] = static_cast<uint8_t>(len & 0xFF);
     memcpy(buf + 4, pkt, len);
 
-    ssize_t n = send(s.fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
-    if (static_cast<size_t>(n) == total) return true;
+    // Fast path: nothing queued, try a direct non-blocking send.
+    if (s.sendQueue.empty()) {
+        ssize_t n = send(s.fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (static_cast<size_t>(n) == total) return true;
+        size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
+        size_t remain = total - sent;
+        if (s.sendQueueBytes() + remain > SEND_QUEUE_HARD_CAP)
+            return false;
+        s.sendQueue.insert(s.sendQueue.end(), buf + sent, buf + total);
+        return true;
+    }
 
-    size_t sent = (n > 0) ? static_cast<size_t>(n) : 0;
-    size_t remain = total - sent;
-    if (s.sendQueueBytes + remain > SEND_QUEUE_HARD_CAP)
+    // Backlogged: append to the contiguous queue.
+    if (s.sendQueueBytes() + total > SEND_QUEUE_HARD_CAP)
         return false;
-    std::vector<uint8_t> pktBuf(remain);
-    memcpy(pktBuf.data(), buf + sent, remain);
-    s.sendQueue.push_back(std::move(pktBuf));
-    s.sendQueueBytes += remain;
+    s.sendQueue.insert(s.sendQueue.end(), buf, buf + total);
     return true;
 }
 
@@ -2047,12 +2045,12 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     // everything bounds the queue at the watermark + one NAL, and the
     // client re-syncs on the first IDR that fits after its socket
     // drains.  Rate-limited WARN reports queue depth and drops.
-    if (s.sendQueueBytes > SEND_QUEUE_HIGH_WATERMARK) {
+    if (s.sendQueueBytes() > SEND_QUEUE_HIGH_WATERMARK) {
         s.nonKeyframeDrops++;
         time_t now = time(nullptr);
         if (now - s.lastNonKeyframeDropLog >= 5) {
             LOG_WARN("ch" << s.videoChn << " RTSP send queue "
-                     << s.sendQueueBytes << "B -- client falling behind, "
+                     << s.sendQueueBytes() << "B -- client falling behind, "
                      << s.nonKeyframeDrops
                      << " frames dropped in last 5s");
             s.nonKeyframeDrops = 0;
@@ -2559,11 +2557,8 @@ void RtspServer::sendRtcpSr(Session &s) {
             // Partial or EAGAIN: enqueue for retry
             size_t sent = (sn > 0) ? static_cast<size_t>(sn) : 0;
             size_t remain = total - sent;
-            if (s.sendQueueBytes + remain > 1024 * 1024) return; // drop
-            std::vector<uint8_t> pkt(remain);
-            memcpy(pkt.data(), buf + sent, remain);
-            s.sendQueue.push_back(std::move(pkt));
-            s.sendQueueBytes += remain;
+            if (s.sendQueueBytes() + remain > 1024 * 1024) return; // drop
+            s.sendQueue.insert(s.sendQueue.end(), buf + sent, buf + total);
         };
         if (s.videoSetupUrl[0] != '\0')
             queueTc(s.videoInterleavedRtcp, rtcp, 28);
