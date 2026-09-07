@@ -1106,6 +1106,7 @@ bool CFG::updateConfig() {
 
   if (save_result != 0) {
     LOG_DEBUG("Config is written to " << filePath);
+    reset_dirty();
     return true;
   } else {
     LOG_ERROR("Failed to serialize JSON config");

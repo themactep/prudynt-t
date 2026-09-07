@@ -331,6 +331,7 @@ public:
 
   bool config_loaded = false;
   bool config_corrupted = false;
+  bool dirty_ = false; // set when set<T>() actually changes a value
   JsonValue *jsonConfig = nullptr;
   std::string filePath{};
   mutable std::mutex configMutex;
@@ -338,6 +339,9 @@ public:
   CFG();
   void load();
   static CFG *createNew();
+  bool is_dirty() const { return dirty_; }
+  void reset_dirty() { dirty_ = false; }
+  void mark_dirty() { dirty_ = true; }
   bool readConfig();
   bool updateConfig();
   bool saveIntValues(const std::vector<std::pair<std::string, int>> &values);
@@ -406,6 +410,20 @@ public:
     for (auto &item : *items) {
       if (item.path == name) {
         if (item.validate(value)) {
+          // No-op when the value is unchanged so a redundant set does not
+          // trigger a config-file rewrite.
+          bool changed;
+          if constexpr (std::is_same_v<T, const char *>) {
+            changed = (item.value == nullptr) != (value == nullptr);
+            if (!changed && item.value && value)
+              changed = strcmp(item.value, value) != 0;
+          } else {
+            changed = (item.value != value);
+          }
+          if (!changed) {
+            return true;
+          }
+
           if constexpr (std::is_same_v<T, const char *>) {
             if (item.value) free((void *)item.value);
             item.value = value ? strdup(value) : nullptr;
@@ -430,6 +448,7 @@ public:
             }
             set_nested_item(jsonConfig, item.path, valueStr.c_str());
           }
+          dirty_ = true;
           return true;
         } else {
           return false;

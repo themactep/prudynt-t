@@ -439,7 +439,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
           if (cloned)
             add_to_object(seiSec, "entries", cloned);
         }
-        save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+        cfg->mark_dirty();
         global_reload_osd = true;
       }
     }
@@ -1503,6 +1503,7 @@ void handle_mp4(JsonValue *obj, std::string &out, bool &sep) {
 namespace JsonAPI {
 
 bool process_json(const std::string &in, std::string &out) {
+  cfg->reset_dirty();
   JsonValue *root = parse_json_string(in.c_str());
   if (!root || root->type != JSON_OBJECT) {
     if (root)
