@@ -5,8 +5,6 @@
 #include "util/Logger.hpp"
 #include <imp/imp_audio.h>
 
-#include <stdexcept>
-
 enum IMPAudioFormat {
   PCM,
   G711A,
@@ -24,6 +22,15 @@ public:
   virtual int close() = 0;
   virtual void setInputRate(int /*rate*/) {}
   virtual ~IMPAudioEncoder() = default;
+
+  // RTTI-free accessors (dynamic_cast removed for -fno-rtti)
+  virtual bool isAAC() const { return false; }
+  virtual int getFrameSamples() const { return 0; }
+  virtual int64_t getLastFramePtsUs() const { return 0; }
+  virtual const uint8_t *getAsc(uint32_t &len) const {
+    len = 0;
+    return nullptr;
+  }
 };
 
 class IMPAudio {
@@ -40,8 +47,7 @@ public:
   IMPAudio(int devId, int inChn, int aeChn)
       : devId(devId), inChn(inChn), aeChn(aeChn) {
     if (init() != 0) {
-      throw std::runtime_error("Failed to initialize IMPAudio - hardware may "
-                               "not be properly initialized");
+      init_failed = true;
     }
   };
 
@@ -62,6 +68,7 @@ public:
   int outChnCnt = 1;
 
 private:
+  bool init_failed = false;
   bool enabledAgc = false;
   bool enabledHpf = false;
   bool enabledNs = false;

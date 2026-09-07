@@ -542,7 +542,10 @@ int IPCServer::handle_client(int fd) {
         pos++;
       if (start == pos)
         return -999999;
-      return std::stoi(req.substr(start, pos - start));
+      int val = 0;
+      for (size_t k = start; k < pos; ++k)
+        val = val * 10 + (req[k] - '0');
+      return val;
     };
     int v;
     v = find_kv("ch");
@@ -613,7 +616,10 @@ int IPCServer::handle_client(int fd) {
         pos++;
       if (start == pos)
         return -999999;
-      return std::stoi(req.substr(start, pos - start));
+      int val = 0;
+      for (size_t k = start; k < pos; ++k)
+        val = val * 10 + (req[k] - '0');
+      return val;
     };
     auto find_str = [&](const char *key) -> std::string {
       size_t pos = req.find(key);

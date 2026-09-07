@@ -1033,40 +1033,31 @@ void VideoWorker::run() {
 
               bool delivered = false;
 
-              try {
-                H264NALUnit nalu;
-                nalu.data = nalu_buf; // copy: channel stores its own copy
-                nalu.imp_ts = rtsp_ts_us;
-                nalu.time = nal_time;
-                nalu.frame_id = current_frame_id;
-                nalu.packet_index = i;
-                nalu.packet_count = stream.packCount;
-                nalu.is_frame_start = frame_start;
-                nalu.is_frame_end = pack_is_frame_end;
-                nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
-                                    nal_is_vps || nal_is_sps || nal_is_pps);
-                delivered = global_video[encChn]->msgChannel->write(std::move(nalu));
-                if (delivered) {
-                  std::unique_lock<std::mutex> lock_stream{
-                      global_video[encChn]->onDataCallbackLock};
-                  if (global_video[encChn]->onDataCallback)
-                    global_video[encChn]->onDataCallback();
-                } else {
-                  LOG_DDEBUG("video channel:"
-                             << encChn
-                             << " msgChannel full, dropped oldest NAL");
-                  std::unique_lock<std::mutex> lock_stream{
-                      global_video[encChn]->onDataCallbackLock};
-                  if (global_video[encChn]->onDataCallback)
-                    global_video[encChn]->onDataCallback();
-                }
-              } catch (const std::exception &e) {
-                LOG_ERROR("video channel:"
-                          << encChn << ", frame_id:" << current_frame_id
-                          << ", packet:" << i << "/"
-                          << stream.packCount
-                          << " - Failed to queue: " << e.what());
-                delivered = false;
+              H264NALUnit nalu;
+              nalu.data = nalu_buf; // copy: channel stores its own copy
+              nalu.imp_ts = rtsp_ts_us;
+              nalu.time = nal_time;
+              nalu.frame_id = current_frame_id;
+              nalu.packet_index = i;
+              nalu.packet_count = stream.packCount;
+              nalu.is_frame_start = frame_start;
+              nalu.is_frame_end = pack_is_frame_end;
+              nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                  nal_is_vps || nal_is_sps || nal_is_pps);
+              delivered = global_video[encChn]->msgChannel->write(std::move(nalu));
+              if (delivered) {
+                std::unique_lock<std::mutex> lock_stream{
+                    global_video[encChn]->onDataCallbackLock};
+                if (global_video[encChn]->onDataCallback)
+                  global_video[encChn]->onDataCallback();
+              } else {
+                LOG_DDEBUG("video channel:"
+                           << encChn
+                           << " msgChannel full, dropped oldest NAL");
+                std::unique_lock<std::mutex> lock_stream{
+                    global_video[encChn]->onDataCallbackLock};
+                if (global_video[encChn]->onDataCallback)
+                  global_video[encChn]->onDataCallback();
               }
 
               std::vector<VideoTapEntry> taps_copy;

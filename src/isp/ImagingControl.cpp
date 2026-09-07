@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <mutex>
@@ -345,9 +346,9 @@ std::optional<ParsedAssignment> parse_assignment(const std::string &token) {
     raw_value.pop_back();
   }
 
-  try {
-    result.value = std::stod(raw_value);
-  } catch (const std::exception &) {
+  char *end = nullptr;
+  result.value = std::strtod(raw_value.c_str(), &end);
+  if (end == raw_value.c_str() || *end != '\0') {
     return std::nullopt;
   }
 

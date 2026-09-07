@@ -24,25 +24,20 @@ int IMPAudio::encodeDirect(IMPAudioFrame *frame, unsigned char *outbuf,
 
 #if defined(USE_AAC) && USE_AAC
 bool IMPAudio::isAACEncoder() {
-  return dynamic_cast<AACEncoder *>(encoder) != nullptr;
+  return encoder && encoder->isAAC();
 }
 
 int IMPAudio::getAACFrameSamples() {
-  auto *aac = dynamic_cast<AACEncoder *>(encoder);
-  return aac ? aac->getFrameSamples() : 0;
+  return encoder ? encoder->getFrameSamples() : 0;
 }
 
 int64_t IMPAudio::getAACLastPtsUs() {
-  auto *aac = dynamic_cast<AACEncoder *>(encoder);
-  return aac ? aac->getLastFramePtsUs() : 0;
+  return encoder ? encoder->getLastFramePtsUs() : 0;
 }
 
 const uint8_t *IMPAudio::getAACAsc(uint32_t &len) {
-  auto *aac = dynamic_cast<AACEncoder *>(encoder);
-  if (aac && aac->getAscLen() > 0) {
-    len = aac->getAscLen();
-    return aac->getAsc();
-  }
+  if (encoder)
+    return encoder->getAsc(len);
   len = 0;
   return nullptr;
 }
@@ -54,7 +49,13 @@ const uint8_t *IMPAudio::getAACAsc(uint32_t &len) { len = 0; return nullptr; }
 #endif
 
 IMPAudio *IMPAudio::createNew(int devId, int inChn, int aeChn) {
-  return new IMPAudio(devId, inChn, aeChn);
+  IMPAudio *a = new IMPAudio(devId, inChn, aeChn);
+  if (a->init_failed) {
+    LOG_ERROR("IMPAudio::createNew failed: hardware may not be properly "
+              "initialized");
+    return nullptr; // leak: ~IMPAudio() would deinit() a half-initialized device
+  }
+  return a;
 }
 
 int IMPAudio::init() {

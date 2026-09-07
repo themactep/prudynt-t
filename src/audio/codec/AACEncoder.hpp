@@ -73,10 +73,13 @@ public:
   unsigned long getMaxOutputBytes() const {
     return maxOutputBytes;
   }
-  int getFrameSamples() const {
+  bool isAAC() const override {
+    return true;
+  }
+  int getFrameSamples() const override {
     return static_cast<int>(inputSamples);
   }
-  int64_t getLastFramePtsUs() const {
+  int64_t getLastFramePtsUs() const override {
     return lastFramePtsUs;
   }
   const uint8_t *getAsc() const {
@@ -84,6 +87,10 @@ public:
   }
   uint32_t getAscLen() const {
     return ascLen;
+  }
+  const uint8_t *getAsc(uint32_t &len) const override {
+    len = ascLen;
+    return ascLen > 0 ? asc : nullptr;
   }
   void setInputRate(int rate) {
     if (rate > 0)

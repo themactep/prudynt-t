@@ -517,6 +517,12 @@ void *AudioWorker::thread_entry(void *arg) {
       global_audio[encChn]->devId, global_audio[encChn]->aiChn,
       global_audio[encChn]->aeChn);
 
+  if (!global_audio[encChn]->imp_audio) {
+    LOG_ERROR("AudioWorker: IMPAudio init failed for channel " << encChn);
+    sh->has_started.release();
+    return nullptr;
+  }
+
   // inform main that initialization is complete
   sh->has_started.release();
 

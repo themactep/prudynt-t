@@ -274,40 +274,34 @@ void BackchannelWorker::run() {
 }
 
 void *BackchannelWorker::thread_entry(void *arg) {
-  try {
-    LOG_INFO("Starting BackchannelWorker thread.");
+  LOG_INFO("Starting BackchannelWorker thread.");
 
-    global_backchannel->imp_backchannel = IMPBackchannel::createNew();
+  global_backchannel->imp_backchannel = IMPBackchannel::createNew();
 
-    // Signal that IMP hardware init (ADEC channels) is complete.
-    // The IMP SDK shares internal state between ADEC and encoder
-    // subsystems; concurrent init causes memory corruption -> SIGILL.
-    if (arg) {
-      auto *sh = static_cast<StartHelper *>(arg);
-      sh->has_started.release();
-    }
+  // Signal that IMP hardware init (ADEC channels) is complete.
+  // The IMP SDK shares internal state between ADEC and encoder
+  // subsystems; concurrent init causes memory corruption -> SIGILL.
+  if (arg) {
+    auto *sh = static_cast<StartHelper *>(arg);
+    sh->has_started.release();
+  }
 
-    BackchannelWorker processor;
-    processor.run();
+  BackchannelWorker processor;
+  processor.run();
 
 #if defined(PLATFORM_T23)
-    if (global_shutdown_requested.load(std::memory_order_relaxed)) {
-      LOG_WARN("T23 shutdown: skipping backchannel teardown");
-      global_backchannel->imp_backchannel = nullptr;
-      LOG_INFO("Exiting BackchannelWorker thread.");
-      return nullptr;
-    }
+  if (global_shutdown_requested.load(std::memory_order_relaxed)) {
+    LOG_WARN("T23 shutdown: skipping backchannel teardown");
+    global_backchannel->imp_backchannel = nullptr;
+    LOG_INFO("Exiting BackchannelWorker thread.");
+    return nullptr;
+  }
 #endif
 
-    delete global_backchannel->imp_backchannel;
-    global_backchannel->imp_backchannel = nullptr;
+  delete global_backchannel->imp_backchannel;
+  global_backchannel->imp_backchannel = nullptr;
 
-    LOG_INFO("Exiting BackchannelWorker thread.");
-  } catch (const std::exception &e) {
-    LOG_ERROR("BackchannelWorker thread caught exception: " << e.what());
-  } catch (...) {
-    LOG_ERROR("BackchannelWorker thread caught unknown exception");
-  }
+  LOG_INFO("Exiting BackchannelWorker thread.");
   return nullptr;
 }
 

@@ -349,14 +349,12 @@ IMPSensorInfo IMPSystem::create_sensor_info(const char *sensor_name) {
 }
 
 IMPSystem *IMPSystem::createNew() {
-  try {
-    return new IMPSystem();
-  } catch (const std::exception &e) {
-    LOG_ERROR("IMPSystem::createNew failed: " << e.what());
-  } catch (...) {
-    LOG_ERROR("IMPSystem::createNew failed: unknown exception");
+  IMPSystem *sys = new IMPSystem();
+  if (sys->init_failed) {
+    LOG_ERROR("IMPSystem::createNew failed: error initializing the imp system.");
+    return nullptr; // leak: ~IMPSystem() would destroy() a half-initialized system
   }
-  return nullptr;
+  return sys;
 }
 
 int IMPSystem::init() {

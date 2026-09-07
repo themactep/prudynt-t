@@ -18,7 +18,7 @@ override CFLAGS        += $(DEFAULT_OPTFLAG)
 endif
 override CFLAGS        += -DNO_OPENSSL=1
 
-CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter
+CXXFLAGS               += $(CFLAGS) -std=c++20 -Wall -Wextra -Wno-unused-parameter -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LDFLAGS                += -lrt -lpthread
 
 # Allow legacy build systems to keep exporting WEBSOCKET_ENABLED=0/1

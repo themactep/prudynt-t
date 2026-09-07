@@ -19,8 +19,9 @@ public:
 
   IMPSystem() {
     if (init() != 0 && Logger::level != Logger::DEBUG) {
-      throw std::invalid_argument("error initializing the imp system.");
-    };
+      init_failed = true;
+      return;
+    }
 
     /* https://github.com/rara64/prudynt-t/commit/7eda99252b0d1309cbe134dc4143182eda9c21bd
      */
@@ -68,6 +69,7 @@ public:
 private:
   IMPSensorInfo sinfo{};
   IMPSensorInfo create_sensor_info(const char *sensor_name);
+  bool init_failed = false;
 };
 
 #endif

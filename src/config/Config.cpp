@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -1022,14 +1023,17 @@ template <typename T> T jsonValueToNumber(JsonValue *value, T defaultValue) {
       return static_cast<T>(value->value.number.real);
     }
   } else if (value->type == JSON_STRING && value->value.string) {
-    try {
-      if constexpr (std::is_integral_v<T>) {
-        return static_cast<T>(std::stoll(value->value.string));
-      } else {
-        return static_cast<T>(std::stod(value->value.string));
-      }
-    } catch (...) {
-      return defaultValue;
+    char *end = nullptr;
+    if constexpr (std::is_integral_v<T>) {
+      long long v = std::strtoll(value->value.string, &end, 10);
+      if (end == value->value.string || *end != '\0')
+        return defaultValue;
+      return static_cast<T>(v);
+    } else {
+      double v = std::strtod(value->value.string, &end);
+      if (end == value->value.string || *end != '\0')
+        return defaultValue;
+      return static_cast<T>(v);
     }
   }
   return defaultValue;
