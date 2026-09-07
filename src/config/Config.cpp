@@ -5,13 +5,16 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <json_config.h>
+#include <unistd.h>
 #include <vector>
 
 #if defined(WEBSOCKET_ENABLED)
@@ -19,6 +22,46 @@
 #endif
 
 #define MODULE "CONFIG"
+
+// Refresh the runtime state files consumed by the web UI heartbeat so it
+// can read mic/spk/running_mode without a prudyntctl JSON round-trip.
+void write_runtime_state() {
+  if (!cfg)
+    return;
+
+  const char *dir = "/run/prudynt";
+  auto set_active = [&](const char *name, bool active) {
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    if (active) {
+      int fd = ::open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+      if (fd >= 0) {
+        const char *payload = "1\n";
+        ssize_t ignored = ::write(fd, payload, 2);
+        (void)ignored;
+        ::close(fd);
+      }
+    } else {
+      ::unlink(path);
+    }
+  };
+
+  set_active("mic.active", cfg->audio.input_enabled);
+  set_active("spk.active", cfg->audio.output_enabled);
+
+  char path[64];
+  snprintf(path, sizeof(path), "%s/running_mode", dir);
+  int fd = ::open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+  if (fd >= 0) {
+    char payload[8];
+    int n = snprintf(payload, sizeof(payload), "%d\n", cfg->image.running_mode);
+    if (n > 0) {
+      ssize_t ignored = ::write(fd, payload, static_cast<size_t>(n));
+      (void)ignored;
+    }
+    ::close(fd);
+  }
+}
 
 namespace fs = std::filesystem;
 

@@ -435,6 +435,7 @@ int main(int argc, const char *argv[]) {
   recover_stale_imp_state();
 
   cfg = std::make_shared<CFG>();
+  write_runtime_state();
 
   // Refuse to start with a corrupted config - bare defaults are only
   // acceptable when there is no config file at all.

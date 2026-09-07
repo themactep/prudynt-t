@@ -319,6 +319,11 @@ struct _websocket {
 };
 #endif
 
+// Refresh the runtime state files the web UI heartbeat reads
+// (/run/prudynt/mic.active, spk.active, running_mode) so it avoids a JSON
+// round-trip through prudyntctl on every poll.
+void write_runtime_state();
+
 class CFG {
 public:
   // Destructor to clean up JSON object
@@ -467,6 +472,10 @@ public:
             set_nested_item(jsonConfig, item.path, valueStr.c_str());
           }
           mark_dirty();
+          if (name == "audio.mic_enabled" || name == "audio.spk_enabled" ||
+              name == "image.running_mode") {
+            write_runtime_state();
+          }
           return true;
         } else {
           return false;
