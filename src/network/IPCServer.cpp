@@ -516,30 +516,6 @@ int IPCServer::handle_client(int fd) {
   // Determine command
   if (starts_with(req, "JSON ") || req[0] == '{') {
     const char *json = req[0] == '{' ? req.c_str() : (req.c_str() + 5);
-    // TEMP diagnostic: identify the local JSON caller
-    {
-      struct ucred cred;
-      socklen_t credlen = sizeof(cred);
-      pid_t peer_pid = -1;
-      if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &credlen) == 0)
-        peer_pid = cred.pid;
-      long ppid = -1;
-      if (peer_pid > 0) {
-        char sp[64];
-        snprintf(sp, sizeof(sp), "/proc/%d/stat", (int)peer_pid);
-        FILE *f = fopen(sp, "r");
-        if (f) {
-          char line[256];
-          if (fgets(line, sizeof(line), f)) {
-            char *c = strrchr(line, ')');
-            if (c)
-              ppid = strtol(c + 2, nullptr, 10);
-          }
-          fclose(f);
-        }
-      }
-      LOG_WARN("IPC-JSON pid=" << peer_pid << " ppid=" << ppid);
-    }
     std::string resp;
     if (process_json_with_jct(json, resp)) {
       write(fd, resp.c_str(), resp.size());
