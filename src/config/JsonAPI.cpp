@@ -1517,13 +1517,9 @@ bool process_json(const std::string &in, std::string &out) {
       action_obj && action_obj->type == JSON_OBJECT) {
     if (JsonValue *dump_val = obj_get(action_obj, "dump_config");
         dump_val && dump_val->type == JSON_NULL) {
-      char *json_str = json_to_string(cfg->jsonConfig, 0); // 0 = compact
-      if (json_str) {
-        out = json_str;
-        free(json_str);
-        free_json_value(root);
-        return true;
-      }
+      out = cfg->serialized_config();
+      free_json_value(root);
+      return true;
     }
   }
 

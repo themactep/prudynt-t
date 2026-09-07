@@ -1062,6 +1062,7 @@ bool CFG::updateConfig() {
   std::lock_guard<std::mutex> lock(configMutex);
 
   config_loaded = readConfig();
+  serialized_cache_.clear();
 
   if (!jsonConfig)
     return false;
@@ -1142,6 +1143,7 @@ void CFG::load() {
   LOG_DEBUG("CFG::load() - Got float items");
 
   config_loaded = readConfig();
+  serialized_cache_.clear();
   LOG_DEBUG("CFG::load() - Read config, loaded=" << config_loaded);
 
   if (jsonConfig) {

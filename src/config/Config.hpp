@@ -332,6 +332,7 @@ public:
   bool config_loaded = false;
   bool config_corrupted = false;
   bool dirty_ = false; // set when set<T>() actually changes a value
+  mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
   JsonValue *jsonConfig = nullptr;
   std::string filePath{};
   mutable std::mutex configMutex;
@@ -341,7 +342,24 @@ public:
   static CFG *createNew();
   bool is_dirty() const { return dirty_; }
   void reset_dirty() { dirty_ = false; }
-  void mark_dirty() { dirty_ = true; }
+  void mark_dirty() {
+    dirty_ = true;
+    std::lock_guard<std::mutex> lock(configMutex);
+    serialized_cache_.clear();
+  }
+  // Returns the compact serialization of jsonConfig, cached until the
+  // config is mutated, so repeated dump_config/subtree reads don't re-walk
+  // the tree.
+  std::string serialized_config() const {
+    std::lock_guard<std::mutex> lock(configMutex);
+    if (serialized_cache_.empty()) {
+      char *js = json_to_string(jsonConfig, 0);
+      serialized_cache_ = js ? js : "{}";
+      if (js)
+        free(js);
+    }
+    return serialized_cache_;
+  }
   bool readConfig();
   bool updateConfig();
   bool saveIntValues(const std::vector<std::pair<std::string, int>> &values);
@@ -448,7 +466,7 @@ public:
             }
             set_nested_item(jsonConfig, item.path, valueStr.c_str());
           }
-          dirty_ = true;
+          mark_dirty();
           return true;
         } else {
           return false;
