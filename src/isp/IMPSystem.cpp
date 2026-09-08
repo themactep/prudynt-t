@@ -207,10 +207,13 @@ void resolve_all_stream_geometry() {
     return;
   }
 
+  // Every stream defaults to the sensor geometry when unset; an explicit
+  // value in prudynt.json wins, clamped to the sensor. Per-request w/h from
+  // prudyntctl is applied later, after the encoder is running.
   resolve_stream_geometry("stream0", cfg->stream0, 0, 0);
-  resolve_stream_geometry("stream1", cfg->stream1, 640, 360);
-  resolve_stream_geometry("stream2", cfg->stream2, 640, 360);
-  resolve_stream_geometry("stream3", cfg->stream3, 640, 360);
+  resolve_stream_geometry("stream1", cfg->stream1, 0, 0);
+  resolve_stream_geometry("stream2", cfg->stream2, 0, 0);
+  resolve_stream_geometry("stream3", cfg->stream3, 0, 0);
 
   // JPEG idle rate default: keep one frame per second for the web UI
   // thumbnail when no preview/snapshot client is connected.
