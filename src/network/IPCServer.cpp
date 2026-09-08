@@ -689,17 +689,15 @@ int IPCServer::handle_client(int fd) {
           w = (int)((long long)h * src_w / src_h);
       }
       // Round to the nearest multiple of 16 (not floor) so the derived
-      // dimension stays closest to the source aspect ratio. Clamp to a
-      // minimum so a pane that is still mid-layout (clientWidth of a few
-      // px) can't trigger a tiny encode or a flurry of encoder re-inits.
-      constexpr int kMinMjpegWidth = 320;
-      constexpr int kMinMjpegHeight = 176;
+      // dimension stays closest to the source aspect ratio. Values pass
+      // through otherwise: no minimum is imposed, and no w/h at all
+      // leaves the encoder at its configured size.
       w = ((w + 8) / 16) * 16;
-      if (w < kMinMjpegWidth)
-        w = kMinMjpegWidth;
+      if (w < 16)
+        w = 16;
       h = ((h + 8) / 16) * 16;
-      if (h < kMinMjpegHeight)
-        h = kMinMjpegHeight;
+      if (h < 16)
+        h = 16;
       // Cap after rounding so a non-16-aligned source (e.g. 1080p) is not
       // exceeded.
       if (w > src_w)
