@@ -1304,12 +1304,30 @@ void VideoWorker::run() {
              !global_restart_video && !global_video[encChn]->run_for_jpeg &&
              !bootstrap_requested_inner && !global_force_video_active &&
              !prebuffer_active_inner) {
+        // Pause the idle substream so an unwatched channel doesn't burn
+        // scaler + encoder cycles. ch0 stays up: it feeds the JPEG preview.
+        if (encChn > 0 && !global_video[encChn]->encoder_paused) {
+          IMP_Encoder_StopRecvPic(encChn);
+          if (global_video[encChn]->imp_framesource)
+            global_video[encChn]->imp_framesource->disable();
+          global_video[encChn]->encoder_paused = true;
+          LOG_INFO("stream" << encChn << ": encoder paused (idle)");
+        }
         global_video[encChn]->should_grab_frames.wait(lock_stream);
         video_clients =
             global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
         bootstrap_requested_inner =
             global_video[encChn]->bootstrap_requested.load(
                 std::memory_order_relaxed);
+      }
+
+      if (global_video[encChn]->encoder_paused) {
+        if (global_video[encChn]->imp_framesource)
+          global_video[encChn]->imp_framesource->enable();
+        IMP_Encoder_StartRecvPic(encChn);
+        IMP_Encoder_RequestIDR(encChn);
+        global_video[encChn]->encoder_paused = false;
+        LOG_INFO("stream" << encChn << ": encoder resumed");
       }
 
       global_video[encChn]->active = true;

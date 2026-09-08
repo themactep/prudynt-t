@@ -329,8 +329,22 @@ void JPEGWorker::run() {
       global_video[global_jpeg[jpgChn]->streamChn]->run_for_jpeg = false;
       while (global_jpeg[jpgChn]->running &&
              !global_jpeg[jpgChn]->request_or_overrun() &&
-             !global_restart_video)
+             !global_restart_video) {
+        // Pause the JPEG encoder while nothing is requesting snapshots so
+        // an idle preview doesn't burn encoder cycles.
+        if (!global_jpeg[jpgChn]->encoder_paused) {
+          IMP_Encoder_StopRecvPic(global_jpeg[jpgChn]->encChn);
+          global_jpeg[jpgChn]->encoder_paused = true;
+          LOG_INFO("jpeg" << jpgChn << ": encoder paused (idle)");
+        }
         global_jpeg[jpgChn]->should_grab_frames.wait(lock_stream);
+      }
+
+      if (global_jpeg[jpgChn]->encoder_paused) {
+        IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
+        global_jpeg[jpgChn]->encoder_paused = false;
+        LOG_INFO("jpeg" << jpgChn << ": encoder resumed");
+      }
 
       targetFps = global_jpeg[jpgChn]->stream->fps;
 

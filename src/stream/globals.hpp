@@ -106,6 +106,7 @@ struct jpeg_stream {
   _stream *stream;
   std::atomic<bool> running; // set to false to make jpeg_grabber thread exit
   std::atomic<bool> active{false};
+  bool encoder_paused = false; // encoder idled while no jpeg requests
   pthread_t thread;
   IMPEncoder *imp_encoder;
   std::condition_variable should_grab_frames;
@@ -193,6 +194,7 @@ struct video_stream {
   std::shared_ptr<NaluPool> nalu_pool;
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg; // see comment in audio_stream
+  bool encoder_paused = false; // encoder idled while no subscribers
   std::atomic<bool> bootstrap_requested{false};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
   std::atomic<bool> mp4_waiting_for_idr;
