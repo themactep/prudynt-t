@@ -129,7 +129,8 @@ void refresh_sensor_properties_from_proc() {
   }
 }
 
-void clamp_stream_to_sensor_limits(const char *stream_name, _stream &stream) {
+void resolve_stream_geometry(const char *stream_name, _stream &stream,
+                            int def_width, int def_height) {
   if (!cfg) {
     return;
   }
@@ -146,8 +147,11 @@ void clamp_stream_to_sensor_limits(const char *stream_name, _stream &stream) {
 
   if (sensor_width > 0) {
     if (stream.width <= 0) {
-      log_change("width", stream.width, sensor_width);
-      stream.width = sensor_width;
+      int w = def_width > 0 ? def_width : sensor_width;
+      if (w > sensor_width)
+        w = sensor_width;
+      log_change("width", stream.width, w);
+      stream.width = w;
     } else if (stream.width > sensor_width) {
       log_change("width", stream.width, sensor_width);
       stream.width = sensor_width;
@@ -156,8 +160,11 @@ void clamp_stream_to_sensor_limits(const char *stream_name, _stream &stream) {
 
   if (sensor_height > 0) {
     if (stream.height <= 0) {
-      log_change("height", stream.height, sensor_height);
-      stream.height = sensor_height;
+      int h = def_height > 0 ? def_height : sensor_height;
+      if (h > sensor_height)
+        h = sensor_height;
+      log_change("height", stream.height, h);
+      stream.height = h;
     } else if (stream.height > sensor_height) {
       log_change("height", stream.height, sensor_height);
       stream.height = sensor_height;
@@ -191,15 +198,29 @@ void clamp_stream_to_sensor_limits(const char *stream_name, _stream &stream) {
 #endif
 }
 
-void clamp_streams_to_sensor_limits() {
+// Single source of truth for stream dimensions: each stream falls back
+// to its per-stream default when unset, clamped to the sensor. Runs after
+// the sensor geometry is known (IMPSystem::init), before the encoders are
+// created.
+void resolve_all_stream_geometry() {
   if (!cfg) {
     return;
   }
 
-  clamp_stream_to_sensor_limits("stream0", cfg->stream0);
-  clamp_stream_to_sensor_limits("stream1", cfg->stream1);
-  clamp_stream_to_sensor_limits("stream2", cfg->stream2);
-  clamp_stream_to_sensor_limits("stream3", cfg->stream3);
+  resolve_stream_geometry("stream0", cfg->stream0, 0, 0);
+  resolve_stream_geometry("stream1", cfg->stream1, 640, 360);
+  resolve_stream_geometry("stream2", cfg->stream2, 640, 360);
+  resolve_stream_geometry("stream3", cfg->stream3, 640, 360);
+
+  // JPEG idle rate default: keep one frame per second for the web UI
+  // thumbnail when no preview/snapshot client is connected.
+  if (cfg->stream2.jpeg_idle_fps <= 0) {
+    int replacement = cfg->sensor.min_fps > 0 ? cfg->sensor.min_fps : 1;
+    replacement = std::clamp(replacement, 1, 30);
+    LOG_INFO("stream2: jpeg_idle_fps adjusted from "
+             << cfg->stream2.jpeg_idle_fps << " to " << replacement);
+    cfg->stream2.jpeg_idle_fps = replacement;
+  }
 }
 
 // Streams with bitrate 0 (= auto) get a default derived from the encoded
@@ -208,7 +229,7 @@ void clamp_streams_to_sensor_limits() {
 // this is a sane starting point for any sensor; a substream scales with its
 // own size (640x360 -> ~200 kbps). An explicit bitrate in prudynt.json wins;
 // setting it back to 0 re-enables the automatic value. This must run after
-// the stream sizes are resolved (clamp_streams_to_sensor_limits()) but
+// the stream sizes are resolved (resolve_all_stream_geometry()) but
 // before the encoders are created, so it is called from IMPSystem::init()
 // right alongside the clamping.
 static void apply_default_bitrate(const char *stream_name, _stream &stream,
@@ -366,7 +387,7 @@ int IMPSystem::init() {
            "after sensor enable");
 #else
   refresh_sensor_properties_from_proc();
-  clamp_streams_to_sensor_limits();
+  resolve_all_stream_geometry();
   apply_default_bitrates();
 #endif
 
@@ -441,7 +462,7 @@ int IMPSystem::init() {
   // This updates actual_fps and max_fps based on the resolution mode selected
   // by the sensor driver
   refresh_sensor_properties_from_proc();
-  clamp_streams_to_sensor_limits();
+  resolve_all_stream_geometry();
   apply_default_bitrates();
 
   /* system */

@@ -367,17 +367,10 @@ void *JPEGWorker::thread_entry(void *arg) {
   int jpgChn = impEncChn - 2;
   int ret;
 
-  // do not use the live config variable
+  // Stream geometry is resolved once in resolve_all_stream_geometry
+  // (IMPSystem::init), so use the stream's own config as-is.
   auto *stream_cfg = global_jpeg[jpgChn]->stream;
   global_jpeg[jpgChn]->streamChn = stream_cfg->jpeg_channel;
-
-  if (global_jpeg[jpgChn]->streamChn == 0) {
-    stream_cfg->width = cfg->stream0.width;
-    stream_cfg->height = cfg->stream0.height;
-  } else {
-    stream_cfg->width = cfg->stream1.width;
-    stream_cfg->height = cfg->stream1.height;
-  }
 
   const char *stream_name =
       (stream_cfg == &cfg->stream2) ? "stream2" : "stream3";

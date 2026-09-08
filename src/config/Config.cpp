@@ -76,45 +76,6 @@ void log_dimension_adjustment(const char *context, const char *field,
                    << new_value);
 }
 
-void apply_stream_sensor_defaults(CFG &config) {
-  const int sensor_w = config.sensor.width;
-  const int sensor_h = config.sensor.height;
-  if (sensor_w <= 0 || sensor_h <= 0) {
-    return;
-  }
-
-  auto adjust_dim = [&](const char *stream_name, const char *field,
-                        int sensor_max, int &value) {
-    if (sensor_max <= 0) {
-      return;
-    }
-    int original = value;
-    if (value <= 0) {
-      value = sensor_max;
-    } else if (value > sensor_max) {
-      value = sensor_max;
-    }
-    log_dimension_adjustment(stream_name, field, original, value);
-  };
-
-  auto adjust_stream = [&](const char *stream_name, _stream &stream) {
-    adjust_dim(stream_name, "width", sensor_w, stream.width);
-    adjust_dim(stream_name, "height", sensor_h, stream.height);
-  };
-
-  adjust_stream("stream0", config.stream0);
-  adjust_stream("stream1", config.stream1);
-
-  if (config.stream2.jpeg_idle_fps <= 0) {
-    const int sensor_min_fps = config.sensor.min_fps;
-    int replacement = sensor_min_fps > 0 ? sensor_min_fps : 1;
-    replacement = std::clamp(replacement, 1, 30);
-    log_dimension_adjustment("stream2", "jpeg_idle_fps",
-                             config.stream2.jpeg_idle_fps, replacement);
-    config.stream2.jpeg_idle_fps = replacement;
-  }
-}
-
 void apply_motion_sensor_defaults(CFG &config) {
   const int sensor_w = config.sensor.width;
   const int sensor_h = config.sensor.height;
@@ -1253,25 +1214,19 @@ void CFG::load() {
                             : "INFO";
   }
 
-  apply_stream_sensor_defaults(*this);
-
+  // Stream dimensions are resolved in one place
+  // (resolve_all_stream_geometry in IMPSystem), after the sensor geometry
+  // is known. Only the rotation inherits here: JPEG snapshots follow the
+  // stream they serve.
   if (stream2.jpeg_channel == 0) {
-    stream2.width = stream0.width;
-    stream2.height = stream0.height;
     stream2.rotation = stream0.rotation;
   } else {
-    stream2.width = stream1.width;
-    stream2.height = stream1.height;
     stream2.rotation = stream1.rotation;
   }
 
   if (stream3.jpeg_channel == 0) {
-    stream3.width = stream0.width;
-    stream3.height = stream0.height;
     stream3.rotation = stream0.rotation;
   } else {
-    stream3.width = stream1.width;
-    stream3.height = stream1.height;
     stream3.rotation = stream1.rotation;
   }
 
