@@ -629,6 +629,16 @@ void HTTPMJPEG::handle_client(int cfd) {
 
   int orig_fps = stream_cfg->fps;
 
+  // A request without dimensions falls back to the resolved base size, so
+  // an earlier explicit override (e.g. a small preview canvas) doesn't
+  // stick. This triggers the size_change path to re-apply the base size.
+  if (w <= 0 && h <= 0 &&
+      (stream_cfg->width != global_jpeg[ch]->base_width ||
+       stream_cfg->height != global_jpeg[ch]->base_height)) {
+    w = global_jpeg[ch]->base_width;
+    h = global_jpeg[ch]->base_height;
+  }
+
   bool size_change =
       (w > 0 && h > 0 && (w != stream_cfg->width || h != stream_cfg->height));
   bool fps_change = (fps > 0 && fps != stream_cfg->fps);

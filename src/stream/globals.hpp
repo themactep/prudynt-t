@@ -116,6 +116,11 @@ struct jpeg_stream {
   // updated
   std::vector<unsigned char> snapshot_buf;
 
+  // Resolved base dimensions (from resolve_all_stream_geometry); a request
+  // without w/h resets the encoder back to these after an explicit override.
+  int base_width{0};
+  int base_height{0};
+
   // Dynamic reconfiguration requests (applied by JPEGWorker)
   // Sequential frame counter for TRACE diagnostics (32-bit to avoid 64-bit
   // atomics)

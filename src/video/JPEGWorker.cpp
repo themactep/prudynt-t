@@ -371,6 +371,8 @@ void *JPEGWorker::thread_entry(void *arg) {
   // (IMPSystem::init), so use the stream's own config as-is.
   auto *stream_cfg = global_jpeg[jpgChn]->stream;
   global_jpeg[jpgChn]->streamChn = stream_cfg->jpeg_channel;
+  global_jpeg[jpgChn]->base_width = stream_cfg->width;
+  global_jpeg[jpgChn]->base_height = stream_cfg->height;
 
   const char *stream_name =
       (stream_cfg == &cfg->stream2) ? "stream2" : "stream3";
