@@ -364,6 +364,17 @@ void serve_fmp4(int cfd, int vch) {
         .count();
   };
 
+  // The encoder timestamps are monotonic since boot, so a client that
+  // connects minutes later would see its media start hundreds of seconds
+  // into the timeline. MSE does not auto-seek to it, so rebase to zero.
+  int64_t base_pts_ms = -1;
+  auto rebase_pts = [&](int64_t pts_ms) {
+    if (base_pts_ms < 0)
+      base_pts_ms = pts_ms;
+    int64_t r = pts_ms - base_pts_ms;
+    return r > 0 ? r : 0;
+  };
+
   // Drain the tap queues, mux, and send video + audio fragments.
   std::vector<uint8_t> sample;
   while (true) {
@@ -393,7 +404,7 @@ void serve_fmp4(int cfd, int vch) {
         // collide for two consecutive frames and yield duplicate DTS.
         int64_t pts_ms = unit.imp_ts > 0 ? unit.imp_ts / 1000 : now_ms();
         auto frag =
-            muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
+            muxer->muxVideo(sample.data(), sample.size(), rebase_pts(pts_ms), isKey);
         sample.clear();
         if (!frag.empty() && !write_chunk(frag))
           return;
@@ -408,7 +419,8 @@ void serve_fmp4(int cfd, int vch) {
           continue;
         int64_t pts_ms = static_cast<int64_t>(af.time.tv_sec) * 1000 +
                          af.time.tv_usec / 1000;
-        auto frag = muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
+        auto frag =
+            muxer->muxAudio(af.data.data(), af.data.size(), rebase_pts(pts_ms));
         if (!frag.empty() && !write_chunk(frag))
           return;
       }
