@@ -18,6 +18,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
+#include <memory>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
@@ -227,9 +228,52 @@ void serve_fmp4(int cfd, int vch) {
   }
   auto vs = global_video[vch];
 
-  // Per-client tap queue; the video worker fans encoded NALs into it.
+  // RAII cleanup for the per-client taps and the muxer.
+  struct TapGuard {
+    int vch;
+    uint64_t vid = 0;
+    uint64_t aud = 0;
+    ~TapGuard() {
+      if (vid)
+        unregister_video_tap(vch, vid);
+      if (aud)
+        unregister_audio_tap(0, aud);
+    }
+  } taps{vch};
+  std::unique_ptr<MP4Muxer, decltype(&DestroyMP4Muxer)> muxer(
+      nullptr, DestroyMP4Muxer);
+
+  // AAC audio track when the mic is enabled; ASC comes from the encoder.
+  std::vector<uint8_t> aac_config;
+  int audio_sample_rate = 0;
+  int audio_channels = 1;
+  bool have_audio = cfg->audio.input_enabled &&
+                    std::strcmp(cfg->audio.input_format, "AAC") == 0;
+  if (have_audio) {
+    uint32_t asc_len = 0;
+    const uint8_t *asc = IMPAudio::getAACAsc(asc_len);
+    if (asc && asc_len) {
+      aac_config.assign(asc, asc + asc_len);
+      audio_sample_rate = cfg->audio.mic_sample_rate();
+#if defined(LIB_AUDIO_PROCESSING)
+      if (cfg->audio.force_stereo)
+        audio_channels = 2;
+#endif
+    } else {
+      have_audio = false;
+    }
+  }
+
+  // Per-client tap queues; workers fan encoded NALs/audio frames into them.
   auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
-  uint64_t tap_id = register_video_tap(vch, q).id;
+  taps.vid = register_video_tap(vch, q).id;
+  std::shared_ptr<MsgChannel<AudioFrame>> aq;
+  if (have_audio && global_audio[0]) {
+    aq = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3);
+    taps.aud = register_audio_tap(0, aq).id;
+    global_audio[0]->hasDataCallback.store(true, std::memory_order_relaxed);
+    global_audio[0]->should_grab_frames.notify_one();
+  }
 
   // Wake the video loop and ask for a keyframe so SPS/PPS + IDR arrive now.
   vs->hasDataCallback.store(true, std::memory_order_relaxed);
@@ -254,7 +298,6 @@ void serve_fmp4(int cfd, int vch) {
   }
 
   if (!have_codec) {
-    unregister_video_tap(vch, tap_id);
     const char *resp =
         "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n"
         "Connection: close\r\n\r\ncodec config unavailable\n";
@@ -262,9 +305,8 @@ void serve_fmp4(int cfd, int vch) {
     return;
   }
 
-  MP4Muxer *muxer = CreateMP4Muxer();
+  muxer.reset(CreateMP4Muxer());
   if (!muxer) {
-    unregister_video_tap(vch, tap_id);
     const char *resp =
         "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n"
         "Connection: close\r\n\r\nmuxer unavailable\n";
@@ -277,10 +319,12 @@ void serve_fmp4(int cfd, int vch) {
   params.height = vs->stream->height;
   params.fps = vs->stream->fps;
   params.avcC = build_avcC(sps, pps);
-  // No aacConfig: video-only track.
+  if (have_audio) {
+    params.aacConfig = aac_config;
+    params.sampleRate = audio_sample_rate;
+    params.channels = audio_channels;
+  }
   if (!muxer->init(params)) {
-    DestroyMP4Muxer(muxer);
-    unregister_video_tap(vch, tap_id);
     const char *resp =
         "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n"
         "Connection: close\r\n\r\nmuxer init failed\n";
@@ -295,11 +339,8 @@ void serve_fmp4(int cfd, int vch) {
                     "Cache-Control: no-store, no-cache\r\n"
                     "Access-Control-Allow-Origin: *\r\n"
                     "Connection: close\r\n\r\n";
-  if (!write_full(cfd, hdr, strlen(hdr))) {
-    DestroyMP4Muxer(muxer);
-    unregister_video_tap(vch, tap_id);
+  if (!write_full(cfd, hdr, strlen(hdr)))
     return;
-  }
 
   auto write_chunk = [&](const std::vector<uint8_t> &data) -> bool {
     char ch[32];
@@ -311,60 +352,71 @@ void serve_fmp4(int cfd, int vch) {
     return write_full(cfd, "\r\n", 2);
   };
 
-  if (!write_chunk(muxer->getInitSegment())) {
-    DestroyMP4Muxer(muxer);
-    unregister_video_tap(vch, tap_id);
+  if (!write_chunk(muxer->getInitSegment()))
     return;
-  }
 
   // Avoid blocking forever on a stalled client.
   timeval sto{2, 0};
   ::setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &sto, sizeof(sto));
 
-  // Drain the tap queue, build AVCC samples, mux, and send fragments.
+  auto now_ms = []() {
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch())
+        .count();
+  };
+
+  // Drain the tap queues, mux, and send video + audio fragments.
   std::vector<uint8_t> sample;
   while (true) {
+    bool did_work = false;
+
     H264NALUnit unit;
-    if (!q->read(&unit)) {
+    while (q->read(&unit)) {
+      did_work = true;
+      if (unit.data.empty())
+        continue;
+      uint8_t nalType = unit.data[0] & 0x1F;
+      // SPS/PPS already live in the avcC init segment; keep them out of-band.
+      if (nalType == 7 || nalType == 8)
+        continue;
+
+      bool isVCL = (nalType == 1 || nalType == 5);
+      bool isKey = (nalType == 5);
+
+      // AVCC sample: 4-byte big-endian length prefix + raw NAL.
+      uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
+      sample.insert(sample.end(), reinterpret_cast<uint8_t *>(&nl),
+                    reinterpret_cast<uint8_t *>(&nl) + 4);
+      sample.insert(sample.end(), unit.data.begin(), unit.data.end());
+
+      if (isVCL) {
+        // Prefer the encoder's monotonic timestamp (us); wall-clock ms can
+        // collide for two consecutive frames and yield duplicate DTS.
+        int64_t pts_ms = unit.imp_ts > 0 ? unit.imp_ts / 1000 : now_ms();
+        auto frag =
+            muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
+        sample.clear();
+        if (!frag.empty() && !write_chunk(frag))
+          return;
+      }
+    }
+
+    if (aq) {
+      AudioFrame af;
+      while (aq->read(&af)) {
+        did_work = true;
+        if (af.data.empty())
+          continue;
+        int64_t pts_ms = static_cast<int64_t>(af.time.tv_sec) * 1000 +
+                         af.time.tv_usec / 1000;
+        auto frag = muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
+        if (!frag.empty() && !write_chunk(frag))
+          return;
+      }
+    }
+
+    if (!did_work)
       std::this_thread::sleep_for(milliseconds(2));
-      continue;
-    }
-    if (unit.data.empty())
-      continue;
-    uint8_t nalType = unit.data[0] & 0x1F;
-    // SPS/PPS already live in the avcC init segment; keep them out of-band.
-    if (nalType == 7 || nalType == 8)
-      continue;
-
-    bool isVCL = (nalType == 1 || nalType == 5);
-    bool isKey = (nalType == 5);
-
-    // AVCC sample: 4-byte big-endian length prefix + raw NAL.
-    uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
-    sample.insert(sample.end(), reinterpret_cast<uint8_t *>(&nl),
-                  reinterpret_cast<uint8_t *>(&nl) + 4);
-    sample.insert(sample.end(), unit.data.begin(), unit.data.end());
-
-    if (isVCL) {
-      // Prefer the encoder's monotonic timestamp (us); two frames can land
-      // in the same wall-clock millisecond, which yields duplicate DTS.
-      int64_t pts_ms = unit.imp_ts > 0
-                           ? unit.imp_ts / 1000
-                           : duration_cast<milliseconds>(
-                                 steady_clock::now().time_since_epoch())
-                                 .count();
-      auto frag = muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
-      sample.clear();
-      if (!frag.empty() && !write_chunk(frag))
-        break;
-    }
   }
-
-  // Terminate the chunked body.
-  (void)write_full(cfd, "0\r\n\r\n", 5);
-
-  DestroyMP4Muxer(muxer);
-  unregister_video_tap(vch, tap_id);
 }
 
 } // namespace
