@@ -5,6 +5,7 @@
 #include "config/JsonAPI.hpp"
 #include "util/Logger.hpp"
 #include "stream/globals.hpp"
+#include "recording/MP4MuxerFactory.hpp"
 
 #include <json_config.h>
 
@@ -187,6 +188,179 @@ std::string get_param(const std::string &qs, const std::string &name) {
     p = k + 1;
   }
   return "";
+}
+
+// Build an AVCDecoderConfigurationRecord from SPS + PPS (start-code-free
+// NALs). Matches the record the WebSocket fMP4 path used to produce.
+std::vector<uint8_t> build_avcC(const std::vector<uint8_t> &sps,
+                                const std::vector<uint8_t> &pps) {
+  std::vector<uint8_t> avcC;
+  if (sps.size() < 4)
+    return avcC;
+  avcC.push_back(0x01);   // configurationVersion
+  avcC.push_back(sps[1]); // AVCProfileIndication
+  avcC.push_back(sps[2]); // profile_compatibility
+  avcC.push_back(sps[3]); // AVCLevelIndication
+  avcC.push_back(0xFF);   // lengthSizeMinusOne = 3
+  avcC.push_back(0xE1);   // numOfSequenceParameterSets = 1
+  uint16_t sps_len = htons(static_cast<uint16_t>(sps.size()));
+  avcC.insert(avcC.end(), reinterpret_cast<uint8_t *>(&sps_len),
+              reinterpret_cast<uint8_t *>(&sps_len) + 2);
+  avcC.insert(avcC.end(), sps.begin(), sps.end());
+  avcC.push_back(0x01); // numOfPictureParameterSets = 1
+  uint16_t pps_len = htons(static_cast<uint16_t>(pps.size()));
+  avcC.insert(avcC.end(), reinterpret_cast<uint8_t *>(&pps_len),
+              reinterpret_cast<uint8_t *>(&pps_len) + 2);
+  avcC.insert(avcC.end(), pps.begin(), pps.end());
+  return avcC;
+}
+
+// Stream an already-encoded H.264 channel as live fragmented MP4 (fMP4) over
+// chunked HTTP. Reuses the existing encode via a video tap, so no new encode
+// and no extra libraries are needed; playable in-browser via MediaSource.
+void serve_fmp4(int cfd, int vch) {
+  if (vch < 0 || vch >= NUM_VIDEO_CHANNELS || !global_video[vch]) {
+    const char *resp = "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n"
+                       "Connection: close\r\n\r\nnot found\n";
+    (void)write_full(cfd, resp, strlen(resp));
+    return;
+  }
+  auto vs = global_video[vch];
+
+  // Per-client tap queue; the video worker fans encoded NALs into it.
+  auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
+  uint64_t tap_id = register_video_tap(vch, q).id;
+
+  // Wake the video loop and ask for a keyframe so SPS/PPS + IDR arrive now.
+  vs->hasDataCallback.store(true, std::memory_order_relaxed);
+  vs->should_grab_frames.notify_one();
+  IMP_Encoder_RequestIDR(vch);
+
+  // Grab SPS/PPS from the latest codec config; wait briefly for the IDR if
+  // they are not available yet (e.g. the first frames after boot).
+  std::vector<uint8_t> sps, pps;
+  bool have_codec = false;
+  for (int i = 0; i < 200; ++i) {
+    {
+      std::lock_guard<std::mutex> lk(vs->codec_config_mutex);
+      sps = vs->latest_sps;
+      pps = vs->latest_pps;
+    }
+    if (sps.size() >= 4 && !pps.empty()) {
+      have_codec = true;
+      break;
+    }
+    std::this_thread::sleep_for(milliseconds(10));
+  }
+
+  if (!have_codec) {
+    unregister_video_tap(vch, tap_id);
+    const char *resp =
+        "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n"
+        "Connection: close\r\n\r\ncodec config unavailable\n";
+    (void)write_full(cfd, resp, strlen(resp));
+    return;
+  }
+
+  MP4Muxer *muxer = CreateMP4Muxer();
+  if (!muxer) {
+    unregister_video_tap(vch, tap_id);
+    const char *resp =
+        "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n"
+        "Connection: close\r\n\r\nmuxer unavailable\n";
+    (void)write_full(cfd, resp, strlen(resp));
+    return;
+  }
+
+  MP4Muxer::InitParams params;
+  params.width = vs->stream->width;
+  params.height = vs->stream->height;
+  params.fps = vs->stream->fps;
+  params.avcC = build_avcC(sps, pps);
+  // No aacConfig: video-only track.
+  if (!muxer->init(params)) {
+    DestroyMP4Muxer(muxer);
+    unregister_video_tap(vch, tap_id);
+    const char *resp =
+        "HTTP/1.0 500 Internal Server Error\r\nContent-Type: text/plain\r\n"
+        "Connection: close\r\n\r\nmuxer init failed\n";
+    (void)write_full(cfd, resp, strlen(resp));
+    return;
+  }
+
+  // Chunked HTTP/1.1 response; the init segment goes out as the first chunk.
+  const char *hdr = "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: video/mp4\r\n"
+                    "Transfer-Encoding: chunked\r\n"
+                    "Cache-Control: no-store, no-cache\r\n"
+                    "Access-Control-Allow-Origin: *\r\n"
+                    "Connection: close\r\n\r\n";
+  if (!write_full(cfd, hdr, strlen(hdr))) {
+    DestroyMP4Muxer(muxer);
+    unregister_video_tap(vch, tap_id);
+    return;
+  }
+
+  auto write_chunk = [&](const std::vector<uint8_t> &data) -> bool {
+    char ch[32];
+    int n = snprintf(ch, sizeof(ch), "%zx\r\n", data.size());
+    if (n <= 0 || !write_full(cfd, ch, static_cast<size_t>(n)))
+      return false;
+    if (!data.empty() && !write_full(cfd, data.data(), data.size()))
+      return false;
+    return write_full(cfd, "\r\n", 2);
+  };
+
+  if (!write_chunk(muxer->getInitSegment())) {
+    DestroyMP4Muxer(muxer);
+    unregister_video_tap(vch, tap_id);
+    return;
+  }
+
+  // Avoid blocking forever on a stalled client.
+  timeval sto{2, 0};
+  ::setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &sto, sizeof(sto));
+
+  // Drain the tap queue, build AVCC samples, mux, and send fragments.
+  std::vector<uint8_t> sample;
+  while (true) {
+    H264NALUnit unit;
+    if (!q->read(&unit)) {
+      std::this_thread::sleep_for(milliseconds(2));
+      continue;
+    }
+    if (unit.data.empty())
+      continue;
+    uint8_t nalType = unit.data[0] & 0x1F;
+    // SPS/PPS already live in the avcC init segment; keep them out of-band.
+    if (nalType == 7 || nalType == 8)
+      continue;
+
+    bool isVCL = (nalType == 1 || nalType == 5);
+    bool isKey = (nalType == 5);
+
+    // AVCC sample: 4-byte big-endian length prefix + raw NAL.
+    uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
+    sample.insert(sample.end(), reinterpret_cast<uint8_t *>(&nl),
+                  reinterpret_cast<uint8_t *>(&nl) + 4);
+    sample.insert(sample.end(), unit.data.begin(), unit.data.end());
+
+    if (isVCL) {
+      int64_t pts_ms =
+          duration_cast<milliseconds>(steady_clock::now().time_since_epoch())
+              .count();
+      auto frag = muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
+      sample.clear();
+      if (!frag.empty() && !write_chunk(frag))
+        break;
+    }
+  }
+
+  // Terminate the chunked body.
+  (void)write_full(cfd, "0\r\n\r\n", 5);
+
+  DestroyMP4Muxer(muxer);
+  unregister_video_tap(vch, tap_id);
 }
 
 } // namespace
@@ -552,6 +726,13 @@ void HTTPMJPEG::handle_client(int cfd) {
 
       send_response(200, "application/json", resp_json);
     }
+    ::close(cfd);
+    return;
+  }
+
+  // Live fMP4 preview: reuse the H.264 encode, no extra encode/libraries.
+  if ((path == "/ch0.mp4" || path == "/ch1.mp4") && method == "GET") {
+    serve_fmp4(cfd, path == "/ch1.mp4" ? 1 : 0);
     ::close(cfd);
     return;
   }
