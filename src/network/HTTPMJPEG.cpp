@@ -216,6 +216,56 @@ std::vector<uint8_t> build_avcC(const std::vector<uint8_t> &sps,
   return avcC;
 }
 
+// Build an AAC-LC AudioSpecificConfig for the given sample rate and channel
+// count. The encoder's own ASC lives on its thread-local worker, so it is not
+// reachable from this HTTP thread; the config is deterministic anyway.
+bool build_aac_asc(int sample_rate, int channels, std::vector<uint8_t> &out) {
+  static constexpr int sample_rate_table[] = {
+      96000, 88200, 64000, 48000, 44100, 32000, 24000,
+      22050, 16000, 12000, 11025, 8000,  7350};
+  int sample_rate_index = -1;
+  for (size_t i = 0;
+       i < sizeof(sample_rate_table) / sizeof(sample_rate_table[0]); ++i) {
+    if (sample_rate_table[i] == sample_rate) {
+      sample_rate_index = static_cast<int>(i);
+      break;
+    }
+  }
+
+  auto append_bits = [&](uint32_t value, int bits, uint8_t &byte,
+                         int &bit_count) {
+    for (int i = bits - 1; i >= 0; --i) {
+      byte = static_cast<uint8_t>((byte << 1) | ((value >> i) & 0x01));
+      ++bit_count;
+      if (bit_count == 8) {
+        out.push_back(byte);
+        byte = 0;
+        bit_count = 0;
+      }
+    }
+  };
+  auto finalize_bits = [&](uint8_t &byte, int &bit_count) {
+    if (bit_count > 0) {
+      byte <<= (8 - bit_count);
+      out.push_back(byte);
+    }
+  };
+
+  out.clear();
+  uint8_t byte = 0;
+  int bit_count = 0;
+  append_bits(2, 5, byte, bit_count); // audioObjectType: AAC-LC
+  if (sample_rate_index >= 0) {
+    append_bits(static_cast<uint32_t>(sample_rate_index), 4, byte, bit_count);
+  } else {
+    append_bits(0x0F, 4, byte, bit_count); // explicit sample rate follows
+    append_bits(static_cast<uint32_t>(sample_rate), 24, byte, bit_count);
+  }
+  append_bits(static_cast<uint32_t>(channels), 4, byte, bit_count);
+  finalize_bits(byte, bit_count);
+  return true;
+}
+
 // Stream an already-encoded H.264 channel as live fragmented MP4 (fMP4) over
 // chunked HTTP. Reuses the existing encode via a video tap, so no new encode
 // and no extra libraries are needed; playable in-browser via MediaSource.
@@ -243,26 +293,19 @@ void serve_fmp4(int cfd, int vch) {
   std::unique_ptr<MP4Muxer, decltype(&DestroyMP4Muxer)> muxer(
       nullptr, DestroyMP4Muxer);
 
-  // AAC audio track when the mic is enabled; ASC comes from the encoder.
+  // AAC audio track when the mic is enabled; the ASC is built locally
+  // because the encoder's copy is thread-local to the audio worker.
   std::vector<uint8_t> aac_config;
-  int audio_sample_rate = 0;
+  int audio_sample_rate = cfg->audio.mic_sample_rate();
   int audio_channels = 1;
   bool have_audio = cfg->audio.input_enabled &&
                     std::strcmp(cfg->audio.input_format, "AAC") == 0;
-  if (have_audio) {
-    uint32_t asc_len = 0;
-    const uint8_t *asc = IMPAudio::getAACAsc(asc_len);
-    if (asc && asc_len) {
-      aac_config.assign(asc, asc + asc_len);
-      audio_sample_rate = cfg->audio.mic_sample_rate();
 #if defined(LIB_AUDIO_PROCESSING)
-      if (cfg->audio.force_stereo)
-        audio_channels = 2;
+  if (have_audio && cfg->audio.force_stereo)
+    audio_channels = 2;
 #endif
-    } else {
-      have_audio = false;
-    }
-  }
+  if (have_audio)
+    have_audio = build_aac_asc(audio_sample_rate, audio_channels, aac_config);
 
   // Per-client tap queues; workers fan encoded NALs/audio frames into them.
   auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
