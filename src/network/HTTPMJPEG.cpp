@@ -346,9 +346,13 @@ void serve_fmp4(int cfd, int vch) {
     sample.insert(sample.end(), unit.data.begin(), unit.data.end());
 
     if (isVCL) {
-      int64_t pts_ms =
-          duration_cast<milliseconds>(steady_clock::now().time_since_epoch())
-              .count();
+      // Prefer the encoder's monotonic timestamp (us); two frames can land
+      // in the same wall-clock millisecond, which yields duplicate DTS.
+      int64_t pts_ms = unit.imp_ts > 0
+                           ? unit.imp_ts / 1000
+                           : duration_cast<milliseconds>(
+                                 steady_clock::now().time_since_epoch())
+                                 .count();
       auto frag = muxer->muxVideo(sample.data(), sample.size(), pts_ms, isKey);
       sample.clear();
       if (!frag.empty() && !write_chunk(frag))
