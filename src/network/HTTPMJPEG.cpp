@@ -843,7 +843,21 @@ void HTTPMJPEG::handle_client(int cfd) {
 
   // Live fMP4 preview: reuse the H.264 encode, no extra encode/libraries.
   if ((path == "/ch0.mp4" || path == "/ch1.mp4") && method == "GET") {
+    if (!api_authenticated) {
+      send_response(401, "application/json", "{\"error\":\"Authentication required\"}\n");
+      ::close(cfd);
+      return;
+    }
     serve_fmp4(cfd, path == "/ch1.mp4" ? 1 : 0);
+    ::close(cfd);
+    return;
+  }
+
+  // Direct MJPEG on this port is media too; gate it with the same API key.
+  if (mjpeg_enabled_ && (path == "/mjpg" || path == "/x/mjpg" ||
+                          path == "/mjpeg" || path == "/x/mjpeg") &&
+      !api_authenticated) {
+    send_response(401, "application/json", "{\"error\":\"Authentication required\"}\n");
     ::close(cfd);
     return;
   }
