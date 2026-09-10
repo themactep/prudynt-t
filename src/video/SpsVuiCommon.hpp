@@ -149,11 +149,15 @@ inline Bits spliceBits(const Bits &bits, std::vector<BitEdit> edits) {
 // isHevc selects the VUI tail appended when the SPS has no VUI at all: H.265
 // VUI carries a few extra single-bit fields between the colour block and the
 // timing/bitstream-restriction flags that H.264 does not.
+// The ISP and encoders run a single BT.709 pipeline regardless of coded
+// resolution (a substream is a downscale of the same signal, not a re-matrix
+// to BT.601), so every stream is published with identical BT.709 values.
+
 inline std::vector<uint8_t> applyVui(const Bits &bits, size_t vuiPresentPos,
-                                     bool isHd, bool isHevc) {
-  uint8_t primaries = isHd ? 1 : 6;
-  uint8_t transfer = isHd ? 1 : 6;
-  uint8_t matrix = isHd ? 1 : 6;
+                                     bool isHevc) {
+  uint8_t primaries = 1; // BT.709
+  uint8_t transfer = 1;  // BT.709
+  uint8_t matrix = 1;    // BT.709
 
   // Locate the rbsp_stop_one_bit: everything after the last '1' is alignment
   // zero padding, so the last set bit is the stop bit and the payload is the

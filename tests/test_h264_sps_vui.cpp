@@ -280,9 +280,9 @@ int main() {
     CHECK(v.ok);
     CHECK(v.fullRange == 1);
     CHECK(v.colourDesc == 1);
-    CHECK(v.matrix == 6); // SD -> BT.601 (SMPTE 170M)
-    CHECK(v.primaries == 6);
-    CHECK(v.transfer == 6);
+    CHECK(v.matrix == 1); // BT.709 for every stream, regardless of size
+    CHECK(v.primaries == 1);
+    CHECK(v.transfer == 1);
   }
 
   // Case 2: VUI present but no video-signal block (HD 1280x720 -> 80x45 MBs).
@@ -309,7 +309,7 @@ int main() {
     CHECK(v.ok);
     CHECK(v.fullRange == 1);
     CHECK(v.colourDesc == 1);
-    CHECK(v.matrix == 1); // HD -> BT.709
+    CHECK(v.matrix == 1); // BT.709
     CHECK(v.primaries == 1);
     CHECK(v.transfer == 1);
     CHECK(v.timingPresent); // tail preserved
@@ -342,7 +342,7 @@ int main() {
     CHECK(v.ok);
     CHECK(v.fullRange == 1);
     CHECK(v.colourDesc == 1);
-    CHECK(v.matrix == 6);      // SD
+    CHECK(v.matrix == 1); // BT.709
     CHECK(v.videoFormat == 5); // preserved
   }
 
@@ -376,7 +376,7 @@ int main() {
     CHECK(v.ok);
     CHECK(v.fullRange == 1); // the bug: was 0, must become 1
     CHECK(v.colourDesc == 1);
-    CHECK(v.matrix == 1); // HD -> BT.709
+    CHECK(v.matrix == 1); // BT.709
     CHECK(v.primaries == 1);
     CHECK(v.transfer == 1);
     CHECK(v.videoFormat == 5); // preserved
