@@ -92,6 +92,8 @@ libexecinfo). All default to `1` except `USE_EXECINFO`. These map to
   hand (compile commands are in the file headers, e.g.
   `g++ -std=c++17 test_daynight_algo.cpp -o ...`). `test_shared_rotation.c`
   is a device-only integration probe against IMP, not a unit test.
+  `http_auth_matrix.py` is a live-camera integration test for the HTTP auth
+  bypass; see `tests/README.md`.
 - `docs/` -- design notes per subsystem (rtsp, audio, video, osd, mp4-control,
   prebuffer, webrtc, metrics, HAL platform matrix). Treat these as the
   authoritative architecture reference.
