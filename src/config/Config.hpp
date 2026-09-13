@@ -245,6 +245,7 @@ struct _rtsp {
   int send_timeout_s;
   int session_reclaim;
   bool auth_required;
+  const char *auth_mode;
   const char *username;
   const char *password;
   const char *name;

@@ -418,6 +418,11 @@ std::vector<ConfigItem<const char *>> CFG::getCharItems() {
       {"rtsp.audio_only_info", rtsp.audio_only_info,
        "audio from the microphone", validateCharNotEmpty},
       {"rtsp.username", rtsp.username, "thingino", validateCharNotEmpty},
+      {"rtsp.auth_mode", rtsp.auth_mode, "digest",
+       [](const char *v) {
+         return strcmp(v, "digest") == 0 || strcmp(v, "basic") == 0 ||
+                strcmp(v, "both") == 0;
+       }},
       {"general.debug_dump_path", general.debug_dump_path, "",
        validateCharEmptyOk},
       {"sensor.model", sensor.model, "unknown", validateCharNotEmpty, false,

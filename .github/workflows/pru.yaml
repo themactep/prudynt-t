@@ -83,11 +83,11 @@ jobs:
 
       - name: Build deps
         run: |
-          ./build.sh deps ${{ matrix.target }} $SUFFIX
+          ./build.sh deps ${{ matrix.target }} $SUFFIX --libc-musl
 
       - name: Build prudynt
         run: |
-          ./build.sh prudynt ${{ matrix.target }} $SUFFIX
+          ./build.sh prudynt ${{ matrix.target }} $SUFFIX --libc-musl
           mv bin/prudynt "bin/prudynt-${{ matrix.target }}-${{ matrix.build_type }}"
 
       - name: Upload binary as artifact

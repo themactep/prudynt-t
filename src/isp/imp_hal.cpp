@@ -247,8 +247,7 @@ void set_jpeg_quality_qtable(int encChn, int quality, const char *cpu_hint) {
   }
 
 #if !(defined(PLATFORM_T31) || defined(PLATFORM_T40) ||                        \
-      defined(PLATFORM_T41)) ||                                                \
-    defined(PLATFORM_C100)
+      defined(PLATFORM_T41) || defined(PLATFORM_C100))
   IMPEncoderJpegeQl pst{};
   if (cpu_hint && strncmp(cpu_hint, "T10", 3) == 0) {
     pst.user_ql_en = 0;

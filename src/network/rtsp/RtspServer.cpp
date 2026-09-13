@@ -6,6 +6,7 @@
 #include "network/rtsp/RtspServer.hpp"
 #include "network/rtsp/RtpPacketizer.hpp"
 #include "network/rtsp/RtspAddr.hpp"
+#include "network/rtsp/RtspDigest.hpp"
 #include "network/rtsp/SdpGenerator.hpp"
 #include "network/rtsp/RtspUtils.hpp"
 #include "util/Logger.hpp"
@@ -48,6 +49,33 @@ constexpr size_t SEND_QUEUE_HARD_CAP = 4 * 1024 * 1024;
 
 namespace simple_rtsp {
 
+// Realm advertised in Basic and Digest challenges.
+static constexpr const char kRealm[] = "thingino";
+
+// Hex-encoded random bytes from /dev/urandom (fallback: rand()).
+static std::string randomHex(size_t bytes) {
+    uint8_t buf[64];
+    if (bytes > sizeof(buf)) bytes = sizeof(buf);
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (f) {
+        if (fread(buf, 1, bytes, f) != bytes)
+            for (size_t i = 0; i < bytes; i++)
+                buf[i] = static_cast<uint8_t>(rand());
+        fclose(f);
+    } else {
+        for (size_t i = 0; i < bytes; i++)
+            buf[i] = static_cast<uint8_t>(rand());
+    }
+    static const char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(bytes * 2);
+    for (size_t i = 0; i < bytes; i++) {
+        out += kHex[buf[i] >> 4];
+        out += kHex[buf[i] & 0x0f];
+    }
+    return out;
+}
+
 // Crash handler + Session moved to headers
 
 // Static helpers moved to RtspUtils.hpp
@@ -59,6 +87,8 @@ namespace simple_rtsp {
 RtspServer::RtspServer() {
     // seed SSRCs
     srand(static_cast<unsigned>(time(nullptr)));
+    // Per-process secret for stateless Digest nonces.
+    nonceSecret_ = randomHex(16);
 }
 
 RtspServer::~RtspServer() {
@@ -70,6 +100,39 @@ void RtspServer::setAuthCredentials(const std::string &user,
     username_     = user;
     password_     = pass;
     authRequired_ = !user.empty();
+}
+
+void RtspServer::setAuthMode(AuthMode mode) { authMode_ = mode; }
+
+// Stateless nonce: the timestamp is included so it can be validated
+// without storing issued values; the MD5 turns it into an opaque token
+// that clients cannot forge.
+std::string RtspServer::makeNonce() const {
+    char ts[32];
+    snprintf(ts, sizeof(ts), "%llx",
+             static_cast<unsigned long long>(time(nullptr)));
+    return std::string(ts) + "-" + util::md5Hex(nonceSecret_ + ":" + ts);
+}
+
+bool RtspServer::checkNonce(const std::string &nonce, bool &stale) const {
+    stale = false;
+    size_t dash = nonce.rfind('-');
+    if (dash == std::string::npos) return false;
+    std::string ts  = nonce.substr(0, dash);
+    std::string mac = nonce.substr(dash + 1);
+    if (util::md5Hex(nonceSecret_ + ":" + ts) != mac) return false;
+
+    char *endp = nullptr;
+    unsigned long long issued = strtoull(ts.c_str(), &endp, 16);
+    if (!endp || *endp != '\0') return false;
+
+    time_t now = time(nullptr);
+    if (issued > static_cast<unsigned long long>(now) + 5) return false;
+    if (now - static_cast<time_t>(issued) > nonceTtlSeconds_) {
+        stale = true;
+        return false;
+    }
+    return true;
 }
 
 void RtspServer::setSendBufferSize(int bytes) { sendBufSize_ = bytes; }
@@ -697,43 +760,141 @@ void RtspServer::cleanupAllSessions() {
 
 // -- Authentication check ---------------------------------------------------
 
-bool RtspServer::checkAuth(Session &s, const char *headers) {
+bool RtspServer::checkAuth(Session &s, const char *headers, const char *method,
+                           std::string &challenge) {
+    const bool useDigest = (authMode_ == AuthMode::DIGEST ||
+                            authMode_ == AuthMode::BOTH);
+    const bool useBasic  = (authMode_ == AuthMode::BASIC ||
+                           authMode_ == AuthMode::BOTH);
+
+    auto setChallenge = [&](bool stale) {
+        challenge.clear();
+        if (useDigest) {
+            challenge += "WWW-Authenticate: Digest realm=\"";
+            challenge += kRealm;
+            challenge += "\", nonce=\"";
+            challenge += makeNonce();
+            challenge += "\", qop=\"auth\", algorithm=MD5";
+            if (stale) challenge += ", stale=true";
+            challenge += "\r\n";
+        }
+        if (useBasic) {
+            challenge += "WWW-Authenticate: Basic realm=\"";
+            challenge += kRealm;
+            challenge += "\"\r\n";
+        }
+    };
+
     if (!authRequired_) return true;
     if (s.authenticated) return true;
-    if (!headers) return false;
+    if (!headers) {
+        setChallenge(false);
+        return false;
+    }
 
     const char *auth = stristr(headers, "Authorization:");
-    if (!auth) return false;
+    if (!auth) {
+        setChallenge(false);
+        return false;
+    }
 
     // Skip past "Authorization:" and whitespace
     auth += 14;
     while (*auth == ' ' || *auth == '\t') auth++;
 
-    // Expect "Basic <base64>"
-    if (strncasecmp(auth, "Basic", 5) != 0) return false;
-    auth += 5;
-    while (*auth == ' ' || *auth == '\t') auth++;
+    // -- Digest ---------------------------------------------------------
+    if (useDigest && strncasecmp(auth, "Digest", 6) == 0) {
+        const char *params = auth + 6;
+        while (*params == ' ' || *params == '\t') params++;
+        const char *end = params;
+        while (*end && *end != '\r' && *end != '\n') end++;
+        std::string paramStr(params, static_cast<size_t>(end - params));
 
-    // Extract the base64 credential string (up to \r or \n)
-    const char *end = auth;
-    while (*end && *end != '\r' && *end != '\n') end++;
+        DigestCredentials c;
+        if (!parseDigestParameters(paramStr.c_str(), c) ||
+            c.username.empty() || c.response.empty()) {
+            setChallenge(false);
+            return false;
+        }
+        if (!c.algorithm.empty() && !iequals(c.algorithm, "MD5")) {
+            LOG_WARN("RTSP digest: unsupported algorithm \"" << c.algorithm
+                     << "\"");
+            setChallenge(false);
+            return false;
+        }
 
-    std::string decoded = base64Decode(auth, static_cast<size_t>(end - auth));
+        bool stale = false;
+        if (!checkNonce(c.nonce, stale)) {
+            setChallenge(stale);
+            return false;
+        }
+        if (c.username != username_) {
+            LOG_WARN("RTSP authentication failed for user \"" << c.username
+                     << "\"");
+            setChallenge(false);
+            return false;
+        }
 
-    // Expect "username:password"
-    size_t colon = decoded.find(':');
-    if (colon == std::string::npos) return false;
+        std::string expected;
+        if (!c.qop.empty()) {
+            if (c.nc.empty() || c.cnonce.empty()) {
+                setChallenge(false);
+                return false;
+            }
+            expected = digestResponse(c.username, kRealm, password_, method,
+                                      c.uri, c.nonce, c.nc, c.cnonce, c.qop);
+        } else {
+            expected = digestResponse(c.username, kRealm, password_, method,
+                                      c.uri, c.nonce, "", "", "");
+        }
 
-    std::string user = decoded.substr(0, colon);
-    std::string pass = decoded.substr(colon + 1);
+        if (expected == c.response) {
+            s.authenticated = true;
+            LOG_INFO("RTSP digest authentication successful for "
+                     << c.username);
+            return true;
+        }
 
-    if (user == username_ && pass == password_) {
-        s.authenticated = true;
-        LOG_INFO("RTSP authentication successful for " << user);
-        return true;
+        LOG_WARN("RTSP digest authentication failed for user \""
+                 << c.username << "\"");
+        setChallenge(false);
+        return false;
     }
 
-    LOG_WARN("RTSP authentication failed for user \"" << user << "\"");
+    // -- Basic (legacy) --------------------------------------------------
+    if (useBasic && strncasecmp(auth, "Basic", 5) == 0) {
+        auth += 5;
+        while (*auth == ' ' || *auth == '\t') auth++;
+
+        // Extract the base64 credential string (up to \r or \n)
+        const char *end = auth;
+        while (*end && *end != '\r' && *end != '\n') end++;
+
+        std::string decoded =
+            base64Decode(auth, static_cast<size_t>(end - auth));
+
+        // Expect "username:password"
+        size_t colon = decoded.find(':');
+        if (colon == std::string::npos) {
+            setChallenge(false);
+            return false;
+        }
+
+        std::string user = decoded.substr(0, colon);
+        std::string pass = decoded.substr(colon + 1);
+
+        if (user == username_ && pass == password_) {
+            s.authenticated = true;
+            LOG_INFO("RTSP authentication successful for " << user);
+            return true;
+        }
+
+        LOG_WARN("RTSP authentication failed for user \"" << user << "\"");
+        setChallenge(false);
+        return false;
+    }
+
+    setChallenge(false);
     return false;
 }
 
@@ -1020,10 +1181,10 @@ void RtspServer::handleRequest(int idx) {
              << " CSeq=" << cseq);
 
     // -- Authentication --------------------------------------------------
-    if (!checkAuth(*s, headersStart)) {
+    std::string authChallenge;
+    if (!checkAuth(*s, headersStart, methodStr, authChallenge)) {
         sendResponse(*s, Status::UNAUTHORIZED, cseq,
-                     "WWW-Authenticate: Basic realm=\"thingino\"\r\n",
-                     nullptr);
+                     authChallenge.c_str(), nullptr);
         // Consume this request
         size_t consumed2 = static_cast<size_t>(end - s->readBuf) + 4;
         {

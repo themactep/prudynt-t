@@ -1,5 +1,7 @@
 #include "recording/MP4Recorder.hpp"
 
+#include <cerrno>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -8,6 +10,28 @@
 
 #undef MODULE
 #define MODULE "MP4Recorder"
+
+namespace {
+
+/* Write all of data to fd, looping over short writes. Returns 0 on
+ * success or -errno on the first failure. A soft NFS mount turns a
+ * stalled write into EIO; callers must not ignore it. */
+int write_all(int fd, const uint8_t *data, size_t len)
+{
+  size_t off = 0;
+  while (off < len) {
+    ssize_t w = ::write(fd, data + off, len - off);
+    if (w < 0) {
+      if (errno == EINTR)
+        continue;
+      return -errno;
+    }
+    off += static_cast<size_t>(w);
+  }
+  return 0;
+}
+
+} // namespace
 
 MP4Recorder::MP4Recorder() = default;
 
@@ -46,8 +70,14 @@ bool MP4Recorder::start(const std::string &path,
 
   std::vector<uint8_t> initSeg = muxer_->getInitSegment();
   if (!initSeg.empty()) {
-    ssize_t w = ::write(fd_, initSeg.data(), initSeg.size());
-    (void)w;
+    int rc = write_all(fd_, initSeg.data(), initSeg.size());
+    if (rc < 0) {
+      LOG_ERROR("failed to write MP4 init segment: " << std::strerror(-rc));
+      DestroyMP4Muxer(muxer_.release());
+      ::close(fd_);
+      fd_ = -1;
+      return false;
+    }
   }
 
   active_ = true;
@@ -67,8 +97,12 @@ void MP4Recorder::writeVideo(const uint8_t *data, size_t size, int64_t pts_ms,
 
   std::vector<uint8_t> frag = muxer_->muxVideo(data, size, pts_ms, isKey);
   if (!frag.empty()) {
-    ssize_t w = ::write(fd_, frag.data(), frag.size());
-    (void)w;
+    int rc = write_all(fd_, frag.data(), frag.size());
+    if (rc < 0) {
+      LOG_ERROR("failed to write video fragment: " << std::strerror(-rc));
+      abortUnlocked();
+      return;
+    }
   }
 }
 
@@ -79,8 +113,12 @@ void MP4Recorder::writeAudio(const uint8_t *data, size_t size, int64_t pts_ms) {
 
   std::vector<uint8_t> frag = muxer_->muxAudio(data, size, pts_ms);
   if (!frag.empty()) {
-    ssize_t w = ::write(fd_, frag.data(), frag.size());
-    (void)w;
+    int rc = write_all(fd_, frag.data(), frag.size());
+    if (rc < 0) {
+      LOG_ERROR("failed to write audio fragment: " << std::strerror(-rc));
+      abortUnlocked();
+      return;
+    }
   }
 }
 
@@ -89,6 +127,18 @@ void MP4Recorder::closeUnlocked() {
     muxer_->close();
     DestroyMP4Muxer(muxer_.release());
   }
+  if (fd_ >= 0) {
+    ::close(fd_);
+    fd_ = -1;
+  }
+  active_ = false;
+}
+
+/* Stop the segment after a write failure. The muxer is left for
+ * stop()/closeUnlocked() to destroy, so the loop sees an inactive
+ * recorder and starts a fresh segment instead of writing into a file
+ * that already has a hole in it. */
+void MP4Recorder::abortUnlocked() {
   if (fd_ >= 0) {
     ::close(fd_);
     fd_ = -1;

@@ -129,6 +129,14 @@ void RTSP::start() {
 
     if (cfg->rtsp.auth_required) {
         server_->setAuthCredentials(cfg->rtsp.username, cfg->rtsp.password);
+        std::string mode =
+            cfg->rtsp.auth_mode ? cfg->rtsp.auth_mode : "digest";
+        if (mode == "basic")
+            server_->setAuthMode(simple_rtsp::RtspServer::AuthMode::BASIC);
+        else if (mode == "both")
+            server_->setAuthMode(simple_rtsp::RtspServer::AuthMode::BOTH);
+        else
+            server_->setAuthMode(simple_rtsp::RtspServer::AuthMode::DIGEST);
     }
 
     // -- Enable backchannel (talkback) ----------------------------------

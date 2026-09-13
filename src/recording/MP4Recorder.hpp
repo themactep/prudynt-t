@@ -24,6 +24,7 @@ public:
 
 private:
   void closeUnlocked();
+  void abortUnlocked();
 
   mutable std::mutex mutex_;
   std::unique_ptr<MP4Muxer> muxer_;

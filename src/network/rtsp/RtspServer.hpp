@@ -21,6 +21,10 @@ public:
     // -- Configuration (must be called before start()) -------------------
 
     void setAuthCredentials(const std::string &user, const std::string &pass);
+
+    // Digest is the default; Basic is kept as a fallback for older clients.
+    enum class AuthMode { BASIC, DIGEST, BOTH };
+    void setAuthMode(AuthMode mode);
     void setSendBufferSize(int bytes);
     void setSendTimeout(int seconds);
     void setStreamName(const std::string &name);
@@ -69,8 +73,13 @@ private:
     // RTSP request dispatch
     void handleRequest(int clientIdx);
 
-    // Authentication
-    bool checkAuth(Session &s, const char *headers);
+    // Authentication -- returns true when the request may proceed.  On
+    // failure `challenge` is filled with the WWW-Authenticate header(s)
+    // to send in the 401 response.
+    bool checkAuth(Session &s, const char *headers, const char *method,
+                   std::string &challenge);
+    std::string makeNonce() const;
+    bool checkNonce(const std::string &nonce, bool &stale) const;
 
     // Per-method handlers -- return the CSeq from the request
     void handleOptions(int clientIdx, int cseq);
@@ -130,6 +139,9 @@ private:
     std::string username_;
     std::string password_;
     bool authRequired_ = false;
+    AuthMode authMode_ = AuthMode::DIGEST;
+    std::string nonceSecret_;
+    static constexpr int nonceTtlSeconds_ = 300;
 
     int sendBufSize_  = 65536;
     int sendTimeoutS_ = 5;
