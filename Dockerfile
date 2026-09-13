@@ -36,8 +36,6 @@ COPY . /deps
 RUN  bash -c 'case "$BUILD_TYPE" in \
       static) \
         SUFFIX="-static";; \
-      hybrid) \
-        SUFFIX="-hybrid";; \
       *) \
         SUFFIX="";; \
     esac && export SUFFIX'

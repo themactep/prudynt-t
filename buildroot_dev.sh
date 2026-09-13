@@ -16,7 +16,7 @@ Example: ./build.sh -b dynamic wyze_cp2
 
 -d    Enable debug mode (-O0 -g)
 -c    Disable ccache
--b    Binary mode (dynamic, static, or hybrid)
+-b    Binary mode (dynamic or static)
 
 Note: Set the DEST_DIR environment variable to specify the directory where the Prudynt binary will be copied after the build.
 EOF
@@ -41,17 +41,15 @@ use_ccache() {
 
 select_binary_mode() {
 	while true; do
-		local selected_mode=$("${DIALOG_COMMON[@]}" --help-button --menu "Select binary mode:" 12 50 3 \
+		local selected_mode=$("${DIALOG_COMMON[@]}" --help-button --menu "Select binary mode:" 12 50 2 \
 			1 "Dynamic (Default)" \
-			2 "Static" \
-			3 "Hybrid" 2>&1 >/dev/tty)
+			2 "Static" 2>&1 >/dev/tty)
 
 		if [[ "$selected_mode" =~ HELP ]]; then
 			"${DIALOG_COMMON[@]}" --msgbox "Binary Mode Selection:
 
 Dynamic: Dynamically linked binary
-Static: Statically linked binary
-Hybrid: Hybrid linking mode" 10 50
+Static: Statically linked binary" 10 50
 			continue
 		fi
 
@@ -62,7 +60,6 @@ Hybrid: Hybrid linking mode" 10 50
 		case "$selected_mode" in
 			1) BINARY_MODE="dynamic" ;;
 			2) BINARY_MODE="static" ;;
-			3) BINARY_MODE="hybrid" ;;
 		esac
 		break
 	done
@@ -96,7 +93,7 @@ Example: ./build.sh -b dynamic wyze_cp2
 
 -d    Enable debug mode (-O0 -g)
 -c    Disable ccache
--b    Binary mode (dynamic, static, or hybrid)
+-b    Binary mode (dynamic or static)
 
 Note: Set the DEST_DIR environment variable to specify the directory where the Prudynt binary will be copied after the build." 15 60
 			continue
@@ -146,8 +143,8 @@ while [[ $# -gt 0 ]]; do
 			;;
 		-b)
 			BINARY_MODE=$2
-			if [[ ! "$BINARY_MODE" =~ ^(dynamic|static|hybrid)$ ]]; then
-				echo "Invalid binary mode. Must be dynamic, static, or hybrid."
+			if [[ ! "$BINARY_MODE" =~ ^(dynamic|static)$ ]]; then
+				echo "Invalid binary mode. Must be dynamic or static."
 				exit 1
 			fi
 			shift 2

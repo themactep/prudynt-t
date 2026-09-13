@@ -29,7 +29,6 @@ jobs:
         build_type:
           - static
           - dynamic
-          - hybrid
 
     steps:
       - name: Checkout source
