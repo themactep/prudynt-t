@@ -86,11 +86,9 @@ endif
 
 ifeq ($(USE_OSD_FONT_LIBSCHRIFT),1)
 OSD_SCHRIFT_LIB_STATIC_LINE  = -l:libschrift.a
-OSD_SCHRIFT_LIB_HYBRID_LINE  = -lschrift
 OSD_SCHRIFT_LIB_DYNAMIC_LINE = -lschrift
 else
 OSD_SCHRIFT_LIB_STATIC_LINE  =
-OSD_SCHRIFT_LIB_HYBRID_LINE  =
 OSD_SCHRIFT_LIB_DYNAMIC_LINE =
 endif
 
@@ -111,11 +109,9 @@ USE_FLAC               ?= 1
 
 ifeq ($(USE_FLAC),1)
 FLAC_LIB_STATIC_LINE   = -l:libflac-lite.a
-FLAC_LIB_HYBRID_LINE   = -lflac-lite
 FLAC_LIB_DYNAMIC_LINE  = -lflac-lite
 else
 FLAC_LIB_STATIC_LINE   =
-FLAC_LIB_HYBRID_LINE   =
 FLAC_LIB_DYNAMIC_LINE  =
 endif
 
@@ -125,11 +121,9 @@ USE_MP3                ?= 1
 
 ifeq ($(USE_MP3),1)
 MP3_LIB_STATIC_LINE    = -l:libhelix-mp3.a
-MP3_LIB_HYBRID_LINE    = -lhelix-mp3
 MP3_LIB_DYNAMIC_LINE   = -lhelix-mp3
 else
 MP3_LIB_STATIC_LINE    =
-MP3_LIB_HYBRID_LINE    =
 MP3_LIB_DYNAMIC_LINE   =
 endif
 
@@ -139,11 +133,9 @@ USE_OPUS               ?= 1
 
 ifeq ($(USE_OPUS),1)
 OPUS_LIB_STATIC_LINE   = -l:libopus.a
-OPUS_LIB_HYBRID_LINE   = -lopus
 OPUS_LIB_DYNAMIC_LINE  = -lopus
 else
 OPUS_LIB_STATIC_LINE   =
-OPUS_LIB_HYBRID_LINE   =
 OPUS_LIB_DYNAMIC_LINE  =
 endif
 
@@ -153,17 +145,13 @@ USE_AAC                ?= 1
 
 ifeq ($(USE_AAC),1)
 FAAC_LIB_STATIC_LINE   = -l:libfaac.a
-FAAC_LIB_HYBRID_LINE   = -lfaac
 FAAC_LIB_DYNAMIC_LINE  = -lfaac
 AAC_LIB_STATIC_LINE    = -l:libhelix-aac.a
-AAC_LIB_HYBRID_LINE    = -lhelix-aac
 AAC_LIB_DYNAMIC_LINE   = -lhelix-aac
 else
 FAAC_LIB_STATIC_LINE   =
-FAAC_LIB_HYBRID_LINE   =
 FAAC_LIB_DYNAMIC_LINE  =
 AAC_LIB_STATIC_LINE    =
-AAC_LIB_HYBRID_LINE    =
 AAC_LIB_DYNAMIC_LINE   =
 endif
 
@@ -181,11 +169,9 @@ endif
 
 ifeq ($(USE_WEBSOCKETS),1)
 WEBSOCKET_LIB_STATIC_LINE = -l:libwebsockets.a
-WEBSOCKET_LIB_HYBRID_LINE = -l:libwebsockets.so
 WEBSOCKET_LIB_DYNAMIC_LINE = -lwebsockets
 else
 WEBSOCKET_LIB_STATIC_LINE =
-WEBSOCKET_LIB_HYBRID_LINE =
 WEBSOCKET_LIB_DYNAMIC_LINE =
 endif
 
@@ -198,8 +184,8 @@ endif
 # Binary Type Configuration
 # -------------------------
 # Default to dynamic linking unless explicitly specified
-ifneq ($(filter -DBINARY_STATIC -DBINARY_HYBRID,$(CFLAGS)),)
-# Static or hybrid build explicitly requested
+ifneq (,$(findstring -DBINARY_STATIC,$(CFLAGS)))
+# Static build explicitly requested
 else
 override CFLAGS        += -DBINARY_DYNAMIC
 endif
@@ -240,35 +226,6 @@ else
 LIBS                   += -l:libmuslshim.a
 endif
 
-# Hybrid Binary Configuration
-# ---------------------------
-else ifneq (,$(findstring -DBINARY_HYBRID,$(CFLAGS)))
-LIBS                    = -Wl,-Bdynamic \
-                          -l:libimp.so \
-                          -l:libalog.so \
-                          -l:libsysutils.so \
-                          -l:libaudioProcess.so \
-                          $(WEBSOCKET_LIB_HYBRID_LINE) \
-                          -Wl,-Bdynamic \
-                          $(OSD_SCHRIFT_LIB_HYBRID_LINE) \
-                          $(OPUS_LIB_HYBRID_LINE) \
-                          $(FAAC_LIB_HYBRID_LINE) \
-                          $(AAC_LIB_HYBRID_LINE) \
-                          $(MP3_LIB_HYBRID_LINE) \
-                          $(FLAC_LIB_HYBRID_LINE) \
-                          -ljct \
-                          -lcurl \
-                          -latomic
-
-ifneq (,$(findstring -DLIBC_GLIBC,$(CFLAGS)))
-	# GLIBC - no additional libraries needed
-else ifneq (,$(findstring -DLIBC_UCLIBC,$(CFLAGS)))
-	# uClibc - no additional libraries needed
-else
-	# Default to musl
-LIBS                   := $(LIBS:-Wl,-Bdynamic=-Wl,-Bdynamic -l:libmuslshim.so)
-endif
-
 # Dynamic Binary Configuration
 # ----------------------------
 else ifneq (,$(findstring -DBINARY_DYNAMIC,$(CFLAGS)))
@@ -299,7 +256,7 @@ endif
 # Error Handling
 # --------------
 else
-$(error No valid binary type defined in CFLAGS. Please specify -DBINARY_STATIC, -DBINARY_HYBRID, or -DBINARY_DYNAMIC)
+$(error No valid binary type defined in CFLAGS. Please specify -DBINARY_STATIC or -DBINARY_DYNAMIC)
 endif
 
 # Optional execinfo library for backtraces

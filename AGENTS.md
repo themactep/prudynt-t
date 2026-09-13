@@ -27,7 +27,7 @@ Two-stage flow, always:
 
 - SOCs: `T10 T20 T21 T23 T30 T31 C100 T40 T41`. `T31` is the fallback default
   when no `-DPLATFORM_*` is passed.
-- Binary type flags: `-static` | `-hybrid` | (default = dynamic).
+- Binary type flags: `-static` | (default = dynamic).
   `-debug` forces `-static` plus `-O0 -g`, `DEBUG_STRIP=0`, `-DENABLE_LOG_DEBUG`.
 - libc: `--libc-uclibc` (default in `build.sh`) | `--libc-musl`. uClibc builds
   add `-fno-stack-protector` (thingino uClibc toolchain is built with
@@ -45,7 +45,7 @@ Two-stage flow, always:
 `buildroot_dev.sh` rebuilds prudynt against an already-built Thingino buildroot
 profile in `~/output/<profile>`. Requires `dialog` unless a profile name is
 passed on the CLI. Flags: `-d` debug, `-c` no ccache, `-b
-dynamic|static|hybrid`. It does `rm -rf 3rdparty && make distclean` first, so
+dynamic|static`. It does `rm -rf 3rdparty && make distclean` first, so
 don't expect `3rdparty/` to survive across runs of this script.
 
 ### Direct make (only if you know what you're doing)
@@ -96,7 +96,7 @@ libexecinfo). All default to `1` except `USE_EXECINFO`. These map to
   prebuffer, webrtc, metrics, HAL platform matrix). Treat these as the
   authoritative architecture reference.
 - `.github/workflows/pru.yaml` -- CI matrix: T10/T20/T21/T23/T30/T31/C100 ×
-  static/dynamic/hybrid using musl gcc14 toolchain. Releases go under tag
+  static/dynamic using musl gcc14 toolchain. Releases go under tag
   `release`.
 
 ## Code style / conventions

@@ -120,8 +120,6 @@ prudynt() {
 	for arg in "$@"; do
 		if [ "$arg" = "-static" ]; then
 			BIN_TYPE="-DBINARY_STATIC"
-		elif [ "$arg" = "-hybrid" ]; then
-			BIN_TYPE="-DBINARY_HYBRID"
 		elif [ "$arg" = "-debug" ]; then
 			DEBUG_BUILD=1
 			# Force static build for debug to ensure all symbols are included
@@ -204,11 +202,9 @@ deps() {
 	# Parse flags for dependency builds
 	CLEAN_ALL=0
 	STATIC_BUILD=0
-	HYBRID_BUILD=0
 	for arg in "$@"; do
 		if [ "$arg" = "--clean-all" ]; then CLEAN_ALL=1; fi
 		if [ "$arg" = "-static" ]; then STATIC_BUILD=1; fi
-		if [ "$arg" = "-hybrid" ]; then HYBRID_BUILD=1; fi
 	done
 	if [ $CLEAN_ALL -eq 1 ]; then
 		echo "Cleaning 3rdparty/ (requested via --clean-all)"
@@ -220,7 +216,7 @@ deps() {
 
 	echo "Build libhelix-aac"
 	cd 3rdparty
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+	if [[ $STATIC_BUILD -eq 1 ]]; then
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_libhelixaac_deps.sh -static
 	else
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_libhelixaac_deps.sh
@@ -248,7 +244,7 @@ deps() {
 
 	echo "Build opus"
 	cd 3rdparty
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+	if [[ $STATIC_BUILD -eq 1 ]]; then
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_opus_deps.sh -static
 	else
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_opus_deps.sh
@@ -260,7 +256,7 @@ deps() {
 
 	echo "Build JCT (JSON Configuration Tool)"
 	cd 3rdparty
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+	if [[ $STATIC_BUILD -eq 1 ]]; then
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_jct_deps.sh -static
 	else
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_jct_deps.sh
@@ -322,7 +318,7 @@ deps() {
 	if [[ "$LIBC_TYPE" == "uclibc" ]]; then
 		echo "Build libuclibcshim"
 		cd 3rdparty
-		if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+		if [[ $STATIC_BUILD -eq 1 ]]; then
 			PRUDYNT_CROSS=$PRUDYNT_CROSS LIBC_EXTRA_CFLAGS="$LIBC_EXTRA_CFLAGS" ../scripts/make_uclibcshim_deps.sh -static
 		else
 			PRUDYNT_CROSS=$PRUDYNT_CROSS LIBC_EXTRA_CFLAGS="$LIBC_EXTRA_CFLAGS" ../scripts/make_uclibcshim_deps.sh
@@ -361,7 +357,7 @@ fi
 
 	echo "Build curl"
 	cd 3rdparty
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+	if [[ $STATIC_BUILD -eq 1 ]]; then
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_curl_deps.sh -static
 	else
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_curl_deps.sh
@@ -370,7 +366,7 @@ fi
 
 	echo "Build faac"
 	cd 3rdparty
-	if [[ $STATIC_BUILD -eq 1 || $HYBRID_BUILD -eq 1 ]]; then
+	if [[ $STATIC_BUILD -eq 1 ]]; then
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_faac_deps.sh -static
 	else
 		PRUDYNT_CROSS=$PRUDYNT_CROSS ../scripts/make_faac_deps.sh
@@ -386,9 +382,8 @@ if [ $# -eq 0 ]; then
 	echo "       ./build.sh full <platform> [options]"
 	echo ""
 	echo "Platforms: T20, T21, T23, T30, T31, C100, T40, T41"
-	echo "Options:   -static | -hybrid | -debug | --libc-musl | --libc-uclibc"
+	echo "Options:   -static | -debug | --libc-musl | --libc-uclibc"
 	echo "  -static:        Static linking (default for -debug)"
-	echo "  -hybrid:        Hybrid linking (some static, some dynamic)"
 	echo "  -debug:         Debug build (no optimization, debug symbols, debug logging)"
 	echo "  --libc-uclibc:  Use thingino uClibc toolchain + ingenic-uclibc shim (default)"
 	echo "  --libc-musl:    Use ingenic-musl shim"
