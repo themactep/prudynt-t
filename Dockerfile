@@ -42,8 +42,8 @@ RUN  bash -c 'case "$BUILD_TYPE" in \
         SUFFIX="";; \
     esac && export SUFFIX'
 
-RUN cd /deps && PRUDYNT_CROSS="mipsel-linux-" ./build.sh deps $TARGET $SUFFIX
+RUN cd /deps && PRUDYNT_CROSS="mipsel-linux-" ./build.sh deps $TARGET $SUFFIX --libc-musl
 
 CMD cp -r /deps/3rdparty /src && \
-    PRUDYNT_CROSS="mipsel-linux-" ./build.sh prudynt $TARGET $SUFFIX && \
+    PRUDYNT_CROSS="mipsel-linux-" ./build.sh prudynt $TARGET $SUFFIX --libc-musl && \
     mv bin/prudynt "bin/prudynt-${TARGET}-${BUILD_TYPE}"

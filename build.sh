@@ -10,7 +10,7 @@ NFS_SHARE="/nfs"
 
 TOOLCHAIN_RELEASE="toolchain-x86_64"
 
-# Libc selection: "musl" (default, uses ingenic-musl shim) or "uclibc" (uses ingenic-uclibc shim)
+# Libc selection: "uclibc" (default, uses ingenic-uclibc shim) or "musl" (uses ingenic-musl shim)
 LIBC_TYPE="uclibc"
 
 parse_libc_flag() {
@@ -390,8 +390,8 @@ if [ $# -eq 0 ]; then
 	echo "  -static:        Static linking (default for -debug)"
 	echo "  -hybrid:        Hybrid linking (some static, some dynamic)"
 	echo "  -debug:         Debug build (no optimization, debug symbols, debug logging)"
-	echo "  --libc-musl:    Use ingenic-musl shim (default)"
-	echo "  --libc-uclibc:  Use thingino uClibc toolchain + ingenic-uclibc shim"
+	echo "  --libc-uclibc:  Use thingino uClibc toolchain + ingenic-uclibc shim (default)"
+	echo "  --libc-musl:    Use ingenic-musl shim"
 	exit 1
 elif [[ "$1" == "deps" ]]; then
 	deps "${@:2}"
