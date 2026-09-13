@@ -474,6 +474,92 @@ void serve_fmp4(int cfd, int vch) {
   }
 }
 
+// == Client address / API-key bypass =======================================
+
+// String form of the accepted socket's peer address (IPv4 only; the
+// server binds AF_INET).
+std::string peer_ipv4(int fd) {
+  sockaddr_in peer{};
+  socklen_t len = sizeof(peer);
+  if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer), &len) != 0)
+    return {};
+  char buf[INET_ADDRSTRLEN] = {};
+  if (!::inet_ntop(AF_INET, &peer.sin_addr, buf, sizeof(buf)))
+    return {};
+  return buf;
+}
+
+bool parse_ipv4(const std::string &s, uint32_t &out) {
+  unsigned a = 0, b = 0, c = 0, d = 0;
+  char tail = 0;
+  if (std::sscanf(s.c_str(), "%u.%u.%u.%u%c", &a, &b, &c, &d, &tail) != 4)
+    return false;
+  if (a > 255 || b > 255 || c > 255 || d > 255)
+    return false;
+  out = (a << 24) | (b << 16) | (c << 8) | d;
+  return true;
+}
+
+bool cidr_match(uint32_t addr, const std::string &entry) {
+  size_t slash = entry.find('/');
+  if (slash == std::string::npos)
+    return false;
+  uint32_t net = 0;
+  if (!parse_ipv4(entry.substr(0, slash), net))
+    return false;
+  const char *bits_str = entry.c_str() + slash + 1;
+  if (*bits_str == '\0')
+    return false;
+  char *end = nullptr;
+  long bits = std::strtol(bits_str, &end, 10);
+  if (!end || *end != '\0' || bits < 0 || bits > 32)
+    return false;
+  uint32_t mask = (bits == 0) ? 0u : (0xffffffffu << (32 - bits));
+  return (addr & mask) == (net & mask);
+}
+
+// Mirror the webui.auth_bypass_ips semantics from /var/www/x/auth.sh: a
+// comma/whitespace separated list of exact IPs, "192.168.1." prefixes, or
+// CIDR ranges.
+bool is_trusted_ipv4(const std::string &ip) {
+  uint32_t addr = 0;
+  if (ip.empty() || !parse_ipv4(ip, addr))
+    return false;
+
+  JsonValue *root = load_config("/etc/thingino.json");
+  if (!root)
+    return false;
+  JsonValue *item = get_nested_item(root, "webui.auth_bypass_ips");
+  std::string list;
+  if (item && item->type == JSON_STRING && item->value.string)
+    list = item->value.string;
+  free_json_value(root);
+  if (list.empty())
+    return false;
+
+  std::string entry;
+  auto match = [&](const std::string &e) {
+    if (e.empty())
+      return false;
+    if (e.find('/') != std::string::npos)
+      return cidr_match(addr, e);
+    if (e.back() == '.')
+      return ip.rfind(e, 0) == 0;
+    return ip == e;
+  };
+
+  for (char c : list) {
+    if (c == ',' || c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      if (match(entry))
+        return true;
+      entry.clear();
+    } else {
+      entry += c;
+    }
+  }
+  return match(entry);
+}
+
 } // namespace
 
 HTTPMJPEG::HTTPMJPEG() = default;
@@ -661,7 +747,8 @@ void HTTPMJPEG::handle_client(int cfd) {
     return provided == stored;
   };
 
-  // Verify API key for config endpoints (skip for loopback)
+  // API key required for config/stream endpoints, except for loopback
+  // and clients listed in webui.auth_bypass_ips (same bypass the WebUI uses).
   std::string api_key = extract_header("X-API-Key");
   if (api_key.empty()) {
     // Fall back to ?token= query parameter
@@ -676,6 +763,14 @@ void HTTPMJPEG::handle_client(int cfd) {
     api_key = find_qs("token");
   }
   bool api_authenticated = verify_api_key(api_key);
+  if (!api_authenticated) {
+    const std::string peer = peer_ipv4(cfd);
+    if (!peer.empty() &&
+        (peer.rfind("127.", 0) == 0 || is_trusted_ipv4(peer))) {
+      LOG_DEBUG("API key bypassed for " << peer);
+      api_authenticated = true;
+    }
+  }
 
   // Handle CORS preflight
   if (method == "OPTIONS") {
