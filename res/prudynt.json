@@ -134,6 +134,7 @@
     "audio_only_enabled": true,
     "audio_only_endpoint": "mic",
     "audio_only_info": "audio from the microphone",
+    "auth_mode": "digest",
     "auth_required": true,
     "bandwidth_margin": 1.2,
     "est_bitrate": 5000,

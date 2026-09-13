@@ -1218,6 +1218,7 @@ void handle_rtsp(JsonValue *obj, std::string &out, bool &sep) {
   add_int("send_buffer_size", "rtsp.send_buffer_size");
   add_int("send_timeout", "rtsp.send_timeout");
   add_bool_r("auth_required", "rtsp.auth_required");
+  add_str_r("auth_mode", "rtsp.auth_mode");
   add_str_r("name", "rtsp.name");
   add_str_r("username", "rtsp.username");
   add_str_r("password", "rtsp.password");

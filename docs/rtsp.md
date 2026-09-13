@@ -87,6 +87,29 @@ RTSP settings in `config.json`:
 | `rtsp.send_buffer_size`  | 307200  | TCP socket send buffer (bytes)         |
 | `rtsp.send_timeout`      | 5       | SO_SNDTIMEO in seconds (0 = disabled)  |
 | `rtsp.est_bitrate`       | 3000    | Advertised bitrate in SDP (kbps)       |
+| `rtsp.auth_required`     | true    | Require authentication before DESCRIBE |
+| `rtsp.auth_mode`         | digest  | `digest`, `basic` or `both`            |
+
+## Authentication
+
+RTSP credentials are configured through `rtsp.username` / `rtsp.password`.
+
+`rtsp.auth_mode` selects how they are checked:
+
+- `digest` (default) -- challenges with `WWW-Authenticate: Digest`
+  (MD5 + `qop="auth"`).  The password never crosses the wire; only an
+  MD5 response that is bound to a server nonce, so a captured request
+  cannot be replayed.
+- `basic` -- legacy HTTP-style Basic auth.  The credentials are base64
+  encoded (i.e. effectively plain text) on every request.  Kept only for
+  clients that cannot do Digest.
+- `both` -- advertises both schemes and accepts either.  A Digest-capable
+  client picks Digest; an older client falls back to Basic.  Use this
+  during migration, then switch to `digest`.
+
+The nonce is stateless: it carries a timestamp and an MD5 bound to a
+per-process secret, and is accepted for 5 minutes.  A session that has
+authenticated once is not re-challenged for subsequent requests.
 
 ## URL Endpoints
 
