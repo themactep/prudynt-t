@@ -1052,18 +1052,38 @@ void VideoWorker::run() {
 
               bool delivered = false;
 
-              H264NALUnit nalu;
-              nalu.data = std::move(nalu_buf); // channel takes ownership
-              nalu.imp_ts = rtsp_ts_us;
-              nalu.time = nal_time;
-              nalu.frame_id = current_frame_id;
-              nalu.packet_index = i;
-              nalu.packet_count = stream.packCount;
-              nalu.is_frame_start = frame_start;
-              nalu.is_frame_end = pack_is_frame_end;
-              nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
-                                  nal_is_vps || nal_is_sps || nal_is_pps);
-              delivered = global_video[encChn]->msgChannel->write(std::move(nalu));
+              // The main channel is only consumed by RTSP/WS sessions.  With no
+              // such client nothing ever reads it, so writing frames here just
+              // fills the 400-entry queue with live buffers that stay resident
+              // until the next subscriber triggers a clear.  That pins several
+              // megabytes for the lifetime of an fMP4-only client.  Skip the
+              // write when no consumer is registered; the per-client taps above
+              // already hold their own copies.
+              bool main_consumer;
+              {
+                std::unique_lock<std::mutex> lock_stream{
+                    global_video[encChn]->onDataCallbackLock};
+                main_consumer =
+                    (global_video[encChn]->onDataCallback != nullptr);
+              }
+
+              if (!main_consumer) {
+                video_state->nalu_pool->returnBuf(std::move(nalu_buf));
+              } else {
+                H264NALUnit nalu;
+                nalu.data = std::move(nalu_buf); // channel takes ownership
+                nalu.imp_ts = rtsp_ts_us;
+                nalu.time = nal_time;
+                nalu.frame_id = current_frame_id;
+                nalu.packet_index = i;
+                nalu.packet_count = stream.packCount;
+                nalu.is_frame_start = frame_start;
+                nalu.is_frame_end = pack_is_frame_end;
+                nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
+                                    nal_is_vps || nal_is_sps || nal_is_pps);
+                delivered =
+                    global_video[encChn]->msgChannel->write(std::move(nalu));
+              }
               if (delivered) {
                 std::unique_lock<std::mutex> lock_stream{
                     global_video[encChn]->onDataCallbackLock};

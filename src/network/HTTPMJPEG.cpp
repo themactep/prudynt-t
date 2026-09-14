@@ -266,6 +266,47 @@ bool build_aac_asc(int sample_rate, int channels, std::vector<uint8_t> &out) {
   return true;
 }
 
+// Streaming clients are counted so the workers keep running while any client is
+// attached and stop once the last one goes away.  Without the release half the
+// video worker keeps producing frames that nothing drains: with no RTSP client
+// nothing reads the main channel, so it fills up and recycles its NAL buffers
+// into the pool, which retains capacity and grows into the largest frames it
+// has seen until the device runs out of memory.
+std::atomic<int> g_stream_clients{0};
+
+void acquire_stream_client(int vch, bool with_audio) {
+  int prev = g_stream_clients.fetch_add(1);
+
+  if (vch >= 0 && vch < NUM_VIDEO_CHANNELS && global_video[vch]) {
+    auto vs = global_video[vch];
+    // Drop any backlog so the new client starts at a keyframe boundary
+    // instead of replaying stale frames.
+    if (prev == 0 && vs->msgChannel)
+      vs->msgChannel->clear();
+    vs->hasDataCallback.store(true, std::memory_order_relaxed);
+    vs->should_grab_frames.notify_one();
+  }
+
+  if (with_audio && global_audio[0]) {
+    global_audio[0]->hasDataCallback.store(true, std::memory_order_relaxed);
+    global_audio[0]->should_grab_frames.notify_one();
+  }
+}
+
+void release_stream_client(int vch, bool with_audio) {
+  int prev = g_stream_clients.fetch_sub(1);
+  if (prev > 1)
+    return; // other clients still attached
+
+  // Last client out: stop the workers so they idle instead of producing into
+  // queues that nothing consumes.
+  g_stream_clients.store(0);
+  if (vch >= 0 && vch < NUM_VIDEO_CHANNELS && global_video[vch])
+    global_video[vch]->hasDataCallback.store(false, std::memory_order_relaxed);
+  if (with_audio && global_audio[0])
+    global_audio[0]->hasDataCallback.store(false, std::memory_order_relaxed);
+}
+
 // Stream an already-encoded H.264 channel as live fragmented MP4 (fMP4) over
 // chunked HTTP. Reuses the existing encode via a video tap, so no new encode
 // and no extra libraries are needed; playable in-browser via MediaSource.
@@ -278,9 +319,10 @@ void serve_fmp4(int cfd, int vch) {
   }
   auto vs = global_video[vch];
 
-  // RAII cleanup for the per-client taps and the muxer.
+  // RAII cleanup for the per-client taps, the muxer and the worker claim.
   struct TapGuard {
     int vch;
+    bool with_audio = false;
     uint64_t vid = 0;
     uint64_t aud = 0;
     ~TapGuard() {
@@ -288,6 +330,9 @@ void serve_fmp4(int cfd, int vch) {
         unregister_video_tap(vch, vid);
       if (aud)
         unregister_audio_tap(0, aud);
+      // Must run after the taps are gone, so no further frames are fanned out
+      // into a queue that is about to be destroyed.
+      release_stream_client(vch, with_audio);
     }
   } taps{vch};
   std::unique_ptr<MP4Muxer, decltype(&DestroyMP4Muxer)> muxer(
@@ -314,13 +359,15 @@ void serve_fmp4(int cfd, int vch) {
   if (have_audio && global_audio[0]) {
     aq = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3);
     taps.aud = register_audio_tap(0, aq).id;
-    global_audio[0]->hasDataCallback.store(true, std::memory_order_relaxed);
-    global_audio[0]->should_grab_frames.notify_one();
+    taps.with_audio = true;
   }
 
-  // Wake the video loop and ask for a keyframe so SPS/PPS + IDR arrive now.
-  vs->hasDataCallback.store(true, std::memory_order_relaxed);
-  vs->should_grab_frames.notify_one();
+  // Claim the workers: sets hasDataCallback and clears the main channel so
+  // this client starts from a keyframe instead of a backlog.  Released by the
+  // TapGuard above on every exit path.
+  acquire_stream_client(vch, taps.with_audio);
+
+  // Ask for a keyframe so SPS/PPS + IDR arrive now.
   IMP_Encoder_RequestIDR(vch);
 
   // Grab SPS/PPS from the latest codec config; wait briefly for the IDR if
@@ -424,14 +471,16 @@ void serve_fmp4(int cfd, int vch) {
     bool did_work = false;
 
     H264NALUnit unit;
-    while (q->read(&unit)) {
+    while (q->read_move(&unit)) {
       did_work = true;
       if (unit.data.empty())
         continue;
       uint8_t nalType = unit.data[0] & 0x1F;
       // SPS/PPS already live in the avcC init segment; keep them out of-band.
-      if (nalType == 7 || nalType == 8)
+      if (nalType == 7 || nalType == 8) {
+        q->release(unit);
         continue;
+      }
 
       bool isVCL = (nalType == 1 || nalType == 5);
       bool isKey = (nalType == 5);
@@ -449,6 +498,9 @@ void serve_fmp4(int cfd, int vch) {
         auto frag =
             muxer->muxVideo(sample.data(), sample.size(), rebase_pts(pts_ms), isKey);
         sample.clear();
+        // Hand the payload back so the next frame reuses it instead of
+        // allocating afresh.
+        q->release(unit);
         if (!frag.empty() && !write_chunk(frag))
           return;
       }
@@ -456,7 +508,7 @@ void serve_fmp4(int cfd, int vch) {
 
     if (aq) {
       AudioFrame af;
-      while (aq->read(&af)) {
+      while (aq->read_move(&af)) {
         did_work = true;
         if (af.data.empty())
           continue;
@@ -464,6 +516,7 @@ void serve_fmp4(int cfd, int vch) {
                          af.time.tv_usec / 1000;
         auto frag =
             muxer->muxAudio(af.data.data(), af.data.size(), rebase_pts(pts_ms));
+        aq->release(af);
         if (!frag.empty() && !write_chunk(frag))
           return;
       }

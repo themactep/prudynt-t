@@ -105,6 +105,22 @@ public:
     return false;
   }
 
+  // Move the oldest element out instead of copying it.  read() copies the
+  // payload and then recycles the original, which makes every frame allocate
+  // a fresh heap buffer that the pool never sees; on a small device that churn
+  // never gets returned to the OS.  Taking ownership avoids the copy entirely
+  // and leaves the caller holding the buffer until it goes out of scope.
+  bool read_move(T *out) {
+    std::unique_lock<std::mutex> lck(cv_mtx);
+    if (can_read()) {
+      *out = std::move(msg_buffer.back());
+      msg_buffer.pop_back();
+      space_cv.notify_one();
+      return true;
+    }
+    return false;
+  }
+
   T wait_read() {
     std::unique_lock<std::mutex> lck(cv_mtx);
     while (!can_read()) {
@@ -117,12 +133,27 @@ public:
     return val;
   }
 
+  // Return whatever is still queued to the pool.  Without this the last
+  // backlog is freed to the allocator when the channel dies, so a session that
+  // ends with a full queue hands the pool nothing back and every subsequent
+  // session allocates from scratch.
+  ~MsgChannel() {
+    for (auto &elem : msg_buffer)
+      recycle(elem);
+  }
+
   void clear() {
     std::unique_lock<std::mutex> lck(cv_mtx);
     for (auto &elem : msg_buffer)
       recycle(elem);
     msg_buffer.clear();
     space_cv.notify_all();
+  }
+
+  // Keep small buffers for reuse; let oversized ones go so the memory
+  // returns to the allocator instead of pinning in the pool.
+  void release(T &elem) {
+    recycle(elem);
   }
 
   size_t size() const {
