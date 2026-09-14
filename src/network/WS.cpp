@@ -338,7 +338,29 @@ struct mp4_sul_wrapper {
   struct user_ctx *owner;
 };
 
+/* Marks a user_ctx as constructed. libwebsockets zeroes per-session data on
+ * allocation, so a zero magic means "placement-new has not run yet".
+ */
+static constexpr uint32_t kUserCtxMagic = 0x504E5443; // 'PNTC'
+
+/* Hard cap for fMP4 bytes queued towards a client that is not draining.
+ * Without it the queue grows at the full encoder bitrate until the box OOMs.
+ */
+static constexpr size_t kMaxPendingFragmentBytes = 1024 * 1024;
+
+/* Give up waiting for SPS/PPS instead of rescheduling the init poll forever. */
+static constexpr int64_t kMp4InitTimeoutMs = 8000;
+
+/* How often the service thread drains the preview taps. */
+static constexpr int64_t kMp4PumpIntervalUs = 25000;
+
+static int64_t steady_now_ms() {
+  return duration_cast<milliseconds>(steady_clock::now().time_since_epoch())
+      .count();
+}
+
 struct user_ctx {
+  uint32_t magic{kUserCtxMagic};
   char id[SESSION_ID_LENGTH + 1]; // +1 for null terminator
   struct lws *wsi;                // libwebsockets handle
   char root[ROOT_MAX_LENGTH];     // json root path (replaced std::string)
@@ -355,6 +377,8 @@ struct user_ctx {
   std::string message;
   snapshot_sul_wrapper snapshot_timer; // lws Soft Timer
   mp4_sul_wrapper mp4_timer;           // separate timer for mp4 init polling
+  mp4_sul_wrapper mp4_pump_timer;      // drains the preview taps on the
+                                       // service thread
   struct snapshot_info snapshot;
   // MP4 HTTP streaming state
   MP4Muxer *mp4_muxer = nullptr;
@@ -368,6 +392,10 @@ struct user_ctx {
   VideoTapEntry video_tap_entry;
   AudioTapEntry audio_tap_entry;
   std::vector<uint8_t> preview_video_sample;
+  int64_t mp4_init_deadline_ms = 0;
+  bool mp4_pump_running = false;
+  bool preview_seen_key = false;
+  size_t preview_dropped_bytes = 0;
 
   user_ctx(const char *session_id, lws *wsi_handle)
       : wsi(wsi_handle), value(0), flag(0), imaging_dirty(false), region(),
@@ -377,12 +405,40 @@ struct user_ctx {
     id[SESSION_ID_LENGTH] = '\0';
     root[0] = '\0'; // Initialize root as empty string
 
+    memset(&snapshot_timer.sul, 0, sizeof(snapshot_timer.sul));
+    memset(&mp4_timer.sul, 0, sizeof(mp4_timer.sul));
+    memset(&mp4_pump_timer.sul, 0, sizeof(mp4_pump_timer.sul));
     snapshot_timer.owner = this;
     mp4_timer.owner = this;
+    mp4_pump_timer.owner = this;
   }
 
+  /* Release everything this session owns, in an order that is safe for the
+   * MP4 pipeline: stop the timers that could re-enter first, then detach from
+   * the encoder taps, and only then free the muxer. Both the WebSocket close
+   * and the HTTP drop path funnel through here, so neither can leak a muxer
+   * or leave a scheduled sul pointing into freed per-session memory.
+   */
   ~user_ctx() {
+    lws_sul_cancel(&snapshot_timer.sul);
+    lws_sul_cancel(&mp4_timer.sul);
+    lws_sul_cancel(&mp4_pump_timer.sul);
+    mp4_pump_running = false;
     teardown_stream_taps();
+    close_muxer();
+    pending_fragments.clear();
+    pending_fragments.shrink_to_fit();
+    http_stream_buf.clear();
+    http_stream_buf.shrink_to_fit();
+    magic = 0;
+  }
+
+  void close_muxer() {
+    if (mp4_muxer) {
+      mp4_muxer->close();
+      DestroyMP4Muxer(mp4_muxer);
+      mp4_muxer = nullptr;
+    }
   }
 
   void teardown_stream_taps() {
@@ -399,6 +455,33 @@ struct user_ctx {
     preview_video_sample.clear();
   }
 
+  /* Append a freshly muxed fragment to the client queue.
+   * Bounded: a client that stops reading makes us drop fragments instead of
+   * buffering the live stream until the camera runs out of memory.
+   */
+  void queue_fragment(const std::vector<uint8_t> &frag) {
+    if (frag.empty()) {
+      return;
+    }
+    std::lock_guard<std::mutex> plock(pending_mutex);
+    if (pending_fragments.size() + frag.size() > kMaxPendingFragmentBytes) {
+      preview_dropped_bytes += frag.size();
+      return;
+    }
+    if (preview_dropped_bytes) {
+      LOG_WARN("fMP4 client not draining, dropped "
+               << preview_dropped_bytes << " bytes. id:" << id);
+      preview_dropped_bytes = 0;
+    }
+    pending_fragments.insert(pending_fragments.end(), frag.begin(), frag.end());
+    flag |= PNT_FLAG_HTTP_STREAM_PENDING;
+  }
+
+  /* Both pumps run on the libwebsockets service thread only (driven by
+   * mp4_pump_timer). Muxing used to happen on the encoder thread, which both
+   * raced the muxer teardown and called lws_callback_on_writable() from a
+   * foreign thread - libwebsockets is not thread safe.
+   */
   void pump_video_preview() {
     if (!mp4_muxer || !preview_video_queue) {
       return;
@@ -412,6 +495,19 @@ struct user_ctx {
       uint8_t nalType = unit.data[0] & 0x1F;
       bool isVCL = (nalType == 1 || nalType == 5);
       bool isKey = (nalType == 5);
+
+      /* Never start a fragment stream on a P frame; the decoder would have
+       * nothing to predict from.
+       */
+      if (!preview_seen_key) {
+        if (!isKey) {
+          if (isVCL) {
+            preview_video_sample.clear();
+          }
+          continue;
+        }
+        preview_seen_key = true;
+      }
 
       uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
       preview_video_sample.push_back(static_cast<uint8_t>((nl >> 24) & 0xFF));
@@ -430,13 +526,7 @@ struct user_ctx {
             mp4_muxer->muxVideo(preview_video_sample.data(),
                                 preview_video_sample.size(), pts_ms, isKey);
         preview_video_sample.clear();
-        if (!frag.empty()) {
-          std::lock_guard<std::mutex> plock(pending_mutex);
-          pending_fragments.insert(pending_fragments.end(), frag.begin(),
-                                   frag.end());
-          flag |= PNT_FLAG_HTTP_STREAM_PENDING;
-          lws_callback_on_writable(wsi);
-        }
+        queue_fragment(frag);
       }
     }
   }
@@ -451,16 +541,13 @@ struct user_ctx {
       if (af.data.empty()) {
         continue;
       }
+      if (!preview_seen_key) {
+        continue; // stay aligned with the video track
+      }
       int64_t pts_ms = static_cast<int64_t>(af.time.tv_sec) * 1000LL +
                        af.time.tv_usec / 1000LL;
       auto frag = mp4_muxer->muxAudio(af.data.data(), af.data.size(), pts_ms);
-      if (!frag.empty()) {
-        std::lock_guard<std::mutex> plock(pending_mutex);
-        pending_fragments.insert(pending_fragments.end(), frag.begin(),
-                                 frag.end());
-        flag |= PNT_FLAG_HTTP_STREAM_PENDING;
-        lws_callback_on_writable(wsi);
-      }
+      queue_fragment(frag);
     }
   }
 };
@@ -1699,35 +1786,52 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
   struct user_ctx *u_ctx = wrapper->owner;
   LOG_DDEBUG("process mp4 init schedule. id:" << u_ctx->id);
 
-  // Try to obtain SPS/PPS from global video channel (non-blocking reads)
+  /* Read the codec config the video worker caches for every consumer.
+   * Draining global_video[0]->msgChannel here used to steal NAL units from
+   * the shared sink, and it only ever yielded anything while an RTSP client
+   * happened to be connected.
+   */
   std::vector<uint8_t> sps;
   std::vector<uint8_t> pps;
-  bool have_sps = false;
-  bool have_pps = false;
+  bool is_hevc = false;
+  {
+    auto &vs = global_video[0];
+    std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
+    if (vs->have_sps && vs->have_pps) {
+      sps = vs->latest_sps;
+      pps = vs->latest_pps;
+    }
+    is_hevc = vs->have_vps && !vs->latest_vps.empty();
+  }
+  bool have_sps = !sps.empty();
+  bool have_pps = !pps.empty();
 
-  // Drain available messages until we find SPS/PPS or none left
-  while (true) {
-    H264NALUnit unit;
-    if (!global_video[0]->msgChannel->read(&unit)) {
-      break; // no more messages currently
+  if (is_hevc) {
+    // This endpoint only builds an avcC record; serving it for H.265 would
+    // hand the browser an undecodable init segment.
+    LOG_WARN("fMP4 preview requested for an H.265 stream, not supported");
+    u_ctx->close_muxer();
+    u_ctx->teardown_stream_taps();
+    if (lws_return_http_status(u_ctx->wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE,
+                               NULL) ||
+        lws_http_transaction_completed(u_ctx->wsi)) {
+      return;
     }
-    if (unit.data.empty())
-      continue;
-    uint8_t nalType = (unit.data[0] & 0x1F);
-    if (nalType == 7) { // SPS
-      sps = unit.data;
-      have_sps = true;
-      LOG_DEBUG("Found SPS for MP4 init");
-    } else if (nalType == 8) { // PPS
-      pps = unit.data;
-      have_pps = true;
-      LOG_DEBUG("Found PPS for MP4 init");
-    }
-    if (have_sps && have_pps)
-      break;
+    return;
   }
 
   if (!have_sps || !have_pps) {
+    if (steady_now_ms() >= u_ctx->mp4_init_deadline_ms) {
+      LOG_WARN("fMP4 preview timed out waiting for SPS/PPS. id:" << u_ctx->id);
+      u_ctx->close_muxer();
+      u_ctx->teardown_stream_taps();
+      if (lws_return_http_status(u_ctx->wsi, HTTP_STATUS_SERVICE_UNAVAILABLE,
+                                 NULL) ||
+          lws_http_transaction_completed(u_ctx->wsi)) {
+        return;
+      }
+      return;
+    }
     // reschedule after 100ms
     lws_sul_schedule(lws_get_context(u_ctx->wsi), 0, &u_ctx->mp4_timer.sul,
                      send_mp4_init, LWS_USEC_PER_SEC / 10);
@@ -1789,8 +1893,8 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
 
     if (!u_ctx->mp4_muxer->init(params)) {
       LOG_DEBUG("MP4Muxer init failed during scheduled init");
-      DestroyMP4Muxer(u_ctx->mp4_muxer);
-      u_ctx->mp4_muxer = nullptr;
+      u_ctx->close_muxer();
+      u_ctx->teardown_stream_taps();
       if (lws_return_http_status(u_ctx->wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR,
                                  NULL) ||
           lws_http_transaction_completed(u_ctx->wsi)) {
@@ -1807,31 +1911,73 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
                   init_seg.size());
     }
 
-    // Build AAC AudioSpecificConfig from FAAC encoder parameters if available
-    if (u_ctx->mp4_muxer && cfg->audio.input_enabled &&
-        strcmp(cfg->audio.input_format, "AAC") == 0) {
-      // Try to retrieve FAAC config by creating a temporary faac encoder
-      faac_params fparams;
-      if (faac_params_init(&fparams) == FAAC_OK) {
-        fparams.sample_rate  = cfg->audio.mic_sample_rate();
-        fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
-        fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;
-        fparams.object_type  = FAAC_OBJ_LOW;
-        faac_encoder *fh = nullptr;
-        if (faac_encoder_open(&fparams, &fh) == FAAC_OK) {
-          const uint8_t *asc_buf = nullptr;
-          uint32_t asc_len = 0;
-          if (faac_encoder_asc(fh, &asc_buf, &asc_len) == FAAC_OK &&
-              asc_buf && asc_len) {
-            params.aacConfig.assign(asc_buf, asc_buf + asc_len);
-          }
-          faac_encoder_close(&fh);
-        }
-      }
-    }
-
     u_ctx->flag |= PNT_FLAG_HTTP_SEND_MP4;
     lws_callback_on_writable(u_ctx->wsi);
+  }
+}
+
+/* Periodically drain the preview taps on the service thread and ask lws for a
+ * writable slot when there is something to ship.
+ */
+static void mp4_pump(lws_sorted_usec_list_t *sul) {
+  mp4_sul_wrapper *wrapper = lws_container_of(sul, mp4_sul_wrapper, sul);
+  struct user_ctx *u_ctx = wrapper->owner;
+
+  u_ctx->pump_video_preview();
+  u_ctx->pump_audio_preview();
+
+  bool pending;
+  {
+    std::lock_guard<std::mutex> plock(u_ctx->pending_mutex);
+    pending = !u_ctx->pending_fragments.empty();
+  }
+  if (pending) {
+    lws_callback_on_writable(u_ctx->wsi);
+  }
+
+  lws_sul_schedule(lws_get_context(u_ctx->wsi), 0, &u_ctx->mp4_pump_timer.sul,
+                   mp4_pump, kMp4PumpIntervalUs);
+}
+
+/* Attach to the encoder taps. Registering also wakes the video/audio workers,
+ * which otherwise stay parked when no RTSP client is connected - that was the
+ * reason a cold-start preview never received SPS/PPS.
+ */
+static void start_preview_taps(struct user_ctx *u_ctx) {
+  u_ctx->teardown_stream_taps();
+  u_ctx->preview_seen_key = false;
+  u_ctx->preview_video_queue =
+      std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE);
+  u_ctx->video_tap_entry = register_video_tap(0, u_ctx->preview_video_queue);
+
+  if (cfg->audio.input_enabled &&
+      strcmp(cfg->audio.input_format, "AAC") == 0) {
+    u_ctx->preview_audio_queue =
+        std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE);
+    u_ctx->audio_tap_entry = register_audio_tap(0, u_ctx->preview_audio_queue);
+  }
+}
+
+/* (Re)initialise the per-session context. libwebsockets reuses the same
+ * per-session buffer across keep-alive requests and across an HTTP->WS
+ * upgrade, so an already constructed context has to be destroyed first or its
+ * muxer, taps and timers are orphaned.
+ */
+static user_ctx *ws_ctx_reset(void *user, struct lws *wsi) {
+  auto *u_ctx = static_cast<user_ctx *>(user);
+  if (u_ctx->magic == kUserCtxMagic) {
+    u_ctx->~user_ctx();
+  }
+  return new (user) user_ctx(generateSessionID(), wsi);
+}
+
+/* Idempotent teardown - lws can report both CLOSED and HTTP_DROP_PROTOCOL for
+ * the same session.
+ */
+static void ws_ctx_destroy(void *user) {
+  auto *u_ctx = static_cast<user_ctx *>(user);
+  if (u_ctx && u_ctx->magic == kUserCtxMagic) {
+    u_ctx->~user_ctx();
   }
 }
 
@@ -1877,7 +2023,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
       /* initialize new u_ctx session structure.
        * assign current wsi and a new sessionid
        */
-      new (user) user_ctx(generateSessionID(), wsi);
+      u_ctx = ws_ctx_reset(user, wsi);
       LOG_DEBUG(
           "WebSocket connection authenticated and user context initialized");
     } else {
@@ -1887,7 +2033,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
         return -1;
       } else {
         LOG_DEBUG("Allowing unauthenticated connection (ws_secured=false)");
-        new (user) user_ctx(generateSessionID(), wsi);
+        u_ctx = ws_ctx_reset(user, wsi);
       }
     }
     break;
@@ -2060,22 +2206,10 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
     LOG_DDEBUG("LWS_CALLBACK_CLOSED id:" << u_ctx->id << ", ip:" << client_ip
                                          << ", flag:" << u_ctx->flag);
 
-    // cleanup delete possibly existing shedules for this session
-    lws_sul_cancel(&u_ctx->snapshot_timer.sul);
-    lws_sul_cancel(&u_ctx->mp4_timer.sul);
-
-    // restore any replaced callbacks and cleanup muxer
-    if (u_ctx->mp4_muxer) {
-      u_ctx->mp4_muxer->close();
-      DestroyMP4Muxer(u_ctx->mp4_muxer);
-      u_ctx->mp4_muxer = nullptr;
-    }
-    u_ctx->teardown_stream_taps();
-
-    u_ctx->pending_fragments.clear();
-    u_ctx->http_stream_buf.clear();
-
-    u_ctx->~user_ctx();
+    /* ~user_ctx() cancels the timers, detaches the taps and frees the muxer
+     * in that order.
+     */
+    ws_ctx_destroy(user);
     break;
 
   // ############################ HTTP ###############################
@@ -2087,16 +2221,16 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
     // check if security is required and validate token
     url_length =
         lws_get_urlarg_by_name_safe(wsi, "token", url_token, sizeof(url_token));
-    if (strcmp(token, url_token) == 0 ||
-        (strcmp(cfg->websocket.token, "auto") != 0 &&
-         strcmp(cfg->websocket.token, "") != 0 &&
-         strcmp(cfg->websocket.token, url_token) == 0)) {
-      /* initialize new u_ctx session structure.
-      * assign current wsi and a new sessionid
-      ' don't know if we need it for http
-      */
-      new (user) user_ctx(generateSessionID(), wsi);
-    } else {
+    /* Construct unconditionally: the rest of this handler dereferences
+     * u_ctx, and on the unauthenticated-but-allowed path it used to operate
+     * on raw, never-constructed per-session memory.
+     */
+    u_ctx = ws_ctx_reset(user, wsi);
+
+    if (strcmp(token, url_token) != 0 &&
+        !(strcmp(cfg->websocket.token, "auto") != 0 &&
+          strcmp(cfg->websocket.token, "") != 0 &&
+          strcmp(cfg->websocket.token, url_token) == 0)) {
       LOG_DEBUG("Unauthenticated http connect from: " << client_ip);
       if (cfg->websocket.http_secured) {
         LOG_DEBUG("Connection refused.");
@@ -2104,6 +2238,7 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
             lws_http_transaction_completed(wsi)) {
           return -1;
         }
+        return 0;
       }
     }
 
@@ -2142,6 +2277,13 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
           }
           return 0;
         }
+
+        /* Attach to the encoder taps right away: that is what wakes the
+         * video worker, which in turn publishes the SPS/PPS the init poll
+         * below is waiting for.
+         */
+        start_preview_taps(u_ctx);
+        u_ctx->mp4_init_deadline_ms = steady_now_ms() + kMp4InitTimeoutMs;
 
         // schedule mp4 init task that will poll for SPS/PPS and initialize
         // muxer
@@ -2278,11 +2420,8 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
                                         &p, end) ||
             lws_finalize_write_http_header(wsi, start, &p, end)) {
           LOG_ERROR("lws error sending mp4 init segment");
-          if (u_ctx->mp4_muxer) {
-            u_ctx->mp4_muxer->close();
-            DestroyMP4Muxer(u_ctx->mp4_muxer);
-            u_ctx->mp4_muxer = nullptr;
-          }
+          u_ctx->teardown_stream_taps();
+          u_ctx->close_muxer();
           u_ctx->http_stream_buf.clear();
           return -1;
         }
@@ -2317,24 +2456,18 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
           }
         }
 
-        // register dedicated taps so preview does not steal RTSP callbacks
-        u_ctx->teardown_stream_taps();
-        u_ctx->preview_video_queue =
-            std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE);
-        u_ctx->video_tap_entry =
-            register_video_tap(0, u_ctx->preview_video_queue,
-                               [u_ctx]() { u_ctx->pump_video_preview(); });
-
-        if (cfg->audio.input_enabled &&
-            strcmp(cfg->audio.input_format, "AAC") == 0) {
-          u_ctx->preview_audio_queue =
-              std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE);
-          u_ctx->audio_tap_entry =
-              register_audio_tap(0, u_ctx->preview_audio_queue,
-                                 [u_ctx]() { u_ctx->pump_audio_preview(); });
+        /* Taps are already attached (see /ch0.mp4 above). Start draining
+         * them from the service thread; muxing on the encoder thread used to
+         * race the teardown below and poked lws from a foreign thread.
+         */
+        if (!u_ctx->mp4_pump_running) {
+          u_ctx->mp4_pump_running = true;
+          lws_sul_schedule(lws_get_context(wsi), 0, &u_ctx->mp4_pump_timer.sul,
+                           mp4_pump, kMp4PumpIntervalUs);
         }
         // keep connection open; don't call lws_http_transaction_completed here
         u_ctx->http_stream_buf.clear();
+        u_ctx->http_stream_buf.shrink_to_fit();
         return 0;
       }
 
@@ -2396,9 +2529,8 @@ int WS::ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
     break;
 
   case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
-    LOG_DDEBUG("LWS_CALLBACK_HTTP_DROP_PROTOCOL ip:" << client_ip
-                                                     << ", id:" << u_ctx->id);
-    u_ctx->~user_ctx();
+    LOG_DDEBUG("LWS_CALLBACK_HTTP_DROP_PROTOCOL ip:" << client_ip);
+    ws_ctx_destroy(user);
     break;
 
   default:

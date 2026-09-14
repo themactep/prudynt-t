@@ -22,6 +22,7 @@
 #include <deque>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -176,6 +177,11 @@ struct audio_stream {
 
   std::mutex tap_mutex;
   std::vector<AudioTapEntry> audio_taps;
+  /* Number of currently registered taps. Lets the worker keep the capture
+   * loop alive for tap-only consumers (e.g. the websocket fMP4 preview),
+   * which do not set hasDataCallback.
+   */
+  std::atomic<int> tap_clients{0};
 
   audio_stream(int devId, int aiChn, int aeChn)
       : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false),
@@ -222,6 +228,8 @@ struct video_stream {
   bool have_pps;
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
+  /* see audio_stream::tap_clients */
+  std::atomic<int> tap_clients{0};
   std::atomic<bool> privacy_requested{false};
   // Cached black IDR frame for privacy mode (Annex B: start_code + SPS + PPS + IDR)
   int privacy_osd_handle{-1};  // OSD cover region handle for privacy
@@ -324,8 +332,20 @@ register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
   entry.notify = std::move(notify);
   if (encChn >= 0 && encChn < NUM_VIDEO_CHANNELS) {
     queue->setPool(global_video[encChn]->nalu_pool);
-    std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
-    global_video[encChn]->video_taps.push_back(entry);
+    {
+      std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+      global_video[encChn]->video_taps.push_back(entry);
+    }
+    {
+      /* Publish the count under mutex_main: the worker evaluates its idle
+       * predicate and parks on should_grab_frames while holding it, so a
+       * bump published outside the lock can be missed entirely.
+       */
+      std::lock_guard<std::mutex> lock(mutex_main);
+      global_video[encChn]->tap_clients.fetch_add(1, std::memory_order_relaxed);
+    }
+    // wake the worker in case it is parked waiting for a consumer
+    global_video[encChn]->should_grab_frames.notify_all();
   }
   return entry;
 }
@@ -334,12 +354,20 @@ inline void unregister_video_tap(int encChn, uint64_t tap_id) {
   if (encChn < 0 || encChn >= NUM_VIDEO_CHANNELS) {
     return;
   }
-  std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
-  auto &taps = global_video[encChn]->video_taps;
-  taps.erase(
-      std::remove_if(taps.begin(), taps.end(),
-                     [&](const VideoTapEntry &v) { return v.id == tap_id; }),
-      taps.end());
+  size_t removed = 0;
+  {
+    std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
+    auto &taps = global_video[encChn]->video_taps;
+    auto it =
+        std::remove_if(taps.begin(), taps.end(),
+                       [&](const VideoTapEntry &v) { return v.id == tap_id; });
+    removed = static_cast<size_t>(std::distance(it, taps.end()));
+    taps.erase(it, taps.end());
+  }
+  if (removed) {
+    global_video[encChn]->tap_clients.fetch_sub(static_cast<int>(removed),
+                                                std::memory_order_relaxed);
+  }
 }
 
 inline AudioTapEntry
@@ -351,8 +379,16 @@ register_audio_tap(int encChn, std::shared_ptr<MsgChannel<AudioFrame>> queue,
   entry.queue = queue;
   entry.notify = std::move(notify);
   if (encChn >= 0 && encChn < NUM_AUDIO_CHANNELS) {
-    std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
-    global_audio[encChn]->audio_taps.push_back(entry);
+    {
+      std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+      global_audio[encChn]->audio_taps.push_back(entry);
+    }
+    {
+      // see register_video_tap
+      std::lock_guard<std::mutex> lock(mutex_main);
+      global_audio[encChn]->tap_clients.fetch_add(1, std::memory_order_relaxed);
+    }
+    global_audio[encChn]->should_grab_frames.notify_all();
   }
   return entry;
 }
@@ -361,12 +397,20 @@ inline void unregister_audio_tap(int encChn, uint64_t tap_id) {
   if (encChn < 0 || encChn >= NUM_AUDIO_CHANNELS) {
     return;
   }
-  std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
-  auto &taps = global_audio[encChn]->audio_taps;
-  taps.erase(
-      std::remove_if(taps.begin(), taps.end(),
-                     [&](const AudioTapEntry &v) { return v.id == tap_id; }),
-      taps.end());
+  size_t removed = 0;
+  {
+    std::lock_guard<std::mutex> lock(global_audio[encChn]->tap_mutex);
+    auto &taps = global_audio[encChn]->audio_taps;
+    auto it =
+        std::remove_if(taps.begin(), taps.end(),
+                       [&](const AudioTapEntry &v) { return v.id == tap_id; });
+    removed = static_cast<size_t>(std::distance(it, taps.end()));
+    taps.erase(it, taps.end());
+  }
+  if (removed) {
+    global_audio[encChn]->tap_clients.fetch_sub(static_cast<int>(removed),
+                                                std::memory_order_relaxed);
+  }
 }
 
 #endif // GLOBALS_HPP

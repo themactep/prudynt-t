@@ -311,7 +311,10 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     mp4_audio_sample_rate = 0;
   }
 
-  if (!af.data.empty() && global_audio[encChn]->hasDataCallback) {
+  bool audio_taps_active =
+      global_audio[encChn]->tap_clients.load(std::memory_order_relaxed) > 0;
+  if (!af.data.empty() &&
+      (global_audio[encChn]->hasDataCallback || audio_taps_active)) {
     bool delivered = global_audio[encChn]->msgChannel->write(af);
     if (delivered) {
       std::unique_lock<std::mutex> lock_stream{
@@ -431,9 +434,13 @@ void AudioWorker::run() {
         (global_mp4_active_recorders.load(std::memory_order_relaxed) > 0);
     bool audio_clients_active = global_audio[encChn]->hasDataCallback;
     bool tap_requests_audio = tap && tap->wantsCapture();
+    /* websocket fMP4 preview consumes audio through a tap only */
+    bool audio_taps_registered =
+        global_audio[encChn]->tap_clients.load(std::memory_order_relaxed) > 0;
     bool should_capture_audio =
         cfg->audio.input_enabled &&
-        (audio_clients_active || recorder_needs_audio || tap_requests_audio);
+        (audio_clients_active || audio_taps_registered || recorder_needs_audio ||
+         tap_requests_audio);
 
     if (should_capture_audio) {
       if (IMP_AI_PollingFrame(global_audio[encChn]->devId,
@@ -481,6 +488,10 @@ void AudioWorker::run() {
             recorder_needed_now;
         // Resume if audio clients are active (audio-only streams like /mic)
         if (audio_clients_active_now) {
+          break;
+        }
+        if (global_audio[encChn]->tap_clients.load(std::memory_order_relaxed) >
+            0) {
           break;
         }
         // Resume if video clients need audio

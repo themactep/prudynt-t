@@ -473,6 +473,12 @@ void VideoWorker::run() {
         std::memory_order_relaxed);
     bool video_clients_active =
         global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+    /* Tap-only consumers (websocket fMP4 preview) never set hasDataCallback.
+     * Without this the capture loop stays parked and the preview never sees
+     * a single NAL, so its muxer init polls forever.
+     */
+    bool video_taps_active =
+        global_video[encChn]->tap_clients.load(std::memory_order_relaxed) > 0;
     if (video_clients_active && !had_video_clients) {
       if (global_video[encChn]->msgChannel) {
         global_video[encChn]->msgChannel->clear();
@@ -504,8 +510,8 @@ void VideoWorker::run() {
 #else
     bool prebuffer_active = false;
 #endif
-    if (video_clients_active || run_for_jpeg || bootstrap_requested ||
-        global_force_video_active || prebuffer_active) {
+    if (video_clients_active || video_taps_active || run_for_jpeg ||
+        bootstrap_requested || global_force_video_active || prebuffer_active) {
       int current_stream_fps = (video_state && video_state->stream)
                                    ? video_state->stream->fps
                                    : last_mp4_fps;
@@ -917,7 +923,7 @@ void VideoWorker::run() {
             }
           }
 
-          if (global_video[encChn]->hasDataCallback) {
+          if (global_video[encChn]->hasDataCallback || video_taps_active) {
             // Add frame boundary metadata for complete frame detection
             static uint32_t frame_counter = 0;
             if (frame_start) {
@@ -952,7 +958,20 @@ void VideoWorker::run() {
                     sei_unit.is_keyframe = true;
                     sei_unit.packet_index = 0;
                     sei_unit.packet_count = 1;
-                    global_video[encChn]->msgChannel->write(sei_unit);
+                    /* Same rule as the main NAL write below: nothing drains
+                     * the main channel without an RTSP/WS subscriber, so
+                     * writing it there would only pin frames. Tap consumers
+                     * get their own copy right below.
+                     */
+                    bool sei_main_consumer;
+                    {
+                      std::unique_lock<std::mutex> lock_stream{
+                          global_video[encChn]->onDataCallbackLock};
+                      sei_main_consumer =
+                          (global_video[encChn]->onDataCallback != nullptr);
+                    }
+                    if (sei_main_consumer)
+                      global_video[encChn]->msgChannel->write(sei_unit);
 
                     // Fan SEI NAL out to video taps so RTSP clients
                     // receive OSD metadata alongside the IDR frame.
@@ -1288,9 +1307,9 @@ void VideoWorker::run() {
         }
       }
     } else if (global_video[encChn]->onDataCallback == nullptr &&
-               !global_restart_video && !global_video[encChn]->run_for_jpeg &&
-               !bootstrap_requested && !global_force_video_active &&
-               !prebuffer_active) {
+               !video_taps_active && !global_restart_video &&
+               !global_video[encChn]->run_for_jpeg && !bootstrap_requested &&
+               !global_force_video_active && !prebuffer_active) {
       LOG_DDEBUG("VIDEO LOCK"
                  << " channel:" << encChn << " hasCallbackIsNull:"
                  << (global_video[encChn]->onDataCallback == nullptr)
@@ -1319,8 +1338,10 @@ void VideoWorker::run() {
               std::memory_order_relaxed);
       bool video_clients =
           global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+      bool video_taps =
+          global_video[encChn]->tap_clients.load(std::memory_order_relaxed) > 0;
       while (global_video[encChn]->onDataCallback == nullptr &&
-             !video_clients &&
+             !video_clients && !video_taps &&
              !global_restart_video && !global_video[encChn]->run_for_jpeg &&
              !bootstrap_requested_inner && !global_force_video_active &&
              !prebuffer_active_inner) {
@@ -1336,6 +1357,8 @@ void VideoWorker::run() {
         global_video[encChn]->should_grab_frames.wait(lock_stream);
         video_clients =
             global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
+        video_taps =
+            global_video[encChn]->tap_clients.load(std::memory_order_relaxed) > 0;
         bootstrap_requested_inner =
             global_video[encChn]->bootstrap_requested.load(
                 std::memory_order_relaxed);
