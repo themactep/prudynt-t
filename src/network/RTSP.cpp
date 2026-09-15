@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <unistd.h>
+#include <utility>
 
 #undef MODULE
 #define MODULE "RTSP"
@@ -28,6 +29,11 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
     vcfg.codec    = stream.format ? stream.format : "H264";
     vcfg.width    = stream.width;
     vcfg.height   = stream.height;
+#ifdef USE_ISP_ROTATION
+    if (stream.rotation == 90 || stream.rotation == 270) {
+        std::swap(vcfg.width, vcfg.height);
+    }
+#endif
     vcfg.fps      = stream.fps > 0 ? stream.fps : 30;
     vcfg.payloadType = 96;
     vcfg.clockRate   = 90000;
