@@ -1328,8 +1328,16 @@ void RtspServer::handleDescribe(int idx, int cseq, const char *uri,
             break;
         }
     }
-    if (videoIdx < 0 && !videoStreams_.empty())
-        videoIdx = 0; // default to first stream
+    if (videoIdx < 0) {
+        // A URI with no path (host root) defaults to the first stream. A URI
+        // that names a stream we do not serve -- e.g. a disabled substream --
+        // must be refused rather than silently return stream 0.
+        const char *scheme = strstr(uri, "://");
+        const char *path = scheme ? strchr(scheme + 3, '/') : strchr(uri, '/');
+        const bool hasStreamPath = path && path[1] != '\0';
+        if (!hasStreamPath && !videoStreams_.empty())
+            videoIdx = 0;
+    }
 
     if (videoIdx < 0) {
         sendResponse(*s, Status::NOT_FOUND, cseq, nullptr, nullptr);
