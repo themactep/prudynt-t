@@ -262,7 +262,11 @@ int Motion::init() {
   int motion_width = cfg->motion.frame_width;
   int motion_height = cfg->motion.frame_height;
 
-  // Get the monitored stream to check for rotation
+#ifdef USE_ISP_ROTATION
+  // Swap dimensions if video is rotated. Only meaningful here: motion
+  // detection reads the ISP's actual frame, which is only physically
+  // rotated when USE_ISP_ROTATION is active (the default SEI-only hint
+  // never touches the frame data itself).
   _stream *monitor_stream_cfg = nullptr;
   if (cfg->motion.monitor_stream == 0) {
     monitor_stream_cfg = &cfg->stream0;
@@ -274,13 +278,13 @@ int Motion::init() {
     monitor_stream_cfg = &cfg->stream3;
   }
 
-  // Swap dimensions if video is rotated
   if (monitor_stream_cfg && monitor_stream_cfg->rotation != 0) {
     std::swap(motion_width, motion_height);
     LOG_DEBUG("Motion detection dimensions adjusted for "
               << monitor_stream_cfg->rotation << " deg rotation: " << motion_width
               << "x" << motion_height);
   }
+#endif
 
   move_param.frameInfo.width = motion_width;
   move_param.frameInfo.height = motion_height;
