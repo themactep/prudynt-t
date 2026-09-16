@@ -81,6 +81,11 @@ std::string generateSdp(const VideoStreamConfig &video,
     int off = 0;
 
     // -- Session description ---------------------------------------------
+    // Session-level connection line (RFC 4566 S5). Without it a session that
+    // has no media-level c= is invalid.
+    char conns[96];
+    snprintf(conns, sizeof(conns), "c=IN %s %s\r\n", kSdpAddrType, serverIp);
+
     // Bandwidth hint (session-level, RFC 4566 S5: b= before a=)
     char bws[32] = "";
     if (video.bitrate > 0) {
@@ -94,11 +99,13 @@ std::string generateSdp(const VideoStreamConfig &video,
         "v=0\r\n"
         "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
+        "%s"
         "t=0 0\r\n"
         "%s"
         "a=control:*\r\n",
         rand(), kSdpAddrType, serverIp,
         streamName,
+        conns,
         bws);
 
     // -- Video media ----------------------------------------------------
@@ -279,10 +286,12 @@ std::string generateAudioOnlySdp(const AudioStreamConfig &audio,
         "v=0\r\n"
         "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
+        "c=IN %s %s\r\n"
         "t=0 0\r\n"
         "a=control:*\r\n",
         rand(), kSdpAddrType, serverIp,
-        streamName);
+        streamName,
+        kSdpAddrType, serverIp);
 
     const char *encName = "mpeg4-generic";
     int audioClk = audio.sampleRate;
@@ -336,10 +345,12 @@ std::string generateBackchannelSdp(const std::vector<BackchannelConfig> &formats
         "v=0\r\n"
         "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
+        "c=IN %s %s\r\n"
         "t=0 0\r\n"
         "a=control:*\r\n",
         rand(), kSdpAddrType, serverIp,
-        streamName);
+        streamName,
+        kSdpAddrType, serverIp);
 
     if (formats.empty()) {
         off += snprintf(buf + off, sizeof(buf) - off,
