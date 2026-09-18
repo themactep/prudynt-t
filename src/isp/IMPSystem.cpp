@@ -314,10 +314,13 @@ void cleanup_stale_t23_isp_state(IMPSensorInfo &sensor_info) {
 
   int ret = 0;
 
-  ret = hal::isp::disable_sensor();
-  LOG_DEBUG_OR_ERROR(
-      ret, "hal::isp::disable_sensor() preemptive cleanup before add_sensor");
-
+  /*
+   * Do not call IMP_ISP_DisableSensor() here: the sensor has not been enabled
+   * in this process, and the libimp decrements its own enable count without
+   * checking, so a disable this early underflows it. IMP_ISP_Close() then
+   * refuses (it bails while that count says "enabled") and the following
+   * IMP_ISP_AddSensor() is rejected with "Sensor is runing".
+   */
   ret = hal::isp::del_sensor(&sensor_info);
   LOG_DEBUG_OR_ERROR(
       ret, "hal::isp::del_sensor(&sinfo) preemptive cleanup before add_sensor");
