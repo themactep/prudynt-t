@@ -391,14 +391,17 @@ int IMPSystem::init() {
   LOG_DEBUG("IMPSystem::init()");
   int ret = 0;
 
-#if defined(PLATFORM_T23)
-  LOG_WARN("IMPSystem init: skipping early sensor procfs refresh on T23 until "
-           "after sensor enable");
-#else
+  /*
+   * The sensor modules publish the flat /proc/jz/sensor tree when they load,
+   * so the sensor geometry is available before the ISP is attached. Read it
+   * here, as the non-T23 path always has: the refresh after enable_sensor()
+   * below still has the final say, but resolving now keeps the streams from
+   * sitting at 0x0 when the ISP never attaches - a 0x0 stream made
+   * IMPFramesource divide by zero.
+   */
   refresh_sensor_properties_from_proc();
   resolve_all_stream_geometry();
   apply_default_bitrates();
-#endif
 
   {
     int pool_size_kb;
