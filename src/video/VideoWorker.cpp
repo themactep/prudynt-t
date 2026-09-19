@@ -1084,22 +1084,19 @@ void VideoWorker::run() {
                 delivered =
                     global_video[encChn]->msgChannel->write(std::move(nalu));
               }
-              if (delivered) {
-                std::unique_lock<std::mutex> lock_stream{
-                    global_video[encChn]->onDataCallbackLock};
-                if (global_video[encChn]->onDataCallback)
-                  global_video[encChn]->onDataCallback();
-              } else {
-                LOG_DDEBUG("video channel:"
-                           << encChn
-                           << " msgChannel full, dropped oldest NAL");
+              if (main_consumer) {
+                if (!delivered) {
+                  LOG_DDEBUG("video channel:"
+                             << encChn
+                             << " msgChannel full, dropped oldest NAL");
+                }
                 std::unique_lock<std::mutex> lock_stream{
                     global_video[encChn]->onDataCallbackLock};
                 if (global_video[encChn]->onDataCallback)
                   global_video[encChn]->onDataCallback();
               }
 
-              if (!delivered) {
+              if (main_consumer && !delivered) {
                 static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
                 static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
                 clog_count[encChn]++;

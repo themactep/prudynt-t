@@ -312,12 +312,21 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   }
 
   if (!af.data.empty() && global_audio[encChn]->hasDataCallback) {
-    bool delivered = global_audio[encChn]->msgChannel->write(af);
-    if (delivered) {
+    bool main_consumer;
+    {
       std::unique_lock<std::mutex> lock_stream{
           global_audio[encChn]->onDataCallbackLock};
-      if (global_audio[encChn]->onDataCallback)
-        global_audio[encChn]->onDataCallback();
+      main_consumer = (global_audio[encChn]->onDataCallback != nullptr);
+    }
+    bool delivered = false;
+    if (main_consumer) {
+      delivered = global_audio[encChn]->msgChannel->write(af);
+      if (delivered) {
+        std::unique_lock<std::mutex> lock_stream{
+            global_audio[encChn]->onDataCallbackLock};
+        if (global_audio[encChn]->onDataCallback)
+          global_audio[encChn]->onDataCallback();
+      }
     }
     std::vector<AudioTapEntry> taps_copy;
     {
@@ -332,7 +341,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
         }
       }
     }
-    if (!delivered) {
+    if (main_consumer && !delivered) {
       static uint32_t clog_count = 0;
       static uint64_t clog_last_log_ms = 0;
       clog_count++;
