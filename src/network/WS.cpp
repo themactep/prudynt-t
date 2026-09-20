@@ -1699,32 +1699,29 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
   struct user_ctx *u_ctx = wrapper->owner;
   LOG_DDEBUG("process mp4 init schedule. id:" << u_ctx->id);
 
-  // Try to obtain SPS/PPS from global video channel (non-blocking reads)
+  // Obtain SPS/PPS from the cached encoder config (latest_sps/latest_pps),
+  // not from global_video[0]->msgChannel.  HTTP fMP4 uses taps, not the main
+  // channel, so reading msgChannel here would compete with RTSP's drain loop
+  // and could starve RTSP clients.
   std::vector<uint8_t> sps;
   std::vector<uint8_t> pps;
   bool have_sps = false;
   bool have_pps = false;
 
-  // Drain available messages until we find SPS/PPS or none left
-  while (true) {
-    H264NALUnit unit;
-    if (!global_video[0]->msgChannel->read(&unit)) {
-      break; // no more messages currently
-    }
-    if (unit.data.empty())
-      continue;
-    uint8_t nalType = (unit.data[0] & 0x1F);
-    if (nalType == 7) { // SPS
-      sps = unit.data;
+  {
+    std::lock_guard<std::mutex> lock(global_video[0]->codec_config_mutex);
+    if (global_video[0]->have_sps && !global_video[0]->latest_sps.empty() &&
+        (global_video[0]->latest_sps[0] & 0x1F) == 7) {
+      sps = global_video[0]->latest_sps;
       have_sps = true;
       LOG_DEBUG("Found SPS for MP4 init");
-    } else if (nalType == 8) { // PPS
-      pps = unit.data;
+    }
+    if (global_video[0]->have_pps && !global_video[0]->latest_pps.empty() &&
+        (global_video[0]->latest_pps[0] & 0x1F) == 8) {
+      pps = global_video[0]->latest_pps;
       have_pps = true;
       LOG_DEBUG("Found PPS for MP4 init");
     }
-    if (have_sps && have_pps)
-      break;
   }
 
   if (!have_sps || !have_pps) {

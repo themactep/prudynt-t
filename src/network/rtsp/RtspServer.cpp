@@ -680,6 +680,8 @@ void RtspServer::closeClient(int idx) {
                 if (global_video[s->videoChn]) {
                     global_video[s->videoChn]->hasDataCallback.store(
                         false, std::memory_order_relaxed);
+                    global_video[s->videoChn]->hasMainChannelConsumer.store(
+                        false, std::memory_order_relaxed);
                 }
             }
         }
@@ -1643,6 +1645,9 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         if (s->videoChn < NUM_VIDEO_CHANNELS && global_video[s->videoChn]) {
             global_video[s->videoChn]->hasDataCallback.store(
                 true, std::memory_order_relaxed);
+            activePlayers_[s->videoChn]++;
+            global_video[s->videoChn]->hasMainChannelConsumer.store(
+                true, std::memory_order_relaxed);
             global_video[s->videoChn]->should_grab_frames.notify_one();
             // Request fresh IDR so client gets SPS/PPS immediately
             IMP_Encoder_RequestIDR(s->videoChn);
@@ -1661,8 +1666,6 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         // buffer overflows on startup.
         s->videoTap->clear();
         s->hasAudioRtpTs = false;
-        if (s->videoChn < NUM_VIDEO_CHANNELS)
-            activePlayers_[s->videoChn]++;
     }
 
     // -- Set up audio tap ------------------------------------------------

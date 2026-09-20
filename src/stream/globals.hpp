@@ -202,6 +202,14 @@ struct video_stream {
   bool encoder_paused = false; // encoder idled while no subscribers
   std::atomic<bool> bootstrap_requested{false};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
+  // True when an RTSP PLAY session is actively consuming the main channel
+  // (msgChannel). Set in RtspServer::handlePlay, cleared in closeClient when
+  // the last RTSP player for the channel detaches. Used by VideoWorker to gate
+  // writes to the main channel so it is not filled for tap-only consumers.
+  //
+  // HTTP fMP4 and HTTP MJPEG consumers use taps and MUST NOT set this flag;
+  // they do not read the main channel and writing to it would waste memory.
+  std::atomic<bool> hasMainChannelConsumer{false};
   std::atomic<bool> mp4_waiting_for_idr;
   std::atomic<int64_t> mp4_required_idr_ts_us;
   std::atomic<int64_t> mp4_last_idr_ts_us;
