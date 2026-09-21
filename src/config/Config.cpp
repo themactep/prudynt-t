@@ -589,6 +589,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 1 && v <= 8; }},
 #endif
       {"rtsp.est_bitrate", rtsp.est_bitrate, 5000, validateIntGe0},
+      {"rtsp.max_clients", rtsp.max_clients, 0, validateIntGe0},
       {"rtsp.out_buffer_size", rtsp.out_buffer_size, 1048576, validateIntGe0},
       {"rtsp.port", rtsp.port, 554, validateInt65535},
       {"rtsp.send_buffer_size", rtsp.send_buffer_size, 307200, validateIntGe0},

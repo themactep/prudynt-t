@@ -51,7 +51,8 @@ enum class Status {
     METHOD_NOT_ALLOWED    = 405,
     SESSION_NOT_FOUND     = 454,
     INTERNAL_ERROR        = 500,
-    NOT_IMPLEMENTED       = 501
+    NOT_IMPLEMENTED       = 501,
+    SERVICE_UNAVAILABLE   = 503
 };
 
 const char *methodToString(Method m);

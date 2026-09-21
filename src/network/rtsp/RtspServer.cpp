@@ -1626,6 +1626,17 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
         return;
     }
 
+    // -- Admission control ------------------------------------------------
+    // Bound concurrent consumers per stream so a slow NVR cannot pull more
+    // main-stream copies than the device can hold.  0 disables the cap.
+    if (s->videoChn >= 0 && cfg && cfg->rtsp.max_clients > 0 &&
+        activePlayers_[s->videoChn] >= cfg->rtsp.max_clients) {
+        LOG_WARN("PLAY refused: ch" << s->videoChn << " at max_clients="
+                                    << cfg->rtsp.max_clients);
+        sendResponse(*s, Status::SERVICE_UNAVAILABLE, cseq, nullptr, nullptr);
+        return;
+    }
+
     // -- Set up video tap ------------------------------------------------
     if (s->videoChn >= 0 && !s->videoTap) {
         s->videoTap = std::make_shared<MsgChannel<H264NALUnit>>(

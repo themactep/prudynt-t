@@ -35,6 +35,7 @@ const char *statusToString(Status s) {
     case Status::SESSION_NOT_FOUND:   return "Session Not Found";
     case Status::INTERNAL_ERROR:      return "Internal Server Error";
     case Status::NOT_IMPLEMENTED:     return "Not Implemented";
+    case Status::SERVICE_UNAVAILABLE: return "Service Unavailable";
     default:                          return "Unknown";
     }
 }

@@ -244,6 +244,7 @@ struct _rtsp {
   int send_buffer_size;
   int send_timeout_s;
   int session_reclaim;
+  int max_clients;
   bool auth_required;
   const char *auth_mode;
   const char *username;
