@@ -268,21 +268,17 @@ bool build_aac_asc(int sample_rate, int channels, std::vector<uint8_t> &out) {
 
 // Streaming clients are counted so the workers keep running while any client is
 // attached and stop once the last one goes away.  Without the release half the
-// video worker keeps producing frames that nothing drains: with no RTSP client
-// nothing reads the main channel, so it fills up and recycles its NAL buffers
-// into the pool, which retains capacity and grows into the largest frames it
-// has seen until the device runs out of memory.
+// video worker keeps producing frames that nothing drains, so the per-client
+// taps fill up and recycle NAL buffers into the pool, which retains capacity
+// and grows into the largest frames it has seen until the device runs out of
+// memory.
 std::atomic<int> g_stream_clients{0};
 
 void acquire_stream_client(int vch, bool with_audio) {
-  int prev = g_stream_clients.fetch_add(1);
+  g_stream_clients.fetch_add(1);
 
   if (vch >= 0 && vch < NUM_VIDEO_CHANNELS && global_video[vch]) {
     auto vs = global_video[vch];
-    // Drop any backlog so the new client starts at a keyframe boundary
-    // instead of replaying stale frames.
-    if (prev == 0 && vs->msgChannel)
-      vs->msgChannel->clear();
     vs->hasDataCallback.store(true, std::memory_order_relaxed);
     vs->should_grab_frames.notify_one();
   }

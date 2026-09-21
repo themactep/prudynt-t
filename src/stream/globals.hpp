@@ -163,7 +163,6 @@ struct audio_stream {
   bool active{false};
   pthread_t thread;
   IMPAudio *imp_audio;
-  std::shared_ptr<MsgChannel<AudioFrame>> msgChannel;
   std::function<void(void)> onDataCallback;
   /* Check whether onDataCallback is not null in a data race free manner.
    * Use only for optimizations, i.e., to skip work if no data callback
@@ -179,7 +178,7 @@ struct audio_stream {
 
   audio_stream(int devId, int aiChn, int aeChn)
       : devId(devId), aiChn(aiChn), aeChn(aeChn), running(false),
-        imp_audio(nullptr), msgChannel(nullptr), onDataCallback{nullptr},
+        imp_audio(nullptr), onDataCallback{nullptr},
         hasDataCallback{false} {
   }
 };
@@ -195,7 +194,6 @@ struct video_stream {
   bool active{false};
   IMPEncoder *imp_encoder;
   IMPFramesource *imp_framesource;
-  std::shared_ptr<MsgChannel<H264NALUnit>> msgChannel;
   std::shared_ptr<NaluPool> nalu_pool;
   std::function<void(void)> onDataCallback;
   bool run_for_jpeg; // see comment in audio_stream
@@ -234,14 +232,12 @@ struct video_stream {
   video_stream(int encChn, _stream *stream, const char *name)
       : encChn(encChn), stream(stream), name(name), running(false), idr(false),
         idr_fix(0), imp_encoder(nullptr), imp_framesource(nullptr),
-        msgChannel(std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE)),
         nalu_pool(std::make_shared<NaluPool>(32)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
         mp4_waiting_for_idr{false}, mp4_required_idr_ts_us{-1},
         mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0},
         mp4_prebuffer_offset_ms{0}, mp4_prebuffer_flushing{false},
         have_vps(false), have_sps(false), have_pps(false) {
-    msgChannel->setPool(nalu_pool);
   }
 };
 

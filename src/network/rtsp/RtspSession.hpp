@@ -66,8 +66,6 @@ struct Session {
     // Reused drain buffers (avoid per-cycle allocation in the event loop)
     H264NALUnit videoNal;
     AudioFrame audioFrame;
-    H264NALUnit mainDummy;
-    AudioFrame audioDummy;
 
     // Subtitle (OSD text)
     bool hasSubtitles = false;

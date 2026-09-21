@@ -474,9 +474,6 @@ void VideoWorker::run() {
     bool video_clients_active =
         global_video[encChn]->hasDataCallback.load(std::memory_order_relaxed);
     if (video_clients_active && !had_video_clients) {
-      if (global_video[encChn]->msgChannel) {
-        global_video[encChn]->msgChannel->clear();
-      }
       IMP_Encoder_RequestIDR(encChn);
       int flush_ret = IMP_Encoder_FlushStream(encChn);
       if (flush_ret != 0) {

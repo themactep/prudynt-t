@@ -32,8 +32,8 @@ public:
 
     // -- Stream registration ---------------------------------------------
 
-    // Register a video stream.  The server will create taps on the
-    // video_state's msgChannel per client.
+    // Register a video stream.  The server creates a per-client tap on the
+    // encoder channel.
     // `chn` = encoder channel (0 or 1).
     void addVideoStream(int chn, const VideoStreamConfig &config,
                         std::shared_ptr<video_stream> videoState);

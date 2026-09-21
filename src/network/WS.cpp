@@ -1699,10 +1699,9 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
   struct user_ctx *u_ctx = wrapper->owner;
   LOG_DDEBUG("process mp4 init schedule. id:" << u_ctx->id);
 
-  // Obtain SPS/PPS from the cached encoder config (latest_sps/latest_pps),
-  // not from global_video[0]->msgChannel.  HTTP fMP4 uses taps, not the main
-  // channel, so reading msgChannel here would compete with RTSP's drain loop
-  // and could starve RTSP clients.
+  // Obtain SPS/PPS from the cached encoder config (latest_sps/latest_pps).
+  // HTTP fMP4 uses a per-client tap, so the encoder config cache is the only
+  // source that does not compete with another consumer's drain loop.
   std::vector<uint8_t> sps;
   std::vector<uint8_t> pps;
   bool have_sps = false;

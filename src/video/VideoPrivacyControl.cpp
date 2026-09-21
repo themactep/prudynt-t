@@ -115,9 +115,6 @@ void applyPrivacyToAllChannels(bool enabled) {
 
       // Flush any buffered frames
       H264NALUnit dummy;
-      if (vs->msgChannel) {
-        while (vs->msgChannel->read(&dummy)) {}
-      }
       {
         std::lock_guard<std::mutex> lock(vs->tap_mutex);
         for (auto &tap : vs->video_taps) {
