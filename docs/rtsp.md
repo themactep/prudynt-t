@@ -7,35 +7,49 @@ interleaved or UDP transport.
 ## Architecture
 
 ```
-┌─────────────┐     tap      ┌──────────────────┐
-│ IMP Encoder │─────────────▶│ MsgChannel       │
-│ (channel 0) │              └────────┬─────────┘
-└─────────────┘                       │
-                                      ▼
-                              ┌──────────────┐     RTP      ┌────────┐
-                              │  RtspServer  │─────────────▶│ client │
-                              │  drain loop  │              └────────┘
-                              └──────────────┘
+┌─────────────┐
+│ IMP Encoder │
+│ (channel 0) │
+└──────┬──────┘
+       │ fan-out (one copy per registered tap)
+       ▼
+┌─────────────────────────────────────────────┐
+│ video_stream tap list                        │
+│   ├─ MsgChannel ─▶ RtspServer session A      │
+│   ├─ MsgChannel ─▶ RtspServer session B      │
+│   └─ MsgChannel ─▶ HTTP MJPEG / WS fMP4      │
+└─────────────────────────────────────────────┘
 ```
 
-Each RTSP session registers a **tap** on the encoder's `MsgChannel`.  The
-drain loop polls every 10 ms, reads queued NALs from the tap, packetizes them
-into RTP (RFC 6184 for H.264, RFC 7798 for H.265), and interleaves them
-over the RTSP TCP connection.
+The encoder has no single shared sink. `VideoWorker` fans every NAL out to
+the taps registered on the `video_stream`, and each RTSP session owns one tap.
+The RTSP drain loop polls every 10 ms, reads queued NALs from its tap,
+packetizes them into RTP (RFC 6184 for H.264, RFC 7798 for H.265), and
+interleaves them over the RTSP TCP connection.
 
 ## TCP Send Strategy
 
 All TCP interleaved sends are **non-blocking** (`MSG_DONTWAIT`).  When the
 socket can't accept data immediately (client slow, TCP window full), the
-packet is enqueued in a per-session `sendQueue`.  Every poll cycle the drain
-loop aggressively retries queued packets before reading new NALs.
+packet is appended to a per-session `sendQueue`.  Every poll cycle the drain
+loop retries queued packets before reading new NALs.
 
-- Queue is **unbounded** — NALs are never dropped.  If memory runs out the
-  OOM killer handles it, which is preferable to silently corrupting the
-  stream.
-- Returning `false` from the output callback stops the entire drain loop,
-  dropping all remaining NALs.  The callback returns `true` even when
-  queuing, so drain continues and the retry loop catches up.
+The per-client path is bounded at three points so one stalled consumer cannot
+exhaust a 64 MB device:
+
+- The per-client tap is byte-bounded (`VIDEO_TAP_MAX_BYTES` 256 KB,
+  `AUDIO_TAP_MAX_BYTES` 64 KB).  It evicts older whole frames and always
+  keeps the newest, so a stalled client holds a bounded backlog instead of
+  pinning megabytes of NALs.
+- `sendQueue` drops new NALs once it passes `SEND_QUEUE_HIGH_WATERMARK`
+  (768 KB); a single IDR burst can briefly reach `SEND_QUEUE_HARD_CAP`
+  (4 MB).  A dropped client re-syncs on the next IDR.
+- `rtsp.max_clients` caps concurrent PLAY sessions per stream (0 = unlimited).
+  A PLAY past the cap gets `503 Service Unavailable`.
+
+Returning `false` from the output callback stops the drain loop for that
+cycle.  The callback returns `true` even when queuing, so the retry loop
+catches up.
 
 ## Timestamps
 
@@ -86,7 +100,8 @@ RTSP settings in `config.json`:
 |--------------------------|---------|----------------------------------------|
 | `rtsp.send_buffer_size`  | 307200  | TCP socket send buffer (bytes)         |
 | `rtsp.send_timeout`      | 5       | SO_SNDTIMEO in seconds (0 = disabled)  |
-| `rtsp.est_bitrate`       | 3000    | Advertised bitrate in SDP (kbps)       |
+| `rtsp.est_bitrate`       | 5000    | Advertised bitrate in SDP (kbps)       |
+| `rtsp.max_clients`       | 0       | Max concurrent PLAYs per stream (0 = unlimited) |
 | `rtsp.auth_required`     | true    | Require authentication before DESCRIBE |
 | `rtsp.auth_mode`         | digest  | `digest`, `basic` or `both`            |
 
