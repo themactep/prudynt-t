@@ -47,6 +47,12 @@
 constexpr size_t SEND_QUEUE_HIGH_WATERMARK = 768 * 1024;
 constexpr size_t SEND_QUEUE_HARD_CAP = 4 * 1024 * 1024;
 
+// Per-client tap bounds.  The element count is a coarse safety net; the byte
+// bound is what actually caps RSS, since one IDR can dwarf a frame count.  The
+// byte bound evicts older whole frames and always keeps the newest frame.
+constexpr size_t VIDEO_TAP_MAX_BYTES = 256 * 1024;
+constexpr size_t AUDIO_TAP_MAX_BYTES = 64 * 1024;
+
 namespace simple_rtsp {
 
 // Realm advertised in Basic and Digest challenges.
@@ -1622,7 +1628,8 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
 
     // -- Set up video tap ------------------------------------------------
     if (s->videoChn >= 0 && !s->videoTap) {
-        s->videoTap = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
+        s->videoTap = std::make_shared<MsgChannel<H264NALUnit>>(
+            MSG_CHANNEL_SIZE * 2, VIDEO_TAP_MAX_BYTES);
         s->videoTapId = register_video_tap(
             s->videoChn,
             s->videoTap,
@@ -1656,7 +1663,8 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
 
     // -- Set up audio tap ------------------------------------------------
     if (s->hasAudio && !s->audioTap && global_audio[0]) {
-        s->audioTap = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3);
+        s->audioTap = std::make_shared<MsgChannel<AudioFrame>>(
+            MSG_CHANNEL_SIZE * 3, AUDIO_TAP_MAX_BYTES);
         s->audioTapId = register_audio_tap(
             0, s->audioTap,
             []() {})
