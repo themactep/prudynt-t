@@ -952,12 +952,6 @@ void VideoWorker::run() {
                     sei_unit.is_keyframe = true;
                     sei_unit.packet_index = 0;
                     sei_unit.packet_count = 1;
-                    bool main_consumer = global_video[encChn]->hasMainChannelConsumer.load(
-                        std::memory_order_relaxed);
-                    if (main_consumer) {
-                      global_video[encChn]->msgChannel->write(sei_unit);
-                    }
-
                     // Fan SEI NAL out to video taps so RTSP clients
                     // receive OSD metadata alongside the IDR frame.
                     {
@@ -1054,77 +1048,9 @@ void VideoWorker::run() {
                 }
               }
 
-              bool delivered = false;
-              bool write_attempted = false;
-
-              // The main channel (msgChannel) is the dedicated drain path used
-              // only by RTSP sessions.  Taps (video_taps) are the per-client
-              // path used by RTSP, HTTP MJPEG, and WS fMP4.  With no RTSP
-              // consumer the main channel is never read, so writing frames
-              // here just fills the 400-entry queue with live buffers that
-              // stay resident until the next RTSP client triggers a clear.
-              // That pins several megabytes for the lifetime of a tap-only
-              // client.  Skip the write when no RTSP consumer is registered;
-              // the per-client taps above already hold their own copies.
-              //
-              // hasMainChannelConsumer is set only by RTSP PLAY and cleared
-              // when the last RTSP player for the channel detaches.
-              // hasDataCallback covers broader activity (any attached client
-              // including taps); the write gate must use the narrower flag so
-              // tap-only consumers (WS fMP4, HTTP MJPEG) do not fill the main
-              // channel.
-              bool main_consumer =
-                  global_video[encChn]->hasMainChannelConsumer.load(
-                      std::memory_order_relaxed);
-
-              if (!main_consumer) {
-                video_state->nalu_pool->returnBuf(std::move(nalu_buf));
-              } else {
-                write_attempted = true;
-                H264NALUnit nalu;
-                nalu.data = std::move(nalu_buf); // channel takes ownership
-                nalu.imp_ts = rtsp_ts_us;
-                nalu.time = nal_time;
-                nalu.frame_id = current_frame_id;
-                nalu.packet_index = i;
-                nalu.packet_count = stream.packCount;
-                nalu.is_frame_start = frame_start;
-                nalu.is_frame_end = pack_is_frame_end;
-                nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
-                                    nal_is_vps || nal_is_sps || nal_is_pps);
-delivered =
-                     global_video[encChn]->msgChannel->write(std::move(nalu));
-               }
-               if (delivered) {
-                 std::unique_lock<std::mutex> lock_stream{
-                     global_video[encChn]->onDataCallbackLock};
-                 if (global_video[encChn]->onDataCallback)
-                   global_video[encChn]->onDataCallback();
-               } else if (write_attempted) {
-                 LOG_DDEBUG("video channel:"
-                            << encChn << " msgChannel full, dropped oldest NAL");
-                 std::unique_lock<std::mutex> lock_stream{
-                     global_video[encChn]->onDataCallbackLock};
-                 if (global_video[encChn]->onDataCallback)
-                   global_video[encChn]->onDataCallback();
-               }
-
-               // Only log clog drops when a main-channel write was actually
-               // attempted and MsgChannel::write reported the queue full.
-               if (write_attempted && !delivered) {
-                 static uint32_t clog_count[NUM_VIDEO_CHANNELS] = {};
-                 static uint64_t clog_last_log_ms[NUM_VIDEO_CHANNELS] = {};
-                 clog_count[encChn]++;
-                 uint64_t now_ms = monotonic_ms();
-                 if (now_ms - clog_last_log_ms[encChn] >= 5000) {
-                   LOG_WARN("video channel:" << encChn
-                                             << " - msgChannel sink clogged, "
-                                             << clog_count[encChn]
-                                             << " frames dropped in last 5s");
-                   clog_count[encChn] = 0;
-                   clog_last_log_ms[encChn] = now_ms;
-                 }
-               }
+              // Taps are the only video sink.  Return the pooled buffer;
+              // the fan-out above already holds what each consumer needs.
+              video_state->nalu_pool->returnBuf(std::move(nalu_buf));
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
             /* Wake the audio thread when video data is flowing so the

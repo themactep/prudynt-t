@@ -464,16 +464,6 @@ void RtspServer::eventLoop() {
                 }
             }
 
-            // Drain orphaned main channels (always --- keep encoder flowing)
-            if (s->videoChn >= 0 && s->videoChn < NUM_VIDEO_CHANNELS &&
-                global_video[s->videoChn] &&
-                global_video[s->videoChn]->msgChannel) {
-                while (global_video[s->videoChn]->msgChannel->read(&s->mainDummy)) {}
-            }
-            if (global_audio[0] && global_audio[0]->msgChannel) {
-                while (global_audio[0]->msgChannel->read(&s->audioDummy)) {}
-            }
-
             // -- Receive backchannel RTP (client -> camera audio) -------
             if (s->backchannel && s->backchannelRtpSock >= 0 &&
                 global_backchannel && global_backchannel->inputQueue) {
@@ -679,8 +669,6 @@ void RtspServer::closeClient(int idx) {
                 activePlayers_[s->videoChn] = 0;
                 if (global_video[s->videoChn]) {
                     global_video[s->videoChn]->hasDataCallback.store(
-                        false, std::memory_order_relaxed);
-                    global_video[s->videoChn]->hasMainChannelConsumer.store(
                         false, std::memory_order_relaxed);
                 }
             }
@@ -1646,8 +1634,6 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
             global_video[s->videoChn]->hasDataCallback.store(
                 true, std::memory_order_relaxed);
             activePlayers_[s->videoChn]++;
-            global_video[s->videoChn]->hasMainChannelConsumer.store(
-                true, std::memory_order_relaxed);
             global_video[s->videoChn]->should_grab_frames.notify_one();
             // Request fresh IDR so client gets SPS/PPS immediately
             IMP_Encoder_RequestIDR(s->videoChn);
