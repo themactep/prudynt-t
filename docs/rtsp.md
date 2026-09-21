@@ -46,6 +46,10 @@ exhaust a 64 MB device:
   (4 MB).  A dropped client re-syncs on the next IDR.
 - `rtsp.max_clients` caps concurrent PLAY sessions per stream (0 = unlimited).
   A PLAY past the cap gets `503 Service Unavailable`.
+- `rtsp.session_reclaim` (seconds) reclaims a session that has been idle, or
+  whose send queue has stayed backed up, for that long.  A client that keeps
+  sending RTCP but never reads its stream would otherwise pin the socket and
+  the WiFi airtime forever.
 
 Returning `false` from the output callback stops the drain loop for that
 cycle.  The callback returns `true` even when queuing, so the retry loop
@@ -102,6 +106,7 @@ RTSP settings in `config.json`:
 | `rtsp.send_timeout`      | 5       | SO_SNDTIMEO in seconds (0 = disabled)  |
 | `rtsp.est_bitrate`       | 5000    | Advertised bitrate in SDP (kbps)       |
 | `rtsp.max_clients`       | 0       | Max concurrent PLAYs per stream (0 = unlimited) |
+| `rtsp.session_reclaim`   | 65      | Seconds an idle or non-draining session may live |
 | `rtsp.auth_required`     | true    | Require authentication before DESCRIBE |
 | `rtsp.auth_mode`         | digest  | `digest`, `basic` or `both`            |
 

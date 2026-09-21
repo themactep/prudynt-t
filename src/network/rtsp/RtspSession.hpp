@@ -107,6 +107,9 @@ struct Session {
     int64_t  lastAudioTsUs = -1;
 
     time_t lastActivity = 0;
+    // Set while the TCP send queue is backed up; cleared once it drains.  A
+    // session that stays blocked past rtsp.session_reclaim is reclaimed.
+    time_t blockedSince = 0;
     bool   authenticated = false;
 
     bool hasValidSession() const { return sessionId[0] != '\0'; }

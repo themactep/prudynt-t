@@ -45,6 +45,7 @@
 // dead-client memory guard; a live client never reaches it because
 // non-keyframes are dropped first.
 constexpr size_t SEND_QUEUE_HIGH_WATERMARK = 768 * 1024;
+constexpr size_t SEND_QUEUE_LOW_WATERMARK = SEND_QUEUE_HIGH_WATERMARK / 2;
 constexpr size_t SEND_QUEUE_HARD_CAP = 4 * 1024 * 1024;
 
 // Per-client tap bounds.  The element count is a coarse safety net; the byte
@@ -386,6 +387,18 @@ void RtspServer::eventLoop() {
                 s->sendQueueOff = 0;
             }
 
+            // Track drain progress.  A session whose queue stays backed up is
+            // connected but not consuming; checkSessionTimeouts reclaims it.
+            // Hysteresis (clear only well below the high watermark) keeps a
+            // queue hovering at the threshold from resetting the timer.
+            size_t queued = s->sendQueueBytes();
+            if (queued > SEND_QUEUE_HIGH_WATERMARK) {
+                if (s->blockedSince == 0)
+                    s->blockedSince = time(nullptr);
+            } else if (queued < SEND_QUEUE_LOW_WATERMARK) {
+                s->blockedSince = 0;
+            }
+
             // Drain video tap --- up to 30 NALs per cycle.  On backpressure
             // the NAL is dropped (destructive MsgChannel::read).
             if (s->videoTap) {
@@ -553,8 +566,6 @@ void RtspServer::eventLoop() {
                 if (ss && ss->playing) sendRtcpSr(*ss);
             }
         }
-
-        // -- Session timeouts --------------------------------------------
 
         // -- Session timeouts --------------------------------------------
         checkSessionTimeouts();
@@ -2755,13 +2766,24 @@ void RtspServer::sendRtcpSr(Session &s) {
 
 void RtspServer::checkSessionTimeouts() {
     time_t now = time(nullptr);
-    constexpr time_t kTimeout = 65; // slightly more than typical RTCP interval
+    // rtsp.session_reclaim bounds both an idle session and one that is
+    // connected but not draining its send queue.  0 keeps the idle default.
+    time_t timeout = (cfg && cfg->rtsp.session_reclaim > 0)
+                         ? cfg->rtsp.session_reclaim
+                         : 65;
 
     for (size_t i = 0; i < sessions_.size(); i++) {
         auto &s = sessions_[i];
         if (!s || s->fd < 0) continue;
-        if (now - s->lastActivity > kTimeout) {
+        if (now - s->lastActivity > timeout) {
             LOG_DEBUG("Session " << s->sessionId << " timed out");
+            closeClient(static_cast<int>(i));
+            continue;
+        }
+        if (s->blockedSince != 0 && now - s->blockedSince > timeout) {
+            LOG_WARN("Session " << s->sessionId << " not draining for "
+                                << (now - s->blockedSince)
+                                << "s, reclaiming");
             closeClient(static_cast<int>(i));
         }
     }
