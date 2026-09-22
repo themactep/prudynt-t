@@ -266,41 +266,21 @@ bool build_aac_asc(int sample_rate, int channels, std::vector<uint8_t> &out) {
   return true;
 }
 
-// Streaming clients are counted so the workers keep running while any client is
-// attached and stop once the last one goes away.  Without the release half the
-// video worker keeps producing frames that nothing drains, so the per-client
-// taps fill up and recycle NAL buffers into the pool, which retains capacity
-// and grows into the largest frames it has seen until the device runs out of
-// memory.
-std::atomic<int> g_stream_clients{0};
-
+// Every HTTP streaming client (fMP4, MJPEG) registers as a video, and
+// optionally audio, consumer of its channel. The per-channel counters behind
+// video_consumer_add/remove keep hasDataCallback true while any client -- HTTP
+// or RTSP -- is still attached, so one detaching does not idle the encoder and
+// freeze the others.
 void acquire_stream_client(int vch, bool with_audio) {
-  g_stream_clients.fetch_add(1);
-
-  if (vch >= 0 && vch < NUM_VIDEO_CHANNELS && global_video[vch]) {
-    auto vs = global_video[vch];
-    vs->hasDataCallback.store(true, std::memory_order_relaxed);
-    vs->should_grab_frames.notify_one();
-  }
-
-  if (with_audio && global_audio[0]) {
-    global_audio[0]->hasDataCallback.store(true, std::memory_order_relaxed);
-    global_audio[0]->should_grab_frames.notify_one();
-  }
+  video_consumer_add(vch);
+  if (with_audio)
+    audio_consumer_add();
 }
 
 void release_stream_client(int vch, bool with_audio) {
-  int prev = g_stream_clients.fetch_sub(1);
-  if (prev > 1)
-    return; // other clients still attached
-
-  // Last client out: stop the workers so they idle instead of producing into
-  // queues that nothing consumes.
-  g_stream_clients.store(0);
-  if (vch >= 0 && vch < NUM_VIDEO_CHANNELS && global_video[vch])
-    global_video[vch]->hasDataCallback.store(false, std::memory_order_relaxed);
-  if (with_audio && global_audio[0])
-    global_audio[0]->hasDataCallback.store(false, std::memory_order_relaxed);
+  video_consumer_remove(vch);
+  if (with_audio)
+    audio_consumer_remove();
 }
 
 // Stream an already-encoded H.264 channel as live fragmented MP4 (fMP4) over
@@ -441,8 +421,12 @@ void serve_fmp4(int cfd, int vch) {
   if (!write_chunk(muxer->getInitSegment()))
     return;
 
-  // Avoid blocking forever on a stalled client.
-  timeval sto{2, 0};
+  // Tolerate a client that briefly stops reading. A browser MSE main thread
+  // can stall for seconds while it appends or decodes, and closing after a 2s
+  // hiccup forces a reconnect that drops the viewer to the live edge (a visible
+  // skip). Give up only after a long stall so a transient hiccup does not kill
+  // the stream.
+  timeval sto{20, 0};
   ::setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &sto, sizeof(sto));
 
   auto now_ms = []() {

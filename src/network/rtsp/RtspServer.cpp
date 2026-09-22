@@ -640,6 +640,7 @@ void RtspServer::acceptClient() {
     s->backchannelInterleavedRtcp = 1;
     s->sessionId[0] = '\0';
     s->lastActivity = time(nullptr);
+    s->blockedSince = 0;
     s->authenticated = false;
     s->videoRtp = RtpState{};
     s->audioRtp = RtpState{};
@@ -682,23 +683,15 @@ void RtspServer::closeClient(int idx) {
     if (s->playing) {
         if (s->videoChn >= 0 && s->videoChn < NUM_VIDEO_CHANNELS) {
             activePlayers_[s->videoChn]--;
-            if (activePlayers_[s->videoChn] <= 0) {
+            if (activePlayers_[s->videoChn] <= 0)
                 activePlayers_[s->videoChn] = 0;
-                if (global_video[s->videoChn]) {
-                    global_video[s->videoChn]->hasDataCallback.store(
-                        false, std::memory_order_relaxed);
-                }
-            }
+            video_consumer_remove(s->videoChn);
         }
         if (s->hasAudio) {
             activeAudioPlayers_--;
-            if (activeAudioPlayers_ <= 0) {
+            if (activeAudioPlayers_ <= 0)
                 activeAudioPlayers_ = 0;
-                if (global_audio[0]) {
-                    global_audio[0]->hasDataCallback.store(
-                        false, std::memory_order_relaxed);
-                }
-            }
+            audio_consumer_remove();
         }
     }
 
@@ -1658,12 +1651,10 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
             []() {})
             .id;
 
-        // Ensure video frames flow --- set hasDataCallback
+        // Ensure video frames flow while this player is attached
         if (s->videoChn < NUM_VIDEO_CHANNELS && global_video[s->videoChn]) {
-            global_video[s->videoChn]->hasDataCallback.store(
-                true, std::memory_order_relaxed);
             activePlayers_[s->videoChn]++;
-            global_video[s->videoChn]->should_grab_frames.notify_one();
+            video_consumer_add(s->videoChn);
             // Request fresh IDR so client gets SPS/PPS immediately
             IMP_Encoder_RequestIDR(s->videoChn);
         }
@@ -1692,11 +1683,8 @@ void RtspServer::handlePlay(int idx, int cseq, const char *uri,
             []() {})
             .id;
 
-        global_audio[0]->hasDataCallback.store(
-            true, std::memory_order_relaxed);
-        global_audio[0]->should_grab_frames.notify_one();
-
         activeAudioPlayers_++;
+        audio_consumer_add();
     }
 
     s->playing = true;

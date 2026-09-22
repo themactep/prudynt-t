@@ -177,6 +177,10 @@ struct audio_stream {
    * is registered right now.
    */
   std::atomic<bool> hasDataCallback;
+  // Attached consumers (RTSP players + HTTP clients). hasDataCallback stays
+  // true while this is above zero, so one client leaving does not idle the
+  // worker while another is still attached.
+  std::atomic<int> consumers{0};
   std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
   std::condition_variable should_grab_frames;
   binary_semaphore_compat is_activated{0};
@@ -208,6 +212,7 @@ struct video_stream {
   bool encoder_paused = false; // encoder idled while no subscribers
   std::atomic<bool> bootstrap_requested{false};
   std::atomic<bool> hasDataCallback; // see comment in audio_stream
+  std::atomic<int> consumers{0};
   std::atomic<bool> mp4_waiting_for_idr;
   std::atomic<int64_t> mp4_required_idr_ts_us;
   std::atomic<int64_t> mp4_last_idr_ts_us;
@@ -317,6 +322,48 @@ extern std::atomic<bool> global_shutdown_requested;
 // so that a START command over the control FIFO does not require an
 // external streaming client.
 extern std::atomic<bool> global_force_video_active;
+
+// hasDataCallback must mean "at least one consumer is attached", not "the last
+// consumer that happened to leave". RTSP players and HTTP fMP4/MJPEG clients
+// add and remove themselves here, so one client detaching does not idle the
+// encoder while another is still watching.
+inline void video_consumer_add(int chn) {
+  if (chn < 0 || chn >= NUM_VIDEO_CHANNELS || !global_video[chn])
+    return;
+  auto &vs = global_video[chn];
+  if (vs->consumers.fetch_add(1) == 0)
+    vs->hasDataCallback.store(true, std::memory_order_relaxed);
+  vs->should_grab_frames.notify_one();
+}
+
+inline void video_consumer_remove(int chn) {
+  if (chn < 0 || chn >= NUM_VIDEO_CHANNELS || !global_video[chn])
+    return;
+  auto &vs = global_video[chn];
+  if (vs->consumers.fetch_sub(1) <= 1) {
+    vs->consumers.store(0);
+    vs->hasDataCallback.store(false, std::memory_order_relaxed);
+  }
+}
+
+inline void audio_consumer_add() {
+  if (!global_audio[0])
+    return;
+  auto &as = global_audio[0];
+  if (as->consumers.fetch_add(1) == 0)
+    as->hasDataCallback.store(true, std::memory_order_relaxed);
+  as->should_grab_frames.notify_one();
+}
+
+inline void audio_consumer_remove() {
+  if (!global_audio[0])
+    return;
+  auto &as = global_audio[0];
+  if (as->consumers.fetch_sub(1) <= 1) {
+    as->consumers.store(0);
+    as->hasDataCallback.store(false, std::memory_order_relaxed);
+  }
+}
 
 inline VideoTapEntry
 register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
