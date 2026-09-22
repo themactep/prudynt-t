@@ -48,6 +48,43 @@ Set an explicit integer (1–8) to bypass auto-calculation entirely:
 Use this when you need to trade memory for throughput on an unusual workload,
 or to reproduce a specific buffer depth for debugging.
 
+Bitrate Auto-Default (`stream0.bitrate` / `stream1.bitrate`)
+------------------------------------------------------------
+
+Setting a stream bitrate to `0` makes prudynt derive it from the encoded
+geometry instead of passing it to the encoder:
+
+```
+kbps = general.bitrate_auto_bppf * scale * width * height * fps / 1000
+```
+
+- `general.bitrate_auto_bppf` is bits per pixel per frame. Default `0.067`,
+  the SDK's own level, about 1 Mbps per megapixel at 15 fps.
+- `scale` is `1.0` for `stream0` and `2.0` for `stream1`. The substream gets
+  the higher factor because the Web UI shows it upscaled, where a low bitrate
+  is obvious.
+- The result is rounded to the nearest 100 kbps and clamped to `[256, 8000]`.
+
+Effective values at the default `0.067`:
+
+| Stream  | Resolution  | FPS | Auto bitrate |
+|---------|-------------|-----|--------------|
+| stream0 | 1920 × 1080 | 15  | 2100 kbps    |
+| stream1 | 960 × 540   | 15  | 1000 kbps    |
+| stream1 | 1280 × 720  | 15  | 1900 kbps    |
+| stream1 | 640 × 360   | 15  | 500 kbps     |
+
+An explicit non-zero bitrate always wins and is passed to the encoder
+unchanged. To retune the auto values without rebuilding, set
+`general.bitrate_auto_bppf` (e.g. `0.08` puts a 960 × 540 substream at
+1200 kbps).
+
+The chosen value is logged at startup:
+
+```
+[INFO:IMPSystem.cpp]: stream1: bitrate auto from 960x540@15 -> 1000 kbps (bppf=0.067, scale=2)
+```
+
 Video Privacy
 -------------
 
