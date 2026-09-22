@@ -45,7 +45,15 @@ struct AudioFrame {
 };
 
 struct H264NALUnit {
-  std::vector<uint8_t> data;
+  // Shared NAL payload.  VideoWorker fills one pooled buffer per NAL and every
+  // tap holds a reference (see pooledBuffer), so fan-out costs a refcount bump
+  // instead of a copy per client.  The pool reclaims the storage when the last
+  // reference is gone.
+  std::shared_ptr<std::vector<uint8_t>> data;
+
+  bool empty() const { return !data || data->empty(); }
+  size_t size() const { return data ? data->size() : 0; }
+  const uint8_t *bytes() const { return data ? data->data() : nullptr; }
 
   // Frame boundary tracking (detect incomplete frames)
   bool is_frame_start = false; // First NAL unit of frame

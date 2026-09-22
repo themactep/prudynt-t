@@ -940,7 +940,8 @@ void VideoWorker::run() {
                       SEIWriter::buildSEI(stream_is_h265_for_sei, sei_json);
                   if (!sei_nal.empty()) {
                     H264NALUnit sei_unit;
-                    sei_unit.data = std::move(sei_nal);
+                    sei_unit.data = std::make_shared<std::vector<uint8_t>>(
+                        std::move(sei_nal));
                     sei_unit.frame_id = current_frame_id;
                     sei_unit.imp_ts = rtsp_ts_us;
                     gettimeofday(&sei_unit.time, nullptr);
@@ -950,27 +951,16 @@ void VideoWorker::run() {
                     sei_unit.packet_index = 0;
                     sei_unit.packet_count = 1;
                     // Fan SEI NAL out to video taps so RTSP clients
-                    // receive OSD metadata alongside the IDR frame.
+                    // receive OSD metadata alongside the IDR frame.  Each
+                    // write shares the buffer, no per-tap copy.
                     {
-                      {
-                        std::lock_guard<std::mutex> tap_lock(
-                            global_video[encChn]->tap_mutex);
-                        taps_copy = global_video[encChn]->video_taps;
-                      }
-                      for (auto &tap : taps_copy) {
-                        if (auto queue = tap.queue.lock()) {
-                          H264NALUnit tap_sei;
-                          tap_sei.data = sei_unit.data;
-                          tap_sei.frame_id = sei_unit.frame_id;
-                          tap_sei.imp_ts = sei_unit.imp_ts;
-                          tap_sei.time = sei_unit.time;
-                          tap_sei.is_frame_start = false;
-                          tap_sei.is_frame_end = false;
-                          tap_sei.is_keyframe = true;
-                          tap_sei.packet_index = 0;
-                          tap_sei.packet_count = 1;
-                          queue->write(std::move(tap_sei));
-                        }
+                      std::lock_guard<std::mutex> tap_lock(
+                          global_video[encChn]->tap_mutex);
+                      taps_copy = global_video[encChn]->video_taps;
+                    }
+                    for (auto &tap : taps_copy) {
+                      if (auto queue = tap.queue.lock()) {
+                        queue->write(sei_unit);
                       }
                     }
                   }
@@ -979,18 +969,23 @@ void VideoWorker::run() {
             }
 
             if (global_video[encChn]->idr == true) {
-              // Borrow pooled buffer, fill once, fan out to taps, move to channel
+              // Fill one pooled buffer, rewrite in place, then fan the same
+              // buffer out to every tap by reference.  The pool reclaims the
+              // storage when the last tap drops its reference.
               size_t payload_len_hint = static_cast<size_t>(end - start);
-              auto nalu_buf = video_state->nalu_pool->borrow(payload_len_hint);
-              nalu_buf.insert(nalu_buf.end(), start + 4, end);
+              auto nalu_data =
+                  pooledBuffer(video_state->nalu_pool, payload_len_hint);
+              nalu_data->insert(nalu_data->end(), start + 4, end);
 
               // Same VUI rewrite as latest_sps, applied to the in-band SPS
               // the RTSP tap forwards every GOP (issue #1547).
-              if (nal_is_sps && !nalu_buf.empty()) {
+              if (nal_is_sps && !nalu_data->empty()) {
                 if (stream_is_h265) {
-                  nalu_buf = h265RewriteSpsVui(nalu_buf.data(), nalu_buf.size());
+                  *nalu_data = h265RewriteSpsVui(nalu_data->data(),
+                                                 nalu_data->size());
                 } else {
-                  nalu_buf = h264RewriteSpsVui(nalu_buf.data(), nalu_buf.size());
+                  *nalu_data = h264RewriteSpsVui(nalu_data->data(),
+                                                 nalu_data->size());
                 }
               }
 
@@ -998,23 +993,21 @@ void VideoWorker::run() {
               // stream (the RTP data that RTSP clients like go2rtc see).
               // H.265 NAL header layout differs (F|Type(6)|LayerId(1)),
               // so this normalization only applies to H.264.
-              if (!stream_is_h265 && (nal_is_sps || nal_is_pps) && !nalu_buf.empty())
-                nalu_buf[0] = (nalu_buf[0] & 0x1F) | (3 << 5);
+              if (!stream_is_h265 && (nal_is_sps || nal_is_pps) &&
+                  !nalu_data->empty())
+                (*nalu_data)[0] = ((*nalu_data)[0] & 0x1F) | (3 << 5);
               // Rewrite H264 level_idc in the inline SPS to match latest_sps
               // (minimum level that fits the real resolution/fps).
-              if (nal_is_sps && !stream_is_h265 && nalu_buf.size() >= 4) {
-                uint8_t need = h264LevelForSps(
-                    nalu_buf, video_state, streamFps(video_state));
-                nalu_buf[3] = need;
+              if (nal_is_sps && !stream_is_h265 && nalu_data->size() >= 4) {
+                uint8_t need = h264LevelForSps(*nalu_data, video_state,
+                                               streamFps(video_state));
+                (*nalu_data)[3] = need;
               }
 
-              // Capture wall-clock time now so taps inherit it after move
+              // Capture wall-clock time now so taps inherit it.
               struct timeval nal_time;
               gettimeofday(&nal_time, nullptr);
 
-              // Fan out to taps first: each tap needs its own copy while
-              // nalu_buf is still intact. The main channel then takes
-              // nalu_buf by move and recycles it on the read side.
               {
                 std::lock_guard<std::mutex> tap_lock(
                     global_video[encChn]->tap_mutex);
@@ -1022,12 +1015,8 @@ void VideoWorker::run() {
               }
               for (auto &tap : taps_copy) {
                 if (auto queue = tap.queue.lock()) {
-                  auto tap_buf =
-                      video_state->nalu_pool->borrow(nalu_buf.size());
-                  tap_buf.insert(tap_buf.end(), nalu_buf.begin(),
-                                 nalu_buf.end());
                   H264NALUnit tap_nalu;
-                  tap_nalu.data = std::move(tap_buf);
+                  tap_nalu.data = nalu_data; // shared reference, no copy
                   tap_nalu.imp_ts = rtsp_ts_us;
                   tap_nalu.time = nal_time;
                   tap_nalu.frame_id = current_frame_id;
@@ -1044,10 +1033,8 @@ void VideoWorker::run() {
                   }
                 }
               }
-
-              // Taps are the only video sink.  Return the pooled buffer;
-              // the fan-out above already holds what each consumer needs.
-              video_state->nalu_pool->returnBuf(std::move(nalu_buf));
+              // No explicit return: nalu_data's pool deleter recycles the
+              // buffer once the last tap reference is gone.
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
             /* Wake the audio thread when video data is flowing so the

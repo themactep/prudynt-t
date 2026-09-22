@@ -47,6 +47,14 @@ public:
                          std::remove_reference_t<decltype(std::declval<U&>().data)>,
                          std::vector<uint8_t>>>>> : std::true_type {};
 
+  // Detect an element that reports its own payload size (H264NALUnit does).
+  template <typename U, typename = void>
+  struct has_size_method : std::false_type {};
+  template <typename U>
+  struct has_size_method<U,
+                         std::void_t<decltype(std::declval<const U&>().size())>>
+      : std::true_type {};
+
   void setPool(std::shared_ptr<NaluPool> p) {
     pool = std::move(p);
   }
@@ -58,7 +66,9 @@ public:
   // recyclable data vector report its size; the rest fall back to sizeof(T),
   // which only matters when a byte bound was requested for them.
   static size_t dataBytes(const T &elem) {
-    if constexpr (has_recyclable_data<T>::value)
+    if constexpr (has_size_method<T>::value)
+      return elem.size();
+    else if constexpr (has_recyclable_data<T>::value)
       return elem.data.size();
     else
       return sizeof(T);

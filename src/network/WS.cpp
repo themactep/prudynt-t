@@ -406,20 +406,20 @@ struct user_ctx {
 
     H264NALUnit unit;
     while (preview_video_queue->read(&unit)) {
-      if (unit.data.empty()) {
+      if (unit.empty()) {
         continue;
       }
-      uint8_t nalType = unit.data[0] & 0x1F;
+      uint8_t nalType = unit.bytes()[0] & 0x1F;
       bool isVCL = (nalType == 1 || nalType == 5);
       bool isKey = (nalType == 5);
 
-      uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
+      uint32_t nl = htonl(static_cast<uint32_t>(unit.size()));
       preview_video_sample.push_back(static_cast<uint8_t>((nl >> 24) & 0xFF));
       preview_video_sample.push_back(static_cast<uint8_t>((nl >> 16) & 0xFF));
       preview_video_sample.push_back(static_cast<uint8_t>((nl >> 8) & 0xFF));
       preview_video_sample.push_back(static_cast<uint8_t>(nl & 0xFF));
-      preview_video_sample.insert(preview_video_sample.end(), unit.data.begin(),
-                                  unit.data.end());
+      preview_video_sample.insert(preview_video_sample.end(),
+                                  unit.data->begin(), unit.data->end());
 
       if (isVCL) {
         auto now = std::chrono::steady_clock::now();

@@ -469,9 +469,9 @@ void serve_fmp4(int cfd, int vch) {
     H264NALUnit unit;
     while (q->read_move(&unit)) {
       did_work = true;
-      if (unit.data.empty())
+      if (unit.empty())
         continue;
-      uint8_t nalType = unit.data[0] & 0x1F;
+      uint8_t nalType = unit.bytes()[0] & 0x1F;
       // SPS/PPS already live in the avcC init segment; keep them out of-band.
       if (nalType == 7 || nalType == 8) {
         q->release(unit);
@@ -482,10 +482,10 @@ void serve_fmp4(int cfd, int vch) {
       bool isKey = (nalType == 5);
 
       // AVCC sample: 4-byte big-endian length prefix + raw NAL.
-      uint32_t nl = htonl(static_cast<uint32_t>(unit.data.size()));
+      uint32_t nl = htonl(static_cast<uint32_t>(unit.size()));
       sample.insert(sample.end(), reinterpret_cast<uint8_t *>(&nl),
                     reinterpret_cast<uint8_t *>(&nl) + 4);
-      sample.insert(sample.end(), unit.data.begin(), unit.data.end());
+      sample.insert(sample.end(), unit.data->begin(), unit.data->end());
 
       if (isVCL) {
         // Prefer the encoder's monotonic timestamp (us); wall-clock ms can

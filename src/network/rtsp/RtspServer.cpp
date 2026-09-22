@@ -2220,7 +2220,7 @@ void RtspServer::updateVideoTimestamp(Session &s, const H264NALUnit &nal,
 
 bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     if (s.fd < 0) return false;
-    if (nal.data.empty()) return false;
+    if (nal.empty()) return false;
 
     // Drop whole NALs while this client's send queue is backed up,
     // BEFORE sending any of their bytes.  A partial NAL (the old
@@ -2250,8 +2250,8 @@ bool RtspServer::sendVideoNal(Session &s, const H264NALUnit &nal) {
     // Strip start code if present.  Regular encoder NALs have no start code
     // (VideoWorker strips them), but injected SEI NALs include 4-byte start
     // codes.  Only strip if we see an exact match.
-    const uint8_t *raw = nal.data.data();
-    size_t rawLen = nal.data.size();
+    const uint8_t *raw = nal.bytes();
+    size_t rawLen = nal.size();
     size_t offset = 0;
     if (rawLen >= 4 && raw[0] == 0 && raw[1] == 0 && raw[2] == 0 && raw[3] == 1) {
         offset = 4;

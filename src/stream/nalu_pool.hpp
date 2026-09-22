@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -67,5 +68,21 @@ private:
   size_t maxPoolBytes;
   size_t pooled_bytes{0};
 };
+
+// Ref-counted handle to a pooled buffer.  The encoder worker fills one buffer
+// per NAL and every tap shares the handle, so fan-out costs a refcount bump
+// instead of a copy per client.  The deleter returns the storage to the pool
+// when the last reference is gone; capturing the pool keeps it alive while any
+// buffer from it is still outstanding.
+inline std::shared_ptr<std::vector<uint8_t>>
+pooledBuffer(const std::shared_ptr<NaluPool> &pool, size_t hint = 0) {
+  std::vector<uint8_t> v = pool->borrow(hint);
+  return std::shared_ptr<std::vector<uint8_t>>(
+      new std::vector<uint8_t>(std::move(v)),
+      [pool](std::vector<uint8_t> *p) {
+        pool->returnBuf(std::move(*p));
+        delete p;
+      });
+}
 
 #endif
