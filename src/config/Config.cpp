@@ -1127,6 +1127,8 @@ bool CFG::updateConfig() {
 
 std::vector<ConfigItem<float>> CFG::getFloatItems() {
   return {
+      {"general.bitrate_auto_bppf", general.bitrate_auto_bppf, 0.067f,
+       [](const float &v) { return v >= 0.0f && v <= 1.0f; }},
       {"rtsp.packet_loss_threshold", rtsp.packet_loss_threshold, 0.05f,
        [](const float &v) { return v >= 0.0f && v <= 1.0f; }},
       {"rtsp.bandwidth_margin", rtsp.bandwidth_margin, 1.2f,

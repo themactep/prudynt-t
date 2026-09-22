@@ -2,6 +2,7 @@
 #include "config/Config.hpp"
 #include "isp/imp_hal.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -233,24 +234,35 @@ void resolve_all_stream_geometry() {
 }
 
 // Streams with bitrate 0 (= auto) get a default derived from the encoded
-// resolution: roughly 1 Mbps per megapixel, rounded to the nearest 100 kbps.
-// For the main stream the encoded size defaults to the sensor geometry, so
-// this is a sane starting point for any sensor; a substream scales with its
-// own size (640x360 -> ~200 kbps). An explicit bitrate in prudynt.json wins;
-// setting it back to 0 re-enables the automatic value. This must run after
-// the stream sizes are resolved (resolve_all_stream_geometry()) but
-// before the encoders are created, so it is called from IMPSystem::init()
-// right alongside the clamping.
+// geometry: general.bitrate_auto_bppf bits per pixel per frame, times the
+// stream's fps and a per-role scale, rounded to the nearest 100 kbps.  The
+// substream carries the higher scale because the Web UI shows it upscaled,
+// where a low bitrate is obvious; the main stream keeps the SDK-level
+// quality that has proven stable.  An explicit bitrate in prudynt.json wins;
+// setting it back to 0 re-enables the automatic value.  This must run after
+// resolve_all_stream_geometry() but before the encoders are created, so it
+// is called from IMPSystem::init() right alongside the clamping.
+static constexpr double kMainBitrateScale = 1.0;
+static constexpr double kSubBitrateScale = 2.0;
+static constexpr int kAutoBitrateMinKbps = 256;
+static constexpr int kAutoBitrateMaxKbps = 8000;
+
 static void apply_default_bitrate(const char *stream_name, _stream &stream,
-                                  int fallback_kbps) {
+                                  int fallback_kbps, double scale) {
   if (stream.bitrate != 0)
     return; // explicit user value
 
   int kbps = 0;
-  if (stream.width > 0 && stream.height > 0) {
-    kbps = ((stream.width * stream.height + 50000) / 100000) * 100;
+  if (stream.width > 0 && stream.height > 0 && stream.fps > 0) {
+    const double bppf = cfg ? cfg->general.bitrate_auto_bppf : 0.067;
+    const double raw = bppf * scale * static_cast<double>(stream.width) *
+                       stream.height * stream.fps / 1000.0;
+    kbps = static_cast<int>(std::lround(raw / 100.0)) * 100;
+    kbps = std::clamp(kbps, kAutoBitrateMinKbps, kAutoBitrateMaxKbps);
     LOG_INFO(stream_name << ": bitrate auto from " << stream.width << "x"
-                         << stream.height << " -> " << kbps << " kbps");
+                         << stream.height << "@" << stream.fps << " -> "
+                         << kbps << " kbps (bppf=" << bppf
+                         << ", scale=" << scale << ")");
   } else {
     LOG_WARN(stream_name << ": bitrate auto requested but stream size "
                             "unknown, using "
@@ -265,8 +277,8 @@ void apply_default_bitrates() {
     return;
   }
 
-  apply_default_bitrate("stream0", cfg->stream0, 3000);
-  apply_default_bitrate("stream1", cfg->stream1, 1000);
+  apply_default_bitrate("stream0", cfg->stream0, 3000, kMainBitrateScale);
+  apply_default_bitrate("stream1", cfg->stream1, 1000, kSubBitrateScale);
 }
 
 int add_sensor_with_retry(IMPSensorInfo &sensor_info) {

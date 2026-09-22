@@ -1,5 +1,22 @@
 # Encoder Bitrate & GOP Auto-Tuning Proposal
 
+## Status
+
+The bitrate auto-default is implemented in `IMPSystem.cpp`
+(`apply_default_bitrate()`), for streams with `bitrate: 0` only:
+
+```
+kbps = general.bitrate_auto_bppf * scale * width * height * fps / 1000
+```
+
+rounded to the nearest 100 kbps, clamped to `[256, 8000]`. `scale` is 1.0 for
+the main stream and 2.0 for the substream, since the Web UI shows the
+substream upscaled where a low bitrate is obvious. `general.bitrate_auto_bppf`
+defaults to 0.067 (the SDK's own level, about 1 Mbps per megapixel at 15 fps)
+and is tunable in `prudynt.json`. An explicit `streamN.bitrate` always wins.
+
+The GOP clamping below is still a proposal.
+
 ## Context
 - Sensors expose their physical capabilities via `/proc/jz/sensor/*` (width, height,
   min/max FPS, I²C bus, reset GPIO, MCLK, video interface, etc.).

@@ -143,6 +143,7 @@ struct _general {
   int imp_polling_timeout_ms;
   bool timestamp_validation_enabled;
   bool audio_debug_verbose;
+  float bitrate_auto_bppf;
 };
 struct _http {
   bool enabled;
