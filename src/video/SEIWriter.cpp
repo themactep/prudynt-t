@@ -63,10 +63,13 @@ std::vector<uint8_t> SEIWriter::buildSEI(bool is_h265,
   // -- 3. Assemble NAL unit ----------------------------------------
 
   std::vector<uint8_t> nal;
-  nal.reserve(4 + 2 + epb.size()); // start code + header + RBSP
+  nal.reserve(2 + epb.size()); // header + RBSP
 
-  // 4-byte Annex B start code
-  nal.insert(nal.end(), {0x00, 0x00, 0x00, 0x01});
+  // No Annex B start code: the tap/muxer path (RTSP, HTTP fMP4, WS fMP4)
+  // carries payload-only NALs, exactly like the encoder output the worker
+  // copies with its 4-byte start code stripped. A start code here would be
+  // length-prefixed as payload by the fMP4 muxer and make the AVCC sample
+  // undecodable (browsers show black; ffmpeg tolerates it).
 
   // NAL unit header
   if (is_h265) {
