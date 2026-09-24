@@ -299,7 +299,7 @@ void handleCommand(const std::string &line) {
 
   // Persist state to config if save_state is enabled
   if (cfg && cfg->privacy.save_state) {
-    cfg->privacy.enabled = value;
+    cfg->set<bool>("privacy.enabled", value);
     cfg->updateConfig();
     LOG_INFO("VideoPrivacyControl: persisted privacy.enabled = "
              << (value ? "true" : "false"));

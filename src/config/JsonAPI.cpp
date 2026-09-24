@@ -439,7 +439,7 @@ void handle_osd(JsonValue *obj, int idx, std::string &sect, bool &s2,
           if (cloned)
             add_to_object(seiSec, "entries", cloned);
         }
-        cfg->mark_dirty();
+        cfg->mark_dirty_path("osd.sei.entries");
         global_reload_osd = true;
       }
     }

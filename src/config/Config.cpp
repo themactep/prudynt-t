@@ -756,46 +756,88 @@ bool CFG::readConfig() {
                " is not a JSON object, ignoring it and using the core only");
       free_json_value(user);
     } else {
+      // Migrate old osd.enabled / osd.elements in the layer itself, since the
+      // core is read-only.
+      JsonValue *osd = get_nested_item(user, "osd");
+      if (osd && osd->type == JSON_OBJECT) {
+        JsonValue *oldEntries = get_nested_item(osd, "elements");
+        JsonValue *oldEnabled = get_nested_item(osd, "enabled");
+        JsonValue *sei = get_nested_item(osd, "sei");
+        if ((oldEntries || oldEnabled) && !sei) {
+          LOG_INFO(
+              "Migrating user layer osd.enabled / osd.elements -> osd.sei.*");
+          sei = create_json_value(JSON_OBJECT);
+          add_to_object(osd, "sei", sei);
+          if (oldEnabled) {
+            add_to_object(sei, "enabled", clone_json_value(oldEnabled));
+            del_nested_item(osd, "enabled");
+          }
+          if (oldEntries) {
+            add_to_object(sei, "entries", clone_json_value(oldEntries));
+            del_nested_item(osd, "elements");
+          }
+          save_config(userFilePath.c_str(), user);
+        }
+      }
       merge_json_into(&jsonConfig, user);
       free_json_value(user);
       LOG_INFO("Applied user configuration layer from " + userFilePath);
     }
   }
 
-  // Migrate old osd.enabled / osd.elements -> osd.sei.enabled /
-  // osd.sei.entries. The core is read-only, so a migration is persisted to the
-  // user layer.
-  bool migrated = false;
-  JsonValue *osd = get_nested_item(jsonConfig, "osd");
-  if (osd && osd->type == JSON_OBJECT) {
-    JsonValue *oldEntries = get_nested_item(osd, "elements");
-    JsonValue *oldEnabled = get_nested_item(osd, "enabled");
-    JsonValue *sei = get_nested_item(osd, "sei");
-    if ((oldEntries || oldEnabled) && !sei) {
-      LOG_INFO("Migrating osd.enabled / osd.elements -> osd.sei.enabled / "
-               "osd.sei.entries");
-      sei = create_json_value(JSON_OBJECT);
-      add_to_object(osd, "sei", sei);
-      if (oldEnabled) {
-        add_to_object(sei, "enabled", clone_json_value(oldEnabled));
-        del_nested_item(osd, "enabled");
-      }
-      if (oldEntries) {
-        add_to_object(sei, "entries", clone_json_value(oldEntries));
-        del_nested_item(osd, "elements");
-      }
-      migrated = true;
-    }
-  }
-
-  if (migrated) {
-    LOG_INFO("Migration complete, saved to user layer.");
-    persist_locked();
-  } else if (save_config(runtimePath.c_str(), jsonConfig) == 0) {
+  if (save_config(runtimePath.c_str(), jsonConfig) == 0) {
     LOG_WARN("Failed to refresh consolidated config " << runtimePath);
   }
 
   return true;
+}
+
+void CFG::mark_dirty_path(const std::string &path) {
+  dirty_ = true;
+  std::lock_guard<std::mutex> lock(configMutex);
+  dirty_paths_.insert(path);
+  serialized_cache_.clear();
+}
+
+// Copy a JSON subtree into a nested object path, preserving value types.
+static bool set_nested_json(JsonValue *root, const std::string &path,
+                            const JsonValue *value) {
+  if (!root || root->type != JSON_OBJECT || !value)
+    return false;
+
+  std::vector<std::string> segments;
+  size_t start = 0;
+  while (start < path.size()) {
+    size_t dot = path.find('.', start);
+    size_t end = (dot == std::string::npos) ? path.size() : dot;
+    if (end > start)
+      segments.push_back(path.substr(start, end - start));
+    if (dot == std::string::npos)
+      break;
+    start = dot + 1;
+  }
+  if (segments.empty())
+    return false;
+
+  JsonValue *current = root;
+  for (size_t i = 0; i + 1 < segments.size(); ++i) {
+    JsonValue *next = get_object_item(current, segments[i].c_str());
+    if (!next || next->type != JSON_OBJECT) {
+      if (next)
+        del_nested_item(current, segments[i].c_str());
+      JsonValue *obj = create_json_value(JSON_OBJECT);
+      if (!obj)
+        return false;
+      add_to_object(current, segments[i].c_str(), obj);
+      next = obj;
+    }
+    current = next;
+  }
+
+  JsonValue *clone = clone_json_value(value);
+  if (!clone)
+    return false;
+  return add_to_object(current, segments.back().c_str(), clone) != 0;
 }
 
 bool CFG::persist_locked() {
@@ -804,33 +846,52 @@ bool CFG::persist_locked() {
     return false;
   }
 
-  // The user layer stores only the delta against the read-only core, so a
-  // firmware upgrade that changes core defaults is still picked up.
+  // Start from what is already on disk and fold in only the paths changed
+  // since the last persist.  Re-applying every config item would otherwise
+  // pin sensor geometry and other derived defaults in the user layer.
+  JsonValue *layer = nullptr;
+  if (fs::exists(userFilePath)) {
+    JsonValue *existing = load_config(userFilePath.c_str());
+    if (existing && existing->type == JSON_OBJECT)
+      layer = existing;
+    else if (existing)
+      free_json_value(existing);
+  }
+  if (!layer)
+    layer = create_json_value(JSON_OBJECT);
+
+  for (const auto &path : dirty_paths_) {
+    JsonValue *value = get_nested_item(jsonConfig, path.c_str());
+    if (value)
+      set_nested_json(layer, path, value);
+  }
+
+  bool ok = true;
+  if (!dirty_paths_.empty()) {
+    ok = save_config(userFilePath.c_str(), layer) != 0;
+    if (!ok)
+      LOG_ERROR("CFG::persist_locked() - failed to save user layer "
+                << userFilePath);
+  }
+
+  // Publish the consolidated view (core + layer) for shell/CGI consumers.
   JsonValue *core = load_config(coreFilePath.c_str());
-  JsonValue *delta = nullptr;
   if (core) {
-    delta = diff_json(jsonConfig, core);
+    merge_json_into(&core, layer);
+    if (save_config(runtimePath.c_str(), core) == 0)
+      LOG_WARN("CFG::persist_locked() - failed to refresh " << runtimePath);
     free_json_value(core);
-  }
-
-  bool ok = save_config(userFilePath.c_str(), delta ? delta : jsonConfig) != 0;
-  if (delta)
-    free_json_value(delta);
-
-  if (!ok) {
-    LOG_ERROR("CFG::persist_locked() - failed to save user layer "
-              << userFilePath);
-    return false;
-  }
-
-  // Refresh the consolidated tmpfs view read by shell/CGI consumers.
-  if (save_config(runtimePath.c_str(), jsonConfig) == 0) {
+  } else if (save_config(runtimePath.c_str(), jsonConfig) == 0) {
     LOG_WARN("CFG::persist_locked() - failed to refresh " << runtimePath);
   }
 
-  LOG_DEBUG("CFG::persist_locked() - saved user layer " << userFilePath);
-  reset_dirty();
-  return true;
+  free_json_value(layer);
+  LOG_DEBUG("CFG::persist_locked() - saved " << dirty_paths_.size()
+                                             << " path(s) to " << userFilePath);
+  // Already under configMutex.
+  dirty_ = false;
+  dirty_paths_.clear();
+  return ok;
 }
 
 bool CFG::persist() {
@@ -1313,7 +1374,9 @@ bool CFG::saveIntValues(
     if (!setNestedValue(jsonConfig, entry.first,
                         std::to_string(entry.second))) {
       LOG_WARN("CFG::saveIntValues() - failed to set key " << entry.first);
+      continue;
     }
+    dirty_paths_.insert(entry.first);
   }
 
   if (!persist_locked()) {

@@ -340,6 +340,9 @@ public:
   bool config_loaded = false;
   bool config_corrupted = false;
   bool dirty_ = false; // set when set<T>() actually changes a value
+  // Config paths changed since the last persist.  Only these are written to
+  // the user layer, so re-applying every item cannot pin derived defaults.
+  std::set<std::string> dirty_paths_;
   mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
   JsonValue *jsonConfig = nullptr;
   // Read-only core shipped with the image.  Set by readConfig().
@@ -355,12 +358,18 @@ public:
   void load();
   static CFG *createNew();
   bool is_dirty() const { return dirty_; }
-  void reset_dirty() { dirty_ = false; }
+  void reset_dirty() {
+    std::lock_guard<std::mutex> lock(configMutex);
+    dirty_ = false;
+    dirty_paths_.clear();
+  }
   void mark_dirty() {
     dirty_ = true;
     std::lock_guard<std::mutex> lock(configMutex);
     serialized_cache_.clear();
   }
+  // Record a config path as changed so it is written to the user layer.
+  void mark_dirty_path(const std::string &path);
   // Returns the compact serialization of jsonConfig, cached until the
   // config is mutated, so repeated dump_config/subtree reads don't re-walk
   // the tree.
@@ -483,7 +492,7 @@ public:
             }
             set_nested_item(jsonConfig, item.path, valueStr.c_str());
           }
-          mark_dirty();
+          mark_dirty_path(name);
           if (name == "audio.mic_enabled" || name == "audio.spk_enabled" ||
               name == "image.running_mode") {
             write_runtime_state();
