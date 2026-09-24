@@ -747,7 +747,26 @@ bool CFG::readConfig() {
   // Layer the writable user overrides on top of the core.  A corrupt user
   // file must never block startup: warn and continue with the core only.
   if (fs::exists(userFilePath)) {
-    JsonValue *user = load_config(userFilePath.c_str());
+    // load_config() masks parse errors as an empty object, so reparse the raw
+    // text to tell a corrupt layer from an empty one.
+    bool corrupt = false;
+    if (FILE *f = fopen(userFilePath.c_str(), "rb")) {
+      std::string raw;
+      char buf[512];
+      size_t n;
+      while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        raw.append(buf, n);
+      fclose(f);
+      if (raw.find_first_not_of(" \t\r\n") != std::string::npos) {
+        JsonValue *check = parse_json_string(raw.c_str());
+        if (check)
+          free_json_value(check);
+        else
+          corrupt = true;
+      }
+    }
+
+    JsonValue *user = corrupt ? nullptr : load_config(userFilePath.c_str());
     if (!user) {
       LOG_WARN("User configuration " + userFilePath +
                " is corrupted, ignoring it and using the core only");
