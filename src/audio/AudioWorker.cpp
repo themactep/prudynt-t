@@ -217,9 +217,7 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
     frame_samples = frame.len / (sample_size_bytes * channels);
   }
 
-#if !defined(OPENIMP)
   IMPAudioStream stream;
-#endif
   bool got_stream = false;
   if (global_audio[encChn]->imp_audio->directEncode) {
     // Direct encoding --- bypass IMP_AENC to avoid its heap corruption bug
@@ -239,7 +237,6 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       start = end = nullptr;
     }
   } else if (global_audio[encChn]->imp_audio->format != IMPAudioFormat::PCM) {
-#if !defined(OPENIMP)
     // IMP_AENC path for built-in codecs (G711A, G711U, G726)
     if (IMP_AENC_SendFrame(global_audio[encChn]->aeChn, &frame) != 0) {
       LOG_ERROR("IMP_AENC_SendFrame(" << global_audio[encChn]->devId << ", "
@@ -261,7 +258,6 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
       start = (uint8_t *)stream.stream;
       end = start + stream.len;
     }
-#endif
   }
 
   if (end > start) {
@@ -328,13 +324,11 @@ void AudioWorker::process_audio_frame(IMPAudioFrame &frame) {
   }
 
   if (got_stream) {
-#if !defined(OPENIMP)
     if (IMP_AENC_ReleaseStream(global_audio[encChn]->aeChn, &stream) < 0) {
       LOG_ERROR("IMP_AENC_ReleaseStream(" << global_audio[encChn]->devId << ", "
                                           << global_audio[encChn]->aeChn
                                           << ", &stream) failed");
     }
-#endif
   }
 }
 

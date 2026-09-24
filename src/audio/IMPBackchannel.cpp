@@ -146,11 +146,6 @@ IMPBackchannel *IMPBackchannel::createNew() {
 }
 
 int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
-#if defined(OPENIMP)
-  (void)format;
-  LOG_WARN("OpenIMP build: IMP ADEC unavailable; backchannel disabled");
-  return -1;
-#else
   int ret = 0;
   IMPAudioDecChnAttr adec_attr;
   adec_attr.mode = ADEC_MODE_PACK;
@@ -176,7 +171,7 @@ int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
     }
     return 0;
 
-#if defined(USE_AAC) && USE_AAC
+#if !defined(OPENIMP) && defined(USE_AAC) && USE_AAC
   case IMPBackchannelFormat::AAC:
     if (aacDecoderHandle == -1) {
       IMPAudioDecDecoder aacDecoderCallbacks;
@@ -209,15 +204,10 @@ int IMPBackchannel::ensureDecoderChannel(IMPBackchannelFormat format) {
   default:
     return -1;
   }
-#endif
 }
 
 int IMPBackchannel::init() {
   LOG_DEBUG("IMPBackchannel::init()");
-#if defined(OPENIMP)
-  LOG_INFO("OpenIMP build: skipping IMP ADEC channel setup");
-  return 0;
-#else
   int ret = 0;
 
 #if !defined(PLATFORM_T23)
@@ -241,7 +231,7 @@ int IMPBackchannel::init() {
       "Backchannel decoder channels deferred until first incoming frame (T23)");
 #endif
 
-#if defined(USE_AAC) && USE_AAC
+#if !defined(OPENIMP) && defined(USE_AAC) && USE_AAC
   // Register the custom AAC decoder callbacks with the IMP SDK if not already
   // done.
   if (aacDecoderHandle == -1) {
@@ -278,16 +268,12 @@ int IMPBackchannel::init() {
 #endif
   }
 #endif
-#endif
 
   return 0;
 }
 
 void IMPBackchannel::deinit() {
   LOG_DEBUG("IMPBackchannel::deinit()");
-#if defined(OPENIMP)
-  return;
-#else
   int ret;
 
 #define DESTROY_ADEC(EnumName, NameString, PayloadType, Frequency, MimeType)   \
@@ -299,13 +285,12 @@ void IMPBackchannel::deinit() {
   X_FOREACH_BACKCHANNEL_FORMAT(DESTROY_ADEC)
 #undef DESTROY_ADEC
 
-#if defined(USE_AAC) && USE_AAC
+#if !defined(OPENIMP) && defined(USE_AAC) && USE_AAC
   if (aacDecoderHandle != -1) {
     ret = IMP_ADEC_UnRegisterDecoder(&aacDecoderHandle);
     LOG_DEBUG_OR_ERROR(ret, "IMP_ADEC_UnRegisterDecoder(" << aacDecoderHandle
                                                           << ")");
     aacDecoderHandle = -1;
   }
-#endif
 #endif
 }
