@@ -342,7 +342,13 @@ public:
   bool dirty_ = false; // set when set<T>() actually changes a value
   mutable std::string serialized_cache_; // cached json_to_string(jsonConfig)
   JsonValue *jsonConfig = nullptr;
-  std::string filePath{};
+  // Read-only core shipped with the image.  Set by readConfig().
+  std::string coreFilePath{"/etc/prudynt.json"};
+  // Writable overlay holding only the deltas against the core.
+  std::string userFilePath{"/etc/prudynt.user.json"};
+  // Consolidated (core + user) view materialized on tmpfs for shell/CGI
+  // consumers that cannot merge the layers themselves.
+  std::string runtimePath{"/run/prudynt.json"};
   mutable std::mutex configMutex;
 
   CFG();
@@ -371,6 +377,9 @@ public:
   bool readConfig();
   bool updateConfig();
   bool saveIntValues(const std::vector<std::pair<std::string, int>> &values);
+  // Persist the in-memory config as a delta in the user layer and refresh
+  // the consolidated tmpfs view.  Takes configMutex.
+  bool persist();
 
   _audio audio{};
   _general general{};
@@ -489,6 +498,9 @@ public:
   }
 
 private:
+  // Like persist(), but the caller already holds configMutex.
+  bool persist_locked();
+
   std::vector<ConfigItem<bool>> boolItems{};
   std::vector<ConfigItem<const char *>> charItems{};
   std::vector<ConfigItem<int>> intItems{};

@@ -472,8 +472,9 @@ int IPCServer::handle_http_client(int fd) {
     send_response(400, "application/json", "{\"error\":\"invalid_request\"}\n");
   } else {
     if (cfg->is_dirty()) {
-      // Persist in-memory changes to disk so they survive reboots
-      save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+      // Persist in-memory changes as a delta in the writable user layer so
+      // they survive reboots without touching the read-only core.
+      cfg->persist();
 
       // Also update /etc/onvif.json with the new RTSP credentials
       JsonValue *rtsp_pw = get_nested_item(cfg->jsonConfig, "rtsp.password");

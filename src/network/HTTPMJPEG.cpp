@@ -943,8 +943,9 @@ void HTTPMJPEG::handle_client(int cfd) {
                     "{\"error\":\"invalid_request\"}\n");
     } else {
       if (cfg->is_dirty()) {
-        // Persist in-memory changes to disk so they survive reboots
-        save_config(cfg->filePath.c_str(), cfg->jsonConfig);
+        // Persist in-memory changes as a delta in the writable user layer so
+        // they survive reboots without touching the read-only core.
+        cfg->persist();
 
         // Also update /etc/onvif.json with the new RTSP credentials
         // so ONVIF stays in sync

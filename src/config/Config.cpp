@@ -720,29 +720,19 @@ bool CFG::readConfig() {
   // program binary
   fs::path binaryPath = fs::read_symlink("/proc/self/exe").parent_path();
   fs::path cfgFilePath = binaryPath / "prudynt.json";
-  filePath = cfgFilePath;
 
-  // Try to load the configuration file from the specified paths
+  // Resolve the read-only core: binary directory first (NFS/dev), then /etc.
   std::string configPath;
-
-  // First try the binary directory
   if (fs::exists(cfgFilePath)) {
     configPath = cfgFilePath.string();
-    LOG_INFO("Loaded configuration from " + configPath);
+  } else if (fs::exists("/etc/prudynt.json")) {
+    configPath = "/etc/prudynt.json";
   } else {
-    // Try /etc/prudynt.json
-    fs::path etcPath = "/etc/prudynt.json";
-    filePath = etcPath;
-
-    if (fs::exists(etcPath)) {
-      configPath = etcPath.string();
-      LOG_INFO("Loaded configuration from " + configPath);
-    } else {
-      LOG_WARN(
-          "Failed to load prudynt configuration file from both locations.");
-      return false; // Exit if configuration file is missing
-    }
+    LOG_WARN("Failed to load prudynt configuration file from both locations.");
+    return false; // Exit if configuration file is missing
   }
+
+  coreFilePath = configPath;
 
   // Load JSON using JCT
   jsonConfig = load_config(configPath.c_str());
@@ -752,15 +742,38 @@ bool CFG::readConfig() {
     config_corrupted = true;
     return false;
   }
+  LOG_INFO("Loaded core configuration from " + configPath);
 
-  // Migrate old osd.enabled / osd.elements -> osd.sei.enabled / osd.sei.entries
+  // Layer the writable user overrides on top of the core.  A corrupt user
+  // file must never block startup: warn and continue with the core only.
+  if (fs::exists(userFilePath)) {
+    JsonValue *user = load_config(userFilePath.c_str());
+    if (!user) {
+      LOG_WARN("User configuration " + userFilePath +
+               " is corrupted, ignoring it and using the core only");
+    } else if (user->type != JSON_OBJECT) {
+      LOG_WARN("User configuration " + userFilePath +
+               " is not a JSON object, ignoring it and using the core only");
+      free_json_value(user);
+    } else {
+      merge_json_into(&jsonConfig, user);
+      free_json_value(user);
+      LOG_INFO("Applied user configuration layer from " + userFilePath);
+    }
+  }
+
+  // Migrate old osd.enabled / osd.elements -> osd.sei.enabled /
+  // osd.sei.entries. The core is read-only, so a migration is persisted to the
+  // user layer.
+  bool migrated = false;
   JsonValue *osd = get_nested_item(jsonConfig, "osd");
   if (osd && osd->type == JSON_OBJECT) {
     JsonValue *oldEntries = get_nested_item(osd, "elements");
     JsonValue *oldEnabled = get_nested_item(osd, "enabled");
     JsonValue *sei = get_nested_item(osd, "sei");
     if ((oldEntries || oldEnabled) && !sei) {
-      LOG_INFO("Migrating osd.enabled / osd.elements -> osd.sei.enabled / osd.sei.entries");
+      LOG_INFO("Migrating osd.enabled / osd.elements -> osd.sei.enabled / "
+               "osd.sei.entries");
       sei = create_json_value(JSON_OBJECT);
       add_to_object(osd, "sei", sei);
       if (oldEnabled) {
@@ -771,12 +784,58 @@ bool CFG::readConfig() {
         add_to_object(sei, "entries", clone_json_value(oldEntries));
         del_nested_item(osd, "elements");
       }
-      save_config(configPath.c_str(), jsonConfig);
-      LOG_INFO("Migration complete, config saved.");
+      migrated = true;
     }
   }
 
+  if (migrated) {
+    LOG_INFO("Migration complete, saved to user layer.");
+    persist_locked();
+  } else if (save_config(runtimePath.c_str(), jsonConfig) == 0) {
+    LOG_WARN("Failed to refresh consolidated config " << runtimePath);
+  }
+
   return true;
+}
+
+bool CFG::persist_locked() {
+  if (!jsonConfig) {
+    LOG_ERROR("CFG::persist_locked() - jsonConfig is null");
+    return false;
+  }
+
+  // The user layer stores only the delta against the read-only core, so a
+  // firmware upgrade that changes core defaults is still picked up.
+  JsonValue *core = load_config(coreFilePath.c_str());
+  JsonValue *delta = nullptr;
+  if (core) {
+    delta = diff_json(jsonConfig, core);
+    free_json_value(core);
+  }
+
+  bool ok = save_config(userFilePath.c_str(), delta ? delta : jsonConfig) != 0;
+  if (delta)
+    free_json_value(delta);
+
+  if (!ok) {
+    LOG_ERROR("CFG::persist_locked() - failed to save user layer "
+              << userFilePath);
+    return false;
+  }
+
+  // Refresh the consolidated tmpfs view read by shell/CGI consumers.
+  if (save_config(runtimePath.c_str(), jsonConfig) == 0) {
+    LOG_WARN("CFG::persist_locked() - failed to refresh " << runtimePath);
+  }
+
+  LOG_DEBUG("CFG::persist_locked() - saved user layer " << userFilePath);
+  reset_dirty();
+  return true;
+}
+
+bool CFG::persist() {
+  std::lock_guard<std::mutex> lock(configMutex);
+  return persist_locked();
 }
 
 template <typename T> bool processLine(const std::string &line, T &value) {
@@ -1102,27 +1161,18 @@ bool CFG::updateConfig() {
     setNestedValue(jsonConfig, roiPath, roiValue);
   }
 
-  // Save config using JCT - it automatically sorts keys and formats nicely
-  LOG_DEBUG("CFG::updateConfig() - About to save config to " << filePath);
-  LOG_DEBUG(
-      "CFG::updateConfig() - jsonConfig pointer: " << (uintptr_t)jsonConfig);
-
   if (!jsonConfig) {
     LOG_ERROR("CFG::updateConfig() - jsonConfig is null!");
     return false;
   }
 
-  int save_result = save_config(filePath.c_str(), jsonConfig);
-  LOG_DEBUG("CFG::updateConfig() - save_config returned: " << save_result);
-
-  if (save_result != 0) {
-    LOG_DEBUG("Config is written to " << filePath);
-    reset_dirty();
-    return true;
-  } else {
-    LOG_ERROR("Failed to serialize JSON config");
+  if (!persist_locked()) {
+    LOG_ERROR("Failed to persist JSON config");
     return false;
   }
+
+  LOG_DEBUG("Config persisted to user layer " << userFilePath);
+  return true;
 };
 
 std::vector<ConfigItem<float>> CFG::getFloatItems() {
@@ -1253,28 +1303,22 @@ bool CFG::saveIntValues(
   if (values.empty())
     return true;
 
-  if (filePath.empty()) {
-    LOG_WARN("CFG::saveIntValues() - filePath is empty");
-    return false;
-  }
-
   std::lock_guard<std::mutex> lock(configMutex);
-  JsonValue *doc = load_config(filePath.c_str());
-  if (!doc) {
-    LOG_ERROR("CFG::saveIntValues() - failed to load config " << filePath);
+  if (!jsonConfig) {
+    LOG_ERROR("CFG::saveIntValues() - jsonConfig is null");
     return false;
   }
 
   for (const auto &entry : values) {
-    if (!setNestedValue(doc, entry.first, std::to_string(entry.second))) {
+    if (!setNestedValue(jsonConfig, entry.first,
+                        std::to_string(entry.second))) {
       LOG_WARN("CFG::saveIntValues() - failed to set key " << entry.first);
     }
   }
 
-  int rc = save_config(filePath.c_str(), doc);
-  if (rc == 0) {
-    LOG_ERROR("CFG::saveIntValues() - save_config failed for " << filePath);
+  if (!persist_locked()) {
+    LOG_ERROR("CFG::saveIntValues() - failed to persist " << userFilePath);
+    return false;
   }
-  free_json_value(doc);
-  return rc != 0;
+  return true;
 }
