@@ -89,7 +89,7 @@ bool acquire_instance_lock() {
                                                << ec.message());
   }
 
-  instance_lock_fd = ::open(kPrudyntLockPath, O_RDWR | O_CREAT, 0644);
+  instance_lock_fd = ::open(kPrudyntLockPath, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
   if (instance_lock_fd < 0) {
     LOG_ERROR("Unable to open instance lock file " << kPrudyntLockPath << ": "
                                                    << strerror(errno));
