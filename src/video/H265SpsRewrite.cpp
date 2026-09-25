@@ -65,9 +65,8 @@ void skipStRefPicSet(BitReader &br, uint32_t stRpsIdx,
 // Walk an H.265 SPS RBSP (two-byte NAL header already stripped) up to and
 // including vui_parameters_present_flag. Returns false if the SPS is
 // malformed or truncated. On success, *vuiPresentPos is the bit offset of
-// vui_parameters_present_flag and *width is pic_width_in_luma_samples.
-bool h265SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos,
-                  uint32_t *width) {
+// vui_parameters_present_flag.
+bool h265SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos) {
   BitReader br(bits);
 
   br.getBits(4);                         // sps_video_parameter_set_id
@@ -107,9 +106,9 @@ bool h265SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos,
   br.getUE(); // sps_seq_parameter_set_id
   uint32_t chroma = br.getUE();
   if (chroma == 3)
-    br.getBit();           // separate_colour_plane_flag
-  uint32_t w = br.getUE(); // pic_width_in_luma_samples
-  br.getUE();              // pic_height_in_luma_samples
+    br.getBit();     // separate_colour_plane_flag
+  br.getUE();        // pic_width_in_luma_samples
+  br.getUE();        // pic_height_in_luma_samples
   if (br.getBit()) {       // conformance_window_flag
     br.getUE();
     br.getUE();
@@ -171,7 +170,6 @@ bool h265SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos,
     return false; // truncated before the VUI
 
   *vuiPresentPos = br.pos;
-  *width = w;
   return true;
 }
 
@@ -197,8 +195,7 @@ std::vector<uint8_t> h265RewriteSpsVui(const uint8_t *sps, size_t len) {
     return result;
 
   size_t vuiPresentPos = 0;
-  uint32_t width = 0;
-  if (!h265SpsToVui(bits, payloadEnd, &vuiPresentPos, &width))
+  if (!h265SpsToVui(bits, payloadEnd, &vuiPresentPos))
     return result;
 
   std::vector<uint8_t> out;
@@ -206,7 +203,7 @@ std::vector<uint8_t> h265RewriteSpsVui(const uint8_t *sps, size_t len) {
   out.push_back(sps[0]); // preserve two-byte NAL header verbatim
   out.push_back(sps[1]);
   std::vector<uint8_t> ebsp =
-      spsvui::applyVui(bits, vuiPresentPos, width >= 1280, /*isHevc=*/true);
+      spsvui::applyVui(bits, vuiPresentPos, /*isHevc=*/true);
   out.insert(out.end(), ebsp.begin(), ebsp.end());
   return out;
 }
