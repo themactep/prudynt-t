@@ -163,6 +163,7 @@ namespace {
 sigset_t shutdown_signal_set;
 
 void *shutdown_signal_thread(void *arg) {
+  WorkerUtils::setCurrentThreadName("signal");
   sigset_t local_set = *static_cast<sigset_t *>(arg);
   int received_signal = 0;
   while (sigwait(&local_set, &received_signal) == 0) {

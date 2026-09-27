@@ -10,6 +10,7 @@
 #define MODULE "AudioOutputWorker"
 
 void *AudioOutputWorker::thread_entry(void *arg) {
+  WorkerUtils::setCurrentThreadName("audio-out");
   StartHelper *sh = static_cast<StartHelper *>(arg);
   AudioOutputWorker worker;
   worker.run(sh);

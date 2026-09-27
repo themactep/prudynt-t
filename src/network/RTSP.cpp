@@ -3,6 +3,7 @@
 #include "network/rtsp/RtspTypes.hpp"
 #include "config/Config.hpp"
 #include "util/Logger.hpp"
+#include "util/WorkerUtils.hpp"
 #include "stream/globals.hpp"
 #include "version.hpp"
 #include <cstring>
@@ -230,6 +231,7 @@ void RTSP::start() {
 }
 
 void *RTSP::run(void *arg) {
+    WorkerUtils::setCurrentThreadName("rtsp");
     auto *self = static_cast<RTSP *>(arg);
     self->start();
     return nullptr;

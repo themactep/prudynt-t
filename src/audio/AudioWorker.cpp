@@ -480,6 +480,8 @@ void *AudioWorker::thread_entry(void *arg) {
   StartHelper *sh = static_cast<StartHelper *>(arg);
   int encChn = sh->encChn;
 
+  WorkerUtils::setCurrentThreadName("audio-in");
+
   LOG_DEBUG("Start audio_grabber thread for device "
             << global_audio[encChn]->devId << " and channel "
             << global_audio[encChn]->aiChn << " and encoder "

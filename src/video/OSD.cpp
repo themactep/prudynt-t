@@ -2,6 +2,7 @@
 #include "config/Config.hpp"
 #include "util/OSDFont.hpp"
 #include "util/Logger.hpp"
+#include "util/WorkerUtils.hpp"
 #include "stream/globals.hpp"
 #include "isp/imp_hal.hpp"
 #include <algorithm>
@@ -1029,6 +1030,7 @@ std::string OSD::getPlaintextInfo() {
 // -- thread -----------------------------------------------------------
 
 void *OSD::thread_entry(void *arg) {
+  WorkerUtils::setCurrentThreadName("osd");
   LOG_DEBUG("start osd update thread.");
   global_osd_thread_signal = true;
   while (global_osd_thread_signal) {

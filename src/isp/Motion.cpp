@@ -1,4 +1,5 @@
 #include "isp/Motion.hpp"
+#include "util/WorkerUtils.hpp"
 #include "stream/globals.hpp"
 #include "isp/imp_hal.hpp"
 #include <algorithm>
@@ -402,6 +403,7 @@ int Motion::exit() {
 }
 
 void *Motion::run(void *arg) {
+  WorkerUtils::setCurrentThreadName("motion");
   ((Motion *)arg)->detect();
   return nullptr;
 }

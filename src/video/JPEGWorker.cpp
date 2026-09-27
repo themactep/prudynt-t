@@ -367,6 +367,8 @@ void *JPEGWorker::thread_entry(void *arg) {
   int jpgChn = impEncChn - 2;
   int ret;
 
+  WorkerUtils::setCurrentThreadName(("jpeg" + std::to_string(jpgChn)).c_str());
+
   // Stream geometry is resolved once in resolve_all_stream_geometry
   // (IMPSystem::init), so use the stream's own config as-is.
   auto *stream_cfg = global_jpeg[jpgChn]->stream;

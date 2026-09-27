@@ -14,6 +14,10 @@ namespace WorkerUtils {
 
 unsigned long long tDiffInMs(struct timeval *startTime);
 
+// Set the calling thread's name for top -H and /proc/<tid>/comm. The kernel
+// truncates to 15 bytes.
+void setCurrentThreadName(const char *name);
+
 } // namespace WorkerUtils
 
 #endif // WORKERUTILS_HPP

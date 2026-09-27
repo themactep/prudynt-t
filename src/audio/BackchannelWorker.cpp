@@ -266,6 +266,7 @@ void BackchannelWorker::run() {
 }
 
 void *BackchannelWorker::thread_entry(void *arg) {
+  WorkerUtils::setCurrentThreadName("backchan");
   LOG_INFO("Starting BackchannelWorker thread.");
 
   global_backchannel->imp_backchannel = IMPBackchannel::createNew();

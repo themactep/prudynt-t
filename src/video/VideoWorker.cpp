@@ -1287,6 +1287,8 @@ void *VideoWorker::thread_entry(void *arg) {
   StartHelper *sh = static_cast<StartHelper *>(arg);
   int encChn = sh->encChn;
 
+  WorkerUtils::setCurrentThreadName(("video" + std::to_string(encChn)).c_str());
+
   LOG_DEBUG("Start stream_grabber thread for stream " << encChn);
 
   int ret;

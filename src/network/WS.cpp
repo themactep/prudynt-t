@@ -4,6 +4,7 @@
 #include "isp/ImagingControl.hpp"
 #include "video/OSD.hpp"
 #include "stream/globals.hpp"
+#include "util/WorkerUtils.hpp"
 #include "isp/imp_hal.hpp"
 #include "libwebsockets.h"
 #include <arpa/inet.h>
@@ -2531,6 +2532,7 @@ void WS::stop() {
 }
 
 void *WS::run(void *arg) {
+  WorkerUtils::setCurrentThreadName("ws");
   ((WS *)arg)->start();
   return nullptr;
 }
