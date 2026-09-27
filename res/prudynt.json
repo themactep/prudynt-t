@@ -182,7 +182,7 @@
     "format": "H264",
     "fps": 15,
     "gop": 30,
-    "height": 360,
+    "height": 0,
     "ip_delta": -1,
     "max_bitrate": 0,
     "max_gop": 60,
@@ -195,13 +195,13 @@
     "rotation": 0,
     "rtsp_endpoint": "ch1",
     "rtsp_info": "stream1",
-    "width": 640
+    "width": 768
   },
   "stream2": {
     "enabled": true,
     "fps": 15,
     "jpeg_channel": 0,
-    "jpeg_idle_fps": 1,
+    "jpeg_idle_fps": 0,
     "jpeg_path": "/tmp/snapshot.jpg",
     "jpeg_quality": 75
   },
@@ -209,7 +209,7 @@
     "enabled": false,
     "fps": 15,
     "jpeg_channel": 1,
-    "jpeg_idle_fps": 1,
+    "jpeg_idle_fps": 0,
     "jpeg_path": "/tmp/snapshot_ch1.jpg",
     "jpeg_quality": 75
   }

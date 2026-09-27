@@ -564,8 +564,11 @@ int main(int argc, const char *argv[]) {
         start_video(1);
       }
 
-      if (cfg->stream2.enabled &&
-          (cfg->stream2.jpeg_idle_fps > 0 || cfg->stream2.jpeg_refresh > 0)) {
+      // Boot-time start only when a periodic snapshot file is requested;
+      // snapshots and MJPEG start the worker on demand in
+      // JPEGWorker::ensure_running. jpeg_idle_fps alone must not spawn it (the
+      // WebUI preview is fMP4, so there is usually no JPEG consumer).
+      if (cfg->stream2.enabled && cfg->stream2.jpeg_refresh > 0) {
         StartHelper sh{2};
         int ret =
             pthread_create(&global_jpeg[0]->thread, nullptr,
@@ -575,8 +578,7 @@ int main(int argc, const char *argv[]) {
         sh.has_started.acquire();
       }
 
-      if (cfg->stream3.enabled &&
-          (cfg->stream3.jpeg_idle_fps > 0 || cfg->stream3.jpeg_refresh > 0)) {
+      if (cfg->stream3.enabled && cfg->stream3.jpeg_refresh > 0) {
         StartHelper sh{3};
         int ret =
             pthread_create(&global_jpeg[1]->thread, nullptr,
