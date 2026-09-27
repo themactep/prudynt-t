@@ -222,15 +222,8 @@ void resolve_all_stream_geometry() {
   resolve_stream_geometry("stream2", cfg->stream2, src2.width, src2.height);
   resolve_stream_geometry("stream3", cfg->stream3, src3.width, src3.height);
 
-  // JPEG idle rate default: keep one frame per second for the web UI
-  // thumbnail when no preview/snapshot client is connected.
-  if (cfg->stream2.jpeg_idle_fps <= 0) {
-    int replacement = cfg->sensor.min_fps > 0 ? cfg->sensor.min_fps : 1;
-    replacement = std::clamp(replacement, 1, 30);
-    LOG_INFO("stream2: jpeg_idle_fps adjusted from "
-             << cfg->stream2.jpeg_idle_fps << " to " << replacement);
-    cfg->stream2.jpeg_idle_fps = replacement;
-  }
+  // jpeg_idle_fps is used verbatim: 0 pauses the JPEG worker until a snapshot
+  // or MJPEG client arrives (see JPEGWorker::run).
 }
 
 // Streams with bitrate 0 (= auto) get a default derived from the encoded
