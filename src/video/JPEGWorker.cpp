@@ -124,6 +124,14 @@ void JPEGWorker::run() {
     bool request_or_overrun = global_jpeg[jpgChn]->request_or_overrun();
     lck.unlock();
 
+    // Derive the target rate before deciding whether to stay active. With
+    // jpeg_idle_fps == 0 the worker must pause as soon as the subscriber
+    // window lapses; resetting targetFps only inside the capture path (below)
+    // let it keep streaming at the last subscriber rate, so a single snapshot
+    // left it running.
+    if (!request_or_overrun)
+      targetFps = global_jpeg[jpgChn]->stream->jpeg_idle_fps;
+
     if (global_jpeg[jpgChn]->running &&
         (request_or_overrun || targetFps)) {
       auto diff_last_image =
