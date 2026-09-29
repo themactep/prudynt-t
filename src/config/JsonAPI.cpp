@@ -4,6 +4,7 @@
 #include "recording/MP4Recorder.hpp"
 #include "stream/globals.hpp"
 #include "isp/imp_hal.hpp"
+#include "util/Logger.hpp"
 
 extern "C" {
 #include <json_config.h>
@@ -739,7 +740,24 @@ void handle_motion(JsonValue *obj, std::string &out, bool &sep) {
   add_int("roi_1_x", "motion.roi_1_x");
   add_int("roi_1_y", "motion.roi_1_y");
   add_int("roi_count", "motion.roi_count");
+#ifdef PRUDYNT_NO_HW_IVS
+  // Hardware IVS is unavailable on this streamer backend: binding IMP_IVS to
+  // the framesource tears the ISP pipeline down. Never honor an enable; report
+  // the flag as false so callers see the effective state, and skip the video
+  // restart.
+  if (JsonValue *mv = obj_get(obj, "enabled")) {
+    if (mv->type == JSON_BOOL && mv->value.boolean != 0) {
+      LOG_WARN("motion.enabled=1 ignored: hardware IVS is not available on this "
+               "streamer backend");
+    }
+    add_key(out, s2, "enabled");
+    cfg->set<bool>("motion.enabled", false);
+    add_bool(out, false);
+    wrote = true;
+  }
+#else
   add_boolk_m("enabled", "motion.enabled", /*restart_video*/ true);
+#endif
   add_strs("script_path", "motion.script_path");
 
   if (JsonValue *rois = obj_get(obj, "rois")) {

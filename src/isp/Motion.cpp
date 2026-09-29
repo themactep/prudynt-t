@@ -213,6 +213,13 @@ void Motion::detect() {
 int Motion::init() {
   LOG_INFO("Initialize motion detection.");
 
+#ifdef PRUDYNT_NO_HW_IVS
+  // No hardware IVS on this backend; binding it would tear down the ISP.
+  LOG_ERROR("Motion detection requires hardware IVS, which this streamer "
+            "backend does not provide; refusing to start.");
+  return -1;
+#endif
+
   if ((cfg->motion.monitor_stream == 0 && !cfg->stream0.enabled) ||
       (cfg->motion.monitor_stream == 1 && !cfg->stream1.enabled)) {
     LOG_ERROR("Monitor stream is disabled, abort.");

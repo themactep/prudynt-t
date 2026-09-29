@@ -436,6 +436,17 @@ int main(int argc, const char *argv[]) {
   cfg = std::make_shared<CFG>();
   write_runtime_state();
 
+#ifdef PRUDYNT_NO_HW_IVS
+  // This streamer backend has no hardware IVS support: starting motion
+  // detection binds IMP_IVS to the framesource, which tears the ISP pipeline
+  // down and kills the video streams. Force it off regardless of the config.
+  if (cfg->motion.enabled) {
+    LOG_WARN("motion.enabled=1 ignored: hardware IVS is not available on this "
+             "streamer backend");
+    cfg->motion.enabled = false;
+  }
+#endif
+
   // Refuse to start with a corrupted config - bare defaults are only
   // acceptable when there is no config file at all.
   if (cfg->config_corrupted) {
