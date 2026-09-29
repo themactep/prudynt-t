@@ -3,6 +3,7 @@
 #include "config/Config.hpp"
 #include "isp/ImagingControl.hpp"
 #include "video/OSD.hpp"
+#include "video/BlackFrame.hpp"
 #include "stream/globals.hpp"
 #include "util/WorkerUtils.hpp"
 #include "isp/imp_hal.hpp"
@@ -1744,11 +1745,17 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
     uint16_t sps_len = htons((uint16_t)sps.size());
     avcC.insert(avcC.end(), (uint8_t *)&sps_len, (uint8_t *)&sps_len + 2);
     avcC.insert(avcC.end(), sps.begin(), sps.end());
-    // PPS
-    avcC.push_back(0x01); // numOfPictureParameterSets
+    // PPS + CAVLC twin PPS (the privacy black keyframe references the twin)
+    std::vector<uint8_t> twin = blackframe::buildBlackPps(pps);
+    avcC.push_back(twin.empty() ? 0x01 : 0x02); // numOfPictureParameterSets
     uint16_t pps_len = htons((uint16_t)pps.size());
     avcC.insert(avcC.end(), (uint8_t *)&pps_len, (uint8_t *)&pps_len + 2);
     avcC.insert(avcC.end(), pps.begin(), pps.end());
+    if (!twin.empty()) {
+      uint16_t twin_len = htons((uint16_t)twin.size());
+      avcC.insert(avcC.end(), (uint8_t *)&twin_len, (uint8_t *)&twin_len + 2);
+      avcC.insert(avcC.end(), twin.begin(), twin.end());
+    }
   }
 
   // initialize muxer with avcC

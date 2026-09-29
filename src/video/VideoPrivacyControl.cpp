@@ -1,6 +1,7 @@
 #include "video/VideoPrivacyControl.hpp"
 
 #include "video/IMPEncoder.hpp"
+#include "video/BlackFrame.hpp"
 #include "util/Logger.hpp"
 #include "stream/globals.hpp"
 #include "isp/imp_hal.hpp"
@@ -110,8 +111,27 @@ void applyPrivacyToAllChannels(bool enabled) {
     auto &vs = global_video[ch];
 
     if (enabled) {
-      // -- Enable: create hardware OSD cover -------------------------
+      // -- Enable: build the software black keyframe -----------------
+      // On the open tx-isp stack there is no hardware OSD cover; this keyframe
+      // is what hides the scene, because the video worker injects it and drops
+      // the real frames while privacy is active. If it cannot be built (non-
+      // H.264, or too large for the device) leave the channel uncovered rather
+      // than suppressing its frames with nothing to show.
+      vs->privacy_black_au.clear();
+      if (vs->stream && vs->stream->format &&
+          std::strcmp(vs->stream->format, "H264") == 0) {
+        std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
+        vs->privacy_black_au =
+            blackframe::buildBlackAccessUnit(vs->latest_sps, vs->latest_pps);
+      }
+      if (vs->privacy_black_au.empty()) {
+        LOG_WARN("VideoPrivacyControl: no black keyframe for ch"
+                 << ch << "; leaving stream uncovered");
+        vs->privacy_requested.store(false, std::memory_order_release);
+        continue;
+      }
       vs->privacy_requested.store(true, std::memory_order_release);
+      vs->privacy_black_sent.store(false, std::memory_order_release);
 
       // Flush any buffered frames
       H264NALUnit dummy;
@@ -199,6 +219,8 @@ void applyPrivacyToAllChannels(bool enabled) {
     } else {
       // -- Disable: destroy OSD cover --------------------------------
       vs->privacy_requested.store(false, std::memory_order_release);
+      vs->privacy_black_au.clear();
+      vs->privacy_black_sent.store(false, std::memory_order_release);
 
       if (vs->privacy_osd_handle >= 0) {
         int encGrp = vs->encChn;

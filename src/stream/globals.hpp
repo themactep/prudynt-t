@@ -234,7 +234,11 @@ struct video_stream {
   std::mutex tap_mutex;
   std::vector<VideoTapEntry> video_taps;
   std::atomic<bool> privacy_requested{false};
-  // Cached black IDR frame for privacy mode (Annex B: start_code + SPS + PPS + IDR)
+  // Prebuilt Annex-B black access unit (SPS + PPS + CAVLC twin PPS + all-I_PCM
+  // black IDR). Injected while privacy is active so the real scene is never
+  // transmitted; privacy_black_sent resets per client set.
+  std::vector<uint8_t> privacy_black_au;
+  std::atomic<bool> privacy_black_sent{false};
   int privacy_osd_handle{-1};  // OSD cover region handle for privacy
 
 #ifdef PREBUFFER_ENABLED
@@ -377,6 +381,9 @@ register_video_tap(int encChn, std::shared_ptr<MsgChannel<H264NALUnit>> queue,
     queue->setPool(global_video[encChn]->nalu_pool);
     std::lock_guard<std::mutex> lock(global_video[encChn]->tap_mutex);
     global_video[encChn]->video_taps.push_back(entry);
+    // A new client must receive the black keyframe if privacy is active.
+    global_video[encChn]->privacy_black_sent.store(false,
+                                                    std::memory_order_release);
   }
   return entry;
 }

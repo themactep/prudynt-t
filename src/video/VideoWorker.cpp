@@ -968,7 +968,10 @@ void VideoWorker::run() {
               }
             }
 
-            if (global_video[encChn]->idr == true) {
+            const bool privacy_active =
+                global_video[encChn]->privacy_requested.load(
+                    std::memory_order_acquire);
+            if (global_video[encChn]->idr == true && !privacy_active) {
               // Fill one pooled buffer, rewrite in place, then fan the same
               // buffer out to every tap by reference.  The pool reclaims the
               // storage when the last tap drops its reference.
@@ -1035,6 +1038,84 @@ void VideoWorker::run() {
               }
               // No explicit return: nalu_data's pool deleter recycles the
               // buffer once the last tap reference is gone.
+            }
+
+            // Privacy: the scene fan-out above is skipped while privacy is
+            // active. Emit the cached black keyframe once per client set so
+            // clients display black; nothing of the scene is transmitted.
+            // Privacy: the scene fan-out above is skipped while privacy is
+            // active. Emit the cover once per encoded frame (first NAL of the
+            // frame) so the stream keeps the encoder's frame rate and timeline;
+            // emitting it at a lower rate leaves RTSP clients with sparse,
+            // repeating timestamps.
+            if (global_video[encChn]->idr == true && privacy_active && i == 0) {
+              auto &black_au = global_video[encChn]->privacy_black_au;
+              if (!black_au.empty()) {
+                std::vector<std::pair<const uint8_t *, size_t>> nals;
+                size_t pos = 0, nal_start = 0;
+                if (black_au.size() >= 4 && black_au[0] == 0 &&
+                    black_au[1] == 0 && black_au[2] == 0 && black_au[3] == 1) {
+                  pos = 4;
+                  nal_start = 4;
+                }
+                for (; pos + 4 <= black_au.size();) {
+                  if (black_au[pos] == 0 && black_au[pos + 1] == 0 &&
+                      black_au[pos + 2] == 0 && black_au[pos + 3] == 1) {
+                    if (pos > nal_start)
+                      nals.emplace_back(black_au.data() + nal_start,
+                                        pos - nal_start);
+                    pos += 4;
+                    nal_start = pos;
+                  } else {
+                    ++pos;
+                  }
+                }
+                if (nal_start < black_au.size())
+                  nals.emplace_back(black_au.data() + nal_start,
+                                    black_au.size() - nal_start);
+
+                struct timeval black_time;
+                gettimeofday(&black_time, nullptr);
+                std::vector<VideoTapEntry> black_taps;
+                {
+                  std::lock_guard<std::mutex> tap_lock(
+                      global_video[encChn]->tap_mutex);
+                  black_taps = global_video[encChn]->video_taps;
+                }
+                // The access unit is built as SPS + PPS + CAVLC twin PPS +
+                // IDR. Clients already have the SPS/PPS from the SDP/avcC, so
+                // send only the twin PPS (the cover references it) and the IDR.
+                // Re-sending SPS/PPS every frame is a sequence header per frame
+                // and makes clients thrash and buffer.
+                const size_t first_k = nals.size() >= 2 ? nals.size() - 2 : 0;
+                const size_t count = nals.size() - first_k;
+                for (size_t k = first_k; k < nals.size(); ++k) {
+                  const size_t idx = k - first_k;
+                  auto data = std::make_shared<std::vector<uint8_t>>(
+                      nals[k].first, nals[k].first + nals[k].second);
+                  for (auto &tap : black_taps) {
+                    if (auto queue = tap.queue.lock()) {
+                      H264NALUnit unit;
+                      unit.data = data;
+                      unit.imp_ts = rtsp_ts_us;
+                      unit.time = black_time;
+                      unit.frame_id = current_frame_id;
+                      unit.packet_index = static_cast<uint32_t>(idx);
+                      unit.packet_count = static_cast<uint32_t>(count);
+                      unit.is_frame_start = (idx == 0);
+                      unit.is_frame_end = (idx + 1 == count);
+                      unit.is_keyframe = true;
+                      queue->write(std::move(unit));
+                      if (tap.notify)
+                        tap.notify();
+                    }
+                  }
+                }
+                global_video[encChn]->privacy_black_sent.store(
+                    true, std::memory_order_release);
+                LOG_DEBUG("privacy: injected black keyframe on ch"
+                          << encChn << " (" << nals.size() << " NALs)");
+              }
             }
 #if defined(USE_AUDIO_STREAM_REPLICATOR)
             /* Wake the audio thread when video data is flowing so the

@@ -1,6 +1,7 @@
 #include "network/HTTPMJPEG.hpp"
 
 #include "config/Config.hpp"
+#include "video/BlackFrame.hpp"
 #include "video/JPEGWorker.hpp"
 #include "config/JsonAPI.hpp"
 #include "util/Logger.hpp"
@@ -208,11 +209,19 @@ std::vector<uint8_t> build_avcC(const std::vector<uint8_t> &sps,
   avcC.insert(avcC.end(), reinterpret_cast<uint8_t *>(&sps_len),
               reinterpret_cast<uint8_t *>(&sps_len) + 2);
   avcC.insert(avcC.end(), sps.begin(), sps.end());
-  avcC.push_back(0x01); // numOfPictureParameterSets = 1
+  // Carry the CAVLC twin PPS too: the privacy black keyframe references it.
+  std::vector<uint8_t> twin = blackframe::buildBlackPps(pps);
+  avcC.push_back(twin.empty() ? 0x01 : 0x02); // numOfPictureParameterSets
   uint16_t pps_len = htons(static_cast<uint16_t>(pps.size()));
   avcC.insert(avcC.end(), reinterpret_cast<uint8_t *>(&pps_len),
               reinterpret_cast<uint8_t *>(&pps_len) + 2);
   avcC.insert(avcC.end(), pps.begin(), pps.end());
+  if (!twin.empty()) {
+    uint16_t twin_len = htons(static_cast<uint16_t>(twin.size()));
+    avcC.insert(avcC.end(), reinterpret_cast<uint8_t *>(&twin_len),
+                reinterpret_cast<uint8_t *>(&twin_len) + 2);
+    avcC.insert(avcC.end(), twin.begin(), twin.end());
+  }
   return avcC;
 }
 
@@ -456,7 +465,7 @@ void serve_fmp4(int cfd, int vch) {
       if (unit.empty())
         continue;
       uint8_t nalType = unit.bytes()[0] & 0x1F;
-      // SPS/PPS already live in the avcC init segment; keep them out of-band.
+      // SPS/PPS already live in the avcC init segment; keep them out-of-band.
       if (nalType == 7 || nalType == 8) {
         q->release(unit);
         continue;
@@ -464,6 +473,7 @@ void serve_fmp4(int cfd, int vch) {
 
       bool isVCL = (nalType == 1 || nalType == 5);
       bool isKey = (nalType == 5);
+
 
       // AVCC sample: 4-byte big-endian length prefix + raw NAL.
       uint32_t nl = htonl(static_cast<uint32_t>(unit.size()));
