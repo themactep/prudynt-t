@@ -50,7 +50,7 @@ public:
   int exit();
   int start();
 
-  void updateDisplayEverySecond();
+  void updateDisplayEverySecond(bool allow_burnin = true);
   static void *thread_entry(void *arg);
 
   std::string getSEIJson();

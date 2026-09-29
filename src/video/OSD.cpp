@@ -932,7 +932,7 @@ int OSD::exit() {
 
 extern bool global_reload_osd;
 
-void OSD::updateDisplayEverySecond() {
+void OSD::updateDisplayEverySecond(bool allow_burnin) {
   if (global_reload_osd) {
     global_reload_osd = false;
     loadElements();
@@ -960,14 +960,19 @@ void OSD::updateDisplayEverySecond() {
   // Burn the timestamp into the video via a hardware OSD region.
   // Runtime toggle via osd.burnin.enabled in prudynt.json.
   // osd.burnin.substream_disabled forces the overlay off on the sub stream
-  // regardless of the global osd.burnin.enabled status.
-  bool burnin_enabled = cfg && cfg->osd.burnin.enabled &&
-                        !(is_substream_ && cfg->osd.burnin.substream_disabled);
-  if (burnin_enabled) {
-    updateTimestampOverlay();
-  } else if (ts_region_created_) {
-    IMP_OSD_ShowRgn(ts_rgn_, osdGrp, 0);
-    ts_region_created_ = false;
+  // regardless of the global osd.burnin.enabled status.  Skipped entirely for
+  // idle channels: their encoder is not running, but the element text above is
+  // still refreshed so the SEI/overlay API stays current.
+  if (allow_burnin) {
+    bool burnin_enabled = cfg && cfg->osd.burnin.enabled &&
+                          !(is_substream_ &&
+                            cfg->osd.burnin.substream_disabled);
+    if (burnin_enabled) {
+      updateTimestampOverlay();
+    } else if (ts_region_created_) {
+      IMP_OSD_ShowRgn(ts_rgn_, osdGrp, 0);
+      ts_region_created_ = false;
+    }
   }
 #endif
 }
@@ -1035,9 +1040,9 @@ void *OSD::thread_entry(void *arg) {
   global_osd_thread_signal = true;
   while (global_osd_thread_signal) {
     for (auto v : global_video) {
-      if (v && v->active && v->imp_encoder && v->imp_encoder->osd) {
+      if (v && v->imp_encoder && v->imp_encoder->osd) {
         if (v->imp_encoder->osd->is_started)
-          v->imp_encoder->osd->updateDisplayEverySecond();
+          v->imp_encoder->osd->updateDisplayEverySecond(v->active);
         else if (v->imp_encoder->osd->startup_delay_ticks)
           v->imp_encoder->osd->startup_delay_ticks--;
         else
