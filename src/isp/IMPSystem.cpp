@@ -199,6 +199,34 @@ void resolve_stream_geometry(const char *stream_name, _stream &stream,
 #endif
 }
 
+// The substream keeps a fixed width and derives its height from the source
+// aspect ratio. H.264 encodes in 16-pixel macroblocks, so an unaligned height
+// is padded and the padding hidden with a frame crop; clients that ignore the
+// crop render the padding as a strip at the bottom of the frame. Keeping the
+// derived height on a macroblock boundary avoids the crop entirely.
+constexpr int kSubstreamDefaultWidth = 768;
+constexpr int kEncoderHeightAlign = 16;
+
+void apply_substream_defaults(_stream &sub, const _stream &source) {
+  const int src_w = source.width > 0 ? source.width : cfg->sensor.width;
+  const int src_h = source.height > 0 ? source.height : cfg->sensor.height;
+
+  if (sub.width <= 0) {
+    sub.width = (src_w > 0 && kSubstreamDefaultWidth > src_w)
+                    ? src_w
+                    : kSubstreamDefaultWidth;
+  }
+
+  if (sub.height <= 0 && src_w > 0 && src_h > 0) {
+    long h = std::lround(static_cast<double>(sub.width) * src_h / src_w);
+    h = ((h + kEncoderHeightAlign / 2) / kEncoderHeightAlign) *
+        kEncoderHeightAlign;
+    if (h < kEncoderHeightAlign)
+      h = kEncoderHeightAlign;
+    sub.height = static_cast<int>(h);
+  }
+}
+
 // Single source of truth for stream dimensions: each stream falls back
 // to its per-stream default when unset, clamped to the sensor. Runs after
 // the sensor geometry is known (IMPSystem::init), before the encoders are
@@ -211,6 +239,10 @@ void resolve_all_stream_geometry() {
   // H.264 source streams default to the sensor geometry when unset; an
   // explicit value in prudynt.json wins, clamped to the sensor.
   resolve_stream_geometry("stream0", cfg->stream0, 0, 0);
+
+  // Substream: 768 wide by default, height from the source aspect ratio and
+  // rounded to a macroblock boundary so the encoder needs no frame crop.
+  apply_substream_defaults(cfg->stream1, cfg->stream0);
   resolve_stream_geometry("stream1", cfg->stream1, 0, 0);
 
   // JPEG streams encode an existing source channel, so when unset they
@@ -247,7 +279,7 @@ static void apply_default_bitrate(const char *stream_name, _stream &stream,
 
   int kbps = 0;
   if (stream.width > 0 && stream.height > 0 && stream.fps > 0) {
-    const double bppf = cfg ? cfg->general.bitrate_auto_bppf : 0.067;
+    const double bppf = cfg ? cfg->general.bitrate_auto_bppf : 0.134;
     const double raw = bppf * scale * static_cast<double>(stream.width) *
                        stream.height * stream.fps / 1000.0;
     kbps = static_cast<int>(std::lround(raw / 100.0)) * 100;
