@@ -9,7 +9,7 @@
 #include "isp/imp_hal.hpp"
 #include "libwebsockets.h"
 #include <arpa/inet.h>
-#include <faac.h>
+#include "audio/codec/faac_compat.hpp"
 #include <filesystem>
 #include <fstream>
 #include <imp/imp_audio.h>
@@ -1773,7 +1773,7 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
         strcmp(cfg->audio.input_format, "AAC") == 0) {
       // Try to retrieve FAAC config by creating a temporary faac encoder
       faac_params fparams;
-      if (faac_params_init(&fparams) == FAAC_OK) {
+      if (faac_params_init_compat(&fparams) == FAAC_OK) {
         fparams.sample_rate  = cfg->audio.mic_sample_rate();
         fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
         fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;
@@ -1816,7 +1816,7 @@ static void send_mp4_init(lws_sorted_usec_list_t *sul) {
         strcmp(cfg->audio.input_format, "AAC") == 0) {
       // Try to retrieve FAAC config by creating a temporary faac encoder
       faac_params fparams;
-      if (faac_params_init(&fparams) == FAAC_OK) {
+      if (faac_params_init_compat(&fparams) == FAAC_OK) {
         fparams.sample_rate  = cfg->audio.mic_sample_rate();
         fparams.num_channels = cfg->audio.force_stereo ? 2 : 1;
         fparams.bit_rate     = cfg->audio.mic_bitrate_kbps() * 1000;

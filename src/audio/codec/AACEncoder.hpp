@@ -4,7 +4,7 @@
 #include "audio/IMPAudio.hpp"
 
 #if defined(USE_AAC) && USE_AAC
-#include <faac.h>
+#include "audio/codec/faac_compat.hpp"
 #include <cstdint>
 #include <cstring>
 #include <memory>

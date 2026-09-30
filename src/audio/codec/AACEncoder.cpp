@@ -20,7 +20,7 @@ AACEncoder::~AACEncoder() {
 
 int AACEncoder::open() {
   faac_params params;
-  faac_status st = faac_params_init(&params);
+  faac_status st = faac_params_init_compat(&params);
   if (st != FAAC_OK) {
     LOG_ERROR("faac_params_init failed: " << faac_strerror(st));
     return -1;
