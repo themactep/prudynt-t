@@ -534,21 +534,32 @@ int IPCServer::handle_client(int fd) {
     int q = -1;
     // very small parser
     auto find_kv = [&](const char *key) -> int {
-      size_t pos = req.find(key);
-      if (pos == std::string::npos)
-        return -999999;
-      pos += std::strlen(key);
-      while (pos < req.size() && (req[pos] == ' ' || req[pos] == '='))
-        pos++;
-      size_t start = pos;
-      while (pos < req.size() && isdigit(static_cast<unsigned char>(req[pos])))
-        pos++;
-      if (start == pos)
-        return -999999;
-      int val = 0;
-      for (size_t k = start; k < pos; ++k)
-        val = val * 10 + (req[k] - '0');
-      return val;
+      // Walk occurrences so a match is only accepted when the key starts at
+      // the beginning of a space-separated token and is followed by '='.
+      // A plain substring search would let "ch=" satisfy a lookup for "h"
+      // (and even feed it its own value), silently corrupting other keys.
+      const size_t klen = std::strlen(key);
+      size_t p = 0;
+      while ((p = req.find(key, p)) != std::string::npos) {
+        bool tok_start = (p == 0) || req[p - 1] == ' ';
+        size_t eq = p + klen;
+        if (tok_start && eq < req.size() && req[eq] == '=') {
+          size_t v0 = eq + 1;
+          size_t v1 = v0;
+          while (v1 < req.size() &&
+                 isdigit(static_cast<unsigned char>(req[v1])))
+            v1++;
+          if (v1 > v0) {
+            int val = 0;
+            for (size_t k = v0; k < v1; ++k)
+              val = val * 10 + (req[k] - '0');
+            return val;
+          }
+          return -999999; // key present but value empty ("h=")
+        }
+        p += klen;
+      }
+      return -999999;
     };
     int v;
     v = find_kv("ch");
@@ -608,21 +619,33 @@ int IPCServer::handle_client(int fd) {
     int ch = 0, w = -1, h = -1, fps = -1, q = -1;
     std::string boundary = "prudyntmjpegboundary";
     auto find_kv = [&](const char *key) -> int {
-      size_t pos = req.find(key);
-      if (pos == std::string::npos)
-        return -999999;
-      pos += std::strlen(key);
-      while (pos < req.size() && (req[pos] == ' ' || req[pos] == '='))
-        pos++;
-      size_t start = pos;
-      while (pos < req.size() && isdigit(static_cast<unsigned char>(req[pos])))
-        pos++;
-      if (start == pos)
-        return -999999;
-      int val = 0;
-      for (size_t k = start; k < pos; ++k)
-        val = val * 10 + (req[k] - '0');
-      return val;
+      // Delimiter-aware lookup: same rationale as in the SNAPSHOT handler
+      // above. A plain substring search lets "ch=" satisfy a lookup for "h"
+      // (and even feed it its own value), which is how a plain
+      // "MJPEG ch=1" request from the stock WebUI pages resized the JPEG
+      // encoder to 1x1 (clamped to 16x16) on every viewer connection.
+      const size_t klen = std::strlen(key);
+      size_t p = 0;
+      while ((p = req.find(key, p)) != std::string::npos) {
+        bool tok_start = (p == 0) || req[p - 1] == ' ';
+        size_t eq = p + klen;
+        if (tok_start && eq < req.size() && req[eq] == '=') {
+          size_t v0 = eq + 1;
+          size_t v1 = v0;
+          while (v1 < req.size() &&
+                 isdigit(static_cast<unsigned char>(req[v1])))
+            v1++;
+          if (v1 > v0) {
+            int val = 0;
+            for (size_t k = v0; k < v1; ++k)
+              val = val * 10 + (req[k] - '0');
+            return val;
+          }
+          return -999999; // key present but value empty ("h=")
+        }
+        p += klen;
+      }
+      return -999999;
     };
     auto find_str = [&](const char *key) -> std::string {
       size_t pos = req.find(key);
