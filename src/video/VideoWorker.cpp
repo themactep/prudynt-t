@@ -469,6 +469,12 @@ void VideoWorker::run() {
       }
     }
     run_for_jpeg = (jpeg_wants_frames && global_video[encChn]->run_for_jpeg);
+    // Hardware IVS binds to the framesource of the channel it monitors. The
+    // idle pause below disables that framesource, which starves the detector
+    // and makes IMP_IVS_PollingResult time out forever, so keep the monitored
+    // channel live the same way a JPEG tap does.
+    bool ivs_monitors_channel =
+        cfg->motion.enabled && cfg->motion.monitor_stream == encChn;
     bool bootstrap_requested = global_video[encChn]->bootstrap_requested.load(
         std::memory_order_relaxed);
     bool video_clients_active =
@@ -502,7 +508,7 @@ void VideoWorker::run() {
     bool prebuffer_active = false;
 #endif
     if (video_clients_active || run_for_jpeg || bootstrap_requested ||
-        global_force_video_active || prebuffer_active) {
+        global_force_video_active || prebuffer_active || ivs_monitors_channel) {
       int current_stream_fps = (video_state && video_state->stream)
                                    ? video_state->stream->fps
                                    : last_mp4_fps;
