@@ -341,7 +341,10 @@ void serve_fmp4(int cfd, int vch) {
   auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
   taps.vid = register_video_tap(vch, q).id;
   std::shared_ptr<MsgChannel<AudioFrame>> aq;
-  if (have_audio && global_audio[0]) {
+  // The audio_stream object exists even when AudioWorker's IMPAudio/encoder
+  // init failed (imp_audio stays null and no frames are ever produced), so
+  // require a live encoder before attaching an audio tap.
+  if (have_audio && global_audio[0] && global_audio[0]->imp_audio) {
     aq = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3);
     taps.aud = register_audio_tap(0, aq).id;
     taps.with_audio = true;
