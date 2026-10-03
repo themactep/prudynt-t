@@ -87,7 +87,10 @@ void Motion::detect() {
 
     ret = IMP_IVS_PollingResult(ivsChn, cfg->motion.ivs_polling_timeout_ms);
     if (ret < 0) {
-      LOG_WARN("IMP_IVS_PollingResult error: " << ret);
+      // No IVS result within the timeout. Expected when the result interval
+      // (fps / skip_frame_count) exceeds ivs_polling_timeout; logging at warn
+      // floods syslog and evicts useful history, so keep it at debug.
+      LOG_DEBUG("IMP_IVS_PollingResult timeout: " << ret);
       continue;
     }
 
