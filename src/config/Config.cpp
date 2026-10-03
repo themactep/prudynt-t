@@ -85,9 +85,12 @@ void apply_motion_sensor_defaults(CFG &config) {
 
   auto adjust_frame_dim = [&](const char *field, int sensor_max, int &value) {
     int original = value;
-    if (value == IVS_AUTO_VALUE || value <= 0) {
-      value = sensor_max;
-    } else if (value > sensor_max) {
+    if (value <= 0) {
+      // Leave the frame size to Motion::init, which reads it from the
+      // monitored encoder channel. A substream is not sensor-sized, so the
+      // sensor geometry is not a valid substitute.
+      value = IVS_AUTO_VALUE;
+    } else if (value != IVS_AUTO_VALUE && value > sensor_max) {
       value = sensor_max;
     }
     log_dimension_adjustment("motion", field, original, value);
@@ -108,9 +111,11 @@ void apply_motion_sensor_defaults(CFG &config) {
     int original = value;
 
     if (is_end_coord) {
-      if (value == IVS_AUTO_VALUE || value <= 0) {
-        value = max_coord;
-      } else {
+      if (value <= 0) {
+        // Resolved at runtime with frame_width/frame_height; see
+        // adjust_frame_dim above.
+        value = IVS_AUTO_VALUE;
+      } else if (value != IVS_AUTO_VALUE) {
         value = std::clamp(value, 0, max_coord);
       }
     } else {

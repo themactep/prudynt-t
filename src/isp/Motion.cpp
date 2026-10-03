@@ -230,22 +230,35 @@ int Motion::init() {
   ret = IMP_IVS_CreateGroup(0);
   LOG_DEBUG_OR_ERROR_AND_EXIT(ret, "IMP_IVS_CreateGroup(0)");
 
-  // automatically set frame size / height
+  // Resolve the frame geometry from the monitored encoder channel. The
+  // monitored framesource runs at that stream's resolution, which is not
+  // necessarily the sensor's, so auto values must not fall back to the sensor.
+  auto needs_geometry = [](int v) { return v == IVS_AUTO_VALUE || v <= 0; };
   ret = IMP_Encoder_GetChnAttr(cfg->motion.monitor_stream, &channelAttributes);
-  if (ret == 0) {
-    if (cfg->motion.frame_width == IVS_AUTO_VALUE) {
+  if (ret != 0) {
+    LOG_ERROR("IMP_Encoder_GetChnAttr(" << cfg->motion.monitor_stream
+                                        << ") failed ret=" << ret);
+    if (needs_geometry(cfg->motion.frame_width) ||
+        needs_geometry(cfg->motion.frame_height) ||
+        needs_geometry(cfg->motion.roi_1_x) ||
+        needs_geometry(cfg->motion.roi_1_y)) {
+      LOG_ERROR("Motion frame geometry unresolved; refusing to start.");
+      return -1;
+    }
+  } else {
+    if (needs_geometry(cfg->motion.frame_width)) {
       cfg->set<int>(getConfigPath("frame_width"),
                     HAL_ENC_ATTR_WIDTH(channelAttributes), true);
     }
-    if (cfg->motion.frame_height == IVS_AUTO_VALUE) {
+    if (needs_geometry(cfg->motion.frame_height)) {
       cfg->set<int>(getConfigPath("frame_height"),
                     HAL_ENC_ATTR_HEIGHT(channelAttributes), true);
     }
-    if (cfg->motion.roi_1_x == IVS_AUTO_VALUE) {
+    if (needs_geometry(cfg->motion.roi_1_x)) {
       cfg->set<int>(getConfigPath("roi_1_x"),
                     HAL_ENC_ATTR_WIDTH(channelAttributes) - 1, true);
     }
-    if (cfg->motion.roi_1_y == IVS_AUTO_VALUE) {
+    if (needs_geometry(cfg->motion.roi_1_y)) {
       cfg->set<int>(getConfigPath("roi_1_y"),
                     HAL_ENC_ATTR_HEIGHT(channelAttributes) - 1, true);
     }
