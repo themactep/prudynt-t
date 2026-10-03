@@ -503,6 +503,37 @@ static bool starts_with(const std::string &s, const char *pfx) {
   return s.rfind(pfx, 0) == 0; // prefix match
 }
 
+// Read the integer from a whitespace-separated "key=value" token. Matching is
+// whole-token, so a substring key ("ch") can never satisfy another key ("h").
+// Returns -999999 when the key is absent or its value is not a number.
+static int parse_cmd_int(const std::string &cmd, const char *key) {
+  const size_t key_len = std::strlen(key);
+  size_t pos = 0;
+  while (pos < cmd.size()) {
+    while (pos < cmd.size() &&
+           std::isspace(static_cast<unsigned char>(cmd[pos])))
+      pos++;
+    const size_t tok = pos;
+    while (pos < cmd.size() &&
+           !std::isspace(static_cast<unsigned char>(cmd[pos])))
+      pos++;
+    if (pos - tok > key_len && cmd.compare(tok, key_len, key) == 0 &&
+        cmd[tok + key_len] == '=') {
+      const size_t v0 = tok + key_len + 1;
+      size_t v1 = v0;
+      while (v1 < pos && std::isdigit(static_cast<unsigned char>(cmd[v1])))
+        v1++;
+      if (v1 == v0)
+        return -999999;
+      int val = 0;
+      for (size_t k = v0; k < v1; ++k)
+        val = val * 10 + (cmd[k] - '0');
+      return val;
+    }
+  }
+  return -999999;
+}
+
 int IPCServer::handle_client(int fd) {
   // Read all into buffer until EOF
   std::string req;
@@ -532,29 +563,11 @@ int IPCServer::handle_client(int fd) {
     // parse ch and q (optional)
     int ch = 0;
     int q = -1;
-    // very small parser
-    auto find_kv = [&](const char *key) -> int {
-      size_t pos = req.find(key);
-      if (pos == std::string::npos)
-        return -999999;
-      pos += std::strlen(key);
-      while (pos < req.size() && (req[pos] == ' ' || req[pos] == '='))
-        pos++;
-      size_t start = pos;
-      while (pos < req.size() && isdigit(static_cast<unsigned char>(req[pos])))
-        pos++;
-      if (start == pos)
-        return -999999;
-      int val = 0;
-      for (size_t k = start; k < pos; ++k)
-        val = val * 10 + (req[k] - '0');
-      return val;
-    };
     int v;
-    v = find_kv("ch");
+    v = parse_cmd_int(req, "ch");
     if (v != -999999)
       ch = v;
-    v = find_kv("q");
+    v = parse_cmd_int(req, "q");
     if (v != -999999)
       q = v;
 
@@ -607,23 +620,6 @@ int IPCServer::handle_client(int fd) {
     // Parse: MJPEG ch=<0|1> w=<W> h=<H> f=<FPS> q=<Q> boundary=<str>
     int ch = 0, w = -1, h = -1, fps = -1, q = -1;
     std::string boundary = "prudyntmjpegboundary";
-    auto find_kv = [&](const char *key) -> int {
-      size_t pos = req.find(key);
-      if (pos == std::string::npos)
-        return -999999;
-      pos += std::strlen(key);
-      while (pos < req.size() && (req[pos] == ' ' || req[pos] == '='))
-        pos++;
-      size_t start = pos;
-      while (pos < req.size() && isdigit(static_cast<unsigned char>(req[pos])))
-        pos++;
-      if (start == pos)
-        return -999999;
-      int val = 0;
-      for (size_t k = start; k < pos; ++k)
-        val = val * 10 + (req[k] - '0');
-      return val;
-    };
     auto find_str = [&](const char *key) -> std::string {
       size_t pos = req.find(key);
       if (pos == std::string::npos)
@@ -637,19 +633,19 @@ int IPCServer::handle_client(int fd) {
       return req.substr(start, pos - start);
     };
     int v;
-    v = find_kv("ch");
+    v = parse_cmd_int(req, "ch");
     if (v != -999999)
       ch = v;
-    v = find_kv("w");
+    v = parse_cmd_int(req, "w");
     if (v != -999999)
       w = v;
-    v = find_kv("h");
+    v = parse_cmd_int(req, "h");
     if (v != -999999)
       h = v;
-    v = find_kv("f");
+    v = parse_cmd_int(req, "f");
     if (v != -999999)
       fps = v;
-    v = find_kv("q");
+    v = parse_cmd_int(req, "q");
     if (v != -999999)
       q = v;
     std::string b = find_str("boundary");
