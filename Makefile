@@ -298,8 +298,8 @@ else ifneq (,$(findstring -DPLATFORM_T31,$(CFLAGS)))
     LIBIMP_DEFAULT_SDK_VERSION := 1.1.6
 else ifneq (,$(findstring -DPLATFORM_T40,$(CFLAGS)))
     LIBIMP_PLATFORM        := T40
-    LIBIMP_LANG            := zh
-    LIBIMP_DEFAULT_SDK_VERSION := 1.2.0
+    LIBIMP_LANG            := en
+    LIBIMP_DEFAULT_SDK_VERSION := 1.3.1
 else ifneq (,$(findstring -DPLATFORM_T41,$(CFLAGS)))
     LIBIMP_PLATFORM        := T41
     LIBIMP_LANG            := zh
