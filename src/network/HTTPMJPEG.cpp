@@ -394,7 +394,11 @@ void serve_fmp4(int cfd, int vch) {
   params.height = vs->stream->height;
   params.fps = vs->stream->fps;
   params.avcC = build_avcC(sps, pps);
-  if (have_audio) {
+  // Only advertise the audio track when the audio tap is actually registered.
+  // If the AAC encoder is unavailable (global_audio[0] is null), no audio
+  // frames will ever be muxed, and a phantom audio track makes browsers drop
+  // the whole muxed fragment stream (frozen fMP4 preview).
+  if (taps.with_audio) {
     params.aacConfig = aac_config;
     params.sampleRate = audio_sample_rate;
     params.channels = audio_channels;
