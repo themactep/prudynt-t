@@ -17,7 +17,7 @@ interleaved or UDP transport.
 │ video_stream tap list                        │
 │   ├─ MsgChannel ─▶ RtspServer session A      │
 │   ├─ MsgChannel ─▶ RtspServer session B      │
-│   └─ MsgChannel ─▶ HTTP MJPEG / WS fMP4      │
+│   └─ MsgChannel ─▶ HTTP MJPEG / HTTP fMP4    │
 └─────────────────────────────────────────────┘
 ```
 
