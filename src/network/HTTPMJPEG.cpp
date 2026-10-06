@@ -2,6 +2,7 @@
 
 #include "config/Config.hpp"
 #include "video/BlackFrame.hpp"
+#include "video/H265CodecConfig.hpp"
 #include "video/JPEGWorker.hpp"
 #include "config/JsonAPI.hpp"
 #include "util/Logger.hpp"
@@ -292,9 +293,10 @@ void release_stream_client(int vch, bool with_audio) {
     audio_consumer_remove();
 }
 
-// Stream an already-encoded H.264 channel as live fragmented MP4 (fMP4) over
-// chunked HTTP. Reuses the existing encode via a video tap, so no new encode
-// and no extra libraries are needed; playable in-browser via MediaSource.
+// Stream an already-encoded H.264 or H.265 channel as live fragmented MP4
+// (fMP4) over chunked HTTP. Reuses the existing encode via a video tap, so no
+// new encode and no extra libraries are needed; playable in-browser via
+// MediaSource where the browser can decode the codec.
 void serve_fmp4(int cfd, int vch) {
   if (vch < 0 || vch >= NUM_VIDEO_CHANNELS || !global_video[vch]) {
     const char *resp = "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n"
@@ -303,6 +305,8 @@ void serve_fmp4(int cfd, int vch) {
     return;
   }
   auto vs = global_video[vch];
+  const bool stream_is_h265 =
+      vs->stream->format && std::strcmp(vs->stream->format, "H265") == 0;
 
   // RAII cleanup for the per-client taps, the muxer and the worker claim.
   struct TapGuard {
@@ -358,17 +362,24 @@ void serve_fmp4(int cfd, int vch) {
   // Ask for a keyframe so SPS/PPS + IDR arrive now.
   IMP_Encoder_RequestIDR(vch);
 
-  // Grab SPS/PPS from the latest codec config; wait briefly for the IDR if
-  // they are not available yet (e.g. the first frames after boot).
-  std::vector<uint8_t> sps, pps;
+  // Grab the parameter sets from the latest codec config; wait briefly for the
+  // IDR if they are not available yet (e.g. the first frames after boot). HEVC
+  // also needs the VPS, since it goes into the hvcC decoder config.
+  std::vector<uint8_t> vps, sps, pps;
   bool have_codec = false;
   for (int i = 0; i < 200; ++i) {
     {
       std::lock_guard<std::mutex> lk(vs->codec_config_mutex);
+      vps = vs->latest_vps;
       sps = vs->latest_sps;
       pps = vs->latest_pps;
     }
-    if (sps.size() >= 4 && !pps.empty()) {
+    if (stream_is_h265) {
+      if (!vps.empty() && !sps.empty() && !pps.empty()) {
+        have_codec = true;
+        break;
+      }
+    } else if (sps.size() >= 4 && !pps.empty()) {
       have_codec = true;
       break;
     }
@@ -396,7 +407,18 @@ void serve_fmp4(int cfd, int vch) {
   params.width = vs->stream->width;
   params.height = vs->stream->height;
   params.fps = vs->stream->fps;
-  params.avcC = build_avcC(sps, pps);
+  if (stream_is_h265) {
+    params.is_hevc = true;
+    if (!buildHvcC(vps, sps, pps, params.hvcC)) {
+      const char *resp =
+          "HTTP/1.0 503 Service Unavailable\r\nContent-Type: text/plain\r\n"
+          "Connection: close\r\n\r\ncodec config unavailable\n";
+      (void)write_full(cfd, resp, strlen(resp));
+      return;
+    }
+  } else {
+    params.avcC = build_avcC(sps, pps);
+  }
   // Only advertise the audio track when the audio tap is actually registered.
   // If the AAC encoder is unavailable (global_audio[0] is null), no audio
   // frames will ever be muxed, and a phantom audio track makes browsers drop
@@ -471,15 +493,33 @@ void serve_fmp4(int cfd, int vch) {
       did_work = true;
       if (unit.empty())
         continue;
-      uint8_t nalType = unit.bytes()[0] & 0x1F;
-      // SPS/PPS already live in the avcC init segment; keep them out-of-band.
-      if (nalType == 7 || nalType == 8) {
-        q->release(unit);
-        continue;
-      }
 
-      bool isVCL = (nalType == 1 || nalType == 5);
-      bool isKey = (nalType == 5);
+      bool isVCL;
+      bool isKey;
+      if (stream_is_h265) {
+        if (unit.size() < 2) {
+          q->release(unit);
+          continue;
+        }
+        uint8_t nalType = (unit.bytes()[0] >> 1) & 0x3F;
+        // VPS/SPS/PPS already live in the hvcC init segment; keep them
+        // out-of-band.
+        if (nalType == 32 || nalType == 33 || nalType == 34) {
+          q->release(unit);
+          continue;
+        }
+        isVCL = (nalType <= 31);
+        isKey = (nalType >= 16 && nalType <= 21);
+      } else {
+        uint8_t nalType = unit.bytes()[0] & 0x1F;
+        // SPS/PPS already live in the avcC init segment; keep them out-of-band.
+        if (nalType == 7 || nalType == 8) {
+          q->release(unit);
+          continue;
+        }
+        isVCL = (nalType == 1 || nalType == 5);
+        isKey = (nalType == 5);
+      }
 
 
       // AVCC sample: 4-byte big-endian length prefix + raw NAL.
