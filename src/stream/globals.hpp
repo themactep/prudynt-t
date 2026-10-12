@@ -249,7 +249,10 @@ struct video_stream {
   video_stream(int encChn, _stream *stream, const char *name)
       : encChn(encChn), stream(stream), name(name), running(false), idr(false),
         idr_fix(0), imp_encoder(nullptr), imp_framesource(nullptr),
-        nalu_pool(std::make_shared<NaluPool>(32)),
+        // 1 MiB per channel: the working set is now bounded by the per-client
+        // tap byte caps, and every pooled byte is pinned for the life of the
+        // process (the 4 MiB default meant up to 8 MiB on two channels).
+        nalu_pool(std::make_shared<NaluPool>(32, 1024 * 1024)),
         onDataCallback(nullptr), run_for_jpeg{false}, hasDataCallback{false},
         mp4_waiting_for_idr{false}, mp4_required_idr_ts_us{-1},
         mp4_last_idr_ts_us{-1}, mp4_last_idr_request_ms{0},

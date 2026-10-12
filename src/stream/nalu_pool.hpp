@@ -7,6 +7,20 @@
 #include <mutex>
 #include <vector>
 
+#if defined(__UCLIBC__) || defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
+// Hand freed heap memory back to the kernel after a streaming client left.
+// uClibc-ng malloc-standard (dlmalloc 2.7) only trims automatically when the
+// top chunk exceeds M_TRIM_THRESHOLD, so after a burst the RSS stays at its
+// high-water mark; an explicit trim at disconnect time is cheap and bounded.
+inline void release_free_heap() {
+#if defined(__UCLIBC__) || defined(__GLIBC__)
+  malloc_trim(0);
+#endif
+}
+
 // NALU buffer pool --- avoids per-NAL heap allocations in the hot video path.
 // Buffers are reused across frames: borrow() returns an empty vector with
 // pre-allocated capacity, returnBuf() puts it back for the next borrow().
