@@ -38,6 +38,29 @@ The firmware now ships four fixed-point decoder families for FIFO playback:
 
 Each decoder installs its shared object into `/usr/lib` and exposes headers in staging, so prudynt links dynamically without adding extra runtime daemons. If a format is unavailable it can be toggled off in Buildroot by deselecting the corresponding `BR2_PACKAGE_LIBHELIX_*`, `BR2_PACKAGE_LIBFLAC`, or `BR2_PACKAGE_OPUS` option.
 
+T23 G.711 Backchannel
+--------------------
+
+On T23, RTSP backchannel PCMU and PCMA payloads are expanded to signed 16-bit
+PCM in software before the existing resampling and speaker output stages.
+This avoids using the IMP ADEC channel for these formats during playback.
+Repeated G.711 sessions with video active triggered SIGSEGV on Sonoff CAM-PT2
+T23N hardware when using the IMP decoder path.
+
+AAC and Opus decoding, codec advertisement and other platforms are unchanged.
+A client must negotiate PCMU or PCMA to use this workaround. For clients that
+prefer the first supported codec, the existing `audio.backchannel_codec_order`
+setting can put `["PCMU", "PCMA"]` first. Other compiled-in formats remain
+advertised, so confirm which codec the client actually sends. This is an optional
+workaround setting, not a new default. Microphone capture is a separate path.
+
+The hardware-independent decoder check covers all 256 codewords of each format:
+
+```
+c++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_g711.cpp -o /tmp/test_g711
+/tmp/test_g711
+```
+
 Microphone Tap
 ---------------
 
