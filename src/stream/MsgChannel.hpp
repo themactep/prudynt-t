@@ -89,6 +89,9 @@ public:
       write_cv.notify_all();
       return true;
     }
+    // Readers that care about stream continuity (fMP4 muxing) poll this to
+    // notice that frames were discarded underneath them.
+    evicted_writes.fetch_add(1, std::memory_order_relaxed);
     // Evict oldest complete frame if markers exist; otherwise drop the oldest
     // element.  A byte bound stops before the newest frame goes away, so a
     // single frame larger than the budget is still delivered.
@@ -200,6 +203,12 @@ public:
     return buffer_size;
   }
 
+  // Number of writes that had to evict older elements.  Monotonic; a reader
+  // compares it with the value it saw last to detect a gap.
+  uint64_t evictions() const {
+    return evicted_writes.load(std::memory_order_relaxed);
+  }
+
 private:
   bool can_read() {
     return !msg_buffer.empty();
@@ -245,6 +254,7 @@ private:
   unsigned int buffer_size;
   size_t max_bytes{0};
   size_t queued_bytes{0};
+  std::atomic<uint64_t> evicted_writes{0};
 };
 
 #endif

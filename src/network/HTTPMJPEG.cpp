@@ -37,6 +37,14 @@ using namespace std::chrono;
 
 namespace {
 
+// Per-client fMP4 tap bounds.  Without a byte bound the tap holds up to
+// MSG_CHANNEL_SIZE*2 NALs (~30-40 s of video) for a client that reads slower
+// than the encoder produces, i.e. several MB per stalled/slow client.  The byte
+// bound evicts whole old frames (the newest frame is always kept, so a large
+// IDR still gets through); the reader then resyncs on the next IDR.
+constexpr size_t FMP4_VIDEO_TAP_MAX_BYTES = 512 * 1024;
+constexpr size_t FMP4_AUDIO_TAP_MAX_BYTES = 64 * 1024;
+
 std::string base64_decode(const std::string &encoded);
 
 bool is_privacy_active_for_jpeg(int ch) {
@@ -338,14 +346,16 @@ void serve_fmp4(int cfd, int vch) {
     have_audio = build_aac_asc(audio_sample_rate, audio_channels, aac_config);
 
   // Per-client tap queues; workers fan encoded NALs/audio frames into them.
-  auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2);
+  auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2,
+                                                     FMP4_VIDEO_TAP_MAX_BYTES);
   taps.vid = register_video_tap(vch, q).id;
   std::shared_ptr<MsgChannel<AudioFrame>> aq;
   // The audio_stream object exists even when AudioWorker's IMPAudio/encoder
   // init failed (imp_audio stays null and no frames are ever produced), so
   // require a live encoder before attaching an audio tap.
   if (have_audio && global_audio[0] && global_audio[0]->imp_audio) {
-    aq = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3);
+    aq = std::make_shared<MsgChannel<AudioFrame>>(MSG_CHANNEL_SIZE * 3,
+                                                  FMP4_AUDIO_TAP_MAX_BYTES);
     taps.aud = register_audio_tap(0, aq).id;
     taps.with_audio = true;
   }
@@ -463,12 +473,24 @@ void serve_fmp4(int cfd, int vch) {
 
   // Drain the tap queues, mux, and send video + audio fragments.
   std::vector<uint8_t> sample;
+  // When the tap evicted frames because this client fell behind, the next
+  // P-frames reference pictures the client never got: drop everything up to
+  // the next IDR instead of muxing a broken stream.
+  uint64_t seen_evictions = q->evictions();
+  bool need_idr = false;
+  int64_t last_idr_request_ms = 0;
   while (true) {
     bool did_work = false;
 
     H264NALUnit unit;
     while (q->read_move(&unit)) {
       did_work = true;
+      uint64_t ev = q->evictions();
+      if (ev != seen_evictions) {
+        seen_evictions = ev;
+        need_idr = true;
+        sample.clear();
+      }
       if (unit.empty())
         continue;
       uint8_t nalType = unit.bytes()[0] & 0x1F;
@@ -481,6 +503,20 @@ void serve_fmp4(int cfd, int vch) {
       bool isVCL = (nalType == 1 || nalType == 5);
       bool isKey = (nalType == 5);
 
+      if (need_idr && isVCL) {
+        if (!isKey) {
+          // Drop this P-frame (and any SEI gathered for it).  The unit's
+          // shared buffer goes back to the pool when it leaves scope.
+          sample.clear();
+          int64_t t = now_ms();
+          if (t - last_idr_request_ms > 1000) {
+            IMP_Encoder_RequestIDR(vch);
+            last_idr_request_ms = t;
+          }
+          continue;
+        }
+        need_idr = false;
+      }
 
       // AVCC sample: 4-byte big-endian length prefix + raw NAL.
       uint32_t nl = htonl(static_cast<uint32_t>(unit.size()));
