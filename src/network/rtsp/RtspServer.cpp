@@ -760,6 +760,7 @@ void RtspServer::closeClient(int idx) {
     s->sendQueueOff = 0;
     s->pendingRespLen = 0;
     s->pendingRespOff = 0;
+    release_free_heap();
 }
 
 void RtspServer::cleanupAllSessions() {

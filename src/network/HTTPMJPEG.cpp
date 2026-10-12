@@ -326,6 +326,9 @@ void serve_fmp4(int cfd, int vch) {
       // Must run after the taps are gone, so no further frames are fanned out
       // into a queue that is about to be destroyed.
       release_stream_client(vch, with_audio);
+      // The client's queues, muxer buffers and sample are gone by now (they
+      // are declared after this guard); return the freed heap to the kernel.
+      release_free_heap();
     }
   } taps{vch};
   std::unique_ptr<MP4Muxer, decltype(&DestroyMP4Muxer)> muxer(
