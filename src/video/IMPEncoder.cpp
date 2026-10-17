@@ -90,6 +90,11 @@ void IMPEncoder::initProfile() {
 
   int eff_width = stream->width;
   int eff_height = stream->height;
+#ifdef USE_ISP_ROTATION
+  if (stream->rotation != 0) {
+    std::swap(eff_width, eff_height);
+  }
+#endif
 
 #ifdef PLATFORM_NEW_SDK
   IMPEncoderRcMode rcMode = IMP_ENC_RC_MODE_CAPPED_QUALITY;
@@ -269,6 +274,13 @@ void IMPEncoder::initProfile() {
 
   chnAttr.encAttr.picWidth = eff_width;
   chnAttr.encAttr.picHeight = eff_height;
+#ifdef USE_ISP_ROTATION
+  if (stream->rotation != 0) {
+    LOG_DEBUG("Encoder dimensions swapped for rotation: "
+              << eff_width << "x" << eff_height << " (original: "
+              << stream->width << "x" << stream->height << ")");
+  }
+#endif
   chnAttr.rcAttr.outFrmRate.frmRateNum = stream->fps;
   chnAttr.rcAttr.outFrmRate.frmRateDen = 1;
   rcAttr->maxGop = stream->max_gop;
