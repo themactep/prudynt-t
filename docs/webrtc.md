@@ -77,7 +77,7 @@ prudynt already normalizes several Ingenic encoder quirks in
 |---|---|---|
 | SPS/PPS emitted with `nal_ref_idc=1` (`0x27`/`0x28`) | T31+ | rewritten to `3` (`0x67`/`0x68`) — go2rtc and browsers expect it |
 | SPS always declares `level_idc=51` (5.1) regardless of resolution | T31+ | rewritten to the minimum level that fits the real resolution/fps; prevents decoder buffer under-allocation ("Invalid level prefix", MB errors) above 1080p |
-| SPS VUI omits or defaults to limited-range luma (16-235) while the encoder feeds near-full-range pixels | T31+ | VUI rewritten to `video_full_range_flag=1` plus an explicit colour matrix (BT.709 for 720p+, BT.601 for SD); without it players clip shadows/highlights (see issue #1547) |
+| SPS VUI omits or defaults to limited-range luma (16-235) while the encoder feeds near-full-range pixels | T31+ | VUI rewritten to `video_full_range_flag=1` plus an explicit BT.709 colour description at every resolution (the pipeline is BT.709 throughout; substreams are downscales, not a re-matrix to BT.601); without it players clip shadows/highlights (see issue #1547) |
 | `pack.frameEnd` never set | T31 | last pack of the `GetStream` batch treated as frame end (RTP marker bit) |
 
 Known remaining platform differences (harmless so far, but relevant
