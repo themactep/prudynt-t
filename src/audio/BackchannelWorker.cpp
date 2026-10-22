@@ -1,6 +1,7 @@
 #include "audio/BackchannelWorker.hpp"
 
 #include "audio/AudioOutputWorker.hpp"
+#include "audio/G711.hpp"
 #include "audio/IMPBackchannel.hpp"
 #include "util/Logger.hpp"
 #include "util/WorkerUtils.hpp"
@@ -89,6 +90,22 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
     }
     pcm.resize(static_cast<size_t>(nsamples));
     outPcmBuffer = std::move(pcm);
+    return true;
+  }
+#endif
+
+#if defined(PLATFORM_T23)
+  // Avoid lazy IMP ADEC initialization during G.711 playback on T23: repeated
+  // backchannel sessions triggered SIGSEGV while video encoding was active.
+  // Keep the existing resampling and audio output path after PCM expansion.
+  if (format == IMPBackchannelFormat::PCMU ||
+      format == IMPBackchannelFormat::PCMA) {
+    outPcmBuffer.resize(payloadSize);
+    for (size_t i = 0; i < payloadSize; ++i) {
+      outPcmBuffer[i] = format == IMPBackchannelFormat::PCMU
+                            ? G711::decodeUlaw(payload[i])
+                            : G711::decodeAlaw(payload[i]);
+    }
     return true;
   }
 #endif
