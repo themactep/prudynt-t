@@ -322,8 +322,9 @@ int Motion::init() {
   move_param.roiRect[0].p1.y = cfg->motion.roi_1_y - 1;
   move_param.roiRectCnt = cfg->motion.roi_count;
 
-  // Exclude burn-in timestamp rectangle from motion detection.
-  // Split the ROI into up to 3 strips around the OSD text area.
+  // Exclude the burn-in timestamp rectangle from motion detection. Only the
+  // part inside the ROI matters, so clip the rectangle to the ROI and split
+  // that area into strips. Outside the ROI the configured bounds are kept.
   if (cfg->osd.burnin.enabled) {
     int bscale = cfg->osd.burnin.scale > 0
                      ? cfg->osd.burnin.scale
@@ -342,8 +343,13 @@ int Motion::init() {
 
     int r0x = cfg->motion.roi_0_x, r0y = cfg->motion.roi_0_y;
     int r1x = cfg->motion.roi_1_x, r1y = cfg->motion.roi_1_y;
+    int bx0 = burnin_x, by0 = burnin_y;
+    int bx1 = burnin_x + burnin_w, by1 = burnin_y + burnin_h;
 
-    // Build up to 3 ROIs around the burn-in rectangle.
+    // Clip the burn-in rectangle to the ROI.
+    int ix0 = std::max(r0x, bx0), iy0 = std::max(r0y, by0);
+    int ix1 = std::min(r1x, bx1), iy1 = std::min(r1y, by1);
+
     int cnt = 0;
     auto addRoi = [&](int x0, int y0, int x1, int y1) {
       if (cnt >= IMP_IVS_MOVE_MAX_ROI_CNT || x0 >= x1 || y0 >= y1) return;
@@ -353,17 +359,23 @@ int Motion::init() {
       move_param.roiRect[cnt].p1.y = y1 - 1;
       cnt++;
     };
-    // Left of text: full height.
-    addRoi(r0x, r0y, burnin_x, r1y);
-    // Right of text: full height.
-    addRoi(burnin_x + burnin_w, r0y, r1x, r1y);
-    // Below text, only its own width.
-    addRoi(burnin_x, burnin_y + burnin_h, burnin_x + burnin_w, r1y);
+    if (ix0 < ix1 && iy0 < iy1) {
+      // Up to four strips around the clipped rectangle.
+      addRoi(r0x, r0y, r1x, iy0); // above
+      addRoi(r0x, iy1, r1x, r1y); // below
+      addRoi(r0x, iy0, ix0, iy1); // left
+      addRoi(ix1, iy0, r1x, iy1); // right
+    }
     if (cnt > 0) {
       move_param.roiRectCnt = cnt;
       LOG_INFO("Motion: burn-in exclusion active ("
                << burnin_w << "x" << burnin_h << " at " << burnin_x << ","
                << burnin_y << "), " << cnt << " ROI strips");
+    } else if (ix0 < ix1 && iy0 < iy1) {
+      // The ROI lies inside the timestamp area; keep it rather than leaving
+      // the detector without a region.
+      LOG_INFO("Motion: burn-in exclusion covers the configured ROI, keeping "
+               "it");
     }
   }
 
