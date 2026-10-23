@@ -475,11 +475,15 @@ void serve_fmp4(int cfd, int vch) {
   // The encoder timestamps are monotonic since boot, so a client that
   // connects minutes later would see its media start hundreds of seconds
   // into the timeline. MSE does not auto-seek to it, so rebase to zero.
-  int64_t base_pts_ms = -1;
-  auto rebase_pts = [&](int64_t pts_ms) {
-    if (base_pts_ms < 0)
-      base_pts_ms = pts_ms;
-    int64_t r = pts_ms - base_pts_ms;
+  // Video and audio come from different clocks (encoder packs vs IMP audio
+  // frames), so each track needs its own base; sharing one shifts audio by
+  // the offset between the clocks and leaves the preview blank.
+  int64_t base_video_ms = -1;
+  int64_t base_audio_ms = -1;
+  auto rebase_pts = [](int64_t &base, int64_t pts_ms) {
+    if (base < 0)
+      base = pts_ms;
+    int64_t r = pts_ms - base;
     return r > 0 ? r : 0;
   };
 
@@ -532,8 +536,8 @@ void serve_fmp4(int cfd, int vch) {
         // Prefer the encoder's monotonic timestamp (us); wall-clock ms can
         // collide for two consecutive frames and yield duplicate DTS.
         int64_t pts_ms = unit.imp_ts > 0 ? unit.imp_ts / 1000 : now_ms();
-        auto frag =
-            muxer->muxVideo(sample.data(), sample.size(), rebase_pts(pts_ms), isKey);
+        auto frag = muxer->muxVideo(sample.data(), sample.size(),
+                                    rebase_pts(base_video_ms, pts_ms), isKey);
         sample.clear();
         // Hand the payload back so the next frame reuses it instead of
         // allocating afresh.
@@ -551,8 +555,8 @@ void serve_fmp4(int cfd, int vch) {
           continue;
         int64_t pts_ms = static_cast<int64_t>(af.time.tv_sec) * 1000 +
                          af.time.tv_usec / 1000;
-        auto frag =
-            muxer->muxAudio(af.data.data(), af.data.size(), rebase_pts(pts_ms));
+        auto frag = muxer->muxAudio(af.data.data(), af.data.size(),
+                                    rebase_pts(base_audio_ms, pts_ms));
         aq->release(af);
         if (!frag.empty() && !write_chunk(frag))
           return;
