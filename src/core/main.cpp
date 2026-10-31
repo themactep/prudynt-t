@@ -33,6 +33,9 @@
 #include <cstdio>
 #include <cstring>
 #include <elf.h>
+#if defined(__UCLIBC__) || defined(__GLIBC__)
+#include <malloc.h>
+#endif
 #include <fcntl.h>
 #include <filesystem>
 #include <signal.h>
@@ -356,6 +359,14 @@ static void start_got_watchdog() {
 }
 
 int main(int argc, const char *argv[]) {
+#if defined(__UCLIBC__) || defined(__GLIBC__)
+  // Serve large, short-lived buffers (IDR NALs, JPEG frame copies, fMP4
+  // fragments; typically 64-300 KiB) from mmap so they go straight back to
+  // the kernel when freed instead of fragmenting the brk heap, and trim the
+  // heap top earlier than the 256 KiB default.
+  mallopt(M_MMAP_THRESHOLD, 64 * 1024);
+  mallopt(M_TRIM_THRESHOLD, 64 * 1024);
+#endif
   if (Logger::init("INFO")) {
     LOG_ERROR("Logger initialization failed.");
     return 1;

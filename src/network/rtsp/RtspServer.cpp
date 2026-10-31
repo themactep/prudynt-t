@@ -47,6 +47,15 @@
 constexpr size_t SEND_QUEUE_HIGH_WATERMARK = 768 * 1024;
 constexpr size_t SEND_QUEUE_LOW_WATERMARK = SEND_QUEUE_HIGH_WATERMARK / 2;
 constexpr size_t SEND_QUEUE_HARD_CAP = 4 * 1024 * 1024;
+// std::vector::clear() keeps the capacity, and Session objects are pooled in
+// sessions_ and never destroyed, so a queue that once grew to the watermark
+// (+ one IDR, rounded up by vector growth to 1-2 MB) pinned that memory for
+// the life of the process.  Give it back once the queue is empty again.
+constexpr size_t SEND_QUEUE_KEEP_CAPACITY = 128 * 1024;
+
+static inline void releaseSendQueue(std::vector<uint8_t> &q) {
+    std::vector<uint8_t>().swap(q);
+}
 
 // Per-client tap bounds.  The element count is a coarse safety net; the byte
 // bound is what actually caps RSS, since one IDR can dwarf a frame count.  The
@@ -365,7 +374,10 @@ void RtspServer::eventLoop() {
                                  MSG_DONTWAIT | MSG_NOSIGNAL);
                 if (n > 0 && static_cast<size_t>(n) >=
                                  s->sendQueue.size() - s->sendQueueOff) {
-                    s->sendQueue.clear();
+                    if (s->sendQueue.capacity() > SEND_QUEUE_KEEP_CAPACITY)
+                        releaseSendQueue(s->sendQueue);
+                    else
+                        s->sendQueue.clear();
                     s->sendQueueOff = 0;
                 } else if (n > 0) {
                     s->sendQueueOff += n;
@@ -744,10 +756,11 @@ void RtspServer::closeClient(int idx) {
     s->hasSubtitles = false;
     s->sessionsIndex = -1;
     s->playing = false;
-    s->sendQueue.clear();
+    releaseSendQueue(s->sendQueue);
     s->sendQueueOff = 0;
     s->pendingRespLen = 0;
     s->pendingRespOff = 0;
+    release_free_heap();
 }
 
 void RtspServer::cleanupAllSessions() {
