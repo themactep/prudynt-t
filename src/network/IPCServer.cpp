@@ -583,20 +583,32 @@ int IPCServer::handle_client(int fd) {
         global_jpeg[ch]->reconfig = true;
       }
     }
-    // Signal demand to speed up capture and wake JPEG worker if idle
-    if (ch >= 0 && ch < NUM_VIDEO_CHANNELS && global_jpeg[ch]) {
+    // The worker pauses when idle and snapshot_buf keeps the last frame from
+    // the previous request. Remember the sequence before waking the worker and
+    // wait for a newer frame: a non-empty buffer alone does not mean it is
+    // current.
+    std::vector<unsigned char> img;
+    const bool have_jpeg =
+        (ch >= 0 && ch < NUM_VIDEO_CHANNELS && global_jpeg[ch]);
+    uint32_t seq = 0;
+    if (have_jpeg) {
+      seq = global_jpeg[ch]->frame_seq.load();
+      // Signal demand to speed up capture and wake the worker if idle.
       global_jpeg[ch]->request();
     }
 
-    // Try to get a fresh snapshot, waiting briefly if not yet available
-    std::vector<unsigned char> img;
-    const int max_wait_ms = 250;
+    const int max_wait_ms = 2000;
     int waited = 0;
-    while (!(get_snapshot_ch_local(ch, img) && !img.empty()) &&
+    while (have_jpeg && global_jpeg[ch]->frame_seq.load() == seq &&
            waited < max_wait_ms) {
       usleep(10 * 1000);
       waited += 10;
     }
+    if (have_jpeg && global_jpeg[ch]->frame_seq.load() == seq) {
+      LOG_WARN("SNAPSHOT ch=" << ch << ": no frame within " << max_wait_ms
+                              << " ms, using buffered frame");
+    }
+    get_snapshot_ch_local(ch, img);
     // Fallback: if requested channel isn't available, try ch0 to avoid
     // client hangs
     if (img.empty() && ch != 0) {
