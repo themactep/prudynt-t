@@ -309,6 +309,7 @@ bool ensure_writable_directory(const fs::path &dir, std::string &reason) {
 
 bool start_recording(const std::string &path, int target_channel);
 void stop_recording(int channel);
+void cancel_stop_timer(int channel);
 
 std::mutex stop_timer_mutex;
 std::array<std::thread, NUM_VIDEO_CHANNELS> stop_timer_threads;
@@ -508,6 +509,14 @@ bool start_recording(const std::string &path, int target_channel) {
     LOG_WARN("MP4ControlSocket: recorder already active on channel "
              << target_channel);
     return false;
+  }
+  if (recorder.hasAborted()) {
+    // The previous segment died on a write error. Release it before the next
+    // one starts: otherwise its auto-stop timer is still pending and would
+    // end the new segment early, and its slot in the active count is never
+    // given back.
+    cancel_stop_timer(target_channel);
+    stop_recording(target_channel);
   }
 
   auto disable_force_if_idle = []() {
@@ -713,8 +722,17 @@ void stop_recording(int channel) {
   }
 
   auto &recorder = global_mp4_recorders[channel];
-  if (!recorder.isActive()) {
+  // A segment that died on a write error (ENOSPC, a card pulled) is no longer
+  // active, but it was started: its state file, its slot in the active count
+  // and the force-video flag are still ours to release. Without this, the
+  // auto-stop timer and STOP both returned here, the .active file stayed, and
+  // a one-shot `record` waiting on that file never returned.
+  if (!recorder.isActive() && !recorder.hasAborted()) {
     return;
+  }
+  if (recorder.hasAborted()) {
+    LOG_WARN("MP4ControlSocket: segment on channel "
+             << channel << " had aborted on a write error; cleaning up");
   }
 
   recorder.stop();

@@ -23,6 +23,14 @@ public:
     return active_.load(std::memory_order_acquire);
   }
 
+  // True after a write failure ended the segment early (abortUnlocked), until
+  // stop() or the next start(). The recorder is no longer active then, but the
+  // caller still owns a started segment: its state file, its slot in the
+  // active-recorder count, its stop timer.
+  bool hasAborted() const {
+    return aborted_.load(std::memory_order_acquire);
+  }
+
   // Bumped on every start(). AudioWorker keeps its own per-channel clock and
   // resets it when this changes, because a looped segment restarts faster than
   // one audio frame and the inactive window is never observed.
@@ -39,4 +47,5 @@ private:
   std::atomic<uint64_t> generation_{0};
   int fd_ = -1;
   std::atomic<bool> active_{false};
+  std::atomic<bool> aborted_{false};
 };
