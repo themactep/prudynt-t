@@ -159,16 +159,20 @@ void MP4Recorder::closeUnlocked() {
     fd_ = -1;
   }
   active_.store(false, std::memory_order_release);
+  aborted_.store(false, std::memory_order_release);
 }
 
 /* Stop the segment after a write failure. The muxer is left for
  * stop()/closeUnlocked() to destroy, so the loop sees an inactive
  * recorder and starts a fresh segment instead of writing into a file
- * that already has a hole in it. */
+ * that already has a hole in it. aborted_ stays set until then so the
+ * control socket can still tell an aborted segment from one that was
+ * never started and clean up after it (state file, active count). */
 void MP4Recorder::abortUnlocked() {
   if (fd_ >= 0) {
     ::close(fd_);
     fd_ = -1;
   }
   active_.store(false, std::memory_order_release);
+  aborted_.store(true, std::memory_order_release);
 }
