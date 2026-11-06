@@ -2185,8 +2185,7 @@ void RtspServer::updateVideoTimestamp(Session &s, const H264NALUnit &nal,
 
         if (s.hasFrameRtpTs) {
             static const uint32_t kMaxVideoRtpStep = 45000;
-            int64_t diff = static_cast<int64_t>(new_ts) -
-                           static_cast<int64_t>(s.lastFrameRtpTs);
+            int64_t diff = static_cast<int32_t>(new_ts - s.lastFrameRtpTs);
             if (diff > kMaxVideoRtpStep)
                 new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
             else if (diff <= 0)
@@ -2480,7 +2479,7 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         // timestamp is clamped to a smooth increment from the last value.
         if (s.hasAudioRtpTs) {
             int32_t max_step = (sampleRate > 0) ? (sampleRate / 2) : 8000;
-            int64_t diff = static_cast<int64_t>(new_ts) - static_cast<int64_t>(s.audioRtp.timestamp);
+            int64_t diff = static_cast<int32_t>(new_ts - s.audioRtp.timestamp);
             if (diff > max_step) {
                 new_ts = s.audioRtp.timestamp + static_cast<uint32_t>(max_step);
             } else if (diff <= 0) {
