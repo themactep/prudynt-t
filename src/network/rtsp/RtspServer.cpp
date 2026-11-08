@@ -10,6 +10,7 @@
 #include "network/rtsp/SdpGenerator.hpp"
 #include "network/rtsp/RtspUtils.hpp"
 #include "util/Logger.hpp"
+#include "util/heap.hpp"
 #include "stream/globals.hpp"
 #include "audio/IMPBackchannel.hpp"
 

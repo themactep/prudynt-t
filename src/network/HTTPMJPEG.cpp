@@ -6,6 +6,7 @@
 #include "video/JPEGWorker.hpp"
 #include "config/JsonAPI.hpp"
 #include "util/Logger.hpp"
+#include "util/heap.hpp"
 #include "stream/globals.hpp"
 #include "recording/MP4MuxerFactory.hpp"
 
@@ -552,14 +553,15 @@ void serve_fmp4(int cfd, int vch) {
 
       if (need_idr && isVCL) {
         if (!isKey) {
-          // Drop this P-frame (and any SEI gathered for it).  The unit's
-          // shared buffer goes back to the pool when it leaves scope.
+          // Drop this P-frame (and any SEI gathered for it) and hand the
+          // buffer back now instead of on the next read.
           sample.clear();
           int64_t t = now_ms();
           if (t - last_idr_request_ms > 1000) {
             IMP_Encoder_RequestIDR(vch);
             last_idr_request_ms = t;
           }
+          q->release(unit);
           continue;
         }
         need_idr = false;
