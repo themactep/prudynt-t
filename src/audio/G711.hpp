@@ -1,6 +1,7 @@
 #ifndef G711_HPP
 #define G711_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace G711 {
@@ -31,6 +32,18 @@ inline int16_t decodeAlaw(uint8_t code) {
     break;
   }
   return static_cast<int16_t>((code & 0x80) ? magnitude : -magnitude);
+}
+
+// Expand a G.711 byte stream in order: one input byte yields one signed 16-bit
+// sample, and `out` must hold at least `count` samples.
+inline void decodeUlaw(const uint8_t *in, size_t count, int16_t *out) {
+  for (size_t i = 0; i < count; ++i)
+    out[i] = decodeUlaw(in[i]);
+}
+
+inline void decodeAlaw(const uint8_t *in, size_t count, int16_t *out) {
+  for (size_t i = 0; i < count; ++i)
+    out[i] = decodeAlaw(in[i]);
 }
 
 } // namespace G711

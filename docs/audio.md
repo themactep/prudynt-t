@@ -54,7 +54,9 @@ setting can put `["PCMU", "PCMA"]` first. Other compiled-in formats remain
 advertised, so confirm which codec the client actually sends. This is an optional
 workaround setting, not a new default. Microphone capture is a separate path.
 
-The hardware-independent decoder check covers all 256 codewords of each format:
+The hardware-independent decoder check covers all 256 codewords of each format
+and the buffer overloads. It runs as part of `tests/run_host_tests.sh`; compile
+it alone with:
 
 ```
 c++ -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_g711.cpp -o /tmp/test_g711

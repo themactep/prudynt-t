@@ -4,6 +4,7 @@
 
 #include "audio/G711.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 
@@ -39,6 +40,22 @@ int main() {
     }
   }
 
-  std::printf("PASS: %d G.711 codewords (256 PCMU, 256 PCMA)\n", checked);
+  // Buffer overloads: one input byte per output sample, order preserved.
+  constexpr uint8_t ulawBuf[4] = {0xff, 0x00, 0x7f, 0x80};
+  constexpr uint8_t alawBuf[4] = {0xd5, 0x55, 0xaa, 0x2a};
+  int16_t ulawOut[4] = {};
+  int16_t alawOut[4] = {};
+  G711::decodeUlaw(ulawBuf, 4, ulawOut);
+  G711::decodeAlaw(alawBuf, 4, alawOut);
+  for (size_t i = 0; i < 4; ++i) {
+    if (ulawOut[i] != G711::decodeUlaw(ulawBuf[i]) ||
+        alawOut[i] != G711::decodeAlaw(alawBuf[i])) {
+      std::fprintf(stderr, "G.711 buffer overload mismatch at %zu\n", i);
+      return 1;
+    }
+  }
+
+  std::printf("PASS: %d G.711 codewords + buffer overloads (256 PCMU, 256 PCMA)\n",
+              checked);
   return 0;
 }

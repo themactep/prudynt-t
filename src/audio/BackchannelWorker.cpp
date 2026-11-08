@@ -100,12 +100,13 @@ bool BackchannelWorker::decodeFrame(const uint8_t *payload, size_t payloadSize,
   // Keep the existing resampling and audio output path after PCM expansion.
   if (format == IMPBackchannelFormat::PCMU ||
       format == IMPBackchannelFormat::PCMA) {
+    // One RTP payload byte is one 8 kHz sample; the 1:1 expansion keeps the
+    // resampler's input rate correct.
     outPcmBuffer.resize(payloadSize);
-    for (size_t i = 0; i < payloadSize; ++i) {
-      outPcmBuffer[i] = format == IMPBackchannelFormat::PCMU
-                            ? G711::decodeUlaw(payload[i])
-                            : G711::decodeAlaw(payload[i]);
-    }
+    if (format == IMPBackchannelFormat::PCMU)
+      G711::decodeUlaw(payload, payloadSize, outPcmBuffer.data());
+    else
+      G711::decodeAlaw(payload, payloadSize, outPcmBuffer.data());
     return true;
   }
 #endif
