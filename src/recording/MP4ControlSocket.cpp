@@ -312,6 +312,10 @@ void stop_recording(int channel);
 void cancel_stop_timer(int channel);
 
 std::mutex stop_timer_mutex;
+// Serializes stop/cleanup accounting so concurrent callers (auto-stop timer,
+// explicit STOP, start_recording's abort cleanup) cannot release the same
+// segment twice and decrement the active count twice.
+std::mutex stop_recording_mutex;
 std::array<std::thread, NUM_VIDEO_CHANNELS> stop_timer_threads;
 std::array<std::atomic<bool>, NUM_VIDEO_CHANNELS> stop_timer_cancel;
 struct StopTimerInitializer {
@@ -721,6 +725,7 @@ void stop_recording(int channel) {
     return;
   }
 
+  std::lock_guard<std::mutex> stop_lock(stop_recording_mutex);
   auto &recorder = global_mp4_recorders[channel];
   // A segment that died on a write error (ENOSPC, a card pulled) is no longer
   // active, but it was started: its state file, its slot in the active count

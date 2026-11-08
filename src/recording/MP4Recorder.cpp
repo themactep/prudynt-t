@@ -158,8 +158,10 @@ void MP4Recorder::closeUnlocked() {
     ::close(fd_);
     fd_ = -1;
   }
-  active_.store(false, std::memory_order_release);
+  // Publish the terminal state before clearing active_ so a reader that sees
+  // the recorder inactive also sees the correct aborted flag.
   aborted_.store(false, std::memory_order_release);
+  active_.store(false, std::memory_order_release);
 }
 
 /* Stop the segment after a write failure. The muxer is left for
@@ -173,6 +175,8 @@ void MP4Recorder::abortUnlocked() {
     ::close(fd_);
     fd_ = -1;
   }
-  active_.store(false, std::memory_order_release);
+  // Publish aborted before clearing active_ (see closeUnlocked): a reader
+  // that observes an inactive recorder must also see the abort.
   aborted_.store(true, std::memory_order_release);
+  active_.store(false, std::memory_order_release);
 }
