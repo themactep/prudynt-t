@@ -83,6 +83,14 @@ static std::string randomHex(size_t bytes) {
     return out;
 }
 
+// Signed step between two 32-bit RTP timestamps.  The subtraction is unsigned
+// (modulo 2^32), so a step across the wrap stays small; the int32_t cast makes
+// it signed and the int64_t return keeps comparisons against unsigned limits
+// signed.  Do not widen the operands first: that turns a wrap into ~-2^32.
+static int64_t rtpTsDelta(uint32_t a, uint32_t b) {
+    return static_cast<int32_t>(a - b);
+}
+
 // Crash handler + Session moved to headers
 
 // Static helpers moved to RtspUtils.hpp
@@ -2185,7 +2193,7 @@ void RtspServer::updateVideoTimestamp(Session &s, const H264NALUnit &nal,
 
         if (s.hasFrameRtpTs) {
             static const uint32_t kMaxVideoRtpStep = 45000;
-            int64_t diff = static_cast<int32_t>(new_ts - s.lastFrameRtpTs);
+            int64_t diff = rtpTsDelta(new_ts, s.lastFrameRtpTs);
             if (diff > kMaxVideoRtpStep)
                 new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
             else if (diff <= 0)
@@ -2479,7 +2487,7 @@ bool RtspServer::sendAudioFrame(Session &s, const AudioFrame &af) {
         // timestamp is clamped to a smooth increment from the last value.
         if (s.hasAudioRtpTs) {
             int32_t max_step = (sampleRate > 0) ? (sampleRate / 2) : 8000;
-            int64_t diff = static_cast<int32_t>(new_ts - s.audioRtp.timestamp);
+            int64_t diff = rtpTsDelta(new_ts, s.audioRtp.timestamp);
             if (diff > max_step) {
                 new_ts = s.audioRtp.timestamp + static_cast<uint32_t>(max_step);
             } else if (diff <= 0) {
