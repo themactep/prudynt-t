@@ -89,12 +89,12 @@ public:
       write_cv.notify_all();
       return true;
     }
-    // Readers that care about stream continuity (fMP4 muxing) poll this to
-    // notice that frames were discarded underneath them.
-    evicted_writes.fetch_add(1, std::memory_order_relaxed);
-    // Evict oldest complete frame if markers exist; otherwise drop the oldest
-    // element.  A byte bound stops before the newest frame goes away, so a
-    // single frame larger than the budget is still delivered.
+    // Evict the oldest complete frame if markers exist; otherwise drop the
+    // oldest element.  A byte bound stops before the newest element/frame goes
+    // away, so a single oversized frame is still delivered.  Count the write as
+    // an eviction only if something was actually dropped: the newest-element
+    // exception can leave the queue over budget without losing data.
+    bool evicted = false;
     if constexpr (has_frame_markers<T>::value) {
       while (!withinBudget() && !msg_buffer.empty()) {
         if (max_bytes > 0 && oneFrameLeft())
@@ -102,16 +102,25 @@ public:
         auto &back = msg_buffer.back();
         bool end_marker = back.is_frame_end;
         popBack();
+        evicted = true;
         if (end_marker) break; // evicted one complete frame
         // Continue popping until we reach frame_end that closes this frame.
       }
     } else {
-      while (msg_buffer.size() > buffer_size) {
+      // AudioFrame has no frame markers, so this is the only place the audio
+      // tap's byte cap is applied.  Honor both the count and byte bounds.
+      while (msg_buffer.size() > buffer_size ||
+             (max_bytes > 0 && queued_bytes > max_bytes)) {
         if (max_bytes > 0 && msg_buffer.size() <= 1)
-          break;
+          break; // keep the newest element even if it exceeds the budget
         popBack();
+        evicted = true;
       }
     }
+    // Readers that care about stream continuity (fMP4 muxing) poll this to
+    // notice that frames were discarded underneath them.
+    if (evicted)
+      evicted_writes.fetch_add(1, std::memory_order_relaxed);
     write_cv.notify_all();
     return false;
   }
