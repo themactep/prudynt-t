@@ -1,8 +1,7 @@
 // Test scenarios for DayNightAlgo --- focused on pitch-black startup bug.
 //
 // Build and run:
-//   g++ -std=c++17 -I../output/../build/prudynt-t-custom/src \
-//       test_daynight_algo.cpp -o test_daynight_algo && ./test_daynight_algo
+//   g++ -std=c++17 -I../output/../build/prudynt-t-custom/src test_daynight_algo.cpp -o test_daynight_algo && ./test_daynight_algo
 //
 // Or just with the header copied inline (self-contained):
 //   g++ -std=c++17 test_daynight_algo.cpp -o test_daynight_algo && ./test_daynight_algo

@@ -1,9 +1,9 @@
 # Tests
 
-Most files here are host-side unit tests with the build command in the file
-header (`test_daynight_algo.cpp`, `test_h264_sps_vui.cpp`,
-`test_h265_sps_vui.cpp`). `test_shared_rotation.c` is a device-only probe
-against IMP.
+Most files here are host-side unit tests (`test_daynight_algo.cpp`,
+`test_h264_sps_vui.cpp`, `test_h265_sps_vui.cpp`, `test_g711.cpp`).
+`tests/run_host_tests.sh` builds and runs all of them, and CI runs it on every
+pull request. `test_shared_rotation.c` is a device-only probe against IMP.
 
 `http_auth_matrix.py` is different: it is an integration test that runs
 against a **live camera** after a test build is deployed. It validates the

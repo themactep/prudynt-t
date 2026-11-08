@@ -102,3 +102,14 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           files: |
             bin/prudynt-${{ matrix.target }}-${{ matrix.build_type }}
+
+  host-tests:
+    name: host-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Run host unit tests
+        run: tests/run_host_tests.sh
