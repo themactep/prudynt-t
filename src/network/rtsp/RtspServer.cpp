@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #endif
 
+#include "video/AccessUnitTiming.hpp"
 #include "network/rtsp/RtspServer.hpp"
 #include "network/rtsp/RtpPacketizer.hpp"
 #include "network/rtsp/RtspAddr.hpp"
@@ -2165,64 +2166,41 @@ void RtspServer::updateVideoTimestamp(Session &s, const H264NALUnit &nal,
     if (!nal.is_frame_start)
         return;
 
-    int64_t ts_us = nal.imp_ts;
-
-    // Determine whether this NAL carries picture data (VCL).
-    // SPS/PPS/VPS/SEI/AUD are non-VCL and should not anchor.
-    bool isPictureNal = true;
-    if (nalLen > 0) {
-        if (isH265 && nalLen >= 2) {
-            uint8_t t = (nalData[0] >> 1) & 0x3F;
-            isPictureNal = (t <= 31);
-        } else {
-            uint8_t t = nalData[0] & 0x1F;
-            isPictureNal = (t == 1 || t == 5);
-        }
-    }
-
-    // Defer anchor when this is a config-only NAL and we haven't
-    // anchored yet.
-    if (s.videoStartAnchorUs < 0 && !isPictureNal) {
-        if (s.hasFrameRtpTs)
-            s.videoRtp.timestamp = s.lastFrameRtpTs + 1;
-        s.lastFrameRtpTs = s.videoRtp.timestamp;
-        s.hasFrameRtpTs = true;
+    const int64_t ts_us = nal.imp_ts;
+    if (ts_us <= 0) return;
+    // frame_start is assigned only to the first NAL of a validated picture AU.
+    // It may be an SPS/PPS prefix. Config-only events never set frame_start.
+    if (s.videoStartAnchorUs < 0) {
+        s.videoStartAnchorUs = ts_us;
         struct timespec mono;
         clock_gettime(CLOCK_MONOTONIC, &mono);
-        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
-    } else {
-        if (s.videoStartAnchorUs < 0) {
-            s.videoStartAnchorUs = ts_us;
-            struct timespec mono;
-            clock_gettime(CLOCK_MONOTONIC, &mono);
-            s.videoTsToMonoOffset =
-                static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                static_cast<int64_t>(mono.tv_nsec) / 1000LL - ts_us;
-        }
-        int64_t rel_us = ts_us - s.videoStartAnchorUs;
-        if (rel_us < 0) rel_us = 0;
-        uint32_t new_ts = static_cast<uint32_t>(
-            (static_cast<uint64_t>(rel_us) * 9ULL) / 100ULL);
-
-        if (s.hasFrameRtpTs) {
-            static const uint32_t kMaxVideoRtpStep = 45000;
-            int64_t diff = rtpTsDelta(new_ts, s.lastFrameRtpTs);
-            if (diff > kMaxVideoRtpStep)
-                new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
-            else if (diff <= 0)
-                new_ts = s.lastFrameRtpTs + 1;
-        }
-        s.lastFrameRtpTs = new_ts;
-        s.hasFrameRtpTs = true;
-        s.videoRtp.timestamp = new_ts;
-        s.videoFrameCount++;
-
-        struct timespec mono;
-        clock_gettime(CLOCK_MONOTONIC, &mono);
-        s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
-                          static_cast<int64_t>(mono.tv_nsec) / 1000LL;
+        s.videoTsToMonoOffset =
+            static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+            static_cast<int64_t>(mono.tv_nsec) / 1000LL - ts_us;
     }
+    if (ts_us < s.videoStartAnchorUs) return;
+    uint32_t new_ts = access_unit_timing::rtp90k(ts_us, s.videoStartAnchorUs);
+    if (s.hasFrameRtpTs) {
+        // Keep the step guard for encoder timestamp-domain jumps (another
+        // client's subscriber startup flushes the encoder mid-session).
+        // Pictures arrive with strictly increasing capture times, so the
+        // backward branch only covers a clock reset.
+        static const uint32_t kMaxVideoRtpStep = 45000;
+        int64_t diff = rtpTsDelta(new_ts, s.lastFrameRtpTs);
+        if (diff > kMaxVideoRtpStep)
+            new_ts = s.lastFrameRtpTs + kMaxVideoRtpStep;
+        else if (diff <= 0)
+            new_ts = s.lastFrameRtpTs + 1;
+    }
+    s.lastFrameRtpTs = new_ts;
+    s.hasFrameRtpTs = true;
+    s.videoRtp.timestamp = new_ts;
+    s.videoFrameCount++;
+
+    struct timespec mono;
+    clock_gettime(CLOCK_MONOTONIC, &mono);
+    s.lastVideoTsUs = static_cast<int64_t>(mono.tv_sec) * 1000000LL +
+                      static_cast<int64_t>(mono.tv_nsec) / 1000LL;
 }
 
 // -- RTP sending (video) ----------------------------------------------------

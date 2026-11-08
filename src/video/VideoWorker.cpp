@@ -1,4 +1,6 @@
 #include "video/VideoWorker.hpp"
+#include "video/AccessUnitTiming.hpp"
+#include <array>
 
 #include <algorithm>
 #include <chrono>
@@ -267,11 +269,7 @@ void VideoWorker::run() {
   int64_t mp4_frame_switch_threshold_us =
       compute_frame_switch_threshold(last_mp4_fps);
 
-  int64_t ts_last_nonzero_us = 0;
-  int64_t ts_last_frame_us = 0;
-  int64_t ts_last_rtp_us = 0;
-  int64_t ts_current_frame_us = 0;
-  bool ts_have_current_frame = false;
+  access_unit_timing::PictureClock picture_clock;
   bool had_video_clients = false;
 
   auto reset_mp4_sample = [&]() {
@@ -490,11 +488,7 @@ void VideoWorker::run() {
         LOG_WARN("VideoWorker: IMP_Encoder_FlushStream("
                  << encChn << ") failed during subscriber startup");
       }
-      ts_last_nonzero_us = 0;
-      ts_last_frame_us = 0;
-      ts_last_rtp_us = 0;
-      ts_current_frame_us = 0;
-      ts_have_current_frame = false;
+      picture_clock.reset();
     }
     had_video_clients = video_clients_active;
 
@@ -536,6 +530,8 @@ void VideoWorker::run() {
           continue;
         }
 
+        // Nominal frame period: used only to fold encoder timestamp-domain
+        // steps out of the recorder timeline, never to invent picture time.
         int64_t nominal_frame_step_us = 33333;
         if (video_state && video_state->stream &&
             video_state->stream->fps > 0) {
@@ -561,16 +557,45 @@ void VideoWorker::run() {
               (strcmp(video_state->stream->format, "H265") == 0);
         }
 
+        // Group pictures before touching clock state. SDK frameEnd flags may
+        // terminate SPS/PPS packs; they do not imply an encoded picture.
+        std::vector<access_unit_timing::Pack> timing_packs;
+        timing_packs.reserve(stream.packCount);
+        for (uint32_t j = 0; j < stream.packCount; ++j) {
+          auto parts = hal::encoder::get_pack_slices(stream, j);
+          std::array<uint8_t, 8> header{};
+          size_t used = std::min<size_t>(header.size(), parts.first_len);
+          if (parts.first_ptr && used) std::memcpy(header.data(), parts.first_ptr, used);
+          size_t extra = std::min<size_t>(header.size() - used, parts.second_len);
+          if (parts.second_ptr && extra) std::memcpy(header.data() + used, parts.second_ptr, extra);
+          timing_packs.push_back(access_unit_timing::describe(
+              header.data(), used + extra, stream_is_h265, stream.pack[j].timestamp));
+        }
+        const auto access_units = access_unit_timing::group(timing_packs);
+        size_t unit_index = 0;
+        bool discard_unit = false;
         for (uint32_t i = 0; i < stream.packCount; ++i) {
-          // Effective frame end: the T31 libimp never sets pack.frameEnd
-          // (always false), which left the RTP marker bit unset and broke
-          // frame-boundary detection in marker-based clients (go2rtc WebRTC
-          // and MP4/MSE showed no video while ffmpeg/MediaMTX, which fall
-          // back to timestamp changes, played fine).  IMP_Encoder_GetStream
-          // returns exactly one encoded frame per call on all platforms, so
-          // the last pack of the batch is by definition the end of frame.
-          bool pack_is_frame_end =
-              stream.pack[i].frameEnd || (i + 1 == stream.packCount);
+          while (i > access_units[unit_index].end) ++unit_index;
+          const auto &unit = access_units[unit_index];
+          const bool unit_start = i == unit.begin;
+          if (unit_start) {
+            discard_unit = !unit.valid;
+            if (unit.picture && !discard_unit) {
+              const auto result = picture_clock.accept(unit.timestamp_us);
+              discard_unit = result != access_unit_timing::Result::Accepted;
+              if (discard_unit) {
+                LOG_WARN("ch" << encChn << " rejected picture capture timestamp "
+                         << unit.timestamp_us << " after " << picture_clock.last()
+                         << "; discontinuity, no nominal time synthesized");
+              }
+            }
+            if (discard_unit) IMP_Encoder_RequestIDR(encChn);
+          }
+          if (discard_unit) continue;
+          const bool frame_start = unit.picture && unit_start;
+          const bool pack_is_frame_end = unit.picture && i == unit.end;
+          const int64_t pack_ts_us = unit.picture ? unit.timestamp_us : picture_clock.last();
+          const int64_t rtsp_ts_us = pack_ts_us;
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
           if ((!recorder_active || !recorder_accepts_samples) &&
@@ -583,8 +608,10 @@ void VideoWorker::run() {
             mp4_ts_offset_us = 0;
           }
 
-          fps++;
-          total_frames++;
+          if (frame_start) {
+            fps++;
+            total_frames++;
+          }
           bps += stream.pack[i].length;
 
           // Use get_pack_slices so ring-buffer wrap-around on T31/T40/T41/C100
@@ -609,59 +636,10 @@ void VideoWorker::run() {
             length = slices.first_len;
           }
           uint8_t *end = start + length;
-          bool frame_start = (i == 0) || stream.pack[i - 1].frameEnd;
           if (frame_start) {
-            // Reset SEI state per frame
             sei_pending_for_frame = false;
             sei_inserted_for_frame = false;
-
-            uint32_t frame_end_idx = i;
-            while (frame_end_idx + 1 < stream.packCount &&
-                   !stream.pack[frame_end_idx].frameEnd) {
-              ++frame_end_idx;
-            }
-
-            int64_t frame_ts_us = 0;
-            for (uint32_t j = i; j <= frame_end_idx; ++j) {
-              if (stream.pack[j].timestamp > 0) {
-                frame_ts_us = stream.pack[j].timestamp;
-              }
-            }
-
-            if (frame_ts_us > 0) {
-              if (frame_ts_us > ts_last_nonzero_us) {
-                ts_last_nonzero_us = frame_ts_us;
-              } else {
-                frame_ts_us = ts_last_nonzero_us;
-              }
-            } else if (ts_last_nonzero_us > 0) {
-              frame_ts_us = ts_last_nonzero_us;
-            } else if (ts_last_frame_us > 0) {
-              frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
-            }
-
-            // Guard against IMP encoder timestamp domain transitions
-            // (relative->rebased) which cause large forward jumps.
-            if (ts_last_frame_us > 0 && frame_ts_us > ts_last_frame_us) {
-              int64_t fwd_step = frame_ts_us - ts_last_frame_us;
-              if (fwd_step > 2 * nominal_frame_step_us) {
-                frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
-                ts_last_nonzero_us = frame_ts_us;
-              }
-            }
-
-            if (ts_last_frame_us > 0 && frame_ts_us <= ts_last_frame_us) {
-              frame_ts_us = ts_last_frame_us + nominal_frame_step_us;
-            }
-            if (frame_ts_us <= 0) {
-              frame_ts_us = (ts_last_frame_us > 0)
-                                ? (ts_last_frame_us + nominal_frame_step_us)
-                                : nominal_frame_step_us;
-            }
-
-            ts_current_frame_us = frame_ts_us;
-            ts_have_current_frame = true;
-
+            const uint32_t frame_end_idx = static_cast<uint32_t>(unit.end);
             // Peek ahead to detect if this frame is an IDR (for SEI insertion)
             if (osd_sei_active) {
               for (uint32_t j = i; j <= frame_end_idx; ++j) {
@@ -692,23 +670,9 @@ void VideoWorker::run() {
             }
           }
 
-          int64_t pack_ts_us = stream.pack[i].timestamp;
-          if (pack_ts_us > ts_last_nonzero_us) {
-            ts_last_nonzero_us = pack_ts_us;
-          }
-          if (ts_have_current_frame && ts_current_frame_us > 0) {
-            pack_ts_us = ts_current_frame_us;
-          } else if (pack_ts_us <= 0 && ts_last_nonzero_us > 0) {
-            pack_ts_us = ts_last_nonzero_us;
-          }
-
-          if (pack_is_frame_end && pack_ts_us > 0) {
-            ts_last_frame_us = pack_ts_us;
-          }
-
           // The recorder timeline outlives an RTSP session. When a client
-          // connects, VideoWorker flushes the encoder and clears
-          // ts_last_frame_us, so the frame-path guard below cannot see the
+          // connects, VideoWorker flushes the encoder and resets the picture
+          // clock, so the picture clock alone cannot see the
           // encoder's relative-to-rebased timestamp step and the MP4 PTS
           // jumps forward by the whole session age. Keep a recorder-scoped
           // last timestamp and fold each domain step into an offset so the
@@ -728,18 +692,6 @@ void VideoWorker::run() {
             }
             mp4_last_ts_us = mp4_ts_us;
           }
-
-          int64_t rtsp_ts_us = pack_ts_us;
-          if (rtsp_ts_us <= 0) {
-            rtsp_ts_us = (ts_last_rtp_us > 0)
-                             ? (ts_last_rtp_us + nominal_frame_step_us)
-                             : nominal_frame_step_us;
-          }
-          constexpr int64_t kMinRtpStepUs = 12;
-          if (ts_last_rtp_us > 0 && rtsp_ts_us <= ts_last_rtp_us) {
-            rtsp_ts_us = ts_last_rtp_us + kMinRtpStepUs;
-          }
-          ts_last_rtp_us = rtsp_ts_us;
 
           uint32_t h264_nal = hal::encoder::get_h264_nal_type(stream.pack[i]);
           uint32_t h265_nal = hal::encoder::get_h265_nal_type(stream.pack[i]);
@@ -868,7 +820,7 @@ void VideoWorker::run() {
                                                   std::memory_order_relaxed);
           }
 
-          if (recorder_accepts_samples &&
+          if (recorder_accepts_samples && unit.picture &&
               payload_len > 0 &&
               !(nal_is_vps || nal_is_sps || nal_is_pps)) {
             bool pack_frame_end = pack_is_frame_end;
@@ -1058,8 +1010,8 @@ void VideoWorker::run() {
                   tap_nalu.imp_ts = rtsp_ts_us;
                   tap_nalu.time = nal_time;
                   tap_nalu.frame_id = current_frame_id;
-                  tap_nalu.packet_index = i;
-                  tap_nalu.packet_count = stream.packCount;
+                  tap_nalu.packet_index = static_cast<uint32_t>(i - unit.begin);
+                  tap_nalu.packet_count = static_cast<uint32_t>(unit.end - unit.begin + 1);
                   tap_nalu.is_frame_start = frame_start;
                   tap_nalu.is_frame_end = pack_is_frame_end;
                   tap_nalu.is_keyframe = (nal_is_idr || nal_is_hevc_idr ||
@@ -1169,13 +1121,13 @@ void VideoWorker::run() {
           // This is OUTSIDE the hasDataCallback block so prebuffer works
           // without RTSP clients Accumulate all NAL units (except SPS/PPS) into
           // prebuffer_sample, flush on frameEnd
-          if (global_video[encChn]->prebuffer &&
+          if (unit.picture && global_video[encChn]->prebuffer &&
               global_video[encChn]->prebuffer->isEnabled()) {
             // Skip VPS/SPS/PPS for prebuffer (they're in the avcC/hvcC)
             if (!(nal_is_vps || nal_is_sps || nal_is_pps) && payload_len > 0) {
               // Set timestamp from first NAL unit of frame
               if (prebuffer_sample_ts_us == -1) {
-                prebuffer_sample_ts_us = stream.pack[i].timestamp;
+                prebuffer_sample_ts_us = pack_ts_us;
               }
 
               // SEI metadata for prebuffer: prepend SEI NAL before first
