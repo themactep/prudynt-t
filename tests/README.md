@@ -2,7 +2,7 @@
 
 Most files here are host-side unit tests (`test_daynight_algo.cpp`,
 `test_h264_sps_vui.cpp`, `test_h265_sps_vui.cpp`, `test_g711.cpp`,
-`test_msgchannel.cpp`).
+`test_msgchannel.cpp`, `test_segment_name.cpp`).
 `tests/run_host_tests.sh` builds and runs all of them, and CI runs it on every
 pull request. `test_shared_rotation.c` is a device-only probe against IMP.
 

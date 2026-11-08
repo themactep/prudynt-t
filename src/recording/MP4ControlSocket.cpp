@@ -25,6 +25,7 @@
 #include "util/Logger.hpp"
 #include "recording/MP4Muxer.hpp"
 #include "recording/PreTriggerBuffer.hpp"
+#include "recording/segment_name.hpp"
 #include "stream/globals.hpp"
 #include "video/H265CodecConfig.hpp"
 
@@ -1029,7 +1030,21 @@ build_loop_target_path(const RecordingLoopParams &params,
   if (!ensure_parent_directory(fullPath)) {
     return {};
   }
-  return fullPath.string();
+
+  // Keep local-time names (they match the OSD burn-in) but never truncate an
+  // existing segment: at DST fall-back the local hour repeats and would yield
+  // an identical name, which MP4Recorder::start() would O_TRUNC.
+  fs::path chosen = unique_segment_path(fullPath);
+  if (chosen.empty()) {
+    LOG_ERROR("MP4ControlSocket: no free segment name for '" << fullPath
+                                                             << "'");
+    return {};
+  }
+  if (chosen != fullPath) {
+    LOG_INFO("MP4ControlSocket: segment name collision, using '"
+             << chosen << "' instead of '" << fullPath << "'");
+  }
+  return chosen.string();
 }
 
 bool wait_until_channel_idle(int channel,
