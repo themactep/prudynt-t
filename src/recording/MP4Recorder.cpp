@@ -63,6 +63,10 @@ bool MP4Recorder::start(const std::string &path,
 
   closeUnlocked();
 
+  // NOTE: O_TRUNC overwrites an existing file for an explicit one-shot path.
+  // Auto-generated (loop/template) names are disambiguated before they reach
+  // here by unique_segment_path(); one-shot path= is not.
+  // TODO: decide whether one-shot should also refuse or suffix on collision.
   fd_ = ::open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
   if (fd_ < 0) {
     LOG_ERROR("failed to open MP4 file '" << path << "'");

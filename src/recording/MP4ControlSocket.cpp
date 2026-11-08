@@ -1343,6 +1343,10 @@ void MP4ControlSocket::run() {
           channel = default_recorder_channel();
         }
 
+        // An explicit path= is used verbatim and may overwrite an existing
+        // file; only names built from mount/dir/name go through
+        // unique_segment_path(). TODO: apply the same collision handling to
+        // one-shot paths (see MP4Recorder::start's O_TRUNC).
         std::string path = options.path;
         if (path.empty() &&
             (!options.mount.empty() || !options.directory.empty() ||
