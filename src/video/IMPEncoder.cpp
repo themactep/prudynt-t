@@ -148,13 +148,11 @@ void IMPEncoder::initProfile() {
                               eff_height, stream->fps, 1, stream->gop, 2,
                               -1, stream->bitrate);
 
-  /* Bitrate is set by IMP_Encoder_SetDefaultParam() above (kbps).  The
-   * RC attr struct fields (attrCbr.uTargetBitRate etc.) use a different
-   * unit (bit/s, see imp_encoder.h: "unit: bit/s") — writing the raw kbps
-   * value here made the encoder target ~1000x less than configured and
-   * it floored out around 700-1000 kbps regardless of the setting.
-   * Only QP/delta tuning is applied here; bitrate stays with the SDK
-   * defaults from SetDefaultParam. */
+  /* bitrate and max_bitrate are kbps: IMP_Encoder_SetDefaultParam() takes
+   * kbps and the RC attr struct fields follow the same unit.  Only
+   * IMP_Encoder_SetChnBitRate() is documented in bit/s.  uMaxPictureSize
+   * is a per-frame size cap, not a rate; feeding it the kbps bitrate is
+   * what floored rate control at ~700-1000 kbps before 8a5e497. */
   switch (rcMode) {
   case IMP_ENC_RC_MODE_FIXQP:
     rcAttr->attrRcMode.attrFixQp.iInitialQP = 38;

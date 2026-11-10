@@ -636,9 +636,11 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream0.pb_delta", stream0.pb_delta, -1,
        [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
+      // max_bitrate is kbps, same unit as bitrate: the SDK rate-control
+      // max-bitrate fields take kbps, not bit/s.
       {"stream0.max_bitrate", stream0.max_bitrate, 0,
        [](const int &v) {
-         return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000);
+         return (v == 0) || (v == -1) || (v >= 64 && v <= 100000);
        }},
       {"stream0.buffers", stream0.buffers, -1,
        [](const int &v) { return v == -1 || (v >= 1 && v <= 8); }},
@@ -668,7 +670,7 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return (v == -1) || (v >= -20 && v <= 20); }},
       {"stream1.max_bitrate", stream1.max_bitrate, 0,
        [](const int &v) {
-         return (v == 0) || (v == -1) || (v >= 64000 && v <= 100000000);
+         return (v == 0) || (v == -1) || (v >= 64 && v <= 100000);
        }},
       {"stream1.buffers", stream1.buffers, -1,
        [](const int &v) { return v == -1 || (v >= 1 && v <= 8); }},
