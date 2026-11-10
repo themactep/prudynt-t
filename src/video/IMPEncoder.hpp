@@ -26,6 +26,13 @@ public:
   static IMPEncoder *createNew(_stream *stream, int encChn, int encGrp,
                                int fsChn, const char *name);
 
+  // Drop any encoder channels/groups left behind by the SDK. On a hot video
+  // restart the previous channels are already destroyed individually, but
+  // T23 libimp can keep stale internal state that makes the next CreateChn
+  // fault unless the global sweep runs again, exactly as it does on a fresh
+  // process start. No-op on other platforms.
+  static void precleanT23();
+
   IMPEncoder(_stream *stream, int encChn, int encGrp, int fsChn,
              const char *name)
       : stream(stream), encChn(encChn), encGrp(encGrp), fsChn(fsChn),

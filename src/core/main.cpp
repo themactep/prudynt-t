@@ -578,6 +578,11 @@ int main(int argc, const char *argv[]) {
     }
 
     if (global_restart_video || startup) {
+      // T23 libimp keeps encoder state that a fresh process start sweeps
+      // before creating channels. A hot video restart must do the same
+      // sweep, or the next CreateChn can fault on the stale state.
+      IMPEncoder::precleanT23();
+
       if (cfg->stream0.enabled) {
         start_video(0);
       }
@@ -724,6 +729,19 @@ int main(int argc, const char *argv[]) {
         if (!global_shutdown_requested.load(std::memory_order_relaxed)) {
           int ret = pthread_join(global_jpeg[1]->thread, NULL);
           LOG_DEBUG("join jpeg[1] done, ret=" << ret);
+        }
+      }
+
+      // Every consumer is stopped, so drop the framesource channels as well.
+      // Leaving them disabled-but-created made the next
+      // IMP_FrameSource_CreateChn() fail on a hot restart and kept stale
+      // SDK state around. A fresh start creates them from scratch.
+      if (!global_shutdown_requested.load(std::memory_order_relaxed)) {
+        for (int chn = 0; chn < NUM_VIDEO_CHANNELS; ++chn) {
+          if (global_video[chn] && global_video[chn]->imp_framesource) {
+            delete global_video[chn]->imp_framesource;
+            global_video[chn]->imp_framesource = nullptr;
+          }
         }
       }
     }

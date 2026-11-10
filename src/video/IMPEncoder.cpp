@@ -20,23 +20,21 @@ inline uint32_t align_up(uint32_t value, uint32_t alignment) {
   return value + (alignment - remainder);
 }
 
-#if defined(PLATFORM_T23)
-void t23_encoder_global_preclean_once() {
-  static std::once_flag once;
-  std::call_once(once, []() {
-    LOG_WARN("T23 pre-clean: running one-time global encoder sweep");
-    for (int ch = 0; ch < 8; ++ch) {
-      (void)IMP_Encoder_StopRecvPic(ch);
-      (void)IMP_Encoder_UnRegisterChn(ch);
-      (void)IMP_Encoder_DestroyChn(ch);
-    }
-    for (int grp = 0; grp < 8; ++grp) {
-      (void)IMP_Encoder_DestroyGroup(grp);
-    }
-  });
-}
-#endif
 } // namespace
+
+void IMPEncoder::precleanT23() {
+#if defined(PLATFORM_T23)
+  LOG_WARN("T23 pre-clean: running global encoder sweep before video start");
+  for (int ch = 0; ch < 8; ++ch) {
+    (void)IMP_Encoder_StopRecvPic(ch);
+    (void)IMP_Encoder_UnRegisterChn(ch);
+    (void)IMP_Encoder_DestroyChn(ch);
+  }
+  for (int grp = 0; grp < 8; ++grp) {
+    (void)IMP_Encoder_DestroyGroup(grp);
+  }
+#endif
+}
 
 IMPEncoder *IMPEncoder::createNew(_stream *stream, int encChn, int encGrp,
                                   int fsChn, const char *name) {
@@ -426,7 +424,6 @@ int IMPEncoder::init() {
   }
 
 #if defined(PLATFORM_T23)
-  t23_encoder_global_preclean_once();
   {
     int cleanup_ret = IMP_Encoder_StopRecvPic(encChn);
     if (cleanup_ret == 0) {
