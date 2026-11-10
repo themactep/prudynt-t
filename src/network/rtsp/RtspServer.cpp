@@ -180,8 +180,19 @@ void RtspServer::addAudioOnlyStream(const AudioStreamConfig &config,
     audioOnlyStreams_.push_back({config, std::move(state)});
 }
 
+void RtspServer::resetRegistrations() {
+    videoStreams_.clear();
+    audioStreams_.clear();
+    audioOnlyStreams_.clear();
+    subtitleStreams_.clear();
+    backchannelFormats_.clear();
+    backchannelEnabled_ = false;
+}
+
 void RtspServer::enableBackchannel() {
-    // Enumerate supported formats from IMPBackchannel
+    // Enumerate supported formats from IMPBackchannel. The server object is
+    // reused across restarts, so start from a clean list.
+    backchannelFormats_.clear();
 #define ADD_BC(EnumName, NameString, PayloadType, Frequency, MimeType) \
     backchannelFormats_.push_back({NameString, Frequency, PayloadType});
     X_FOREACH_BACKCHANNEL_FORMAT(ADD_BC)

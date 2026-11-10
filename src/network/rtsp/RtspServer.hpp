@@ -53,6 +53,11 @@ public:
     // Formats are auto-detected from IMPBackchannel capabilities.
     void enableBackchannel();
 
+    // Drop all stream and backchannel registrations. The server object is
+    // reused across video restarts, so the registration vectors must be
+    // reset before RTSP::start() registers the new configuration again.
+    void resetRegistrations();
+
     // -- Lifecycle -------------------------------------------------------
 
     bool start(int port);

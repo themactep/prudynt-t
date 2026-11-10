@@ -121,6 +121,12 @@ void RTSP::addSubsession(int chnNr, _stream &stream) {
 }
 
 void RTSP::start() {
+    // A video restart reuses the same RtspServer object, so drop the previous
+    // stream formats before registering the current configuration. Otherwise
+    // every restart appends another copy of the stream and backchannel lists.
+    server_->resetRegistrations();
+    audioConfigured_ = false;
+
     // -- Configure server -----------------------------------------------
     std::string streamName = std::string(cfg->rtsp.name) + " (" + BUILD_COMMIT + ")";
     server_->setStreamName(streamName);
