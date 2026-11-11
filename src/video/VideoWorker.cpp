@@ -309,6 +309,12 @@ void VideoWorker::run() {
     mp4_ts_offset_us = 0;
   };
 
+  // Loop rotation reopens the recorder in the same tick as the previous
+  // segment closes, so the inactive check below does not reliably observe the
+  // gap. Track the recorder generation like AudioWorker and rebase the video
+  // clock on every new segment instead of on observed inactivity.
+  uint64_t mp4_recorder_generation = channel_recorder.generation();
+
   auto flush_mp4_sample = [&](bool recorder_active) {
     static bool was_recorder_active = false;
 
@@ -573,6 +579,14 @@ void VideoWorker::run() {
               stream.pack[i].frameEnd || (i + 1 == stream.packCount);
           bool recorder_active = channel_recorder.isActive();
           bool recorder_accepts_samples = recorder_active;
+          uint64_t recorder_generation = channel_recorder.generation();
+          if (recorder_generation != mp4_recorder_generation) {
+            mp4_recorder_generation = recorder_generation;
+#ifdef PREBUFFER_ENABLED
+            pending_frames_during_flush.clear();
+#endif
+            reset_mp4_state();
+          }
           if ((!recorder_active || !recorder_accepts_samples) &&
               mp4_sample_ts_us != -1) {
             reset_mp4_state();
