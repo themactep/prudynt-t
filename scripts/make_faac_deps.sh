@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/../3rdparty"
 FAAC_REPO="https://github.com/knik0/faac.git"
 FAAC_DIR="${BUILD_DIR}/faac"
-FAAC_VER="faac-2.0"
+FAAC_VER="faac-2.2"
 INSTALL_DIR="${BUILD_DIR}/install"
 
 # Determine if building static or shared library
