@@ -354,7 +354,7 @@ int main() {
     CHECK(again == out);
   }
 
-  // Synthetic minimal SPS, no VUI (SD 720x576 -> BT.601).
+  // Synthetic minimal SPS, no VUI (SD 720x576 -> BT.709).
   {
     std::vector<uint8_t> nal = buildMinimalSps(720, 576, 0);
     std::vector<uint8_t> out = h265RewriteSpsVui(nal.data(), nal.size());
@@ -362,9 +362,9 @@ int main() {
     CHECK(v.ok);
     CHECK(v.fullRange == 1);
     CHECK(v.colourDesc == 1);
-    CHECK(v.matrix == 6); // SD -> BT.601 (SMPTE 170M)
-    CHECK(v.primaries == 6);
-    CHECK(v.transfer == 6);
+    CHECK(v.matrix == 1); // BT.709, same as HD
+    CHECK(v.primaries == 1);
+    CHECK(v.transfer == 1);
   }
 
   // Synthetic minimal SPS, VUI without a video-signal block (HD 1280x720).
@@ -375,7 +375,7 @@ int main() {
     CHECK(v.ok);
     CHECK(v.fullRange == 1);
     CHECK(v.colourDesc == 1);
-    CHECK(v.matrix == 1); // HD -> BT.709
+    CHECK(v.matrix == 1); // BT.709
     CHECK(v.primaries == 1);
     CHECK(v.transfer == 1);
   }
