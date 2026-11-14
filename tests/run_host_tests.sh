@@ -35,3 +35,7 @@ $CXX -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_msgchannel.cpp -o "$out/m
 echo "== test_segment_name"
 $CXX -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_segment_name.cpp -o "$out/segname"
 "$out/segname"
+
+echo "== test_access_unit_timing"
+$CXX -std=c++20 -Wall -Wextra -Werror -Isrc tests/test_access_unit_timing.cpp -o "$out/aut"
+"$out/aut"
