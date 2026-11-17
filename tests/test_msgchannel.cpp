@@ -20,6 +20,27 @@ void check(bool cond, int line) {
 
 #define CHECK(cond) check((cond), __LINE__)
 
+// Frame-like element with the markers and the stream timestamp the age bound
+// uses (H264NALUnit has the same fields).
+struct TsFrame {
+  std::vector<uint8_t> data;
+  bool is_frame_start = false;
+  bool is_frame_end = false;
+  uint32_t frame_id = 0;
+  int64_t imp_ts = 0;
+  size_t size() const { return data.size(); }
+};
+
+TsFrame make_frame(uint32_t id, int64_t ts) {
+  TsFrame f;
+  f.data.assign(1, 0);
+  f.is_frame_start = true;
+  f.is_frame_end = true;
+  f.frame_id = id;
+  f.imp_ts = ts;
+  return f;
+}
+
 } // namespace
 
 int main() {
@@ -59,7 +80,35 @@ int main() {
     CHECK(ch.evictions() == 1);
   }
 
+  // Age bound: the oldest frame is evicted once the queue spans more than the
+  // limit; the newest frame stays.
+  {
+    MsgChannel<TsFrame> ch(100, 0, 2'000'000);
+    CHECK(ch.write(make_frame(1, 0)));
+    CHECK(ch.write(make_frame(2, 1'000'000)));
+    CHECK(ch.write(make_frame(3, 2'000'000)));
+    CHECK(ch.evictions() == 0);
+    CHECK(!ch.write(make_frame(4, 2'500'000)));
+    CHECK(ch.evictions() == 1);
+    CHECK(ch.size() == 3);
+  }
+
+  // A single frame is kept (nothing older to drop), and types without a stream
+  // timestamp ignore the age bound.
+  {
+    MsgChannel<TsFrame> ch(100, 0, 2'000'000);
+    CHECK(ch.write(make_frame(1, 0)));
+    CHECK(ch.evictions() == 0);
+    CHECK(ch.size() == 1);
+
+    MsgChannel<int> no_ts(100, 0, 2'000'000);
+    CHECK(no_ts.write(1));
+    CHECK(no_ts.write(2));
+    CHECK(no_ts.evictions() == 0);
+  }
+
   if (failures == 0)
-    std::printf("PASS: MsgChannel count/byte bounds and eviction accounting\n");
+    std::printf(
+        "PASS: MsgChannel count/byte/age bounds and eviction accounting\n");
   return failures ? 1 : 0;
 }

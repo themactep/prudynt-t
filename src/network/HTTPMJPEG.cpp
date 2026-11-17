@@ -39,13 +39,14 @@ using namespace std::chrono;
 
 namespace {
 
-// Per-client fMP4 tap bounds.  Without a byte bound the tap holds up to
-// MSG_CHANNEL_SIZE*2 NALs (~30-40 s of video) for a client that reads slower
-// than the encoder produces, i.e. several MB per stalled/slow client.  The byte
-// bound evicts whole old frames (the newest frame is always kept, so a large
-// IDR still gets through); the reader then resyncs on the next IDR.
+// Per-client fMP4 tap bounds.  The count/byte bound caps the memory a stalled
+// client can pin; the age bound caps how far behind live its queued frames can
+// be, so a low-bitrate stream cannot sit many seconds behind in the tap.
+// Evicting whole old frames (the newest is always kept, so a large IDR still
+// gets through) makes the reader resync on the next IDR.
 constexpr size_t FMP4_VIDEO_TAP_MAX_BYTES = 512 * 1024;
 constexpr size_t FMP4_AUDIO_TAP_MAX_BYTES = 64 * 1024;
+constexpr int64_t FMP4_VIDEO_TAP_MAX_AGE_US = 5LL * 1000 * 1000;
 
 std::string base64_decode(const std::string &encoded);
 
@@ -354,8 +355,9 @@ void serve_fmp4(int cfd, int vch) {
     have_audio = build_aac_asc(audio_sample_rate, audio_channels, aac_config);
 
   // Per-client tap queues; workers fan encoded NALs/audio frames into them.
-  auto q = std::make_shared<MsgChannel<H264NALUnit>>(MSG_CHANNEL_SIZE * 2,
-                                                     FMP4_VIDEO_TAP_MAX_BYTES);
+  auto q = std::make_shared<MsgChannel<H264NALUnit>>(
+      MSG_CHANNEL_SIZE * 2, FMP4_VIDEO_TAP_MAX_BYTES,
+      FMP4_VIDEO_TAP_MAX_AGE_US);
   taps.vid = register_video_tap(vch, q).id;
   std::shared_ptr<MsgChannel<AudioFrame>> aq;
   // The audio_stream object exists even when AudioWorker's IMPAudio/encoder
