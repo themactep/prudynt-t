@@ -24,8 +24,11 @@ public:
   // maxBytes: byte bound, 0 disables it.  A byte bound evicts whole frames
   //           like the count bound, but stops before removing the newest
   //           frame so one oversized IDR is still delivered.
-  MsgChannel(unsigned int bsize, size_t maxBytes = 0)
-      : buffer_size{bsize}, max_bytes{maxBytes} {
+  // maxAgeUs: stream-time age bound, 0 disables it.  The age bound evicts
+  //           whole frames the same way, so a slow client cannot queue many
+  //           seconds behind live on a low-bitrate stream.
+  MsgChannel(unsigned int bsize, size_t maxBytes = 0, int64_t maxAgeUs = 0)
+      : buffer_size{bsize}, max_bytes{maxBytes}, max_age_us{maxAgeUs} {
   }
 
   // SFINAE helper: detect frame-boundary fields at compile time.
@@ -54,6 +57,20 @@ public:
   struct has_size_method<U,
                          std::void_t<decltype(std::declval<const U&>().size())>>
       : std::true_type {};
+
+  // Detect a stream timestamp (H264NALUnit.imp_ts) for the age bound.
+  template <typename U, typename = void>
+  struct has_imp_ts : std::false_type {};
+  template <typename U>
+  struct has_imp_ts<U, std::void_t<decltype(std::declval<const U&>().imp_ts)>>
+      : std::true_type {};
+
+  static int64_t tsOf(const T &elem) {
+    if constexpr (has_imp_ts<T>::value)
+      return elem.imp_ts;
+    else
+      return 0;
+  }
 
   void setPool(std::shared_ptr<NaluPool> p) {
     pool = std::move(p);
@@ -85,18 +102,19 @@ public:
     std::unique_lock<std::mutex> lck(cv_mtx);
     queued_bytes += dataBytes(msg);
     msg_buffer.push_front(std::move(msg));
-    if (withinBudget()) {
+    if (withinBudget() && withinAge()) {
       write_cv.notify_all();
       return true;
     }
     // Evict the oldest complete frame if markers exist; otherwise drop the
-    // oldest element.  A byte bound stops before the newest element/frame goes
-    // away, so a single oversized frame is still delivered.  Count the write as
-    // an eviction only if something was actually dropped: the newest-element
-    // exception can leave the queue over budget without losing data.
+    // oldest element.  A byte or age bound stops before the newest
+    // element/frame goes away, so a single oversized frame is still delivered.
+    // Count the write as an eviction only if something was actually dropped:
+    // the newest-element exception can leave the queue over budget without
+    // losing data.
     bool evicted = false;
     if constexpr (has_frame_markers<T>::value) {
-      while (!withinBudget() && !msg_buffer.empty()) {
+      while ((!withinBudget() || !withinAge()) && !msg_buffer.empty()) {
         if (max_bytes > 0 && oneFrameLeft())
           break; // keep the newest frame even if it exceeds the budget
         auto &back = msg_buffer.back();
@@ -108,9 +126,9 @@ public:
       }
     } else {
       // AudioFrame has no frame markers, so this is the only place the audio
-      // tap's byte cap is applied.  Honor both the count and byte bounds.
+      // tap's byte cap is applied.  Honor the count, byte and age bounds.
       while (msg_buffer.size() > buffer_size ||
-             (max_bytes > 0 && queued_bytes > max_bytes)) {
+             (max_bytes > 0 && queued_bytes > max_bytes) || !withinAge()) {
         if (max_bytes > 0 && msg_buffer.size() <= 1)
           break; // keep the newest element even if it exceeds the budget
         popBack();
@@ -229,6 +247,21 @@ private:
     return max_bytes == 0 || queued_bytes <= max_bytes;
   }
 
+  // True when the queued frames span no more than the age bound.  The front is
+  // the newest element; the back is the oldest.  Elements without a stream
+  // timestamp, and channels without an age bound, always pass.
+  bool withinAge() const {
+    if (max_age_us <= 0 || msg_buffer.size() < 2)
+      return true;
+    if constexpr (!has_imp_ts<T>::value) {
+      return true;
+    } else {
+      const int64_t newest = tsOf(msg_buffer.front());
+      const int64_t oldest = tsOf(msg_buffer.back());
+      return newest - oldest <= max_age_us;
+    }
+  }
+
   // True when only the newest frame is left in the queue.  Frame-aware
   // eviction uses this to stop before discarding the frame just written.
   bool oneFrameLeft() const {
@@ -262,6 +295,7 @@ private:
   std::condition_variable space_cv;
   unsigned int buffer_size;
   size_t max_bytes{0};
+  int64_t max_age_us{0};
   size_t queued_bytes{0};
   std::atomic<uint64_t> evicted_writes{0};
 };
