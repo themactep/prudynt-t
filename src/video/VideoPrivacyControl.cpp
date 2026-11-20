@@ -105,7 +105,41 @@ void ensureFifo() {
   }
 }
 
-void applyPrivacyToAllChannels(bool enabled) {
+void disableChannelPrivacy(const std::shared_ptr<video_stream> &vs) {
+  vs->privacy_requested.store(false, std::memory_order_release);
+  vs->privacy_black_au.clear();
+  vs->privacy_black_sent.store(false, std::memory_order_release);
+
+  if (vs->privacy_osd_handle >= 0) {
+    int encGrp = vs->encChn;
+    int ret = IMP_OSD_ShowRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
+                              encGrp, 0);
+    if (ret != 0) {
+      LOG_WARN("VideoPrivacyControl: IMP_OSD_ShowRgn(hide) ch"
+               << vs->encChn << " ret=" << ret);
+    }
+    ret = IMP_OSD_UnRegisterRgn(
+        (IMPRgnHandle)(intptr_t)vs->privacy_osd_handle, encGrp);
+    if (ret != 0) {
+      LOG_WARN("VideoPrivacyControl: IMP_OSD_UnRegisterRgn ch"
+               << vs->encChn << " ret=" << ret);
+    }
+    IMP_OSD_DestroyRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle);
+    vs->privacy_osd_handle = -1;
+  }
+
+  if (vs->running) {
+    int ret = IMP_Encoder_RequestIDR(vs->encChn);
+    if (ret != 0) {
+      LOG_WARN("VideoPrivacyControl: IMP_Encoder_RequestIDR(ch"
+               << vs->encChn << ") = " << ret);
+    }
+  }
+}
+
+bool applyPrivacyToAllChannels(bool enabled) {
+  bool applied = true;
+
   for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
     if (!global_video[ch]) continue;
     auto &vs = global_video[ch];
@@ -125,9 +159,10 @@ void applyPrivacyToAllChannels(bool enabled) {
             blackframe::buildBlackAccessUnit(vs->latest_sps, vs->latest_pps);
       }
       if (vs->privacy_black_au.empty()) {
-        LOG_WARN("VideoPrivacyControl: no black keyframe for ch"
-                 << ch << "; leaving stream uncovered");
+        LOG_ERROR("VideoPrivacyControl: cannot build the cover for ch"
+                  << ch << "; leaving stream uncovered");
         vs->privacy_requested.store(false, std::memory_order_release);
+        applied = false;
         continue;
       }
       vs->privacy_requested.store(true, std::memory_order_release);
@@ -218,39 +253,23 @@ void applyPrivacyToAllChannels(bool enabled) {
                << " (" << sw << "x" << sh << ")");
     } else {
       // -- Disable: destroy OSD cover --------------------------------
-      vs->privacy_requested.store(false, std::memory_order_release);
-      vs->privacy_black_au.clear();
-      vs->privacy_black_sent.store(false, std::memory_order_release);
-
-      if (vs->privacy_osd_handle >= 0) {
-        int encGrp = vs->encChn;
-        int ret;
-        ret = IMP_OSD_ShowRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
-                        encGrp, 0);
-        if (ret != 0) {
-          LOG_WARN("VideoPrivacyControl: IMP_OSD_ShowRgn(hide) ch" << ch
-                   << " ret=" << ret);
-        }
-        ret = IMP_OSD_UnRegisterRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle,
-                              encGrp);
-        if (ret != 0) {
-          LOG_WARN("VideoPrivacyControl: IMP_OSD_UnRegisterRgn ch" << ch
-                   << " ret=" << ret);
-        }
-        IMP_OSD_DestroyRgn((IMPRgnHandle)(intptr_t)vs->privacy_osd_handle);
-        vs->privacy_osd_handle = -1;
-      }
-
-      if (vs->running) {
-        int ret = IMP_Encoder_RequestIDR(ch);
-        if (ret != 0) {
-          LOG_WARN("VideoPrivacyControl: IMP_Encoder_RequestIDR(ch" << ch
-                   << ") = " << ret);
-        }
-      }
-
+      disableChannelPrivacy(vs);
       LOG_INFO("VideoPrivacyControl: OSD cover disabled on ch" << ch);
     }
+  }
+
+  if (enabled && !applied) {
+    // Some channels were covered before the failure was seen; take the
+    // partial cover down so every channel is in the same state.
+    for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+      if (global_video[ch]) {
+        disableChannelPrivacy(global_video[ch]);
+      }
+    }
+    remove_privacy_state_file();
+    LOG_ERROR("VideoPrivacyControl: privacy could not cover every stream; "
+              "left off");
+    return false;
   }
 
   if (enabled) {
@@ -260,6 +279,7 @@ void applyPrivacyToAllChannels(bool enabled) {
     remove_privacy_state_file();
     LOG_INFO("VideoPrivacyControl: privacy disabled on all channels");
   }
+  return true;
 }
 
 void handleCommand(const std::string &line) {
@@ -317,14 +337,23 @@ void handleCommand(const std::string &line) {
   // Always apply privacy to all channels simultaneously for security
   LOG_INFO("VideoPrivacyControl: handleCommand applying privacy="
            << (value ? "on" : "off"));
-  applyPrivacyToAllChannels(value);
+  const bool applied = applyPrivacyToAllChannels(value);
 
-  // Persist state to config if save_state is enabled
+  // Persist state to config if save_state is enabled. A cover that could not
+  // be built leaves the stream visible, so never persist the requested value
+  // in that case: the next boot would repeat the failure while the UI claimed
+  // the camera was hidden.
   if (cfg && cfg->privacy.save_state) {
-    cfg->set<bool>("privacy.enabled", value);
+    const bool effective = value && applied;
+    cfg->set<bool>("privacy.enabled", effective);
     cfg->updateConfig();
-    LOG_INFO("VideoPrivacyControl: persisted privacy.enabled = "
-             << (value ? "true" : "false"));
+    if (value && !applied) {
+      LOG_ERROR("VideoPrivacyControl: privacy stayed off; persisted "
+                "privacy.enabled = false");
+    } else {
+      LOG_INFO("VideoPrivacyControl: persisted privacy.enabled = "
+               << (effective ? "true" : "false"));
+    }
   }
 }
 
