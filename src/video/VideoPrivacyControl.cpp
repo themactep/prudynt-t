@@ -379,6 +379,42 @@ void VideoPrivacyControl::applyStartupState() {
 
   LOG_INFO("VideoPrivacyControl: applying persisted privacy on startup");
 
+  // The software cover is built from each stream's live SPS/PPS, which the
+  // video worker only learns from the first IDR it encodes. At boot nothing
+  // has asked the encoder for frames yet (RTSP starts after this call), so
+  // the parameter sets do not exist and the cover cannot be built: privacy
+  // would be skipped while privacy.enabled stays true, leaving the UI showing
+  // privacy on over a live stream. Bootstrap the parameter sets the way an
+  // RTSP client would, and wait for them.
+  bool stream_wanted[NUM_VIDEO_CHANNELS] = {cfg->stream0.enabled,
+                                            cfg->stream1.enabled};
+  for (int ch = 0; ch < NUM_VIDEO_CHANNELS; ++ch) {
+    if (!stream_wanted[ch] || !global_video[ch])
+      continue;
+    auto &vs = global_video[ch];
+    {
+      std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
+      if (vs->have_sps && vs->have_pps)
+        continue;
+    }
+    vs->bootstrap_requested.store(true, std::memory_order_relaxed);
+    vs->should_grab_frames.notify_one();
+    IMP_Encoder_RequestIDR(ch);
+
+    bool ready = false;
+    for (int attempt = 0; attempt < 50 && !ready; ++attempt) {  // up to 5 s
+      usleep(100000);
+      std::lock_guard<std::mutex> lock(vs->codec_config_mutex);
+      ready = vs->have_sps && vs->have_pps;
+    }
+    vs->bootstrap_requested.store(false, std::memory_order_relaxed);
+    vs->should_grab_frames.notify_one();
+    if (!ready) {
+      LOG_WARN("VideoPrivacyControl: no SPS/PPS for ch"
+               << ch << " after 5 s; startup privacy may not cover it");
+    }
+  }
+
   // Write to the FIFO so the privacy thread handles it (same path as the
   // shell 'privacy on' command).  Direct IMP_OSD calls from main would race
   // with encoder group init in the video worker threads.
