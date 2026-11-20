@@ -228,9 +228,15 @@ PpsInfo parsePps(const std::vector<uint8_t> &pps, int &num_groups) {
     p.t8 = (int)r.u(1);
     if (p.t8)
       p.sm = (int)r.u(1);
-    if (p.sm)
-      return p; // scaling matrices unsupported
-    p.scq = r.se();
+    if (p.sm) {
+      // The cover frame is DC-predicted with zero residual, so no scaling list
+      // is ever applied to it. Drop the lists from the twin PPS (the encoder's
+      // own PPS is untouched) instead of refusing to build the cover.
+      p.sm = 0;
+      p.scq = p.cqp;
+    } else {
+      p.scq = r.se();
+    }
   }
   p.valid = true;
   return p;
