@@ -86,7 +86,7 @@ std::string generateSdp(const VideoStreamConfig &video,
     char conns[96];
     snprintf(conns, sizeof(conns), "c=IN %s %s\r\n", kSdpAddrType, serverIp);
 
-    // Bandwidth hint (session-level, RFC 4566 S5: b= before a=)
+    // Bandwidth hint (session-level, RFC 4566 S5: b= before t=)
     char bws[32] = "";
     if (video.bitrate > 0) {
         snprintf(bws, sizeof(bws), "b=AS:%d\r\n", video.bitrate);
@@ -100,8 +100,8 @@ std::string generateSdp(const VideoStreamConfig &video,
         "o=- %d 1 IN %s %s\r\n"
         "s=%s\r\n"
         "%s"
-        "t=0 0\r\n"
         "%s"
+        "t=0 0\r\n"
         "a=control:*\r\n",
         rand(), kSdpAddrType, serverIp,
         streamName,
