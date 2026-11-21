@@ -252,6 +252,16 @@ void JPEGWorker::run() {
               continue;
             }
 
+            // The first frame the vendor encoder yields after an idle resume
+            // is the one it retained from before the pause; dropping it keeps
+            // snapshots and MJPEG from serving a stale image as fresh.
+            if (global_jpeg[jpgChn]->discard_first_frame) {
+              global_jpeg[jpgChn]->discard_first_frame = false;
+              LOG_INFO("jpeg" << jpgChn << ": dropped stale frame after resume");
+              IMP_Encoder_ReleaseStream(global_jpeg[jpgChn]->encChn, &stream);
+              continue;
+            }
+
             fps++;
             bps += total_size;
 
@@ -349,6 +359,7 @@ void JPEGWorker::run() {
       }
 
       if (global_jpeg[jpgChn]->encoder_paused) {
+        global_jpeg[jpgChn]->discard_first_frame = true;
         IMP_Encoder_StartRecvPic(global_jpeg[jpgChn]->encChn);
         global_jpeg[jpgChn]->encoder_paused = false;
         LOG_INFO("jpeg" << jpgChn << ": encoder resumed");

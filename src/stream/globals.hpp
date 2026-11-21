@@ -115,6 +115,7 @@ struct jpeg_stream {
   std::atomic<bool> running; // set to false to make jpeg_grabber thread exit
   std::atomic<bool> active{false};
   bool encoder_paused = false; // encoder idled while no jpeg requests
+  bool discard_first_frame = false; // vendor returns a stale frame after resume
   pthread_t thread;
   IMPEncoder *imp_encoder;
   std::condition_variable should_grab_frames;
