@@ -9,9 +9,8 @@ using namespace spsvui;
 // Walk an H.264 SPS RBSP (NAL header byte already stripped) up to and including
 // vui_parameters_present_flag. Returns false if the SPS is malformed or
 // truncated. On success, *vuiPresentPos is the bit offset of
-// vui_parameters_present_flag and *width is the coded width in luma samples.
-bool h264SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos,
-                  uint32_t *width) {
+// vui_parameters_present_flag.
+bool h264SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos) {
   BitReader br(bits);
 
   uint32_t profile = br.getBits(8);
@@ -62,8 +61,8 @@ bool h264SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos,
   }
   br.getUE();                     // max_num_ref_frames
   br.getBit();                    // gaps_in_frame_num_value_allowed_flag
-  uint32_t wMbs = br.getUE() + 1; // pic_width_in_mbs_minus1
-  br.getUE();                     // pic_height_in_map_units_minus1
+  br.getUE(); // pic_width_in_mbs_minus1
+  br.getUE(); // pic_height_in_map_units_minus1
   uint32_t fmo = br.getBit();     // frame_mbs_only_flag
   if (!fmo)
     br.getBit();     // mb_adaptive_frame_field_flag
@@ -79,7 +78,6 @@ bool h264SpsToVui(const Bits &bits, size_t payloadEnd, size_t *vuiPresentPos,
     return false; // truncated before the VUI
 
   *vuiPresentPos = br.pos;
-  *width = wMbs * 16;
   return true;
 }
 
@@ -105,15 +103,14 @@ std::vector<uint8_t> h264RewriteSpsVui(const uint8_t *sps, size_t len) {
     return result;
 
   size_t vuiPresentPos = 0;
-  uint32_t width = 0;
-  if (!h264SpsToVui(bits, payloadEnd, &vuiPresentPos, &width))
+  if (!h264SpsToVui(bits, payloadEnd, &vuiPresentPos))
     return result;
 
   std::vector<uint8_t> out;
   out.reserve(1 + (rbsp.size() + 8));
   out.push_back(sps[0]); // preserve NAL header verbatim
   std::vector<uint8_t> ebsp =
-      spsvui::applyVui(bits, vuiPresentPos, width >= 1280, /*isHevc=*/false);
+      spsvui::applyVui(bits, vuiPresentPos, /*isHevc=*/false);
   out.insert(out.end(), ebsp.begin(), ebsp.end());
   return out;
 }
