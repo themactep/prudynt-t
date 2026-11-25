@@ -350,6 +350,8 @@ void handle_image(JsonValue *obj, std::string &out, bool &sep) {
     add_num(out, cfg->get<int>("image.running_mode"));
     wrote = true;
   }
+  add_int("ae_min_it", "image.ae_min_it",
+          [] { hal::isp::set_ae_min_it(cfg->image.ae_min_it); });
   if (hal::caps().has_isp_ae_comp) {
     add_int("ae_compensation", "image.ae_compensation",
             [] { hal::isp::set_ae_compensation(cfg->image.ae_compensation); });

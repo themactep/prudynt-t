@@ -573,6 +573,12 @@ int IMPSystem::init() {
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_anti_flicker("
                               << cfg->image.anti_flicker << ")");
 
+  if (cfg->image.ae_min_it > 0) {
+    ret = hal::isp::set_ae_min_it(cfg->image.ae_min_it);
+    LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_ae_min_it(" << cfg->image.ae_min_it
+                                                       << ")");
+  }
+
   ret = hal::isp::set_ae_compensation(cfg->image.ae_compensation);
   LOG_DEBUG_OR_ERROR(ret, "hal::isp::set_ae_compensation("
                               << cfg->image.ae_compensation << ")");
