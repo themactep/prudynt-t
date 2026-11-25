@@ -527,6 +527,12 @@ std::vector<ConfigItem<int>> CFG::getIntItems() {
        [](const int &v) { return v >= 0 && v <= kBurninMaxScale; }},
 
       {"image.ae_compensation", image.ae_compensation, 128, validateInt255},
+      /* Shortest exposure the auto-exposure may choose, in sensor lines.
+       * 0 keeps the ISP default. Set it to one period of the mains lighting
+       * (the first "Antiflicker nodes" step in /proc/jz/isp/isp-m0) to stop
+       * rolling bands in scenes bright enough to need a shorter exposure. */
+      {"image.ae_min_it", image.ae_min_it, 0,
+       [](const int &v) { return v >= 0 && v <= 8192; }},
       /* Expert overrides preserved for backward compatibility */
       {"http.port", http.port, 8080, validateInt65535},
       {"image.anti_flicker", image.anti_flicker, 2, validateInt2},

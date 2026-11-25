@@ -168,6 +168,7 @@ struct _image {
   int running_mode;
   int anti_flicker;
   int ae_compensation;
+  int ae_min_it;
   int dpc_strength;
   int defog_strength;
   int drc_strength;

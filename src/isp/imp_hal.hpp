@@ -197,6 +197,7 @@ int get_anti_flicker(int &out_mode);
 int set_ae_compensation(int val);
 int get_ae_compensation(int &out_val);
 int set_ae_it_max(unsigned int it_max);
+int set_ae_min_it(int min_it);
 int get_ae_it_max(unsigned int &out_it_max);
 int set_ae_min(int min_it, int min_again, int min_it_short,
                int min_again_short);

@@ -1,3 +1,6 @@
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include "isp/imp_hal.hpp"
 
 #include "config/Config.hpp"
@@ -701,12 +704,23 @@ int set_vflip(bool enable) {
 #endif
 }
 
+// Exposure floor requested through image.ae_min_it (0 = none). The ISP drops
+// it back to 1 line whenever the running mode or the sensor timing changes, so
+// it is re-applied after each of those calls.
+static std::atomic<int> g_ae_min_it{0};
+static void reapply_ae_min_it();
+static void reapply_ae_min_it_deferred();
+
 int set_running_mode(int mode) {
 #if defined(PLATFORM_T40) || defined(PLATFORM_T41)
   IMPISPRunningMode m = (IMPISPRunningMode)mode;
   return IMP_ISP_Tuning_SetISPRunningMode(IMPVI, &m);
 #else
-  return IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)mode);
+  int ret = IMP_ISP_Tuning_SetISPRunningMode((IMPISPRunningMode)mode);
+  // The mode switch completes a few frames later and resets the AE limits
+  // then, so an immediate re-apply is lost.
+  reapply_ae_min_it_deferred();
+  return ret;
 #endif
 }
 
@@ -894,7 +908,9 @@ int set_anti_flicker(int mode) {
   } else if (mode == 2) {
     attr = IMPISP_ANTIFLICKER_60HZ;
   }
-  return IMP_ISP_Tuning_SetAntiFlickerAttr(attr);
+  int ret = IMP_ISP_Tuning_SetAntiFlickerAttr(attr);
+  reapply_ae_min_it();
+  return ret;
 #endif
 }
 
@@ -989,6 +1005,53 @@ int set_ae_min(int min_it, int min_again, int min_it_short,
   LOG_DEBUG("set_ae_min not supported on this platform");
   return -1;
 #endif
+}
+
+static int write_ae_min_it(int min_it) {
+#if defined(PLATFORM_T23) || defined(PLATFORM_T31) || defined(PLATFORM_C100)
+  IMPISPAEMin ae_min{};
+  int ret = IMP_ISP_Tuning_GetAeMin(&ae_min);
+  if (ret != 0)
+    return ret;
+  // Only the integration-time floor changes; the gain floors and the
+  // short-frame (WDR) values the ISP already has are kept.
+  ae_min.min_it = min_it > 0 ? min_it : 1;
+  return IMP_ISP_Tuning_SetAeMin(&ae_min);
+#else
+  (void)min_it;
+  return -1;
+#endif
+}
+
+static void reapply_ae_min_it() {
+  int want = g_ae_min_it.load();
+  if (want > 0)
+    write_ae_min_it(want);
+}
+
+// Re-apply over the next few seconds, for ISP operations that reset the AE
+// limits asynchronously. One worker at a time; a second request while one is
+// running is covered by the remaining passes of the first.
+static void reapply_ae_min_it_deferred() {
+  static std::atomic<bool> busy{false};
+  if (g_ae_min_it.load() <= 0 || busy.exchange(true))
+    return;
+  std::thread([] {
+    static const int delays_ms[] = {300, 700, 1000, 2000, 4000};
+    for (int d : delays_ms) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(d));
+      reapply_ae_min_it();
+    }
+    busy.store(false);
+  }).detach();
+}
+
+// Set the shortest integration time the auto-exposure may choose, in sensor
+// lines. min_it <= 0 removes the floor.
+int set_ae_min_it(int min_it) {
+  int want = min_it > 0 ? min_it : 0;
+  g_ae_min_it.store(want);
+  return write_ae_min_it(want);
 }
 
 int get_ae_min(int &out_min_it, int &out_min_again, int &out_min_it_short,
@@ -1555,8 +1618,10 @@ int set_sensor_fps(int fps_num, int fps_den) {
   fps.den = static_cast<uint32_t>(fps_den);
   return IMP_ISP_Tuning_SetSensorFPS(IMPVI_MAIN, &fps);
 #else
-  return IMP_ISP_Tuning_SetSensorFPS(static_cast<uint32_t>(fps_num),
-                                     static_cast<uint32_t>(fps_den));
+  int ret = IMP_ISP_Tuning_SetSensorFPS(static_cast<uint32_t>(fps_num),
+                                        static_cast<uint32_t>(fps_den));
+  reapply_ae_min_it();
+  return ret;
 #endif
 }
 
